@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#5b5fc7">
+<title>TeamsRelay</title>
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<style>
+  :root{ --brand:#5b5fc7; --bg:#f0f0f4; --card:#fff; --ink:#242424; --sub:#616161; --line:#e6e6ee; }
+  @media (prefers-color-scheme:dark){ :root{ --brand:#7f85f5; --bg:#141414; --card:#1f1f1f; --ink:#f4f4f6; --sub:#adadb2; --line:#2e2e32; } }
+  *{ box-sizing:border-box; } html,body{ margin:0; height:100%; }
+  body{ font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); display:grid; place-items:center; min-height:100dvh; }
+  .box{ width:min(360px,90vw); background:var(--card); border:1px solid var(--line); border-radius:18px; padding:26px 22px; box-shadow:0 10px 40px rgba(0,0,0,.12); text-align:center; }
+  .logo{ width:56px; height:56px; border-radius:15px; background:var(--brand); display:grid; place-items:center; margin:0 auto 14px; }
+  h1{ margin:0 0 18px; font-size:22px; }
+  input{ width:100%; border:1px solid var(--line); border-radius:11px; padding:13px 15px; font:inherit; background:var(--bg); color:var(--ink); margin-bottom:11px; }
+  button{ width:100%; border:0; background:var(--brand); color:#fff; border-radius:11px; padding:14px; font-weight:700; font-size:16px; }
+  .err{ color:#c4314b; font-size:13.5px; margin-top:10px; min-height:18px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="logo"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14"/><path d="M12 8v9.5"/><path d="M7.7 5.7 5 8l2.7 2.3"/><path d="M16.3 5.7 19 8l-2.7 2.3"/></svg></div>
+    <h1>TeamsRelay</h1>
+    <input id="u" placeholder="Utente" autocapitalize="none" autocorrect="off" autocomplete="username">
+    <input id="p" type="password" placeholder="Password" autocomplete="current-password">
+    <button onclick="go()">Entra</button>
+    <div class="err" id="err"></div>
+  </div>
+<script>
+  async function go(){
+    const u=document.getElementById('u').value.trim(), p=document.getElementById('p').value;
+    try{
+      const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:u,password:p})});
+      if(r.ok){ location.href='/'; } else { document.getElementById('err').textContent='Credenziali errate'; }
+    }catch(e){ document.getElementById('err').textContent='Errore di rete'; }
+  }
+  document.getElementById('p').addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
+</script>
+</body>
+</html>

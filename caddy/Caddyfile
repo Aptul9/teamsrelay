@@ -1,0 +1,19 @@
+# TeamsRelay — Caddy con HTTPS automatico.
+# DOMAIN, DESKTOP_DOMAIN e HTTPS_PORT arrivano da .env tramite docker-compose.yml.
+{
+	http_port 80
+	https_port {$HTTPS_PORT:443}
+}
+
+{$DOMAIN} {
+	reverse_proxy webapp:8090
+}
+
+# ---- Opzionale: desktop remoto su un sottodominio ----
+# Protetto dalle credenziali DESKTOP_USER / DESKTOP_PASS del container chromium.
+# 1) record DNS per DESKTOP_DOMAIN   2) imposta DESKTOP_DOMAIN e DESKTOP_URL in .env
+# 3) togli il commento al blocco qui sotto   4) docker compose up -d caddy
+#
+# {$DESKTOP_DOMAIN} {
+# 	reverse_proxy chromium:3000
+# }

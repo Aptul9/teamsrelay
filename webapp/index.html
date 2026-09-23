@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#5b5fc7">
+<title>TeamsRelay</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TeamsRelay">
+<style>
+  :root{ --brand:#5b5fc7; --brand-d:#4f52b2; --red:#c4314b; --green:#13a10e; --yellow:#eaa300;
+    --bg:#f0f0f4; --card:#fff; --ink:#242424; --sub:#616161; --line:#e6e6ee; --accent:#eef0fb; }
+  @media (prefers-color-scheme:dark){ :root{ --brand:#7f85f5; --brand-d:#6a6fd8; --red:#f1707f; --green:#5ec75a; --yellow:#f5c451;
+    --bg:#141414; --card:#1f1f1f; --ink:#f4f4f6; --sub:#adadb2; --line:#2e2e32; --accent:#26263a; }}
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; position:fixed; inset:0; overflow:hidden; overscroll-behavior:none; -webkit-user-select:none; user-select:none; }
+  body{ font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); display:flex; flex-direction:column; }
+  header{ background:var(--card); border-bottom:1px solid var(--line); padding:calc(env(safe-area-inset-top) + 10px) 12px 10px; flex:none; }
+  .brand{ display:flex; align-items:center; gap:9px; margin-bottom:10px; }
+  .logo{ width:30px; height:30px; border-radius:8px; background:var(--brand); display:grid; place-items:center; flex:none; }
+  .brand h1{ font-size:17px; margin:0; font-weight:700; flex:1; }
+  .status{ display:flex; align-items:center; gap:6px; border:1px solid var(--line); background:var(--bg); color:var(--sub); border-radius:20px; padding:5px 11px; font-size:12.5px; font-weight:700; }
+  .sdot{ width:9px; height:9px; border-radius:50%; background:var(--yellow); }
+  .switch{ display:flex; background:var(--accent); border-radius:11px; padding:3px; gap:3px; }
+  .switch button{ position:relative; flex:1; border:0; background:transparent; color:var(--sub); font-weight:600; font-size:14px; padding:9px 4px; border-radius:9px; }
+  .switch button.on{ background:var(--brand); color:#fff; }
+  .tabbadge{ position:absolute; top:2px; right:8px; min-width:18px; height:18px; padding:0 5px; background:var(--red); color:#fff; border-radius:9px; font-size:11px; font-weight:800; line-height:18px; display:none; }
+  .pushbn{ margin-top:9px; background:var(--brand); color:#fff; text-align:center; font-weight:600; font-size:14px; padding:10px; border-radius:10px; }
+  .filters{ display:flex; gap:7px; overflow-x:auto; padding:8px 2px 2px; -ms-overflow-style:none; scrollbar-width:none; }
+  .filters::-webkit-scrollbar{ display:none; }
+  .chip{ flex:none; border:1px solid var(--line); background:var(--bg); color:var(--sub); border-radius:16px; padding:6px 13px; font-size:13px; font-weight:600; }
+  .chip.on{ background:var(--brand); color:#fff; border-color:var(--brand); }
+  .spanel{ position:absolute; top:calc(env(safe-area-inset-top) + 52px); right:10px; z-index:30; width:min(320px,92vw); background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,.28); padding:12px; }
+  .spanel h3{ margin:0 0 8px; font-size:15px; }
+  .hrow{ display:flex; align-items:center; gap:9px; padding:7px 0; font-size:14px; border-bottom:1px solid var(--line); }
+  .hrow:last-of-type{ border-bottom:0; }
+  .hrow .k{ flex:1; color:var(--sub); } .hrow .v{ font-weight:700; }
+  .pill{ width:10px; height:10px; border-radius:50%; flex:none; }
+  .sbtns{ display:flex; gap:8px; margin-top:10px; } .sbtns button{ flex:1; border:0; border-radius:9px; padding:10px; font-weight:700; font-size:13px; background:var(--accent); color:var(--brand); }
+  .reactbar{ position:fixed; z-index:60; background:var(--card); border:1px solid var(--line); border-radius:26px; box-shadow:0 8px 30px rgba(0,0,0,.32); padding:5px 8px; display:flex; gap:2px; }
+  .reactbar button{ border:0; background:transparent; font-size:25px; padding:5px 6px; border-radius:50%; line-height:1; }
+  .reactbar button:active{ background:var(--accent); transform:scale(1.15); }
+  .react{ display:inline-block; background:var(--card); border:1px solid var(--line); border-radius:11px; padding:1px 7px; font-size:13px; margin-top:4px; }
+  main{ flex:1; overflow:hidden; position:relative; }
+  .view{ position:absolute; inset:0; display:none; flex-direction:column; } .view.on{ display:flex; }
+  .list{ overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:4px 8px 20px; flex:1; }
+  .ptr{ text-align:center; font-size:12.5px; color:var(--sub); height:0; overflow:hidden; transition:height .15s; }
+  .ptr.show{ height:26px; line-height:26px; }
+  .ptr.ok{ color:var(--green); font-weight:700; } .ptr.err{ color:var(--red); font-weight:700; }
+  .row{ display:flex; align-items:center; gap:12px; padding:10px; border-radius:12px; }
+  .row:active{ background:var(--accent); }
+  .av{ width:44px; height:44px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; font-size:16px; flex:none; }
+  .rc{ flex:1; min-width:0; } .rtop{ display:flex; align-items:baseline; gap:8px; }
+  .rname{ font-weight:600; font-size:15.5px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .rname.unread{ font-weight:800; }
+  .rtime{ font-size:12px; color:var(--sub); flex:none; }
+  .rbot{ display:flex; align-items:center; gap:8px; margin-top:2px; }
+  .rprev{ flex:1; color:var(--sub); font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .rprev.unread{ color:var(--ink); font-weight:600; }
+  .dot{ width:11px; height:11px; border-radius:50%; background:var(--red); flex:none; }
+  .sep{ height:1px; background:var(--line); margin:0 0 0 66px; }
+  .empty{ text-align:center; color:var(--sub); margin-top:44px; padding:0 24px; font-size:14.5px; }
+  .spin{ display:flex; flex-direction:column; align-items:center; gap:12px; margin-top:54px; color:var(--sub); font-size:14px; }
+  .ring{ width:34px; height:34px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--brand); animation:spin .8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .msg{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 13px; margin:0 4px 9px; }
+  .msg .top{ display:flex; gap:9px; align-items:center; margin-bottom:3px; } .msg .who{ font-weight:700; font-size:14px; flex:1; } .msg .tm{ font-size:12px; color:var(--sub); }
+  .msg .bd{ font-size:15px; white-space:pre-wrap; word-break:break-word; }
+  .conv{ position:absolute; inset:0; display:none; flex-direction:column; background:var(--bg); } .conv.on{ display:flex; }
+  .cbar{ display:flex; align-items:center; gap:11px; padding:9px 10px; background:var(--card); border-bottom:1px solid var(--line); }
+  .cbar .back{ border:0; background:transparent; color:var(--brand); font-weight:800; font-size:24px; padding:0 4px; }
+  .cbar .cav{ width:34px; height:34px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; font-size:14px; flex:none; }
+  .cbar .t{ font-weight:700; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .msgs{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:14px 12px; display:flex; flex-direction:column; gap:3px; }
+  .b{ max-width:80%; padding:8px 13px; border-radius:8px; font-size:15px; white-space:pre-wrap; word-break:break-word; margin-bottom:4px; box-shadow:0 1px 1px rgba(0,0,0,.06); -webkit-user-select:text; user-select:text; }
+  .b.them{ align-self:flex-start; background:var(--card); color:var(--ink); border-top-left-radius:2px; }
+  .b.me{ align-self:flex-end; background:var(--brand); color:#fff; border-top-right-radius:2px; }
+  .b .au{ font-size:11px; color:var(--brand); font-weight:700; margin-bottom:2px; }
+  .b .st{ font-size:10.5px; margin-top:3px; text-align:right; opacity:.8; }
+  .b.me .st{ color:rgba(255,255,255,.85); } .b .st.err{ color:#ffbcbc; font-weight:700; }
+  .compose{ display:flex; gap:8px; align-items:flex-end; padding:8px calc(env(safe-area-inset-left) + 10px) calc(env(safe-area-inset-bottom) + 8px) 10px; background:var(--card); border-top:1px solid var(--line); }
+  .compose textarea{ flex:1; resize:none; border:1px solid var(--line); border-radius:22px; padding:10px 15px; font:inherit; background:var(--bg); color:var(--ink); max-height:120px; -webkit-user-select:text; user-select:text; }
+  .compose button{ border:0; background:var(--brand); color:#fff; border-radius:50%; width:44px; height:44px; font-size:18px; flex:none; }
+  #vC iframe{ flex:1; width:100%; border:0; background:#000; }
+  .bar{ padding:9px 12px; background:var(--card); border-top:1px solid var(--line); display:flex; gap:8px; align-items:center; font-size:13px; color:var(--sub); }
+  .bar a{ color:#fff; background:var(--brand); text-decoration:none; padding:8px 12px; border-radius:9px; font-weight:600; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14"/><path d="M12 8v9.5"/><path d="M7.7 5.7 5 8l2.7 2.3"/><path d="M16.3 5.7 19 8l-2.7 2.3"/></svg></div>
+      <h1>TeamsRelay</h1>
+      <button class="status" onclick="toggleStatus()"><span class="sdot" id="sdot"></span><span id="slabel">Stato</span></button>
+    </div>
+    <div class="switch">
+      <button id="tA" onclick="show('A')">Notifiche</button>
+      <button id="tB" class="on" onclick="show('B')">Chat<span class="tabbadge" id="unreadBadge"></span></button>
+      <button id="tC" onclick="show('C')">Desktop</button>
+    </div>
+    <div id="pushBanner" class="pushbn" style="display:none" onclick="enablePush()">🔔 Attiva le notifiche</div>
+  </header>
+
+  <div id="statusPanel" class="spanel" style="display:none">
+    <h3>Stato del sistema</h3>
+    <div id="statusRows"></div>
+    <div class="sbtns"><button onclick="doResync()">🔄 Risincronizza</button><button onclick="doRecheck()">✓ Riverifica</button></div>
+  </div>
+
+  <main>
+    <div id="vA" class="view"><div class="list" id="listA"><div class="empty">Le notifiche dei messaggi Teams compaiono qui.</div></div></div>
+    <div id="vB" class="view on">
+      <div style="padding:0 8px" class="filtersWrap">
+        <div class="filters">
+          <button class="chip on" id="f-all" onclick="setFilter('all')">Tutte</button>
+          <button class="chip" id="f-unread" onclick="setFilter('unread')">Non lette</button>
+          <button class="chip" id="f-mentions" onclick="setFilter('mentions')">@ Menzioni</button>
+          <button class="chip" id="ordBtn" onclick="toggleOrder()">↓ Recenti</button>
+        </div>
+      </div>
+      <div class="list" id="listB"><div class="ptr" id="ptr"></div><div class="spin"><div class="ring"></div>Carico le conversazioni…</div></div>
+      <div class="conv" id="conv">
+        <div class="cbar"><button class="back" onclick="closeConv()">‹</button><div class="cav" id="convAv"></div><div class="t" id="convTitle"></div></div>
+        <div class="msgs" id="msgs"></div>
+        <div class="compose"><textarea id="ta" rows="1" placeholder="Scrivi un messaggio…"></textarea><button onclick="sendMsg()">➤</button></div>
+      </div>
+    </div>
+    <div id="vC" class="view">
+      <div class="bar"><span>Teams desktop (controllo remoto)</span><a href="__DESKTOP_URL__" target="_blank" rel="noopener">Schermo intero ↗</a></div>
+      <iframe id="deskFrame" title="Teams desktop"></iframe>
+    </div>
+  </main>
+  <div id="reactBar" class="reactbar" style="display:none">
+    <button onclick="doReact('like')">👍</button>
+    <button onclick="doReact('heart')">❤️</button>
+    <button onclick="doReact('laugh')">😂</button>
+    <button onclick="doReact('surprised')">😮</button>
+    <button onclick="doReact('cry')">😢</button>
+    <button onclick="doReact('angry')">😡</button>
+  </div>
+<script>
+  const DESKTOP_URL="__DESKTOP_URL__";
+  let cur='B', openChat=null, poll=null, deskLoaded=false, statusOpen=false, filterMode='all', sortDesc=true;
+  let localReacts={}, reactMid=null;
+  const EMO={like:'👍',heart:'❤️',laugh:'😂',surprised:'😮',cry:'😢',angry:'😡'};
+  const $=id=>document.getElementById(id);
+  const esc=s=>{const e=document.createElement('div');e.textContent=s||'';return e.innerHTML;};
+  const isSelf=n=>/\(you\)/i.test(n||'');
+  const initials=s=>{s=(s||'?').trim().replace(/\(.*?\)/g,'').trim();const p=s.split(/[\s,]+/).filter(Boolean);return((p[0]?.[0]||'')+(p[1]?.[0]||'')||s[0]||'?').toUpperCase();};
+  const AVC=['#6264a7','#0a7cbb','#498205','#c19c00','#ca5010','#b4009e','#008272','#e3008c','#5c2e91','#986f0b'];
+  const avColor=s=>{let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return AVC[h%AVC.length];};
+  const fmt=ts=>{ if(!ts) return ''; const d=new Date(ts*1000); return d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}); };
+  const ago=ts=>{ if(!ts) return 'mai'; const s=Math.max(0,Date.now()/1000-ts); if(s<60)return 'ora'; if(s<3600)return Math.floor(s/60)+' min fa'; if(s<86400)return Math.floor(s/3600)+' h fa'; return Math.floor(s/86400)+' g fa'; };
+  const spinHtml='<div class="spin"><div class="ring"></div>Carico…</div>';
+  async function api(u,opt){ const r=await fetch(u,Object.assign({credentials:'same-origin'},opt||{})); if(r.status===401){ location.href='/'; throw 0; } if(!r.ok) throw 0; return r.json(); }
+
+  function show(v){
+    cur=v;
+    for(const x of ['A','B','C']){ $('v'+x).classList.toggle('on',x===v); $('t'+x).classList.toggle('on',x===v); }
+    if(v==='A') loadFeed();
+    if(v==='B' && !openChat) loadChats();
+    if(v==='C' && !deskLoaded){ $('deskFrame').src=DESKTOP_URL; deskLoaded=true; }
+  }
+  function setFilter(f){ filterMode=f; ['all','unread','mentions'].forEach(x=>$('f-'+x).classList.toggle('on',x===f)); loadChats(); }
+  function toggleOrder(){ sortDesc=!sortDesc; $('ordBtn').textContent=sortDesc?'↓ Recenti':'↑ Meno recenti'; loadChats(); }
+
+  async function loadFeed(){
+    try{ const ms=await api('/api/feed'); const box=$('listA');
+      if(!ms.length){ box.innerHTML='<div class="empty">Nessuna notifica ancora.</div>'; return; }
+      box.innerHTML=''; ms.forEach(m=>{ const el=document.createElement('div'); el.className='msg';
+        el.innerHTML=`<div class="top"><div class="who">${esc(m.title||'Teams')}</div><div class="tm">${fmt(m.ts)}</div></div><div class="bd">${esc(m.body||'')}</div>`; box.appendChild(el); }); }catch(e){}
+  }
+  async function loadChats(){
+    try{ const chats=await api('/api/chats');
+      const self=chats.find(c=>isSelf(c.name)); let rest=chats.filter(c=>!isSelf(c.name));
+      if(filterMode==='unread') rest=rest.filter(c=>c.unread);
+      if(filterMode==='mentions') rest=rest.filter(c=>c.mention||/@/.test(c.preview||''));
+      if(!sortDesc) rest=rest.slice().reverse();
+      const list = self ? [self,...rest] : rest;
+      const box=$('listB'); const ptr=$('ptr').outerHTML;
+      let unreadN=chats.filter(c=>c.unread&&!isSelf(c.name)).length;
+      if(!list.length){ box.innerHTML=ptr+'<div class="empty">Nessuna conversazione'+(filterMode!=='all'?' con questo filtro':'')+'.</div>'; }
+      else{ let html=ptr; list.forEach((c,i)=>{
+        html+=`<div class="row" onclick="enterConv(this.dataset.n)" data-n="${esc(c.name)}">
+          <div class="av" style="background:${avColor(c.name)}">${isSelf(c.name)?'★':esc(initials(c.name))}</div>
+          <div class="rc"><div class="rtop"><div class="rname${c.unread?' unread':''}">${esc(c.name)}</div><div class="rtime">${esc(c.tm||'')}</div></div>
+          <div class="rbot"><div class="rprev${c.unread?' unread':''}">${esc(c.preview||'')}</div>${c.unread?'<div class="dot"></div>':''}</div></div></div>`;
+        if(i<list.length-1) html+='<div class="sep"></div>';
+      }); box.innerHTML=html; }
+      const bd=$('unreadBadge'); if(unreadN>0){ bd.textContent=unreadN; bd.style.display='block'; } else bd.style.display='none';
+    }catch(e){}
+  }
+  async function enterConv(name){
+    openChat=name; pending=[]; lastMsgs=[]; $('convTitle').textContent=name;
+    const av=$('convAv'); av.textContent=isSelf(name)?'★':initials(name); av.style.background=avColor(name);
+    $('msgs').innerHTML=spinHtml; $('conv').classList.add('on');
+    try{ await api('/api/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}); }catch(e){}
+    refreshMsgs(true); clearInterval(poll); poll=setInterval(()=>refreshMsgs(false),1400);
+  }
+  function closeConv(){ clearInterval(poll); poll=null; openChat=null; $('conv').classList.remove('on'); loadChats(); }
+  let pending=[], lastMsgs=[];
+  function renderMsgs(first){
+    const box=$('msgs');
+    const atBottom = box.scrollHeight-box.scrollTop-box.clientHeight < 70;
+    const realMine = lastMsgs.filter(m=>m.mine).map(m=>(m.text||'').trim());
+    pending = pending.filter(p => !realMine.includes(p.text.trim()));
+    let html='';
+    lastMsgs.forEach(m=>{ if(!(m.text||'').trim()) return; const mid=String(m.mid||''); const rc=localReacts[mid]||[];
+      const rcHtml=rc.length?`<div class="react">${rc.map(e=>EMO[e]||'').join(' ')}</div>`:'';
+      html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}</div>`:'')}${esc(m.text)}${m.mine?'<div class="st">✓ Inviato</div>':''}${rcHtml}</div>`; });
+    pending.forEach(p=>{ const failed=Date.now()-p.ts>14000; html+=`<div class="b me" style="opacity:.72">${esc(p.text)}<div class="st ${failed?'err':''}">${failed?'✗ Non inviato — riprova':'🕓 Invio…'}</div></div>`; });
+    box.innerHTML=html;
+    if(first||atBottom||pending.length) box.scrollTop=box.scrollHeight;
+  }
+  async function refreshMsgs(first){
+    if(!openChat) return;
+    try{ lastMsgs=await api('/api/messages?name='+encodeURIComponent(openChat));
+      if(!lastMsgs.length && first) return;
+      if(!lastMsgs.length && !pending.length){ $('msgs').innerHTML='<div class="empty">Nessun messaggio in questa chat.</div>'; return; }
+      renderMsgs(first); }catch(e){}
+  }
+  async function sendMsg(){
+    const ta=$('ta'); const text=ta.value.trim(); if(!text||!openChat) return; ta.value=''; ta.style.height='auto';
+    pending.push({text, ts:Date.now()}); renderMsgs(false);
+    try{ await api('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:openChat,text})}); }catch(e){}
+    setTimeout(()=>refreshMsgs(false),1100);
+  }
+  $('ta').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMsg(); }});
+  $('ta').addEventListener('input',e=>{ e.target.style.height='auto'; e.target.style.height=Math.min(120,e.target.scrollHeight)+'px'; });
+
+  // ---- reazioni ----
+  function openReact(ev, mid){
+    if(!mid) return; ev.stopPropagation();
+    reactMid=mid; const bar=$('reactBar'); bar.style.display='flex';
+    const bw=bar.offsetWidth||258, bh=bar.offsetHeight||50;
+    let x=(ev.clientX||innerWidth/2)-bw/2; x=Math.max(8,Math.min(x,innerWidth-bw-8));
+    let y=(ev.clientY||200)-bh-12; if(y<64) y=(ev.clientY||200)+18;
+    bar.style.left=x+'px'; bar.style.top=y+'px';
+  }
+  function hideReact(){ $('reactBar').style.display='none'; reactMid=null; }
+  document.addEventListener('click',e=>{ const bar=$('reactBar'); if(bar.style.display==='flex' && !bar.contains(e.target) && !e.target.closest('.b')) hideReact(); });
+  async function doReact(emoji){
+    if(!reactMid) return; const mid=reactMid;
+    localReacts[mid]=[...new Set([...(localReacts[mid]||[]),emoji])];
+    hideReact(); renderMsgs(false);
+    try{ await api('/api/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mid,emoji})}); }catch(e){}
+  }
+
+  // ---- pull-to-refresh (lista chat) ----
+  (function(){
+    const l=$('listB'); let sy=0, pulling=false;
+    l.addEventListener('touchstart',e=>{ if(l.scrollTop<=0 && !openChat){ sy=e.touches[0].clientY; pulling=true; } },{passive:true});
+    l.addEventListener('touchmove',e=>{ if(!pulling) return; const dy=e.touches[0].clientY-sy;
+      if(dy>0){ const p=$('ptr'); p.className='ptr show'; p.textContent= dy>70?'Rilascia per aggiornare':'Tira giù per aggiornare'; } },{passive:true});
+    l.addEventListener('touchend',async e=>{ if(!pulling) return; pulling=false; const p=$('ptr');
+      const dy=(e.changedTouches[0].clientY-sy);
+      if(dy>70){ p.className='ptr show'; p.textContent='Aggiorno…'; try{ await api('/api/resync',{method:'POST'}); await new Promise(r=>setTimeout(r,900)); await loadChats(); p.className='ptr show ok'; p.textContent='✓ Aggiornato'; }catch(err){ p.className='ptr show err'; p.textContent='✗ Non riuscito'; } setTimeout(()=>{p.className='ptr'; p.textContent='';},1400); }
+      else { p.className='ptr'; p.textContent=''; } });
+  })();
+
+  // ---- stato ----
+  const COLOR={green:'var(--green)',yellow:'var(--yellow)',red:'var(--red)'};
+  const pcol=st=> st==='ok'?'var(--green)':(st==='login'||st==='err'||st==='no')?'var(--red)':'var(--yellow)';
+  async function refreshStatus(){
+    try{ const h=await api('/api/health'); const ov=h.overall||'yellow';
+      $('sdot').style.background=COLOR[ov];
+      $('slabel').textContent = ov==='green'?'Attivo':ov==='red'?'Problema':'…';
+      if(statusOpen) renderStatus(h);
+    }catch(e){}
+  }
+  function renderStatus(h){
+    const rows=[
+      ['Teams', h.teams==='ok'?'Connesso':h.teams==='login'?'Login scaduto':h.teams==='unknown'?'Non verificabile':'In caricamento', pcol(h.teams)],
+      ['Rilevamento nuovi messaggi', h.watcher==='ok'?'Attivo':'Fermo', pcol(h.watcher==='ok'?'ok':'warn')],
+      ['Motore browser', h.agent==='ok'?'Attivo':'Non risponde', pcol(h.agent==='ok'?'ok':'err')],
+      ['Ultimo messaggio', ago(h.last_msg_ts), pcol(h.last_msg_ts?'ok':'warn')],
+      ['Notifiche push', (h.push_subs||0)+' dispositiv'+((h.push_subs||0)===1?'o':'i'), pcol((h.push_subs||0)>0?'ok':'warn')],
+    ];
+    $('statusRows').innerHTML=rows.map(r=>`<div class="hrow"><span class="pill" style="background:${r[2]}"></span><div class="k">${r[0]}</div><div class="v">${esc(r[1])}</div></div>`).join('');
+  }
+  async function toggleStatus(){ statusOpen=!statusOpen; $('statusPanel').style.display=statusOpen?'block':'none'; if(statusOpen){ $('statusRows').innerHTML=spinHtml; try{ renderStatus(await api('/api/health')); }catch(e){} } }
+  async function doResync(){ try{ await api('/api/resync',{method:'POST'}); }catch(e){} loadChats(); if(openChat) refreshMsgs(false); }
+  async function doRecheck(){ try{ await api('/api/recheck',{method:'POST'}); }catch(e){} setTimeout(refreshStatus,3000); }
+
+  // ---- Web Push ----
+  function urlB64ToUint8(s){ const pad='='.repeat((4-s.length%4)%4); const b=atob((s+pad).replace(/-/g,'+').replace(/_/g,'/')); const a=new Uint8Array(b.length); for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i); return a; }
+  async function enablePush(){
+    try{
+      const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+      if(!('serviceWorker' in navigator)||!('PushManager' in window)||(!standalone && /iPhone|iPad/i.test(navigator.userAgent))){
+        alert('Su iPhone le notifiche funzionano solo dall\'app installata: Condividi → "Aggiungi a schermata Home", apri TeamsRelay da lì e riprova.'); return;
+      }
+      const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready;
+      const perm = await Notification.requestPermission();
+      if(perm!=='granted'){ alert('Permesso notifiche negato.'); return; }
+      const {key} = await api('/api/vapidkey');
+      let sub = await reg.pushManager.getSubscription();
+      if(!sub) sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey: urlB64ToUint8(key)});
+      await api('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub.toJSON?sub.toJSON():sub)});
+      $('pushBanner').style.display='none'; alert('Notifiche attivate ✓'); refreshStatus();
+    }catch(e){ alert('Errore notifiche: '+e); }
+  }
+  (async()=>{
+    if('serviceWorker' in navigator){ try{ await navigator.serviceWorker.register('/sw.js'); }catch(e){} }
+    let has=false;
+    try{ const reg=await navigator.serviceWorker.getRegistration(); if(reg){ has=!!(await reg.pushManager.getSubscription()); } }catch(e){}
+    if(!has) $('pushBanner').style.display='block';
+  })();
+
+  loadChats(); refreshStatus();
+  setInterval(()=>{ if(cur==='B'&&!openChat) loadChats(); if(cur==='A') loadFeed(); }, 8000);
+  setInterval(refreshStatus, 15000);
+</script>
+</body>
+</html>

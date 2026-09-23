@@ -1,0 +1,16 @@
+# ---- Dati sensibili e di runtime: NON vanno MAI su git ----
+.env
+# Profilo Chromium: contiene la sessione Teams loggata (chi lo possiede entra nel tuo account)
+config/
+# Database dei messaggi e URL del desktop remoto
+data/
+# Chiave privata Web Push
+vapid/
+caddy_data/
+caddy_config/
+
+*.bak
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

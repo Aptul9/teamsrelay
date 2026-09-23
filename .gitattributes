@@ -1,0 +1,3 @@
+# Fine riga LF ovunque: gli script e i file di configurazione girano su Linux
+* text=auto eol=lf
+*.png binary

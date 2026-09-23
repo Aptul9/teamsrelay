@@ -1,0 +1,90 @@
+# TeamsRelay — stack Docker Compose.
+# Tutta la configurazione sta in .env (copia .env.example). Vedi README.md.
+services:
+  chromium:
+    # Browser remoto con Microsoft Teams web loggato (la sessione resta in ./config)
+    image: lscr.io/linuxserver/chromium:latest
+    container_name: teams-chromium
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-UTC}
+      - CUSTOM_USER=${DESKTOP_USER:?imposta DESKTOP_USER in .env}
+      - PASSWORD=${DESKTOP_PASS:?imposta DESKTOP_PASS in .env}
+      - CHROME_CLI=--remote-debugging-port=9222 --remote-allow-origins=* https://teams.microsoft.com/
+    volumes:
+      - ./config:/config
+    ports:
+      # Interfaccia web del desktop remoto: SOLO su localhost.
+      # Raggiungila con un tunnel SSH, con deploy/desktop-tunnel.sh o col sottodominio Caddy.
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3001"
+    shm_size: "1gb"
+    restart: unless-stopped
+
+  agent:
+    # Legge e pilota Teams via Chrome DevTools Protocol; manda le notifiche push
+    build: ./agent
+    container_name: teams-agent
+    network_mode: "service:chromium"
+    environment:
+      - TZ=${TZ:-UTC}
+      - CDP=http://localhost:9222
+      - DB_PATH=/data/messages.db
+      - VAPID_PRIVATE=/vapid/private_key.pem
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@example.com}
+      - NTFY_ENABLED=${NTFY_ENABLED:-0}
+      - NTFY_URL=${NTFY_URL:-https://ntfy.sh}
+      - NTFY_TOPIC=${NTFY_TOPIC:-}
+    volumes:
+      - ./agent/agent.py:/app/agent.py:ro
+      - ./data:/data
+      - ./vapid:/vapid:ro
+    depends_on:
+      - chromium
+    restart: unless-stopped
+
+  webapp:
+    # Web app installabile (PWA) + API
+    build: ./webapp
+    container_name: teams-webapp
+    environment:
+      - DB_PATH=/data/messages.db
+      - UI_USER=${UI_USER:?imposta UI_USER in .env}
+      - UI_PASS=${UI_PASS:?imposta UI_PASS in .env}
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - DESKTOP_URL=${DESKTOP_URL:-}
+      - VAPID_APPKEY=/vapid/appkey.txt
+    volumes:
+      # Montati per poter modificare i file senza ricostruire l'immagine.
+      # Dopo una modifica: docker compose restart webapp   (NON basta "up -d")
+      - ./webapp/app.py:/app/app.py:ro
+      - ./webapp/index.html:/app/index.html:ro
+      - ./webapp/login.html:/app/login.html:ro
+      - ./webapp/static:/app/static:ro
+      - ./vapid:/vapid:ro
+      - ./data:/data
+    restart: unless-stopped
+
+  caddy:
+    # Reverse proxy con certificati HTTPS automatici (Let's Encrypt)
+    image: caddy:2
+    container_name: teams-caddy
+    environment:
+      - DOMAIN=${DOMAIN:?imposta DOMAIN in .env}
+      - DESKTOP_DOMAIN=${DESKTOP_DOMAIN:-}
+      - HTTPS_PORT=${HTTPS_PORT:-443}
+    ports:
+      - "80:80"
+      - "${HTTPS_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:${HTTPS_PORT:-443}"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
