@@ -78,6 +78,11 @@
   .b.me{ align-self:flex-end; background:var(--brand); color:#fff; border-top-right-radius:2px; }
   .b .au{ font-size:11px; color:var(--brand); font-weight:700; margin-bottom:2px; }
   .b .st{ font-size:10.5px; margin-top:3px; text-align:right; opacity:.8; }
+  .b .q{ border-left:3px solid currentColor; opacity:.75; padding:2px 8px; margin:2px 0 6px; font-size:13px; white-space:normal; }
+  .b .q .qa{ font-weight:700; font-size:11.5px; }
+  .b .im{ display:block; margin:2px 0 4px; } .b .im img{ display:block; max-width:100%; height:auto; max-height:320px; object-fit:contain; border-radius:6px; }
+  .b .fl{ display:block; margin-top:4px; padding:6px 9px; border-radius:6px; background:rgba(0,0,0,.06); color:inherit; text-decoration:none; font-size:13.5px; white-space:normal; }
+  .b.me .fl{ background:rgba(255,255,255,.18); }
   .b.me .st{ color:rgba(255,255,255,.85); } .b .st.err{ color:#ffbcbc; font-weight:700; }
   .compose{ display:flex; gap:8px; align-items:flex-end; padding:8px calc(env(safe-area-inset-left) + 10px) calc(env(safe-area-inset-bottom) + 8px) 10px; background:var(--card); border-top:1px solid var(--line); }
   .compose textarea{ flex:1; resize:none; border:1px solid var(--line); border-radius:22px; padding:10px 15px; font:inherit; background:var(--bg); color:var(--ink); max-height:120px; -webkit-user-select:text; user-select:text; }
@@ -206,12 +211,19 @@
     const realMine = lastMsgs.filter(m=>m.mine).map(m=>(m.text||'').trim());
     pending = pending.filter(p => !realMine.includes(p.text.trim()));
     let html='';
-    lastMsgs.forEach(m=>{ if(!(m.text||'').trim()) return; const mid=String(m.mid||''); const rc=localReacts[mid]||[];
+    lastMsgs.forEach(m=>{ const imgs=m.images||[], files=m.files||[];
+      if(!(m.text||'').trim() && !imgs.length && !files.length) return; const mid=String(m.mid||''); const rc=localReacts[mid]||[];
       const rcHtml=rc.length?`<div class="react">${rc.map(e=>EMO[e]||'').join(' ')}</div>`:'';
-      html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}</div>`:'')}${esc(m.text)}${m.mine?'<div class="st">✓ Inviato</div>':''}${rcHtml}</div>`; });
+      const qHtml=m.quote?`<div class="q"><div class="qa">${esc(m.quote.author)}</div>${esc(m.quote.text)}</div>`:'';
+      const iHtml=imgs.map(i=>{ const u=i.f?'/media/'+i.f:i.url; return `<a class="im" href="${esc(u)}" target="_blank" onclick="event.stopPropagation()"><img src="${esc(u)}" alt=""${i.w&&i.h?` width="${i.w}" height="${i.h}"`:''}></a>`; }).join('');
+      const fHtml=files.map(f=>`<a class="fl" href="${esc(f.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📎 ${esc(f.name)}</a>`).join('');
+      html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}</div>`:'')}${qHtml}${iHtml}${esc(m.text)}${fHtml}${m.mine?'<div class="st">✓ Inviato</div>':''}${rcHtml}</div>`; });
     pending.forEach(p=>{ const failed=Date.now()-p.ts>14000; html+=`<div class="b me" style="opacity:.72">${esc(p.text)}<div class="st ${failed?'err':''}">${failed?'✗ Non inviato — riprova':'🕓 Invio…'}</div></div>`; });
-    box.innerHTML=html;
-    if(first||atBottom||pending.length) box.scrollTop=box.scrollHeight;
+    // riscrive il DOM solo se qualcosa è cambiato: altrimenti a ogni poll le immagini lampeggiano
+    if(html===box._html && !first) return;
+    box._html=html; box.innerHTML=html;
+    if(first||atBottom||pending.length){ box.scrollTop=box.scrollHeight;
+      box.querySelectorAll('img').forEach(i=>{ if(!i.complete) i.addEventListener('load',()=>{ box.scrollTop=box.scrollHeight; },{once:true}); }); }
   }
   async function refreshMsgs(first){
     if(!openChat) return;

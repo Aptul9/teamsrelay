@@ -1,4 +1,4 @@
-import os, sqlite3, secrets, time, hmac, hashlib, base64, json
+import os, re, sqlite3, secrets, time, hmac, hashlib, base64, json
 from contextlib import closing
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -120,7 +120,22 @@ def chats(request: Request):
     check(request); return JSONResponse(q("SELECT name,preview,tm,unread,mention FROM chats ORDER BY pos"))
 @app.get("/api/messages")
 def messages(request: Request, name: str):
-    check(request); return JSONResponse(q("SELECT mid,author,text,mine,reacts FROM chat_messages WHERE chat=? ORDER BY idx", (name,)))
+    check(request)
+    rows = q("SELECT mid,author,text,mine,reacts,extra FROM chat_messages WHERE chat=? ORDER BY idx", (name,))
+    for r in rows:
+        try: r.update(json.loads(r.pop("extra") or "{}"))
+        except Exception: pass
+    return JSONResponse(rows)
+
+# immagini delle chat, scaricate dall'agent in data/media
+MEDIA_DIR = os.path.join(os.path.dirname(DB_PATH), "media")
+@app.get("/media/{fn}")
+def media(request: Request, fn: str):
+    check(request)
+    if not re.fullmatch(r"[0-9a-f]{16}\.(png|jpg|gif|webp)", fn): raise HTTPException(404)
+    path = os.path.join(MEDIA_DIR, fn)
+    if not os.path.exists(path): raise HTTPException(404)
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 class OpenReq(BaseModel):
     name: str

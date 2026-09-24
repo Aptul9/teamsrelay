@@ -1,4 +1,4 @@
-import os, time, json, sqlite3, urllib.request
+import os, time, json, sqlite3, urllib.request, hashlib, base64
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 try:
@@ -14,6 +14,8 @@ DB_PATH    = os.environ.get("DB_PATH", "/data/messages.db")
 VAPID_PRIVATE = os.environ.get("VAPID_PRIVATE", "/vapid/private_key.pem")
 VAPID_CLAIMS  = {"sub": os.environ.get("VAPID_SUBJECT", "mailto:admin@example.com")}
 HEALTHTAG  = "__HEALTHCHECK__"
+MEDIA_DIR  = os.path.join(os.path.dirname(DB_PATH), "media")
+MEDIA_EXT  = {"image/png":"png","image/jpeg":"jpg","image/gif":"gif","image/webp":"webp"}
 
 HOOK_JS = r"""
 () => {
@@ -86,18 +88,61 @@ CHATS_JS = r"""
 MSGS_JS = r"""
 () => {
   const items=[...document.querySelectorAll('[data-tid="chat-pane-message"]')];
-  const out=[];
+  const SKIP='[data-tid="quoted-reply-card"],[data-tid="file-attachment-grid"],[data-tid*="reaction"],[data-tid^="message-actions"]';
+  const isEmoji=i=>/Emoji/i.test(i.getAttribute('itemtype')||'')||i.closest('[data-tid="emoticon-renderer"]');
+  // testo del corpo: le emoji di Teams sono <img alt="😂">, innerText le perderebbe
+  const walk=n=>{
+    if(n.nodeType===3) return n.nodeValue;
+    if(n.nodeType!==1) return '';
+    if(n.matches(SKIP)) return '';
+    if(n.tagName==='BR') return '\n';
+    if(n.tagName==='IMG') return isEmoji(n)?(n.alt||''):'';
+    let t=''; for(const c of n.childNodes) t+=walk(c);
+    const d=getComputedStyle(n).display;
+    return (n.tagName==='P' || /^(block|flex|grid|list-item|table)$/.test(d))?t+'\n':t;
+  };
+  const out=[]; let lastAuthor='';
   for (const e of items.slice(-40)){
     const mine = !!e.querySelector('.fui-ChatMyMessage') || (e.className||'').indexOf('MyMessage')>-1 || !!e.closest('.fui-ChatMyMessage');
     let author='';
-    const an=e.querySelector('[data-tid="message-author-name"]'); if(an) author=(an.innerText||'').trim();
+    const it=e.closest('[data-tid="chat-pane-item"]')||e;
+    const an=it.querySelector('[data-tid="message-author-name"]')||e.querySelector('[data-tid="message-author-name"]'); if(an) author=(an.innerText||'').trim();
     if(!author){ const al=e.getAttribute('aria-label')||''; const mm=al.match(/^([^,]+),/); if(mm) author=mm[1].trim(); }
-    let text=''; const bd=e.querySelector('[id^="content-"]')||e.querySelector('[data-tid="messageBodyContent"]'); if(bd) text=(bd.innerText||'').trim();
-    if(!text) text=(e.innerText||'').replace(/\s+/g,' ').trim().slice(0,500);
+    // Teams mostra il nome solo sul primo di più messaggi consecutivi dello stesso autore
+    if(mine) lastAuthor=''; else if(author) lastAuthor=author; else author=lastAuthor;
+    const bd=e.querySelector('[id^="content-"]')||e.querySelector('[data-tid="messageBodyContent"]');
+    let text=bd?walk(bd).replace(/\u00a0/g,' ').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim():'';
+    let quote=null; const qc=e.querySelector('[data-tid="quoted-reply-card"]');
+    if(qc){ const qt=qc.querySelector('[data-tid="quoted-reply-preview-content"]');
+      const lines=(qc.innerText||'').split('\n').map(x=>x.trim()).filter(Boolean);
+      quote={author:(lines[0]||'').slice(0,60), text:((qt&&qt.innerText)||lines.slice(2).join(' ')).trim().slice(0,300)}; }
+    const images=[...e.querySelectorAll('img')].filter(i=>!isEmoji(i) && !i.closest(SKIP) && !i.closest('[data-tid*="avatar" i]')
+      && (/AMSImage/i.test(i.getAttribute('itemtype')||'') || /^lazy-image/.test(i.getAttribute('data-tid')||'') || i.naturalWidth>64))
+      .map(i=>({src:i.currentSrc||i.src||'', w:i.naturalWidth, h:i.naturalHeight}));
+    const files=[];
+    for(const g of e.querySelectorAll('[data-tid="file-attachment-grid"]')){
+      for(const x of g.querySelectorAll('[aria-label*="https://"]')){
+        const [name,...rest]=(x.getAttribute('aria-label')||'').split('\n'); const url=rest.join('').trim();
+        if(name && !files.some(f=>f.url===url)) files.push({name:name.trim().slice(0,160), url:url});
+      }
+    }
     let reacts=''; try{ const rc=[...e.querySelectorAll('[aria-label*="reaction" i]')]; reacts=rc.map(x=>(x.getAttribute('aria-label')||'').trim()).filter(Boolean).join(' | ').slice(0,160); }catch(_){}
-    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,800), mine:!!mine, reacts:reacts});
+    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files});
   }
   return out;
+}
+"""
+
+# nome della chat aperta in Teams (per non salvare i messaggi di una chat sotto il nome di un'altra)
+OPEN_CHAT_JS = r"""() => { const t=document.querySelector('[data-tid="chat-title"]'); return t?(t.innerText||'').split('\n')[0].trim():''; }"""
+
+# scarica un'immagine dalla pagina: gli URL blob: e AMS sono leggibili solo dentro la sessione Teams
+FETCH_JS = r"""
+async (src) => {
+  const r=await fetch(src,{credentials:'include'}); if(!r.ok) return null;
+  const b=await r.blob(); if(b.size>8e6) return null;
+  const u=await new Promise(ok=>{const f=new FileReader(); f.onload=()=>ok(f.result); f.readAsDataURL(b);});
+  return {type:b.type, data:u.split(',')[1]};
 }
 """
 
@@ -111,7 +156,7 @@ def db_init():
             c.execute("DROP TABLE IF EXISTS chats")
             c.execute("CREATE TABLE chats(name TEXT PRIMARY KEY, preview TEXT, pos INTEGER, ts INTEGER, tm TEXT, unread INTEGER, mention INTEGER)")
             c.execute("DROP TABLE IF EXISTS chat_messages")
-            c.execute("CREATE TABLE chat_messages(chat TEXT, idx INTEGER, mid TEXT, author TEXT, text TEXT, mine INTEGER, reacts TEXT)")
+            c.execute("CREATE TABLE chat_messages(chat TEXT, idx INTEGER, mid TEXT, author TEXT, text TEXT, mine INTEGER, reacts TEXT, extra TEXT)")
             c.execute("CREATE TABLE IF NOT EXISTS commands(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, type TEXT, arg1 TEXT, arg2 TEXT, status TEXT DEFAULT 'pending')")
             c.execute("CREATE TABLE IF NOT EXISTS state(k TEXT PRIMARY KEY, v TEXT)")
             c.execute("CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, sub TEXT)")
@@ -135,7 +180,8 @@ def save_chat_messages(chat, msgs):
         with dbc() as c:
             c.execute("DELETE FROM chat_messages WHERE chat=?",(chat,))
             for i,m in enumerate(msgs):
-                c.execute("INSERT INTO chat_messages(chat,idx,mid,author,text,mine,reacts) VALUES(?,?,?,?,?,?,?)",(chat,i,m.get("mid",""),m.get("author",""),m.get("text",""),1 if m.get("mine") else 0,m.get("reacts","")))
+                extra={k:m[k] for k in ("quote","images","files") if m.get(k)}
+                c.execute("INSERT INTO chat_messages(chat,idx,mid,author,text,mine,reacts,extra) VALUES(?,?,?,?,?,?,?,?)",(chat,i,m.get("mid",""),m.get("author",""),m.get("text",""),1 if m.get("mine") else 0,m.get("reacts",""),json.dumps(extra,ensure_ascii=False) if extra else ""))
     except Exception as e: print("save_cm:", e, flush=True)
 
 def get_state(k, d=""):
@@ -309,28 +355,77 @@ def teams_page(ctx):
         if ("teams.microsoft.com" in u or "teams.cloud.microsoft" in u) and "serviceworker" not in u: return p
     return None
 
+def same_chat(cur, name):
+    return bool(cur) and (cur.startswith(name) or name.startswith(cur))
+
 def open_chat(page, name):
-    ok = page.evaluate("""(name) => {
-      const clean=s=>(s||'').replace(/\\s+/g,' ').replace(/^(Favorites|Chats|Quick views|Recent|Drafts)\\s+/i,'').trim();
-      const tis=[...document.querySelectorAll('[role="treeitem"][id^="menu"]')];
+    ok = page.evaluate(r"""(name) => {
+      const SECT=/^(Chats|Chat|Favorites|Preferiti)\b/i;
+      const hd=s=>s.querySelector(':scope > :not([role="group"])')||s;
+      const head=s=>(hd(s).innerText||'').replace(/\s+/g,' ').trim();
+      const clean=s=>(s||'').replace(/\s+/g,' ').trim();
+      // solo le chat (livello 2): l'header della sezione "Chats" contiene il testo della prima chat e cliccarlo la chiude
+      const tis=[...document.querySelectorAll('[role="treeitem"][aria-level="2"][id^="menu"]')].filter(e=>{
+        const s=e.parentElement && e.parentElement.closest('[role="treeitem"][aria-level="1"]'); return s && SECT.test(head(s)); });
       let t=tis.find(e => clean(e.innerText).startsWith(name));
       if(!t) t=tis.find(e => clean(e.innerText).indexOf(name)>-1);
       if(t){ (t.querySelector('a,[role=button]')||t).click(); return true; }
       return false;
     }""", name)
-    if ok:
-        # attende che i messaggi della chat siano presenti (max ~3s) invece di uno sleep fisso
-        try: page.wait_for_selector('[data-tid="chat-pane-message"]', timeout=3000)
-        except Exception: time.sleep(1.2)
-        time.sleep(0.4)
-    return ok
+    if not ok: return False
+    # attende che Teams mostri davvero la chat richiesta (i messaggi della chat precedente sono ancora nel DOM)
+    for _ in range(24):
+        try:
+            if same_chat(page.evaluate(OPEN_CHAT_JS), name): break
+        except Exception: pass
+        time.sleep(0.25)
+    else:
+        print("open_chat: la chat non si è aperta:", name, flush=True); return False
+    try: page.wait_for_selector('[data-tid="chat-pane-message"]', timeout=3000)
+    except Exception: pass
+    time.sleep(0.4)
+    return True
 
-def read_open_messages(page):
-    try: return page.evaluate(MSGS_JS)
-    except Exception as e: print("read msgs:", e, flush=True); return []
+MEDIA_FAILED = set()
+
+def fetch_media(page, key, src):
+    """Salva in MEDIA_DIR l'immagine vista nella pagina; ritorna il nome file o None. Una volta sola per immagine."""
+    os.makedirs(MEDIA_DIR, exist_ok=True)
+    for ext in MEDIA_EXT.values():
+        if os.path.exists(os.path.join(MEDIA_DIR, key+"."+ext)): return key+"."+ext
+    if not src or key in MEDIA_FAILED: return None
+    try: r = page.evaluate(FETCH_JS, src)
+    except Exception as e: print("media:", src[:60], str(e).splitlines()[0][:80], flush=True); r = None
+    if not r or r.get("type") not in MEDIA_EXT:
+        MEDIA_FAILED.add(key); return None   # es. GIF Giphy senza CORS: resta il link pubblico
+    fn = key+"."+MEDIA_EXT[r["type"]]
+    with open(os.path.join(MEDIA_DIR, fn), "wb") as f: f.write(base64.b64decode(r["data"]))
+    return fn
+
+def read_open_messages(page, chat):
+    """Messaggi della chat aperta in Teams, None se in Teams è aperta un'altra chat."""
+    try:
+        cur = page.evaluate(OPEN_CHAT_JS)
+        if not same_chat(cur, chat): return None
+        msgs = page.evaluate(MSGS_JS)
+    except Exception as e: print("read msgs:", e, flush=True); return None
+    for m in msgs:
+        imgs = []
+        for i, im in enumerate(m.get("images") or []):
+            key = hashlib.sha1(f"{chat}|{m.get('mid','')}|{i}".encode()).hexdigest()[:16]
+            fn = fetch_media(page, key, im.get("src", ""))
+            if fn: imgs.append({"f": fn, "w": im.get("w", 0), "h": im.get("h", 0)})
+            elif (im.get("src") or "").startswith("https://"): imgs.append({"url": im["src"], "w": im.get("w", 0), "h": im.get("h", 0)})
+        m["images"] = imgs
+    return msgs
+
+def save_open_chat(page, chat):
+    msgs = read_open_messages(page, chat)
+    if msgs is not None: save_chat_messages(chat, msgs)
 
 def do_send(page, name, text):
     if not open_chat(page, name): return False
+    if not same_chat(page.evaluate(OPEN_CHAT_JS), name): return False
     try:
         box = page.query_selector('[data-tid="ckeditor"]') or page.query_selector('[role="textbox"]')
         if not box: return False
@@ -416,21 +511,21 @@ def main():
                 for cid,ctype,a1,a2 in pending_commands():
                     print("CMD",ctype,a1,flush=True)
                     if ctype=="open":
-                        if open_chat(page,a1): set_state("active_chat",a1); save_chat_messages(a1, read_open_messages(page))
+                        if open_chat(page,a1): set_state("active_chat",a1); save_open_chat(page, a1)
                     elif ctype=="send":
-                        do_send(page,a1,a2); set_state("active_chat",a1); save_chat_messages(a1, read_open_messages(page))
+                        do_send(page,a1,a2); set_state("active_chat",a1); save_open_chat(page, a1)
                     elif ctype=="resync":
                         try: save_chats(page.evaluate(CHATS_JS))
                         except Exception: pass
                         ac=get_state("active_chat")
-                        if ac: save_chat_messages(ac, read_open_messages(page))
+                        if ac: save_open_chat(page, ac)
                     elif ctype=="recheck":
                         ok,why=self_check(page)
                         push_all("Teams", "✓ Tutto funziona" if ok else ("⚠️ Problema: "+why))
                     elif ctype=="react":
                         react_message(page,a1,a2)
                         ac=get_state("active_chat")
-                        if ac: save_chat_messages(ac, read_open_messages(page))
+                        if ac: save_open_chat(page, ac)
                     done_command(cid)
                 if tick % 3 == 0:
                     try:
@@ -444,7 +539,7 @@ def main():
                 if tick % 5 == 0:
                     update_health(page)
                 ac=get_state("active_chat")
-                if ac: save_chat_messages(ac, read_open_messages(page))
+                if ac: save_open_chat(page, ac)
                 # check programmato 2x/giorno
                 slot=selfcheck_slot()
                 if slot:
