@@ -98,7 +98,7 @@ jobs:
           # i dati di runtime (.env, profilo Chromium, database, chiavi VAPID) restano sul server
           rsync -az --delete \
             --exclude .git/ --exclude .github/ --exclude .env \
-            --exclude /config/ --exclude /data/ --exclude /vapid/ --exclude .deployed-sha \
+            --exclude /config/ --exclude /data/ --exclude /vapid/ --exclude .deployed-sha --exclude .caddyfile-sum \
             ./ "$TARGET:$TR_DIR/"
 
       - name: Build and restart

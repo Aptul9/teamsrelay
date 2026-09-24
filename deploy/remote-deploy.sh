@@ -10,7 +10,7 @@ cd "$TR_DIR"
 
 code_files() {
   # tutto tranne i dati di runtime
-  find . -mindepth 1 -maxdepth 1 ! -name .env ! -name config ! -name data ! -name vapid -printf '%P\n'
+  find . -mindepth 1 -maxdepth 1 ! -name .env ! -name config ! -name data ! -name vapid ! -name .caddyfile-sum -printf '%P\n'
 }
 
 healthy() {
@@ -53,6 +53,7 @@ case "${1:-}" in
       code_files | xargs -r rm -rf
       tar -xzf "$BACKUP"
       docker compose up -d --build --remove-orphans
+      docker compose restart caddy && sha256sum caddy/Caddyfile | cut -d' ' -f1 > .caddyfile-sum
       healthy && echo "rollback completato: $(cat .deployed-sha 2>/dev/null || echo versione precedente)" >&2
     fi
     exit 1
