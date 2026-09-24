@@ -43,6 +43,10 @@ TeamsRelay risolve così: un Chromium in un container sul tuo server tiene apert
 - **Leggi e rispondi** alle chat 1:1 e di gruppo, con il nome dell'autore nei gruppi.
 - **Immagini, GIF, emoji, file e citazioni** come su Teams: le immagini vengono scaricate dall'agent in `data/media`, i file compaiono col nome e il link SharePoint.
 - **Reazioni e "Visualizzato"** letti da Teams: le reazioni ricevute sotto ogni messaggio e lo stato *Inviato* / *Visualizzato* dei tuoi messaggi.
+- **Reagisci e modifica** dall'app: la reazione o la modifica viene applicata sul Teams vero e l'app lo conferma solo quando compare su Teams (altrimenti avvisa). Un secondo tocco sulla stessa reazione la toglie.
+- **Letto da** nei gruppi: dal menu di un tuo messaggio vedi chi l'ha letto, come in Teams.
+- **Allegati scaricabili**: i file SharePoint/OneDrive si scaricano dall'app, l'agent li prende con la sessione Teams.
+- **Notifiche come l'Attività di Teams**: reazioni ai tuoi messaggi, menzioni, risposte e inviti, con filtri; toccando una voce si apre la chat.
 - **Stato di invio reale**: il messaggio passa da *Invio…* a **✓ Inviato** solo quando compare davvero nella conversazione su Teams. Se non compare entro 14 secondi vedi *✗ Non inviato*.
 - **Reazioni** 👍 ❤️ 😂 😮 😢 😡: tocchi un messaggio, scegli la reazione e questa viene applicata davvero su Teams.
 - **Filtri**: Tutte / Non lette / @Menzioni / ordine dalle più recenti o dalle meno recenti.

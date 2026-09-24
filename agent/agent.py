@@ -79,7 +79,7 @@ CHATS_JS = r"""
     const al=(e.getAttribute('aria-label')||'');
     const mention = !!e.querySelector('[data-tid*="mention" i],[class*="mention" i]') || /mention|menzion/i.test(al);
     out.push({name:name.slice(0,60), preview:prev.slice(0,120), time:tm, unread:unread, mention:mention});
-    if(out.length>=25) break;
+    if(out.length>=40) break;
   }
   return out;
 }
@@ -141,6 +141,27 @@ MSGS_JS = r"""
 }
 """
 
+# Feed Attività di Teams: reazioni ai miei messaggi, menzioni, risposte
+ACTIVITY_JS = r"""() => [...document.querySelectorAll('[data-tid="activity-feed-list-item"]')].map(it=>{
+  const id=((it.getAttribute('aria-labelledby')||'').match(/activity-feed-item-title-(\d+)/)||[])[1]||'';
+  const tEl=it.querySelector('[data-tid="activity-feed-item-title"]');
+  const title=tEl?(tEl.innerText||'').replace(/\s+/g,' ').trim():'';
+  const leaves=[...it.querySelectorAll('*')].filter(x=>x.children.length===0 && (x.textContent||'').trim() && !(tEl&&tEl.contains(x)))
+    .map(x=>x.textContent.replace(/\s+/g,' ').trim());
+  // riga dell'orario riconosciuta dal formato: prima c'è l'anteprima, dopo il luogo (chat, oppure team > canale)
+  const TM=/^(\d{1,2}:\d{2}\s?(AM|PM)?|\d{1,2}\/\d{1,2}(\/\d{2,4})?|Yesterday|Ieri|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/i;
+  let ti=leaves.findIndex(x=>TM.test(x)); if(ti<0) ti=leaves.length;
+  const tm=leaves[ti]||'', preview=leaves.slice(0,ti).join(' '), place=leaves.slice(ti+1);
+  const emoji=[...it.querySelectorAll('img')].map(i=>i.alt||'').filter(Boolean).join('');
+  let kind=/reacted/i.test(title)?'reaction':/mentioned/i.test(title)?'mention':/repl/i.test(title)?'reply':'message';
+  const actor=title?title.replace(/\s+(reacted|mentioned|replied|liked|sent|posted|invited|scheduled)\b.*$/i,'').trim():'';
+  let chat=place.join(' › ');
+  if(/^In chat with you$/i.test(chat)) chat=actor;                        // 1:1: il luogo è la persona
+  if(/\d{1,2}:\d{2}\s?(AM|PM)?\s*-\s*\d{1,2}:\d{2}/i.test(chat)) kind='meeting';  // invito a riunione
+  const w=parseInt(getComputedStyle(tEl||it).fontWeight,10)||400;
+  return {id, title, kind, actor, emoji, preview:preview.slice(0,300), tm, chat, channel:place.length>1, unread:w>=600};
+})"""
+
 # nome della chat aperta in Teams (per non salvare i messaggi di una chat sotto il nome di un'altra)
 OPEN_CHAT_JS = r"""() => { const t=document.querySelector('[data-tid="chat-title"]'); return t?(t.innerText||'').split('\n')[0].trim():''; }"""
 
@@ -168,6 +189,8 @@ def db_init():
             if "extra" not in cols: c.execute("ALTER TABLE chat_messages ADD COLUMN extra TEXT")
             c.execute("CREATE TABLE IF NOT EXISTS commands(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, type TEXT, arg1 TEXT, arg2 TEXT, status TEXT DEFAULT 'pending')")
             c.execute("CREATE TABLE IF NOT EXISTS state(k TEXT PRIMARY KEY, v TEXT)")
+            c.execute("CREATE TABLE IF NOT EXISTS activity(id TEXT PRIMARY KEY, pos INTEGER, kind TEXT, actor TEXT, title TEXT, emoji TEXT, preview TEXT, tm TEXT, chat TEXT, unread INTEGER, ts INTEGER)")
+            if "channel" not in {r[1] for r in c.execute("PRAGMA table_info(activity)")}: c.execute("ALTER TABLE activity ADD COLUMN channel INTEGER")
             c.execute("CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, sub TEXT)")
     except Exception as e: print("db_init:", e, flush=True)
 
@@ -176,10 +199,16 @@ def db_msg(title, body):
         with dbc() as c: c.execute("INSERT INTO messages(ts,source,title,body) VALUES(?,?,?,?)",(int(time.time()),"teams",title,body))
     except Exception as e: print("db_msg:", e, flush=True)
 
-def save_chats(chats):
+def save_chats(chats, replace=False):
+    """Teams virtualizza la lista: si vedono solo le chat che entrano nella finestra (che cambia con chi guarda il desktop).
+    Le chat visibili vanno in testa nell'ordine di Teams; quelle non visibili ora restano, nel loro ordine."""
     if not chats: return
     try:
         with dbc() as c:
+            seen = {ch["name"] for ch in chats}
+            old = [dict(name=r[0], preview=r[1], time=r[2], unread=r[3], mention=r[4])
+                   for r in c.execute("SELECT name,preview,tm,unread,mention FROM chats ORDER BY pos")]
+            if not replace: chats = (list(chats) + [o for o in old if o["name"] not in seen])[:40]
             c.execute("DELETE FROM chats")
             for i,ch in enumerate(chats):
                 c.execute("INSERT OR REPLACE INTO chats(name,preview,pos,ts,tm,unread,mention) VALUES(?,?,?,?,?,?,?)",(ch["name"],ch.get("preview",""),i,int(time.time()),ch.get("time",""),1 if ch.get("unread") else 0,1 if ch.get("mention") else 0))
@@ -615,6 +644,72 @@ def edit_message(page, chat, mid, text):
         if cur is not None and cur.replace("\u00a0", " ").strip() == text: return True
     print("edit: testo non aggiornato su Teams", mid, flush=True); return False
 
+SCROLL_ACTIVITY_JS = r"""()=>{ let e=document.querySelector('[data-tid="activity-feed-list-item"]');
+  while(e && !(e.scrollHeight>e.clientHeight+5 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e=e.parentElement;
+  if(!e) return false; const b=e.scrollTop; e.scrollTop=b+e.clientHeight*0.8; return e.scrollTop>b; }"""
+
+def read_activity(page):
+    """Legge il feed Attività di Teams e torna alla chat aperta prima. Ritorna il numero di voci lette o None."""
+    active = get_state("active_chat")
+    items = None
+    try:
+        clear_overlays(page)
+        page.locator('button[aria-label^="Activity"]:visible').first.click(timeout=4000)
+        page.locator('[data-tid="activity-feed-list-item"]').first.wait_for(timeout=8000)
+        time.sleep(0.5)
+        # anche questa lista è virtualizzata: si scorre e si accumula per id
+        acc, order = {}, []
+        for _ in range(6):
+            for a in page.evaluate(ACTIVITY_JS):
+                k = a.get("id") or (a.get("title", "") + a.get("tm", ""))
+                if k not in acc: order.append(k)
+                acc[k] = a
+            if len(order) >= 40: break
+            moved = page.evaluate(SCROLL_ACTIVITY_JS)
+            if not moved: break
+            time.sleep(0.6)
+        items = [acc[k] for k in order][:40]
+    except Exception as e:
+        print("activity:", str(e).splitlines()[0][:120], flush=True)
+    finally:
+        # si torna sempre a Chat: il resto dell'agent lavora sulla vista chat
+        try:
+            page.locator('button[aria-label^="Chat"]:visible').first.click(timeout=4000)
+            page.locator('[role="treeitem"][aria-level="2"]').first.wait_for(timeout=8000)
+            if active: open_chat(page, active)
+        except Exception as e: print("activity back:", str(e).splitlines()[0][:120], flush=True)
+    if not items: return None
+    try:
+        with dbc() as c:
+            c.execute("DELETE FROM activity")
+            for i, a in enumerate(items):
+                c.execute("INSERT OR REPLACE INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,channel,unread,ts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                          (a.get("id") or f"x{i}", i, a.get("kind",""), a.get("actor",""), a.get("title",""), a.get("emoji",""), a.get("preview",""), a.get("tm",""), a.get("chat",""), 1 if a.get("channel") else 0, 1 if a.get("unread") else 0, int(time.time())))
+        set_state("activity_ts", str(int(time.time())))
+    except Exception as e: print("activity save:", e, flush=True)
+    return len(items)
+
+SCROLL_CHATS_JS = r"""(to)=>{ let e=document.querySelector('[role="treeitem"][aria-level="2"]');
+  while(e && !(e.scrollHeight>e.clientHeight+5 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e=e.parentElement;
+  if(!e) return false; const b=e.scrollTop; e.scrollTop = (to==='top') ? 0 : b+e.clientHeight*0.8; return e.scrollTop!==b; }"""
+
+def scan_chats_full(page):
+    """Scorre tutta la lista chat di Teams (virtualizzata) e la salva completa e in ordine, poi torna in cima."""
+    try:
+        page.evaluate(SCROLL_CHATS_JS, "top"); time.sleep(0.4)
+        acc, order = {}, []
+        for _ in range(8):
+            for ch in page.evaluate(CHATS_JS):
+                if ch["name"] not in acc: order.append(ch["name"])
+                acc[ch["name"]] = ch
+            if len(order) >= 40 or not page.evaluate(SCROLL_CHATS_JS, "down"): break
+            time.sleep(0.5)
+        page.evaluate(SCROLL_CHATS_JS, "top")
+        if not order: return
+        save_chats([acc[n] for n in order][:40], replace=True)   # un'unica transazione: la lista non resta mai vuota
+        set_state("last_scan_ts", str(int(time.time())))
+    except Exception as e: print("chats full:", str(e).splitlines()[0][:120], flush=True)
+
 def scan_chats(page):
     try:
         chats = page.evaluate(CHATS_JS)
@@ -655,6 +750,7 @@ def main():
                 for m in page.evaluate(DRAIN_JS):
                     t,b=m.get("title",""),m.get("body","")
                     if t==HEALTHTAG: continue
+                    if re.match(r"(Nice job|Notifications are now on)", t or "", re.I): continue
                     print("MSG:",repr(t),repr(b),flush=True); notify_msg(t,b)
                 # comandi
                 for cid,ctype,a1,a2 in pending_commands():
@@ -671,6 +767,9 @@ def main():
                     elif ctype=="recheck":
                         ok,why=self_check(page)
                         push_all("Teams", "✓ Tutto funziona" if ok else ("⚠️ Problema: "+why))
+                    elif ctype=="activity":
+                        n=read_activity(page)
+                        set_cmd_result(cid, "done" if n is not None else "failed")
                     elif ctype=="download":
                         try: args=json.loads(a2 or "{}")
                         except Exception: args={}
@@ -692,10 +791,12 @@ def main():
                         else: ok=edit_message(page,a1,args.get("mid",""),args.get("text",""))
                         set_cmd_result(cid, "done" if ok else "failed")
                         set_state("active_chat",a1); save_open_chat(page, a1)
-                    if ctype not in ("react","edit","readby","download"): done_command(cid)
+                    if ctype not in ("react","edit","readby","download","activity"): done_command(cid)
                     # i comandi possono durare secondi: la lista chat non deve restare ferma nel frattempo
                     scan_chats(page)
-                if tick % 3 == 0: scan_chats(page)
+                if tick % 300 == 1: scan_chats_full(page)
+                elif tick % 3 == 0: scan_chats(page)
+                if tick % 150 == 5: read_activity(page)
                 if tick % 5 == 0:
                     update_health(page)
                 ac=get_state("active_chat")

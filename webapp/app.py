@@ -115,6 +115,15 @@ def index(request: Request):
 @app.get("/api/feed")
 def feed(request: Request):
     check(request); return JSONResponse(q("SELECT id,ts,title,body FROM messages ORDER BY id DESC LIMIT 150"))
+@app.get("/api/activity")
+def activity(request: Request):
+    check(request)
+    ts = q("SELECT v FROM state WHERE k='activity_ts'")
+    return {"ts": int(ts[0]["v"]) if ts else 0,
+            "items": q("SELECT id,kind,actor,title,emoji,preview,tm,chat,channel,unread FROM activity ORDER BY pos")}
+@app.post("/api/activity/refresh")
+def activity_refresh(request: Request):
+    check(request); return {"ok": True, "id": command("activity")}
 @app.get("/api/chats")
 def chats(request: Request):
     check(request); return JSONResponse(q("SELECT name,preview,tm,unread,mention FROM chats ORDER BY pos"))

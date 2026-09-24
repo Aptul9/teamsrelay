@@ -94,6 +94,13 @@
   .sh{ background:var(--card); width:min(520px,100%); border-radius:16px 16px 0 0; padding:16px 16px calc(env(safe-area-inset-bottom) + 12px); max-height:70vh; overflow:auto; }
   .sh-t{ font-weight:800; font-size:16px; margin-bottom:8px; } .sh-x{ width:100%; margin-top:12px; border:0; border-radius:10px; padding:11px; font-weight:700; background:var(--accent); color:var(--brand); }
   .rd-l{ color:var(--sub); font-size:13px; margin-bottom:6px; } .rd{ display:flex; align-items:center; gap:10px; padding:7px 0; font-size:15px; border-bottom:1px solid var(--line); }
+  .actsub{ font-size:12px; color:var(--sub); padding:4px 4px 0; min-height:16px; }
+  .act{ display:flex; gap:12px; padding:10px; border-radius:12px; align-items:flex-start; }
+  .act:active{ background:var(--accent); }
+  .act .av{ position:relative; } .abadge{ position:absolute; right:-4px; bottom:-4px; min-width:20px; height:20px; padding:0 3px; border-radius:10px; background:var(--card); border:1px solid var(--line); color:var(--brand); font-size:12px; font-weight:800; display:grid; place-items:center; }
+  .act .at{ font-size:14.5px; } .act.unread .at{ font-weight:800; }
+  .act .ap{ color:var(--ink); font-size:13.5px; margin-top:2px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .act .am{ color:var(--sub); font-size:12px; margin-top:3px; }
   .toast{ position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 84px); transform:translateX(-50%); z-index:80; background:#242424; color:#fff; padding:9px 15px; border-radius:10px; font-size:14px; box-shadow:0 6px 24px rgba(0,0,0,.3); display:none; max-width:90vw; }
   .toast.on{ display:block; }
   .compose{ display:flex; gap:8px; align-items:flex-end; padding:8px calc(env(safe-area-inset-left) + 10px) calc(env(safe-area-inset-bottom) + 8px) 10px; background:var(--card); border-top:1px solid var(--line); }
@@ -112,7 +119,7 @@
       <button class="status" onclick="toggleStatus()"><span class="sdot" id="sdot"></span><span id="slabel">Stato</span></button>
     </div>
     <div class="switch">
-      <button id="tA" onclick="show('A')">Notifiche</button>
+      <button id="tA" onclick="show('A')">Notifiche<span class="tabbadge" id="actBadge"></span></button>
       <button id="tB" class="on" onclick="show('B')">Chat<span class="tabbadge" id="unreadBadge"></span></button>
       <button id="tC" onclick="show('C')">Desktop</button>
     </div>
@@ -126,7 +133,15 @@
   </div>
 
   <main>
-    <div id="vA" class="view"><div class="list" id="listA"><div class="empty">Le notifiche dei messaggi Teams compaiono qui.</div></div></div>
+    <div id="vA" class="view">
+      <div style="padding:0 8px"><div class="filters">
+        <button class="chip on" id="a-all" onclick="setActFilter('all')">Tutte</button>
+        <button class="chip" id="a-unread" onclick="setActFilter('unread')">Non lette</button>
+        <button class="chip" id="a-mention" onclick="setActFilter('mention')">@ Menzioni</button>
+        <button class="chip" id="a-reaction" onclick="setActFilter('reaction')">Reazioni</button>
+      </div><div class="actsub" id="actSub"></div></div>
+      <div class="list" id="listA"><div class="spin"><div class="ring"></div>Carico le attività…</div></div>
+    </div>
     <div id="vB" class="view on">
       <div style="padding:0 8px" class="filtersWrap">
         <div class="filters">
@@ -187,11 +202,50 @@
   function setFilter(f){ filterMode=f; ['all','unread','mentions'].forEach(x=>$('f-'+x).classList.toggle('on',x===f)); loadChats(); }
   function toggleOrder(){ sortDesc=!sortDesc; $('ordBtn').textContent=sortDesc?'↓ Recenti':'↑ Meno recenti'; loadChats(); }
 
+  // ---- Attività: lo stesso feed di Teams (reazioni ai tuoi messaggi, menzioni, risposte) ----
+  let actItems=[], actFilter='all', actBusy=false;
+  const ACT_ICON={reaction:'', mention:'@', reply:'↩', message:'💬', meeting:'📅'};
+  function setActFilter(f){ actFilter=f; ['all','unread','mention','reaction'].forEach(x=>$('a-'+x).classList.toggle('on',x===f)); renderActivity(); }
+  // Teams web è impostato in inglese (i selettori lo richiedono): i titoli del feed si traducono qui
+  function actTitle(t){ return (t||'')
+    .replace(/^(.+?) reacted to your message$/i,'$1 ha reagito al tuo messaggio')
+    .replace(/^(.+?) mentioned you$/i,'$1 ti ha menzionato')
+    .replace(/^(.+?) mentioned (.+)$/i,'$1 ha menzionato $2')
+    .replace(/^(.+?) replied to your message$/i,'$1 ha risposto al tuo messaggio')
+    .replace(/^(.+?) replied( to .+)?$/i,'$1 ha risposto')
+    .replace(/^(.+?) invited you$/i,'$1 ti ha invitato')
+    .replace(/^(.+?) posted in (.+)$/i,'$1 ha pubblicato in $2'); }
+  function renderActivity(){
+    const box=$('listA');
+    const it=actItems.filter(a=>actFilter==='all'||(actFilter==='unread'?a.unread:a.kind===actFilter));
+    if(!it.length){ box.innerHTML=`<div class="empty">${actItems.length?'Niente in questo filtro.':'Nessuna attività.'}</div>`; return; }
+    box.innerHTML=it.map(a=>{ const who=a.actor||a.chat||'Teams';
+      const badge=a.kind==='reaction'?(a.emoji||'👍'):ACT_ICON[a.kind]||'💬';
+      const title=actTitle(a.title)||(a.chat?a.chat:'Messaggio');
+      const target=(a.kind==='meeting'||a.channel)?'':a.chat;
+      return `<div class="act${a.unread?' unread':''}" data-chat="${esc(target)}" onclick="openFromActivity(this.dataset.chat)">
+        <div class="av" style="background:${avColor(who)}">${esc(initials(who))}<span class="abadge">${esc(badge)}</span></div>
+        <div class="rc"><div class="at">${esc(title)}</div>${a.preview?`<div class="ap">${esc(a.preview)}</div>`:''}
+        <div class="am">${esc(a.chat)}${a.tm?' · '+esc(a.tm):''}</div></div></div>`; }).join('');
+  }
+  async function loadActivity(){
+    try{ const r=await api('/api/activity'); actItems=r.items||[];
+      $('actSub').textContent=r.ts?'Aggiornato alle '+new Date(r.ts*1000).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}):'';
+      const n=actItems.filter(a=>a.unread).length, bd=$('actBadge'); if(n){ bd.textContent=n; bd.style.display='block'; } else bd.style.display='none';
+      if(cur==='A') renderActivity(); }catch(e){}
+  }
   async function loadFeed(){
-    try{ const ms=await api('/api/feed'); const box=$('listA');
-      if(!ms.length){ box.innerHTML='<div class="empty">Nessuna notifica ancora.</div>'; return; }
-      box.innerHTML=''; ms.forEach(m=>{ const el=document.createElement('div'); el.className='msg';
-        el.innerHTML=`<div class="top"><div class="who">${esc(m.title||'Teams')}</div><div class="tm">${fmt(m.ts)}</div></div><div class="bd">${esc(m.body||'')}</div>`; box.appendChild(el); }); }catch(e){}
+    await loadActivity(); if(actBusy) return; actBusy=true; $('actSub').textContent='Aggiorno da Teams…';
+    try{ const c=await api('/api/activity/refresh',{method:'POST'}); const r=await followCmd(c.id); if(r.status!=='done') toast('Attività di Teams non aggiornate'); }catch(e){}
+    actBusy=false; await loadActivity();
+  }
+  loadActivity(); setInterval(loadActivity, 30000);
+  async function openFromActivity(chat){
+    if(!chat){ toast('Si apre solo dal Teams desktop'); return; }
+    // il nome nel feed è quello mostrato da Teams: si cerca la chat corrispondente nella lista
+    const chats=await api('/api/chats').catch(()=>[]); const c=chats.find(x=>x.name===chat)||chats.find(x=>x.name.startsWith(chat)||chat.startsWith(x.name));
+    if(!c){ toast('Chat non trovata nella lista'); return; }
+    show('B'); enterConv(c.name);
   }
   async function loadChats(){
     try{ const chats=await api('/api/chats');
