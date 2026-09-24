@@ -166,6 +166,7 @@ MSGS_JS = r"""
     let status=''; if(mine){ const my=e.closest('.fui-ChatMyMessage')||it.querySelector('.fui-ChatMyMessage');
       const si=my&&my.querySelector('[class*="statusIcon"]'); status=si?(si.getAttribute('aria-label')||'').trim():''; }
     // Teams scrive "Edited" in un span dell'intestazione del messaggio
+    const deleted=!!it.querySelector('[data-tid="message-tombstone"]');
     const edited=[...it.querySelectorAll('span')].some(x=>!x.closest('[id^="content-"]') && /^(Edited|Modificato)$/i.test((x.textContent||'').trim()));
     const avi=it.querySelector('[data-tid="message-avatar"] img.fui-Avatar__image, [data-tid="message-avatar"] img');
     const avsrc=(avi&&avi.naturalWidth)?(avi.currentSrc||avi.src):'';
@@ -174,7 +175,7 @@ MSGS_JS = r"""
     for(let k=0;k<4;k++) html=html.replace(/<div>\s*<\/div>/g,'');
     html=html.replace(/^(\s|<div>|<p>[\s\u00a0]*<\/p>)+/,m=>m.replace(/<p>[\s\u00a0]*<\/p>/g,'')).replace(/(<p>[\s\u00a0]*<\/p>|\s)+(?=(<\/div>)*$)/,'').slice(0,20000);
     const mentionsMe=!!(bd && bd.querySelector('[data-mention-type][aria-label="Mentioned you"]'));
-    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files, reactions:reactions, status:status, edited:edited, html:html, mentionsMe:mentionsMe, avsrc:avsrc});
+    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files, reactions:reactions, status:status, edited:edited, html:html, mentionsMe:mentionsMe, avsrc:avsrc, deleted:deleted});
   }
   return out;
 }
@@ -268,7 +269,7 @@ def save_chat_messages(chat, msgs):
         with dbc() as c:
             c.execute("DELETE FROM chat_messages WHERE chat=?",(chat,))
             for i,m in enumerate(msgs):
-                extra={k:m[k] for k in ("quote","images","files","reactions","status","edited","readby","html","mentionsMe","av") if m.get(k)}
+                extra={k:m[k] for k in ("quote","images","files","reactions","status","edited","readby","html","mentionsMe","av","deleted") if m.get(k)}
                 c.execute("INSERT INTO chat_messages(chat,idx,mid,author,text,mine,reacts,extra) VALUES(?,?,?,?,?,?,?,?)",(chat,i,m.get("mid",""),m.get("author",""),m.get("text",""),1 if m.get("mine") else 0,m.get("reacts",""),json.dumps(extra,ensure_ascii=False) if extra else ""))
     except Exception as e: print("save_cm:", e, flush=True)
 
@@ -627,6 +628,66 @@ def do_send(page, name, text):
         time.sleep(1.0); return True
     except Exception as e: print("send err:", e, flush=True); return False
 
+def reply_message(page, chat, mid, text):
+    """Risposta con citazione (Reply with quote) al messaggio `mid`. True quando il messaggio compare su Teams."""
+    text = (text or "").strip()
+    if not text or not clear_overlays(page) or not open_chat(page, chat): return False
+    before = page.evaluate("""()=>document.querySelectorAll('[data-tid="chat-pane-message"]').length""")
+    try:
+        # sui messaggi degli altri "Reply with quote" è sulla barra, sui miei è nel menu More options
+        mine = page.evaluate("""(mid)=>{const m=document.querySelector('[data-tid="chat-pane-message"][data-mid="'+mid+'"]'); return !!(m&&m.closest('.fui-ChatMyMessage'))}""", mid)
+        if mine or not click_bar_button(page, mid, "message-actions-quoted-reply"):
+            if not click_bar_button(page, mid, "message-actions-more"): print("reply: barra non trovata", mid, flush=True); return False
+            page.locator('[role="menu"] [data-tid="message-actions-quoted-reply"]:visible').first.click(timeout=4000)
+        # la citazione compare sopra il box di scrittura
+        page.wait_for_function("""()=>[...document.querySelectorAll('[data-tid="close-quoted-reply"]')].some(x=>!x.closest('[data-tid="chat-pane-item"]'))""", timeout=4000)
+        # Teams mette già il cursore dopo la citazione: un click sul box finirebbe sulla citazione e il testo andrebbe perso
+        time.sleep(0.3)
+        page.keyboard.insert_text(text); time.sleep(0.3)
+        if text[:20] not in (page.evaluate("""()=>{const e=[...document.querySelectorAll('[data-tid="ckeditor"]')].find(x=>!x.closest('[data-tid="chat-pane-item"]')&&x.offsetParent!==null); return e?e.innerText:''}""") or ""):
+            raise RuntimeError("testo non inserito nel box")
+        # Invio: il pulsante cambia nome a seconda del layout (sendMessageCommands-send / newMessageCommands-send)
+        page.keyboard.press("Enter")
+    except Exception as e:
+        print("reply:", str(e).splitlines()[0][:120], flush=True)
+        try: page.locator('[data-tid="close-quoted-reply"]:visible').first.click(timeout=1500)   # niente citazioni lasciate nel box
+        except Exception: pass
+        return False
+    finally:
+        page.mouse.move(2, 2)
+    for _ in range(20):
+        time.sleep(0.3)
+        ok = page.evaluate("""([n,t])=>{ const ms=[...document.querySelectorAll('[data-tid="chat-pane-message"]')]; if(ms.length<=n) return false;
+          const it=ms[ms.length-1].closest('[data-tid="chat-pane-item"]'); return !!it.querySelector('[data-tid="quoted-reply-card"]') && (it.innerText||'').includes(t); }""", [before, text[:40]])
+        if ok: return True
+    print("reply: messaggio non comparso su Teams", mid, flush=True); return False
+
+def delete_message(page, chat, mid):
+    """Elimina un mio messaggio. Teams lo fa subito e lascia "Undo" per qualche secondo."""
+    if not clear_overlays(page) or not open_chat(page, chat): return False
+    try:
+        if not click_bar_button(page, mid, "message-actions-more"): return False
+        page.locator('[role="menu"] [data-tid="message-actions-delete"]:visible').first.click(timeout=4000)
+    except Exception as e:
+        print("delete:", str(e).splitlines()[0][:120], flush=True); clear_overlays(page); return False
+    finally:
+        page.mouse.move(2, 2)
+    for _ in range(32):
+        time.sleep(0.25)
+        if page.evaluate("""(mid)=>{const m=document.querySelector('[data-tid="chat-pane-message"][data-mid="'+mid+'"]'); const it=m&&m.closest('[data-tid="chat-pane-item"]'); return !!(it&&it.querySelector('[data-tid="message-tombstone"]'))}""", mid): return True
+    print("delete: nessun cambio su Teams", mid, flush=True); return False
+
+def undo_delete(page, chat, mid):
+    if not clear_overlays(page) or not open_chat(page, chat): return False
+    pt = page.evaluate("""(mid)=>{const m=document.querySelector('[data-tid="chat-pane-message"][data-mid="'+mid+'"]'); const it=m&&m.closest('[data-tid="chat-pane-item"]');
+      const b=it&&it.querySelector('[data-tid="message-undo-delete-btn"]'); if(!b) return null; b.scrollIntoView({block:'center'}); const r=b.getBoundingClientRect(); return {x:r.left+r.width/2,y:r.top+r.height/2};}""", mid)
+    if not pt: return False
+    page.mouse.click(pt["x"], pt["y"]); page.mouse.move(2, 2)
+    for _ in range(16):
+        time.sleep(0.25)
+        if page.evaluate("""(mid)=>{const m=document.querySelector('[data-tid="chat-pane-message"][data-mid="'+mid+'"]'); const it=m&&m.closest('[data-tid="chat-pane-item"]'); return !!(it&&!it.querySelector('[data-tid="message-tombstone"]'))}""", mid): return True
+    return False
+
 # ---------------- REAZIONI E MODIFICA ----------------
 # Le azioni di Teams compaiono solo con un hover vero del mouse: gli eventi sintetici via JS non bastano.
 QUICK_REACTS    = {"like":"message-actions-like","heart":"message-actions-heart","laugh":"message-actions-laugh","surprised":"message-actions-surprised"}
@@ -888,12 +949,22 @@ def main():
         try: ctx.grant_permissions(["notifications"])
         except Exception: pass
         tick=0
+        no_page_since=None
         while True:
             try:
                 page=teams_page(ctx)
                 if not page:
                     set_state("health", json.dumps({"cdp":"ok","teams":"loading","overall":"yellow","ts":int(time.time())}))
+                    no_page_since = no_page_since or time.time()
+                    # dopo un reload di Teams una connessione CDP può non vedere più la scheda: si riparte puliti
+                    # (Docker riavvia il container, restart: unless-stopped)
+                    if time.time() - no_page_since > 60:
+                        print("scheda Teams non visibile da 60 s: riavvio l'agent", flush=True); os._exit(1)
                     time.sleep(3); continue
+                no_page_since = None
+                # dopo un reload Teams riparte senza chat aperta: si riapre quella in uso nella web app
+                ac0 = get_state("active_chat")
+                if ac0 and not page.evaluate(OPEN_CHAT_JS): open_chat(page, ac0)
                 if page.evaluate(HOOK_JS)=="installed": print("hook ok", flush=True)
                 for m in page.evaluate(DRAIN_JS):
                     t,b=m.get("title",""),m.get("body","")
@@ -924,6 +995,15 @@ def main():
                         fn=download_file(page,a1,args.get("name",""))
                         if fn: set_state(f"cmd_result:{cid}", json.dumps({"f": fn}))
                         set_cmd_result(cid, "done" if fn else "failed")
+                    elif ctype in ("reply","delete","undodelete"):
+                        try: args=json.loads(a2 or "{}")
+                        except Exception: args={}
+                        if ctype=="reply": ok=reply_message(page,a1,args.get("mid",""),args.get("text",""))
+                        elif ctype=="delete": ok=delete_message(page,a1,args.get("mid",""))
+                        else: ok=undo_delete(page,a1,args.get("mid",""))
+                        # prima si salva il nuovo stato, poi si conferma: la web app rilegge appena vede "done"
+                        set_state("active_chat",a1); save_open_chat(page, a1)
+                        set_cmd_result(cid, "done" if ok else "failed")
                     elif ctype in ("react","edit"):
                         # arg1 = chat, arg2 = JSON {mid, emoji|text}
                         try: args=json.loads(a2 or "{}")
@@ -931,9 +1011,10 @@ def main():
                         if ctype=="react" and args.get("pill"): ok=toggle_pill(page,a1,args.get("mid",""),args["pill"])
                         elif ctype=="react": ok=react_message(page,a1,args.get("mid",""),args.get("emoji",""))
                         else: ok=edit_message(page,a1,args.get("mid",""),args.get("text",""))
-                        set_cmd_result(cid, "done" if ok else "failed")
+                        # prima si salva il nuovo stato, poi si conferma: la web app rilegge appena vede "done"
                         set_state("active_chat",a1); save_open_chat(page, a1)
-                    if ctype not in ("react","edit","download","activity"): done_command(cid)
+                        set_cmd_result(cid, "done" if ok else "failed")
+                    if ctype not in ("react","edit","download","activity","reply","delete","undodelete"): done_command(cid)
                     # i comandi possono durare secondi: la lista chat non deve restare ferma nel frattempo
                     scan_chats(page)
                 if tick % 300 == 1: scan_chats_full(page)
@@ -954,7 +1035,10 @@ def main():
                 tick+=1
             except Exception as e:
                 print("loop:", e, flush=True); time.sleep(2)
-                try: browser=pw.chromium.connect_over_cdp(CDP); ctx=browser.contexts[0]
+                try:
+                    try: browser.close()        # chiude solo la connessione CDP, non il browser
+                    except Exception: pass
+                    browser=pw.chromium.connect_over_cdp(CDP); ctx=browser.contexts[0]
                 except Exception: pass
             time.sleep(1)
 

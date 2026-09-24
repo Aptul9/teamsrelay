@@ -243,6 +243,22 @@ def files(request: Request, fn: str, name: str = "file"):
     safe = re.sub(r'[\\/:*?"<>|\r\n]+', "_", name)[:150] or "file"
     return FileResponse(path, filename=safe)
 
+class MsgActReq(BaseModel):
+    name: str
+    mid: str
+    text: str = ""
+@app.post("/api/reply")
+def reply_api(request: Request, r: MsgActReq):
+    check(request)
+    if not r.text.strip(): raise HTTPException(400, detail="Testo vuoto")
+    return {"ok": True, "id": command("reply", r.name, json.dumps({"mid": r.mid, "text": r.text}))}
+@app.post("/api/delete")
+def delete_api(request: Request, r: MsgActReq):
+    check(request); return {"ok": True, "id": command("delete", r.name, json.dumps({"mid": r.mid}))}
+@app.post("/api/undodelete")
+def undodelete_api(request: Request, r: MsgActReq):
+    check(request); return {"ok": True, "id": command("undodelete", r.name, json.dumps({"mid": r.mid}))}
+
 @app.get("/api/cmd/{cid}")
 def cmd_status(request: Request, cid: int):
     check(request)

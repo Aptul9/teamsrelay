@@ -42,6 +42,7 @@
   .sbtns{ display:flex; gap:8px; margin-top:10px; } .sbtns button{ flex:1; border:0; border-radius:9px; padding:10px; font-weight:700; font-size:13px; background:var(--accent); color:var(--brand); }
   .reactbar{ position:fixed; z-index:60; background:var(--card); border:1px solid var(--line); border-radius:26px; box-shadow:0 8px 30px rgba(0,0,0,.32); padding:5px 8px; display:flex; gap:2px; }
   .reactbar button{ border:0; background:transparent; font-size:25px; padding:5px 6px; border-radius:50%; line-height:1; }
+  .reactbar{ flex-wrap:wrap; justify-content:center; max-width:94vw; }
   .reactbar button:active{ background:var(--accent); transform:scale(1.15); }
   .react.mine{ border-color:var(--brand); background:var(--accent); }
   .react[data-e]{ cursor:pointer; }
@@ -102,6 +103,13 @@
   .b .fl .fl-s{ display:block; font-size:11px; opacity:.75; margin-top:2px; }
   .b.me .st{ color:rgba(255,255,255,.85); } .b .st.err{ color:#ffbcbc; font-weight:700; }
   .editbar{ display:flex; align-items:center; gap:8px; padding:7px 14px; background:var(--accent); color:var(--brand); font-size:13.5px; font-weight:700; border-top:1px solid var(--line); }
+  .replybar{ display:flex; align-items:center; gap:10px; padding:7px 14px; background:var(--card); border-top:1px solid var(--line); }
+  .replybar .rq{ flex:1; min-width:0; border-left:3px solid var(--brand); padding-left:9px; }
+  .replybar .qa{ font-weight:700; font-size:12.5px; color:var(--brand); } .replybar .rt{ font-size:13px; color:var(--sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .replybar button{ border:0; background:transparent; color:var(--sub); font-size:17px; font-weight:800; }
+  .reactbar .rb-del{ color:var(--red); }
+  .b .del{ font-style:italic; opacity:.75; } .b .undo{ border:0; background:transparent; color:inherit; text-decoration:underline; font-weight:700; padding:0 0 0 6px; font-style:normal; }
+  .cbar .cav img{ width:100%; height:100%; border-radius:50%; object-fit:cover; display:block; }
   .editbar span{ flex:1; } .editbar button{ border:0; background:transparent; color:var(--brand); font-size:17px; font-weight:800; }
   .reactbar .rb-edit{ font-size:14px; font-weight:700; color:var(--brand); border-radius:16px; padding:6px 10px; border-left:1px solid var(--line); }
   .actsub{ font-size:12px; color:var(--sub); padding:4px 4px 0; min-height:16px; }
@@ -166,6 +174,7 @@
         <div class="cbar"><button class="back" onclick="closeConv()">‹</button><div class="cav" id="convAv"></div><div class="t" id="convTitle"></div></div>
         <div class="msgs" id="msgs"></div>
         <div class="editbar" id="editBar" style="display:none"><span>✏️ Modifica messaggio</span><button onclick="cancelEdit()">✕</button></div>
+        <div class="replybar" id="replyBar" style="display:none"><div class="rq"><div class="qa" id="replyWho"></div><div class="rt" id="replyTxt"></div></div><button onclick="cancelReply()">✕</button></div>
         <div class="compose"><textarea id="ta" rows="1" placeholder="Scrivi un messaggio…"></textarea><button onclick="sendMsg()">➤</button></div>
       </div>
     </div>
@@ -181,7 +190,9 @@
     <button onclick="doReact('surprised')">😮</button>
     <button onclick="doReact('cry')">😢</button>
     <button onclick="doReact('angry')">😠</button>
+    <button class="rb-edit" onclick="startReply()">↩ Rispondi</button>
     <button id="editBtn" class="rb-edit" onclick="startEdit()" style="display:none">✏️ Modifica</button>
+    <button id="delBtn" class="rb-edit rb-del" onclick="doDelete()" style="display:none">🗑 Elimina</button>
   </div>
 
   <div id="toast" class="toast"></div>
@@ -260,8 +271,9 @@
     if(!c){ toast('Chat non trovata nella lista'); return; }
     show('B'); enterConv(c.name);
   }
+  let lastChats=[];
   async function loadChats(){
-    try{ const chats=await api('/api/chats');
+    try{ const chats=await api('/api/chats'); lastChats=chats;
       const self=chats.find(c=>isSelf(c.name)); let rest=chats.filter(c=>!isSelf(c.name));
       if(filterMode==='unread') rest=rest.filter(c=>c.unread);
       if(filterMode==='mentions') rest=rest.filter(c=>c.mention||/@/.test(c.preview||''));
@@ -282,7 +294,10 @@
   }
   async function enterConv(name){
     openChat=name; pending=[]; lastMsgs=[]; $('convTitle').textContent=name;
-    const av=$('convAv'); av.textContent=isSelf(name)?'★':initials(name); av.style.background=avColor(name);
+    const av=$('convAv'), ch=(lastChats||[]).find(c=>c.name===name)||{};
+    if(ch.muted){ av.innerHTML=BELL_OFF; av.style.background='var(--accent)'; }
+    else if(ch.av){ av.innerHTML=avInner(name,ch.av); av.style.background='transparent'; }
+    else { av.textContent=isSelf(name)?'★':initials(name); av.style.background=avColor(name); }
     $('msgs').innerHTML=spinHtml; $('conv').classList.add('on');
     try{ await api('/api/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}); }catch(e){}
     refreshMsgs(true); clearInterval(poll); poll=setInterval(()=>refreshMsgs(false),1400);
@@ -324,11 +339,11 @@
       const qHtml=m.quote?`<div class="q"><div class="qa">${esc(m.quote.author)}</div>${esc(m.quote.text)}</div>`:'';
       const iHtml=imgs.map(i=>{ const u=i.f?'/media/'+i.f:i.url; return `<a class="im" href="${esc(u)}" target="_blank" onclick="event.stopPropagation()"><img src="${esc(u)}" alt=""${i.w&&i.h?` width="${i.w}" height="${i.h}"`:''}></a>`; }).join('');
       const fHtml=files.map(f=>`<a class="fl" href="${esc(f.url)}" data-url="${esc(f.url)}" data-name="${esc(f.name)}" onclick="event.stopPropagation(); return getFile(event,this)">📎 ${esc(f.name)}<span class="fl-s">Tocca per scaricare</span></a>`).join('');
-      const bub=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author&&m.author!==prevAuthor?`<div class="au">${esc(m.author)}${m.mentionsMe?'<span class="atme">@</span>':''}</div>`:'')}${qHtml}${iHtml}${(!pe&&m.html)?`<div class="tx">${m.html}</div>`:esc(pe||m.text)}${fHtml}${!m.mine&&m.edited?'<div class="st">Modificato</div>':''}${m.mine?`<div class="st">${st}</div>`:''}${rcHtml}</div>`;
+      const bub=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author&&m.author!==prevAuthor?`<div class="au">${esc(m.author)}${m.mentionsMe?'<span class="atme">@</span>':''}</div>`:'')}${m.deleted?`<div class="del">Messaggio eliminato${m.mine?` <button class="undo" onclick="undoDelete(event,'${mid}')">Annulla</button>`:''}</div>`:`${qHtml}${iHtml}${(!pe&&m.html)?`<div class="tx">${m.html}</div>`:esc(pe||m.text)}${fHtml}`}${!m.mine&&m.edited?'<div class="st">Modificato</div>':''}${m.mine&&!m.deleted?`<div class="st">${st}</div>`:''}${m.deleted?'':rcHtml}</div>`;
       if(m.mine) html+=bub;
       else { const first=m.author!==prevAuthor; html+=`<div class="mrow"><div class="av mav${first?'':' sp'}" style="background:${avBg(m.author||'?',m.av)}">${first?avInner(m.author||'?',m.av):''}</div>${bub}</div>`; }
       prevAuthor=m.mine?null:m.author; });
-    pending.forEach(p=>{ const failed=Date.now()-p.ts>14000; html+=`<div class="b me" style="opacity:.72">${esc(p.text)}<div class="st ${failed?'err':''}">${failed?'✗ Non inviato — riprova':'🕓 Invio…'}</div></div>`; });
+    pending.forEach(p=>{ const failed=Date.now()-p.ts>14000; html+=`<div class="b me" style="opacity:.72">${p.quote?`<div class="q"><div class="qa">${esc(p.quote.author)}</div>${esc(p.quote.text)}</div>`:''}${esc(p.text)}<div class="st ${failed?'err':''}">${failed?'✗ Non inviato — riprova':'🕓 Invio…'}</div></div>`; });
     // riscrive il DOM solo se qualcosa è cambiato: altrimenti a ogni poll le immagini lampeggiano
     if(html===box._html && !first) return;
     box._html=html; box.innerHTML=html;
@@ -344,6 +359,9 @@
   }
   async function sendMsg(){
     const ta=$('ta'); const text=ta.value.trim(); if(!text||!openChat) return; ta.value=''; ta.style.height='auto';
+    if(replyMid){ const mid=replyMid, chat=openChat, q=replyQuote; cancelReply(); pending.push({text, ts:Date.now(), quote:q}); renderMsgs(false);
+      let st='failed'; try{ const r=await api('/api/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chat,mid,text})}); st=(await followCmd(r.id)).status; }catch(e){}
+      if(st!=='done') toast('Risposta non inviata su Teams'); await refreshMsgs(false); renderMsgs(false); return; }
     if(editMid){ const mid=editMid, chat=openChat; cancelEdit(); pendingEdits[mid]=text; renderMsgs(false);
       let st='failed'; try{ const r=await api('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chat,mid,text})}); st=(await followCmd(r.id)).status; }catch(e){}
       delete pendingEdits[mid]; if(st!=='done') toast('Modifica non riuscita su Teams'); await refreshMsgs(false); renderMsgs(false); return; }
@@ -358,7 +376,8 @@
   function openReact(ev, mid){
     if(!mid) return; ev.stopPropagation();
     reactMid=mid; const bar=$('reactBar'); const m=lastMsgs.find(x=>String(x.mid)===mid);
-    $('editBtn').style.display=(m&&m.mine&&(m.text||'').trim())?'':'none'; bar.style.display='flex';
+    $('editBtn').style.display=(m&&m.mine&&!m.deleted&&(m.text||'').trim())?'':'none';
+    $('delBtn').style.display=(m&&m.mine&&!m.deleted)?'':'none'; bar.style.display='flex';
     const bw=bar.offsetWidth||258, bh=bar.offsetHeight||50;
     let x=(ev.clientX||innerWidth/2)-bw/2; x=Math.max(8,Math.min(x,innerWidth-bw-8));
     let y=(ev.clientY||200)-bh-12; if(y<64) y=(ev.clientY||200)+18;
@@ -390,9 +409,28 @@
     await refreshMsgs(false); renderMsgs(false);
   }
   function startEdit(){
-    const mid=reactMid, m=lastMsgs.find(x=>String(x.mid)===mid); hideReact(); if(!m) return;
+    const mid=reactMid, m=lastMsgs.find(x=>String(x.mid)===mid); hideReact(); if(!m) return; cancelReply();
     editMid=mid; const ta=$('ta'); ta.value=m.text||''; $('editBar').style.display='flex'; ta.focus();
     ta.style.height='auto'; ta.style.height=Math.min(120,ta.scrollHeight)+'px';
+  }
+  let replyMid=null, replyQuote=null;
+  function startReply(){
+    const mid=reactMid, m=lastMsgs.find(x=>String(x.mid)===mid); hideReact(); if(!m) return;
+    cancelEdit(); replyMid=mid; replyQuote={author:m.mine?'Tu':(m.author||''), text:(m.text||'').slice(0,160)};
+    $('replyWho').textContent=replyQuote.author; $('replyTxt').textContent=replyQuote.text||'📎'; $('replyBar').style.display='flex'; $('ta').focus();
+  }
+  function cancelReply(){ replyMid=null; replyQuote=null; $('replyBar').style.display='none'; }
+  // eliminazione come in Teams: subito, con "Annulla" sul messaggio eliminato
+  async function doDelete(){
+    const mid=reactMid, chat=openChat; hideReact(); if(!mid||!chat) return;
+    pendingEdits[mid]='🗑 Elimino…'; renderMsgs(false);
+    let st='failed'; try{ const r=await api('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chat,mid})}); st=(await followCmd(r.id)).status; }catch(e){}
+    delete pendingEdits[mid]; if(st!=='done') toast('Messaggio non eliminato su Teams'); await refreshMsgs(false); renderMsgs(false);
+  }
+  async function undoDelete(ev, mid){
+    ev.stopPropagation(); const chat=openChat; ev.target.textContent='Ripristino…';
+    let st='failed'; try{ const r=await api('/api/undodelete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chat,mid})}); st=(await followCmd(r.id)).status; }catch(e){}
+    if(st!=='done') toast('Non è più possibile annullare'); await refreshMsgs(false); renderMsgs(false);
   }
   function cancelEdit(){ editMid=null; $('editBar').style.display='none'; const ta=$('ta'); ta.value=''; ta.style.height='auto'; }
 
