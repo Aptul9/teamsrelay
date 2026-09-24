@@ -16,6 +16,9 @@ services:
       - CHROME_CLI=--remote-debugging-port=9222 --remote-allow-origins=* https://teams.microsoft.com/
       # pubblicato da Caddy su https://<DOMAIN>/desktop/, dietro il login della web app
       - SUBFOLDER=/desktop/
+      # Senza GPU (VM ARM) Selkies codifica H.264 in software e il decoder del browser non ne ricava frame
+      # ("decoder produced no output"): i frame JPEG si vedono in qualsiasi browser e bastano per il login
+      - SELKIES_ENCODER=jpeg
     volumes:
       - ./config:/config
     ports:
