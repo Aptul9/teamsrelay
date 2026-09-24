@@ -35,7 +35,7 @@ docker run --rm -v "$PWD:/w" -w /w python:3.12-slim \
 docker compose up -d --build
 ```
 
-Poi il login a Teams su `https://<DOMAIN>/desktop/` (stesse credenziali dell'app) e l'app sul telefono da `https://<DOMAIN>`. Passo per passo: [Installazione](docs/guida/installazione.md).
+Poi apri l'app su `https://<DOMAIN>` (credenziali UI_USER e UI_PASS), aggiungi il tuo account Teams, e accedi dal desktop remoto. Passo per passo: [Installazione](docs/guida/installazione.md).
 
 ## Licenza
 

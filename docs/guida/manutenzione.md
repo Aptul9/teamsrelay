@@ -5,16 +5,19 @@
 ```bash
 cd /opt/teamsrelay
 docker compose ps                      # stato dei container
-docker compose logs -f agent           # NEWMSG, CMD, errori
+docker compose logs -f agent-1         # NEWMSG, CMD, errori dell'account 1
 docker compose logs -f webapp
-docker compose restart agent webapp
+docker compose --profile accounts logs -f agent-1    # se il profilo non è in COMPOSE_PROFILES
+docker compose restart agent-1 webapp
 ```
+
+Gli account (slot 1...4) hanno servizi `chromium-N` e `agent-N`. Sono nel profilo `accounts`, quindi `docker compose up -d` non li avvia.
 
 ## Stato rosso "Login scaduto"
 
 Il caso più frequente. Il conditional access invalida la sessione e Teams mostra *"Chats are temporarily unavailable"* o *"We need you to sign in again"*: non sincronizza più e la lista resta ferma.
 
-1. Apri il [desktop remoto](/guida/desktop-remoto): pannello di stato → **Apri Teams remoto**, oppure `https://<DOMAIN>/desktop/`.
+1. Apri il [desktop remoto](/guida/desktop-remoto): pannello di stato → **Apri Teams remoto**, oppure scegli l'account in alto a sinistra e toccala scheda **Desktop**.
 2. In Teams clicca **Sign in** o ricarica la pagina, e accedi di nuovo con MFA.
 3. Entro un minuto lo stato torna verde.
 
@@ -52,12 +55,19 @@ Con il [deploy automatico](/guida/deploy) basta un push su `main`. A mano:
 cd /opt/teamsrelay
 git pull
 docker compose up -d --build
-docker compose pull chromium && docker compose up -d chromium    # aggiorna il browser, la sessione resta in config/
+docker compose --profile accounts pull && docker compose --profile accounts up -d    # aggiorna i browser, le sessioni restano in config/N
 ```
 
 ## Backup
 
-Da salvare: `.env`, `vapid/` (chiavi push), `config/` (sessione Teams, dato **sensibile**) e, se serve, `data/` (database, immagini e file scaricati).
+Da salvare:
+- `.env` (configurazione, contiene password);
+- `vapid/` (chiavi push);
+- `config/` (sessione Teams di tutti gli account, dato **sensibile**);
+- `data/app.db` (elenco account e sottoscrizioni push);
+- `data/N/` per ogni account N (database dei messaggi, immagini, file scaricati).
+
+Se lo spazio è limitato o serve solo la lista chat, bastano `.env`, `vapid/` e `data/app.db`.
 
 ## Porta 443 condivisa con OpenVPN (sslh)
 
@@ -79,6 +89,5 @@ In questa modalità il sito va aperto sempre con `https://`: il redirect da `htt
 
 ```bash
 cd /opt/teamsrelay && docker compose down -v
-sudo systemctl disable --now teamsrelay-desktop 2>/dev/null
-sudo rm -rf /opt/teamsrelay /etc/systemd/system/teamsrelay-desktop.service
+sudo rm -rf /opt/teamsrelay
 ```

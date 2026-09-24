@@ -9,9 +9,8 @@ Tutta la configurazione sta nel file `.env` accanto a `docker-compose.yml`. Si p
 | `DOMAIN` | sì | Nome pubblico della web app, per esempio `teams.example.com` o `84-8-248-192.sslip.io`. Caddy chiede il certificato per questo nome. |
 | `UI_USER`, `UI_PASS` | sì | Credenziali della web app. Senza, la web app non parte (tranne in locale, vedi sotto). |
 | `SESSION_SECRET` | consigliata | Firma il cookie di sessione, che dura un anno. Se è vuota viene derivata da utente e password. Cambiarla disconnette tutti i dispositivi. |
-| `DESKTOP_USER`, `DESKTOP_PASS` | no | Password propria del Chromium. Con il desktop su `/desktop/` dietro il login dell'app va lasciata vuota; serve solo per il tunnel Cloudflare o il sottodominio, e senza di lei il tunnel non parte. |
-| `DESKTOP_URL` | no | Indirizzo del desktop remoto. Vuoto vale `/desktop/` sullo stesso dominio dell'app. |
-| `DESKTOP_DOMAIN` | no | Sottodominio del desktop per Caddy, vedi [Desktop remoto](/guida/desktop-remoto). |
+| `DESKTOP_USER`, `DESKTOP_PASS` | no | Password propria di ogni Chromium. Lasciale vuote: il desktop di ogni account è su `/desktop/N/` dietro il login della web app (UI_USER/UI_PASS), e con una password il Chromium ne chiederebbe una seconda. |
+| `DESKTOP_URL` | no | Template dell'indirizzo del desktop remoto, con `{n}` al posto del numero di slot. Vuoto vale `/desktop/{n}/` sullo stesso dominio dell'app. |
 | `VAPID_SUBJECT` | no | Contatto richiesto dallo standard Web Push, nella forma `mailto:...`. |
 | `TZ` | no | Fuso orario, usato dai controlli automatici delle fasce 8-11 e 17-20. |
 | `HTTPS_PORT`, `HTTPS_BIND` | no | Porta e interfaccia di Caddy. Default `443` e `0.0.0.0`. Con sslh: `8443` e `127.0.0.1`. |

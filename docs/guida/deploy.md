@@ -28,13 +28,14 @@ flowchart LR
 
 1. salva il codice in esecuzione sul server (`deploy/remote-deploy.sh backup`);
 2. copia il codice con `rsync --delete`;
-3. `docker compose up -d --build` e attesa che web app e agent siano su;
-4. se non salgono, rimette la versione precedente e il job fallisce;
-5. controlla `https://<dominio>/healthz` da Internet.
+3. se è il primo deploy su una versione con account multipli, migra il vecchio layout (una sola sessione `config/` e `data/messages.db`) nello slot 1;
+4. `docker compose up -d --build` con `COMPOSE_PROFILES=accounts` e attesa che web app e agent siano su;
+5. se non salgono, rimette la versione precedente e il job fallisce;
+6. controlla `https://<dominio>/healthz` da Internet.
 
 Un solo deploy alla volta: i push ravvicinati si mettono in coda.
 
-Sul server il deploy **non tocca mai** `.env`, `config/` (sessione Teams), `data/` (database, immagini, file) e `vapid/`. Il container `chromium` non viene ricreato se non cambia la sua configurazione, quindi la sessione Teams sopravvive ai deploy.
+Sul server il deploy **non tocca mai** `.env`, `config/` (sessione Teams degli account, dato sensibile), `data/` (database, immagini, file) e `vapid/`. I container di account non vengono ricreati se non cambia la loro configurazione, quindi le sessioni Teams sopravvivono ai deploy.
 
 ## Secrets e variabili
 
@@ -71,7 +72,7 @@ La chiave di deploy si genera così e la parte privata va nel secret `DEPLOY_SSH
 ssh-keygen -t ed25519 -N "" -C "teamsrelay-deploy@github-actions" -f teamsrelay-deploy
 ```
 
-Al primo deploy manca solo il login a Teams, da fare a mano su `https://<DOMAIN>/desktop/` ([Installazione, passo 7](/guida/installazione#_7-primo-login-a-teams)).
+Al primo deploy manca solo il login a Teams, da fare a mano dal desktop remoto del primo account ([Installazione, passo 7](/guida/installazione#_7-primo-account)).
 
 ## Rollback manuale
 

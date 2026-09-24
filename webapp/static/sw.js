@@ -13,10 +13,14 @@ self.addEventListener('push', event => {
   }));
 });
 
+// la notifica apre l'app sull'account da cui arriva (acc = slot)
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+  const acc = (event.notification.data || {}).acc;
   event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cl => {
-    for (const c of cl) { if ('focus' in c) return c.focus(); }
-    if (clients.openWindow) return clients.openWindow('/');
+    for (const c of cl) {
+      if ('focus' in c) { if (acc) c.postMessage({ acc }); return c.focus(); }
+    }
+    if (clients.openWindow) return clients.openWindow(acc ? '/?a=' + acc : '/');
   }));
 });

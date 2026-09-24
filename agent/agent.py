@@ -1,4 +1,4 @@
-import os, re, time, json, sqlite3, urllib.request, hashlib, base64
+import os, re, time, json, sqlite3, urllib.request, hashlib, base64, signal
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 try:
@@ -10,7 +10,10 @@ NTFY_URL   = os.environ.get("NTFY_URL", "https://ntfy.sh")
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC", "")
 NTFY_ENABLED = os.environ.get("NTFY_ENABLED", "0") == "1" and bool(NTFY_TOPIC)
 CDP        = os.environ.get("CDP", "http://localhost:9222")
-DB_PATH    = os.environ.get("DB_PATH", "/data/messages.db")
+DB_PATH    = os.environ.get("DB_PATH", "/data/1/messages.db")
+# slot dell'account (1-4) e database dell'app, condiviso fra gli account: dispositivi per le push, elenco account
+ACCOUNT    = os.environ.get("ACCOUNT", "1")
+APP_DB     = os.environ.get("APP_DB", "/data/app.db")
 VAPID_PRIVATE = os.environ.get("VAPID_PRIVATE", "/vapid/private_key.pem")
 VAPID_CLAIMS  = {"sub": os.environ.get("VAPID_SUBJECT", "mailto:admin@example.com")}
 HEALTHTAG  = "__HEALTHCHECK__"
@@ -219,7 +222,14 @@ async (src) => {
 def dbc():
     c = sqlite3.connect(DB_PATH, timeout=8); c.execute("PRAGMA journal_mode=WAL"); return c
 
+def adbc():
+    c = sqlite3.connect(APP_DB, timeout=8); c.execute("PRAGMA journal_mode=WAL"); return c
+
 def db_init():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    try:
+        with adbc() as c: c.execute("CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, sub TEXT)")
+    except Exception as e: print("db_init app:", e, flush=True)
     try:
         with dbc() as c:
             c.execute("CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, source TEXT, title TEXT, body TEXT)")
@@ -238,7 +248,6 @@ def db_init():
             acols = {r[1] for r in c.execute("PRAGMA table_info(activity)")}
             if "channel" not in acols: c.execute("ALTER TABLE activity ADD COLUMN channel INTEGER")
             if "av" not in acols: c.execute("ALTER TABLE activity ADD COLUMN av TEXT")
-            c.execute("CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, sub TEXT)")
     except Exception as e: print("db_init:", e, flush=True)
 
 def db_msg(title, body):
@@ -304,21 +313,33 @@ def send_ntfy(title, body):
         with urllib.request.urlopen(urllib.request.Request(NTFY_URL,data=data,headers={"Content-Type":"application/json"}),timeout=10) as r: return r.status
     except Exception as e: print("ntfy:", e, flush=True)
 
+def acc_label():
+    """Con più account la notifica dice di quale è: organizzazione, altrimenti email."""
+    try:
+        with adbc() as c: many = c.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] > 1
+    except Exception: many = False
+    if not many: return ""
+    try: me = json.loads(get_state("me") or "{}")
+    except Exception: me = {}
+    return me.get("tenant") or me.get("email") or f"account {ACCOUNT}"
+
 def push_all(title, body):
     if webpush is None or not os.path.exists(VAPID_PRIVATE): return 0
     try:
-        with dbc() as c: rows=c.execute("SELECT endpoint,sub FROM push_subs").fetchall()
+        with adbc() as c: rows=c.execute("SELECT endpoint,sub FROM push_subs").fetchall()
     except Exception: return 0
+    lb=acc_label(); title=(title or "TeamsRelay")+(f" · {lb}" if lb else "")
     n=0
     for ep,sub in rows:
         try:
-            webpush(subscription_info=json.loads(sub), data=json.dumps({"title":(title or "TeamsRelay"),"body":(body or "")}),
+            # acc: la notifica apre l'app su questo account
+            webpush(subscription_info=json.loads(sub), data=json.dumps({"title":title,"body":(body or ""),"acc":int(ACCOUNT)}),
                     vapid_private_key=VAPID_PRIVATE, vapid_claims=dict(VAPID_CLAIMS)); n+=1
         except WebPushException as e:
             code=getattr(getattr(e,"response",None),"status_code",0)
             if code in (404,410):
                 try:
-                    with dbc() as c: c.execute("DELETE FROM push_subs WHERE endpoint=?",(ep,))
+                    with adbc() as c: c.execute("DELETE FROM push_subs WHERE endpoint=?",(ep,))
                 except Exception: pass
         except Exception as e: print("push:", e, flush=True)
     return n
@@ -381,7 +402,7 @@ def scan_new_messages(chats):
 
 def push_count():
     try:
-        with dbc() as c: return c.execute("SELECT COUNT(*) FROM push_subs").fetchone()[0]
+        with adbc() as c: return c.execute("SELECT COUNT(*) FROM push_subs").fetchone()[0]
     except Exception: return 0
 
 def last_msg_ts():
@@ -415,7 +436,8 @@ def update_health(page):
         h["overall"]="green"
     # alert una-tantum quando la sessione Teams scade / va in modalita' ridotta
     prev = get_state("teams_status_prev")
-    if h.get("teams") == "login" and prev != "login":
+    # solo per un account già entrato almeno una volta: quello appena aggiunto il login lo deve ancora fare
+    if h.get("teams") == "login" and prev != "login" and get_state("me"):
         push_all("TeamsRelay", "Sessione Teams scaduta: apri lo schermo remoto e rifai il login per riattivare i messaggi.")
     set_state("teams_status_prev", h.get("teams",""))
     set_state("health", json.dumps(h))
@@ -440,14 +462,45 @@ def self_check(page):
         return (False, "Rilevamento nuovi messaggi in errore: " + str(e))
     return (True, "")
 
+# Teams web ora reindirizza da teams.microsoft.com a teams.cloud.microsoft
+TEAMS_HOSTS = ("teams.microsoft.com", "teams.cloud.microsoft", "teams.live.com")
+LOGIN_HOSTS = ("login.microsoftonline.com", "login.live.com", "login.microsoft.com")
+def host_of(p):
+    from urllib.parse import urlparse
+    try: return urlparse(p.url or "").hostname or ""
+    except Exception: return ""
+def is_teams(p):
+    return host_of(p) in TEAMS_HOSTS and "serviceworker" not in (p.url or "")
+
 def teams_page(ctx):
+    """La scheda di Teams; se manca, quella del login Microsoft (account appena aggiunto o sessione scaduta)."""
+    login = None
     for p in ctx.pages:
-        u=""
-        try: u=p.url or ""
+        try:
+            if is_teams(p): return p
+            if host_of(p) in LOGIN_HOSTS and not login: login = p
         except Exception: continue
-        # Teams web ora reindirizza da teams.microsoft.com a teams.cloud.microsoft
-        if ("teams.microsoft.com" in u or "teams.cloud.microsoft" in u) and "serviceworker" not in u: return p
-    return None
+    return login
+
+# Chi è loggato: nome, email e organizzazione dal profilo che Teams tiene in localStorage, foto dal pulsante del profilo
+WHOAMI_JS = r"""()=>{ const g=k=>{try{return JSON.parse(localStorage.getItem(k)||'null')}catch(e){return null}};
+  const u=g('tmp.auth.v1.GLOBAL.User.User'), p=(u&&u.item&&u.item.profile)||{};
+  const tk=Object.keys(localStorage).find(k=>/^tmp\.auth\.v1\..*\.Tenants\.Tenants$/.test(k));
+  const t=((g(tk)||{}).item)||[];
+  const img=document.querySelector('[data-tid="me-control-avatar"] img');
+  return {name:p.name||'', email:p.preferred_username||p.upn||'', tenant:(t.find(x=>x.tenantId===p.tid)||{}).tenantName||'',
+          avsrc:(img&&img.naturalWidth)?(img.currentSrc||img.src):''}; }"""
+
+def save_identity(page):
+    try: me = page.evaluate(WHOAMI_JS)
+    except Exception as e: print("whoami:", str(e).splitlines()[0][:120], flush=True); return
+    if not me.get("email") and not me.get("name"): return
+    me["av"] = avatar_file(page, me.pop("avsrc", ""), [1])
+    try: old = json.loads(get_state("me") or "{}")
+    except Exception: old = {}
+    if not me["av"] and old.get("av"): me["av"] = old["av"]
+    if me != old: print("account:", me.get("email"), me.get("tenant"), flush=True)
+    set_state("me", json.dumps(me, ensure_ascii=False))
 
 def same_chat(cur, name):
     return bool(cur) and (cur.startswith(name) or name.startswith(cur))
@@ -938,6 +991,8 @@ def selfcheck_slot():
     return None if get_state(key) == "1" else key
 
 def main():
+    # PID 1 nel container: senza handler SIGTERM viene ignorato e "docker stop" aspetta il timeout
+    signal.signal(signal.SIGTERM, lambda *_: os._exit(0))
     db_init()
     print("agent v5 avvio, CDP:", CDP, " ntfy=", NTFY_ENABLED, flush=True)
     with sync_playwright() as pw:
@@ -962,6 +1017,10 @@ def main():
                         print("scheda Teams non visibile da 60 s: riavvio l'agent", flush=True); os._exit(1)
                     time.sleep(3); continue
                 no_page_since = None
+                # login Microsoft in corso (account appena aggiunto o sessione scaduta): c'è solo da segnalarlo
+                if not is_teams(page):
+                    if tick % 5 == 0: update_health(page)
+                    tick+=1; time.sleep(1); continue
                 # dopo un reload Teams riparte senza chat aperta: si riapre quella in uso nella web app
                 ac0 = get_state("active_chat")
                 if ac0 and not page.evaluate(OPEN_CHAT_JS): open_chat(page, ac0)
@@ -1023,6 +1082,7 @@ def main():
                 if tick % 300 == 1 and teams_ok: scan_chats_full(page)
                 elif tick % 3 == 0: scan_chats(page)
                 if tick % 150 == 5 and teams_ok: read_activity(page)
+                if teams_ok and (tick % 300 == 7 or not get_state("me")): save_identity(page)
                 if tick % 5 == 0:
                     update_health(page)
                 ac=get_state("active_chat")

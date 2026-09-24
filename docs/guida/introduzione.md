@@ -14,23 +14,30 @@ TeamsRelay sposta il browser su un server: un Chromium in un container tiene ape
 
 | Area | Funzioni |
 |---|---|
+| Account | Fino a 4 account Teams contemporanei. Aggiungi, rimuovi e passa da un account all'altro nella parte alta dell'app. Notifiche di tutti gli account su un unico dispositivo. |
 | Lista chat | Foto profilo e foto dei gruppi, anteprima, orario, non letti, chat silenziate con la campanella barrata, filtri Tutte / Non lette / Menzioni, ordine. |
 | Messaggi | Testo con la formattazione di Teams (colori, grassetto, elenchi, codice, link), menzioni evidenziate (in rosso quelle a te), emoji, immagini, GIF, file, citazioni, autore e foto nei gruppi, "Modificato". |
 | Azioni | Invia, rispondi con citazione, reagisci con sei reazioni rapide, tocca una reazione per toglierla o aggiungerla, modifica ed elimina i tuoi messaggi, annulla l'eliminazione, scarica gli allegati. |
 | Stato dei tuoi messaggi | *Inviato*, *Visualizzato*, e nei gruppi *Letto da N su M* con i nomi. |
-| Notifiche | Web Push sul telefono per i messaggi nuovi (non per le chat silenziate). Scheda **Notifiche** con il feed Attività di Teams: reazioni ai tuoi messaggi, menzioni, risposte, inviti. |
-| Affidabilità | Pannello di stato verde solo se tutto il giro funziona, push quando la sessione scade, controllo automatico due volte al giorno. |
-| Desktop | Scheda Desktop (solo da telefono) con il browser remoto, per il login e l'MFA. |
+| Notifiche | Web Push sul telefono per i messaggi nuovi (non per le chat silenziate). Con più account, la notifica riporta l'account. Scheda **Notifiche** con il feed Attività di Teams: reazioni ai tuoi messaggi, menzioni, risposte, inviti. |
+| Affidabilità | Pannello di stato verde solo se tutto il giro funziona, push quando la sessione scade, controllo automatico due volte al giorno. Ogni account ha il suo browser e il suo database. |
+| Desktop | Scheda Desktop (solo da telefono) con il browser remoto dell'account, per il login e l'MFA. |
 
 ## Come funziona
+
+Fino a 4 account Teams girati in parallelo, ognuno con il suo browser e il suo database.
 
 ```mermaid
 flowchart LR
   subgraph Server["Server Linux (Docker Compose)"]
-    CH["chromium<br/>Teams web loggato"]
-    AG["agent<br/>Playwright via CDP"]
-    DB[("SQLite<br/>data/messages.db")]
+    subgraph Account["Account 1...4"]
+      CH["chromium-N<br/>Teams web loggato"]
+      AG["agent-N<br/>Playwright via CDP"]
+      DB[(SQLite<br/>data/N/messages.db)]
+    end
     WA["webapp<br/>FastAPI + PWA"]
+    DP["dockerproxy<br/>start/stop"]
+    APP[("SQLite<br/>data/app.db")]
     CA["caddy<br/>HTTPS automatico"]
   end
   PH["Telefono<br/>web app TeamsRelay"]
@@ -39,17 +46,19 @@ flowchart LR
   AG -- "Chrome DevTools Protocol" --> CH
   AG -- "chat, messaggi, stato" --> DB
   WA -- "legge i dati, accoda comandi" --> DB
+  WA -- "start/stop container" --> DP
+  WA -- "account, push" --> APP
   CA --> WA
   PH -- HTTPS --> CA
   AG -- "push firmate VAPID" --> WP --> PH
 ```
 
-1. **chromium** ([linuxserver/chromium](https://docs.linuxserver.io/images/docker-chromium/)) apre Teams web. Il login lo fai una volta dal desktop remoto e la sessione resta nella cartella `config/`.
-2. **agent** si collega al browser con il Chrome DevTools Protocol, legge lista chat, conversazione aperta e feed Attività, li salva in SQLite e manda le push.
-3. **webapp** serve la web app e le API. Le tue azioni (apri, invia, reagisci, modifica...) diventano **comandi** in SQLite che l'agent esegue sulla pagina di Teams; la web app segue l'esito di ogni comando.
+1. **chromium-N** e **agent-N** (slot 1...4): ogni account ha il suo Chromium con Teams web e il suo agent. I login li fai dal desktop remoto dell'account (`/desktop/N/`) e le sessioni restano in `config/N/`. Gli slot non in uso non consumano risorse.
+2. **webapp** serve la web app e le API. Le tue azioni (apri, invia, reagisci, modifica...) diventano **comandi** nel database dell'account, che l'agent di quell'account esegue sulla pagina. La webapp parla con Docker (tramite dockerproxy) solo per accendere e spegnere i slot degli account.
+3. **dockerproxy** è un filtro: la webapp può solo accendere e spegnere container già creati, tutto il resto è negato (creare, eseguire, listare, ispezionare).
 4. **caddy** pubblica la web app in HTTPS con certificati Let's Encrypt.
 
-Il database è l'unico canale fra web app e agent. I dettagli sono in [Architettura](/riferimento/architettura).
+Il database di ogni account è l'unico canale fra web app e agent di quell'account. Il database dell'app (app.db) condiviso contiene l'elenco degli account e le sottoscrizioni push. I dettagli sono in [Architettura](/riferimento/architettura).
 
 ## Da dove partire
 

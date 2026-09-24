@@ -42,7 +42,7 @@ git clone <url-del-repository> /opt/teamsrelay
 cd /opt/teamsrelay
 ```
 
-Il percorso `/opt/teamsrelay` è quello usato dal deploy automatico e dal servizio del tunnel desktop.
+Il percorso `/opt/teamsrelay` è quello usato dal deploy automatico.
 
 ## 3. Dominio
 
@@ -63,7 +63,7 @@ openssl rand -hex 32               # da mettere in SESSION_SECRET
 nano .env
 ```
 
-Obbligatori in produzione: `DOMAIN`, `UI_USER`, `UI_PASS`. `UI_PASS` protegge anche il desktop remoto, quindi va scelta robusta. Tutte le voci: [Configurazione](/guida/configurazione). Senza `UI_USER` e `UI_PASS` la web app non si avvia.
+Obbligatori in produzione: `DOMAIN`, `UI_USER`, `UI_PASS`. `UI_PASS` protegge l'accesso alla web app e al desktop remoto di tutti gli account, quindi va scelta robusta. Tutte le voci: [Configurazione](/guida/configurazione). Senza `UI_USER` e `UI_PASS` la web app non si avvia.
 
 ## 5. Chiavi per le notifiche push
 
@@ -78,24 +78,25 @@ Crea `vapid/private_key.pem` (privata) e `vapid/appkey.txt` (pubblica). Vanno ge
 
 ```bash
 docker compose up -d --build
-docker compose ps                  # quattro container in esecuzione
-docker compose logs -f agent       # Ctrl+C per uscire
+docker compose ps                  # web app, Caddy, dockerproxy e slot spenti
+docker compose logs -f webapp      # Ctrl+C per uscire
 ```
 
 Caddy ottiene il certificato da solo. `https://<dominio>` deve mostrare la pagina di login di TeamsRelay.
 
-## 7. Primo login a Teams
+## 7. Primo account
 
-1. Apri `https://<DOMAIN>/desktop/` ed entra con `UI_USER` / `UI_PASS`.
-2. Nel Chromium remoto è aperto Teams: accedi con il tuo account, password e MFA.
-3. Chiudi i popup di benvenuto e aspetta la lista chat.
-4. Imposta la lingua di Teams su **English**: alcuni testi letti dall'agent sono in inglese e le etichette tradotte dalla web app partono da quelli.
+1. Apri `https://<DOMAIN>` ed entra con `UI_USER` / `UI_PASS`.
+2. Toccando la foto profilo in alto a sinistra (ora un cerchio grigio), scegli **Aggiungi account**. Il browser remoto si avvia (può impiegare un paio di minuti).
+3. Si apre una pagina con "Accesso a Microsoft da fare": accedi con il tuo account, password e MFA. Su PC si apre una nuova scheda; su telefono rimane nella scheda Desktop.
+4. Torna alla app principale. Il profilo, l'email e l'organizzazione compaiono da soli sotto la foto.
+5. Imposta la lingua di Teams su **English**: alcuni testi letti dall'agent sono in inglese e le etichette tradotte dalla web app partono da quelli.
 
-Da qui l'agent lavora da solo. Il desktop resta raggiungibile dall'app quando serve rifare il login: [Desktop remoto](/guida/desktop-remoto).
+Da qui l'agent lavora da solo. Il desktop rimane raggiungibile toccando la scheda **Desktop** quando serve rifare il login: [Desktop remoto](/guida/desktop-remoto).
 
 ## 8. Verifica
 
-Apri `https://<dominio>` ed entra con `UI_USER` / `UI_PASS`. Entro un minuto:
+Sulla app principale. Entro un minuto:
 
 - compare la lista chat con le foto;
 - la pillola di stato in alto a destra è **verde**;

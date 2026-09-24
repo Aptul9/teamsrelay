@@ -3,21 +3,22 @@
 Lo stack gira anche sul PC con Docker Desktop, senza dominio e senza login.
 
 ```bash
-docker compose -f docker-compose.yml -f compose.local.yml up -d --build chromium agent webapp
+docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml --profile accounts create --build
+docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml up -d
 ```
 
 | Indirizzo | Cosa |
 |---|---|
-| `http://localhost:3000` | Browser remoto con Teams: qui si fa il login. |
 | `http://localhost:8090` | Web app TeamsRelay. |
+| `http://localhost:8090/desktop/N/` | Browser remoto con Teams dell'account N: qui si fa il login. |
 
-`compose.local.yml` cambia tre cose rispetto alla produzione:
+`compose.local.env` e `compose.local.yml` cambiano tre cose rispetto alla produzione:
 
 - **niente Caddy**: `http://localhost` è già un contesto sicuro per service worker e Web Push;
-- **niente login** su web app e desktop, perché entrambi ascoltano solo su `127.0.0.1`;
+- **niente login** (NO_AUTH=1) su web app e desktop, perché entrambi ascoltano solo su `127.0.0.1`;
 - **volumi Docker** al posto delle cartelle `config/` e `data/`: sul filesystem Windows lock di SQLite e symlink del profilo Chromium non sono affidabili.
 
-Nel `.env` locale basta `DOMAIN=localhost`; le altre credenziali possono restare vuote.
+Nel `compose.local.env`: `DOMAIN=localhost` e credenziali vuote (`UI_USER=`, `UI_PASS=`).
 
 ## Modificare il codice
 

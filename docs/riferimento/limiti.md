@@ -13,4 +13,4 @@ Verificati sul campo.
 | Interfaccia di Teams | Se Microsoft cambia i [selettori](/riferimento/selettori), le funzioni coinvolte smettono di funzionare finché non si aggiornano. |
 | Bot senza anteprima | Il rilevamento dei messaggi nuovi si basa sull'anteprima: i bot che non la mostrano possono sfuggire. |
 | iPhone | Le push arrivano solo all'app installata sulla Home. |
-| Un utente | Una sessione Teams per installazione. |
+| Massimo 4 account | Fino a 4 account Teams contemporanei per installazione. |

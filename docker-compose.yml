@@ -1,67 +1,136 @@
 # TeamsRelay — stack Docker Compose.
 # Tutta la configurazione sta in .env (copia .env.example). Vedi README.md.
-services:
-  chromium:
-    # Browser remoto con Microsoft Teams web loggato (la sessione resta in ./config)
-    image: lscr.io/linuxserver/chromium:latest
-    container_name: teams-chromium
-    security_opt:
-      - seccomp:unconfined
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=${TZ:-UTC}
-      - CUSTOM_USER=${DESKTOP_USER:-}
-      - PASSWORD=${DESKTOP_PASS:-}
-      - CHROME_CLI=--remote-debugging-port=9222 --remote-allow-origins=* https://teams.microsoft.com/
-      # pubblicato da Caddy su https://<DOMAIN>/desktop/, dietro il login della web app
-      - SUBFOLDER=/desktop/
-      # Senza GPU (VM ARM) Selkies codifica H.264 in software e il decoder del browser non ne ricava frame
-      # ("decoder produced no output"): i frame JPEG si vedono in qualsiasi browser e bastano per il login
-      - SELKIES_ENCODER=jpeg
-    volumes:
-      - ./config:/config
-    ports:
-      # Interfaccia web del desktop remoto: SOLO su localhost.
-      # Raggiungila con un tunnel SSH, con deploy/desktop-tunnel.sh o col sottodominio Caddy.
-      - "127.0.0.1:3000:3000"
-      - "127.0.0.1:3001:3001"
-    shm_size: "1gb"
-    restart: unless-stopped
+#
+# Account Teams: fino a 4 slot, ognuno con il suo browser (chromium-N) e il suo agent (agent-N).
+# Gli slot sono nel profilo "accounts": un "docker compose up -d" non li avvia. Il deploy li crea spenti
+# e la web app accende solo quelli degli account aggiunti dall'app (tramite dockerproxy).
+x-chromium: &chromium
+  # Browser remoto con Microsoft Teams web loggato (la sessione resta in ./config/N)
+  image: lscr.io/linuxserver/chromium:latest
+  security_opt:
+    - seccomp:unconfined
+  shm_size: "1gb"
+  profiles: ["accounts"]
+  restart: unless-stopped
 
-  agent:
-    # Legge e pilota Teams via Chrome DevTools Protocol; manda le notifiche push
-    build: ./agent
-    container_name: teams-agent
-    network_mode: "service:chromium"
+x-chromium-env: &chromium-env
+  PUID: "1000"
+  PGID: "1000"
+  TZ: ${TZ:-UTC}
+  CUSTOM_USER: ${DESKTOP_USER:-}
+  PASSWORD: ${DESKTOP_PASS:-}
+  CHROME_CLI: --remote-debugging-port=9222 --remote-allow-origins=* https://teams.microsoft.com/
+  # Senza GPU (VM ARM) Selkies codifica H.264 in software e il decoder del browser non ne ricava frame
+  # ("decoder produced no output"): i frame JPEG si vedono in qualsiasi browser e bastano per il login
+  SELKIES_ENCODER: jpeg
+
+x-agent: &agent
+  # Legge e pilota Teams via Chrome DevTools Protocol; manda le notifiche push
+  build: ./agent
+  image: teamsrelay-agent
+  volumes:
+    - ./agent/agent.py:/app/agent.py:ro
+    - ./data:/data
+    - ./vapid:/vapid:ro
+  profiles: ["accounts"]
+  restart: unless-stopped
+
+x-agent-env: &agent-env
+  TZ: ${TZ:-UTC}
+  # 127.0.0.1, not localhost: Chromium binds CDP on IPv4 only, localhost resolves to ::1 first
+  CDP: http://127.0.0.1:9222
+  APP_DB: /data/app.db
+  VAPID_PRIVATE: /vapid/private_key.pem
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
+  NTFY_ENABLED: ${NTFY_ENABLED:-0}
+  NTFY_URL: ${NTFY_URL:-https://ntfy.sh}
+  NTFY_TOPIC: ${NTFY_TOPIC:-}
+
+services:
+  chromium-1:
+    <<: *chromium
+    container_name: teams-chromium-1
     environment:
-      - TZ=${TZ:-UTC}
-      # 127.0.0.1, not localhost: Chromium binds CDP on IPv4 only, localhost resolves to ::1 first
-      - CDP=http://127.0.0.1:9222
-      - DB_PATH=/data/messages.db
-      - VAPID_PRIVATE=/vapid/private_key.pem
-      - VAPID_SUBJECT=${VAPID_SUBJECT:-mailto:admin@example.com}
-      - NTFY_ENABLED=${NTFY_ENABLED:-0}
-      - NTFY_URL=${NTFY_URL:-https://ntfy.sh}
-      - NTFY_TOPIC=${NTFY_TOPIC:-}
+      <<: *chromium-env
+      # pubblicato da Caddy su https://<DOMAIN>/desktop/1/, dietro il login della web app
+      SUBFOLDER: /desktop/1/
     volumes:
-      - ./agent/agent.py:/app/agent.py:ro
-      - ./data:/data
-      - ./vapid:/vapid:ro
-    depends_on:
-      - chromium
-    restart: unless-stopped
+      - ./config/1:/config
+  agent-1:
+    <<: *agent
+    container_name: teams-agent-1
+    network_mode: "service:chromium-1"
+    depends_on: [chromium-1]
+    environment:
+      <<: *agent-env
+      ACCOUNT: "1"
+      DB_PATH: /data/1/messages.db
+
+  chromium-2:
+    <<: *chromium
+    container_name: teams-chromium-2
+    environment:
+      <<: *chromium-env
+      SUBFOLDER: /desktop/2/
+    volumes:
+      - ./config/2:/config
+  agent-2:
+    <<: *agent
+    container_name: teams-agent-2
+    network_mode: "service:chromium-2"
+    depends_on: [chromium-2]
+    environment:
+      <<: *agent-env
+      ACCOUNT: "2"
+      DB_PATH: /data/2/messages.db
+
+  chromium-3:
+    <<: *chromium
+    container_name: teams-chromium-3
+    environment:
+      <<: *chromium-env
+      SUBFOLDER: /desktop/3/
+    volumes:
+      - ./config/3:/config
+  agent-3:
+    <<: *agent
+    container_name: teams-agent-3
+    network_mode: "service:chromium-3"
+    depends_on: [chromium-3]
+    environment:
+      <<: *agent-env
+      ACCOUNT: "3"
+      DB_PATH: /data/3/messages.db
+
+  chromium-4:
+    <<: *chromium
+    container_name: teams-chromium-4
+    environment:
+      <<: *chromium-env
+      SUBFOLDER: /desktop/4/
+    volumes:
+      - ./config/4:/config
+  agent-4:
+    <<: *agent
+    container_name: teams-agent-4
+    network_mode: "service:chromium-4"
+    depends_on: [chromium-4]
+    environment:
+      <<: *agent-env
+      ACCOUNT: "4"
+      DB_PATH: /data/4/messages.db
 
   webapp:
-    # Web app installabile (PWA) + API
+    # Web app installabile (PWA) + API; gestisce gli account e accende/spegne i loro slot
     build: ./webapp
     container_name: teams-webapp
     environment:
-      - DB_PATH=/data/messages.db
+      - APP_DB=/data/app.db
       - UI_USER=${UI_USER:-}
       - UI_PASS=${UI_PASS:-}
       - SESSION_SECRET=${SESSION_SECRET:-}
       - DESKTOP_URL=${DESKTOP_URL:-}
+      - DOCKER_API=http://dockerproxy:2375
       - VAPID_APPKEY=/vapid/appkey.txt
     volumes:
       # Montati per poter modificare i file senza ricostruire l'immagine.
@@ -72,6 +141,23 @@ services:
       - ./webapp/static:/app/static:ro
       - ./vapid:/vapid:ro
       - ./data:/data
+      # per cancellare la sessione del browser quando si toglie un account
+      - ./config:/config
+    networks: [default, control]
+    restart: unless-stopped
+
+  dockerproxy:
+    # Unico accesso della web app a Docker: solo avvio e arresto di container già creati.
+    # Creare container, eseguire comandi, leggere configurazioni: tutto negato.
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: teams-dockerproxy
+    environment:
+      - POST=1
+      - ALLOW_START=1
+      - ALLOW_STOP=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [control]
     restart: unless-stopped
 
   caddy:
@@ -80,7 +166,6 @@ services:
     container_name: teams-caddy
     environment:
       - DOMAIN=${DOMAIN:?imposta DOMAIN in .env}
-      - DESKTOP_DOMAIN=${DESKTOP_DOMAIN:-}
       - HTTPS_PORT=${HTTPS_PORT:-443}
     ports:
       - "80:80"
@@ -90,6 +175,11 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     restart: unless-stopped
+
+networks:
+  # solo web app e dockerproxy: i browser (che aprono pagine web) non raggiungono Docker
+  control:
+    internal: true
 
 volumes:
   caddy_data:

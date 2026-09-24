@@ -1,15 +1,16 @@
 # TeamsRelay — Caddy con HTTPS automatico.
-# DOMAIN, DESKTOP_DOMAIN e HTTPS_PORT arrivano da .env tramite docker-compose.yml.
+# DOMAIN e HTTPS_PORT arrivano da .env tramite docker-compose.yml.
 {
 	http_port 80
 	https_port {$HTTPS_PORT:443}
 }
 
-{$DOMAIN} {
-	# Desktop remoto (Teams nel Chromium del server) sullo stesso dominio, protetto dal login di TeamsRelay:
-	# Caddy chiede a /api/authcheck se il cookie di sessione è valido prima di far passare la richiesta.
-	redir /desktop /desktop/
-	handle /desktop/* {
+# Desktop remoto dello slot N (il Chromium con Teams di quell'account) su /desktop/N/, protetto dal login
+# di TeamsRelay: Caddy chiede a /api/authcheck se il cookie di sessione è valido prima di far passare la richiesta.
+# Se lo slot è spento il container non esiste in rete e la risposta è 502.
+(desktop) {
+	redir /desktop/{args[0]} /desktop/{args[0]}/
+	handle /desktop/{args[0]}/* {
 		forward_auth webapp:8090 {
 			uri /api/authcheck
 			# la verifica è una richiesta HTTP normale anche quando quella originale è un websocket
@@ -17,18 +18,19 @@
 			header_up -Upgrade
 			header_up -Connection
 		}
-		reverse_proxy chromium:3000
+		reverse_proxy chromium-{args[0]}:3000
 	}
+}
+
+{$DOMAIN} {
+	import desktop 1
+	import desktop 2
+	import desktop 3
+	import desktop 4
+	# vecchio indirizzo del desktop, prima degli account: si torna all'app
+	redir /desktop / 302
+	redir /desktop/ / 302
 	handle {
 		reverse_proxy webapp:8090
 	}
 }
-
-# ---- Opzionale: desktop remoto su un sottodominio ----
-# Protetto dalle credenziali DESKTOP_USER / DESKTOP_PASS del container chromium.
-# 1) record DNS per DESKTOP_DOMAIN   2) imposta DESKTOP_DOMAIN e DESKTOP_URL in .env
-# 3) togli il commento al blocco qui sotto   4) docker compose up -d caddy
-#
-# {$DESKTOP_DOMAIN} {
-# 	reverse_proxy chromium:3000
-# }

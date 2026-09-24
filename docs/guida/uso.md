@@ -1,6 +1,20 @@
 # Uso quotidiano
 
-L'app ha le schede **Notifiche** e **Chat**, più **Desktop** da telefono.
+L'app ha le schede **Notifiche** e **Chat**, più **Desktop** da telefono. La foto profilo in alto a sinistra gestisce gli account.
+
+## Account
+
+Fino a 4 account Teams contemporanei. Tocca la foto in alto a sinistra.
+
+| Elemento | Effetto |
+|---|---|
+| **Nomi degli account** | Scorri la lista o tocca un nome per passarvi: le chat cambiano al volo. Il nome con la spunta è quello attivo. Accanto a ogni nome: foto profilo, email e organizzazione, e un pallino rosso se ha messaggi non letti. |
+| **Teams remoto** / **Accesso a Microsoft da fare** | Ogni account ha il suo pulsante. Con "Teams remoto" il login è fatto; con "Accesso a Microsoft" toccalo per aprire la pagina di login nel desktop remoto di quell'account. |
+| **Rimuovi** | Cancella l'account: conferma, poi lo slot si spegne e la sessione Teams di TeamsRelay sparisce (il tuo account Microsoft non cambia). |
+| **Aggiungi account** | Tocca per aggiungere il prossimo. Si avvia il browser remoto dello slot libero e si apre la pagina di login. Massimo 4. |
+| **Nessun account Teams** | Messaggio quando non ce n'è nessuno. Aggiungi il primo. |
+
+Notifiche: con più di un account attivo, il titolo della notifica push include l'organizzazione o l'email per riconoscere da quale account viene.
 
 ## Lista chat
 

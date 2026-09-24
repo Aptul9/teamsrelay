@@ -4,25 +4,29 @@
 
 | Servizio | Immagine | Ruolo | Esposizione |
 |---|---|---|---|
-| `chromium` | `lscr.io/linuxserver/chromium` | Teams web con la sessione in `config/`, CDP su `127.0.0.1:9222` | `127.0.0.1:3000-3001` (interfaccia del desktop) |
-| `agent` | `./agent` (Python, Playwright come client CDP) | Legge e comanda Teams, manda le push | nessuna; condivide la rete di `chromium` |
-| `webapp` | `./webapp` (FastAPI) | PWA e API | solo tramite Caddy |
-| `caddy` | `caddy:2` | HTTPS automatico, reverse proxy | `80`, `${HTTPS_BIND}:${HTTPS_PORT}` |
+| `chromium-1`, `chromium-2`, `chromium-3`, `chromium-4` | `lscr.io/linuxserver/chromium` | Teams web dell'account N, sessione in `config/N/`, CDP su `127.0.0.1:9222` | nessuna: la porta 3000 (interfaccia del desktop) la raggiunge solo Caddy |
+| `agent-1`, `agent-2`, `agent-3`, `agent-4` | `./agent` (Python, Playwright) | Legge e comanda Teams dell'account N, manda le push | nessuna; condivide la rete di `chromium-N` |
+| `webapp` | `./webapp` (FastAPI) | PWA, API, gestisce account via dockerproxy | solo tramite Caddy |
+| `dockerproxy` | `tecnativa/docker-socket-proxy` | Filtro Docker: la webapp può solo start/stop container esistenti | rete interna con webapp |
+| `caddy` | `caddy:2` | HTTPS automatico, reverse proxy, `/api/authcheck` per il desktop | `80`, `${HTTPS_BIND}:${HTTPS_PORT}` |
+
+I servizi `chromium-N` e `agent-N` sono nel profilo `accounts`: `docker compose up -d` non li avvia. `docker compose up -d --profile accounts` li attiva.
 
 L'agent si collega a `http://127.0.0.1:9222`: Chromium espone CDP solo su IPv4, e `localhost` nel container risolve prima `::1`.
 
 ## Web app e agent
 
-Web app e agent non si parlano direttamente: condividono `data/messages.db` (SQLite in WAL).
+Web app e agent di un account non si parlano direttamente: condividono `data/N/messages.db` (SQLite in WAL). Un secondo database condiviso da tutti gli account, `data/app.db`, contiene l'elenco degli account e le sottoscrizioni push.
 
 ```mermaid
 sequenceDiagram
   participant T as Telefono
   participant W as webapp
-  participant D as SQLite
-  participant A as agent
-  participant C as Teams (Chromium)
-  T->>W: POST /api/react {name, mid, emoji}
+  participant AD as data/app.db
+  participant D as data/N/messages.db
+  participant A as agent-N
+  participant C as Teams (Chromium-N)
+  T->>W: POST /api/react {a=N, name, mid, emoji}
   W->>D: INSERT commands (pending)
   W-->>T: {id}
   loop ogni ~1 s
@@ -31,12 +35,14 @@ sequenceDiagram
   A->>C: apre la chat, hover reale, click sul pulsante
   A->>C: verifica il cambio sulla pagina
   A->>D: salva la conversazione, poi status done/failed
-  T->>W: GET /api/cmd/{id}
+  T->>W: GET /api/cmd/{id}?a=N
   W-->>T: done
-  T->>W: GET /api/messages
+  T->>W: GET /api/messages?a=N
 ```
 
 Lo stato della conversazione viene salvato **prima** di segnare il comando come concluso: quando la web app vede `done` e rilegge, trova già il nuovo stato.
+
+Ogni account ha il suo agent che legge il proprio database: gli account girano in parallelo in piena indipendenza.
 
 ## Ciclo dell'agent
 
@@ -79,6 +85,10 @@ Un messaggio è nuovo quando l'anteprima o l'orario di una chat cambia con un te
 
 ## Tabelle SQLite
 
+Ogni account ha il suo `data/N/messages.db` con le tabelle qui sotto. Un database condiviso, `data/app.db`, contiene `accounts` e `push_subs`.
+
+### `data/N/messages.db` (per account)
+
 | Tabella | Contenuto |
 |---|---|
 | `chats` | lista chat: nome, anteprima, ora, non letto, menzione, silenziata, foto |
@@ -87,26 +97,46 @@ Un messaggio è nuovo quando l'anteprima o l'orario di una chat cambia con un te
 | `activity` | feed Attività |
 | `commands` | coda dei comandi della web app con esito |
 | `messages` | storico delle notifiche inviate |
-| `state` | salute, chat attiva, risultati dei comandi |
-| `push_subs` | sottoscrizioni Web Push |
+| `state` | salute (teams, watcher, hook), chat attiva, identità (name, email, tenant, photo), risultati dei comandi |
+
+### `data/app.db` (condiviso)
+
+| Tabella | Contenuto |
+|---|---|
+| `accounts` | slot, timestamp di aggiunta |
+| `push_subs` | endpoint, sottoscrizione Web Push per qualsiasi account |
 
 ## File del progetto
 
 ```
 teamsrelay/
-├── docker-compose.yml        stack di produzione
-├── compose.local.yml         override per il PC (niente Caddy, niente login)
+├── docker-compose.yml           stack di produzione
+├── compose.local.yml            override per il PC (niente Caddy, niente login)
+├── compose.local.env            variabili per lo sviluppo in locale
 ├── .env.example
-├── agent/agent.py            lettura e pilotaggio di Teams, push, salute
-├── webapp/app.py             API FastAPI, login, sessione, media e file
-├── webapp/index.html         la PWA
-├── webapp/static/            manifest, service worker, icone
-├── caddy/Caddyfile
-├── deploy/remote-deploy.sh   deploy e rollback sul server
-├── deploy/desktop-tunnel.sh  tunnel Cloudflare per il desktop
-├── .github/workflows/        CI/CD
-├── docs/                     questa documentazione (VitePress)
-└── tools/                    chiavi VAPID, icone
+├── agent/agent.py               lettura e pilotaggio di Teams, push, salute
+├── webapp/app.py                API FastAPI, login, sessione, media e file
+├── webapp/index.html            la PWA
+├── webapp/static/               manifest, service worker, icone
+├── caddy/Caddyfile              routing verso account N, HTTPS, authcheck
+├── deploy/remote-deploy.sh      deploy e rollback sul server
+├── .github/workflows/           CI/CD
+├── docs/                        questa documentazione (VitePress)
+└── tools/                       chiavi VAPID, icone
 ```
 
-Create a runtime e mai versionate: `config/` (profilo del browser con la sessione Teams), `data/`, `vapid/`.
+### Runtime (create a runtime, mai versionate)
+
+```
+teamsrelay/
+├── config/1                      profilo del browser dell'account 1 (sessione Teams)
+├── config/2, config/3, config/4  profili degli altri account
+├── data/app.db                   elenco account, sottoscrizioni push (condiviso)
+├── data/1/messages.db            chat e messaggi dell'account 1
+├── data/1/media/                 immagini scaricate dall'account 1
+├── data/1/files/                 file scaricati (SharePoint) dell'account 1
+├── data/2/, data/3/, data/4/     dati degli altri account
+├── vapid/private_key.pem         chiave privata VAPID (genera una volta)
+├── vapid/appkey.txt              chiave pubblica VAPID
+└── .caddyfile-sum                hash per rilevare cambiamenti del Caddyfile
+```
