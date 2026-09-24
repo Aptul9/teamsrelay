@@ -78,7 +78,9 @@ CHATS_JS = r"""
     else { prev=clean.slice(name.length).trim(); }
     const al=(e.getAttribute('aria-label')||'');
     const mention = !!e.querySelector('[data-tid*="mention" i],[class*="mention" i]') || /mention|menzion/i.test(al);
-    out.push({name:name.slice(0,60), preview:prev.slice(0,120), time:tm, unread:unread, mention:mention});
+    // chat silenziata: Teams lo scrive sulla riga e mette la campanella barrata al posto dell'avatar
+    const muted = e.getAttribute('data-item-type')==='muted-chat' || !!e.querySelector('[data-testid="muted-icon"]');
+    out.push({name:name.slice(0,60), preview:prev.slice(0,120), time:tm, unread:unread, mention:mention, muted:muted});
     if(out.length>=40) break;
   }
   return out;
@@ -100,6 +102,35 @@ MSGS_JS = r"""
     let t=''; for(const c of n.childNodes) t+=walk(c);
     const d=getComputedStyle(n).display;
     return (n.tagName==='P' || /^(block|flex|grid|list-item|table)$/.test(d))?t+'\n':t;
+  };
+  // corpo in HTML ridotto e sicuro: solo tag noti, colori validati, link http(s); il testo è sempre escapato
+  const escH=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const COLOR=/^(rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(,\s*[\d.]+\s*)?\)|#[0-9a-f]{3,8})$/i;
+  const TAGS={B:'b',STRONG:'b',I:'i',EM:'i',U:'u',S:'s',STRIKE:'s',DEL:'s',CODE:'code',PRE:'pre',UL:'ul',OL:'ol',LI:'li',BLOCKQUOTE:'blockquote',P:'p',H1:'h',H2:'h',H3:'h',H4:'h'};
+  const toHtml=n=>{
+    if(n.nodeType===3) return escH(n.nodeValue);
+    if(n.nodeType!==1 || n.matches(SKIP)) return '';
+    const t=n.tagName;
+    if(t==='BR') return '<br>';
+    if(t==='IMG') return isEmoji(n)?escH(n.alt||''):'';
+    if(/Mention/i.test(n.getAttribute('itemtype')||'')){
+      const me=/Mentioned you/i.test((n.closest('[data-mention-type]')||n).getAttribute('aria-label')||'');
+      return `<span class="mn${me?' me':''}">${escH(n.textContent||'')}</span>`;
+    }
+    let out=''; for(const c of n.childNodes) out+=toHtml(c);
+    if(n.hasAttribute('data-mention-type')) return out;          // contenitore della menzione: inline
+    if(t==='A'){ const h=n.getAttribute('href')||''; return /^https?:\/\//i.test(h)?`<a href="${escH(h)}" target="_blank" rel="noopener">${out}</a>`:out; }
+    const st=n.style||{};
+    if(st.color && COLOR.test(st.color.trim())) out=`<span style="color:${st.color.trim()}">${out}</span>`;
+    if(st.backgroundColor && COLOR.test(st.backgroundColor.trim())) out=`<span style="background:${st.backgroundColor.trim()}">${out}</span>`;
+    if(/^(bold|[6-9]00)$/.test(st.fontWeight||'')) out=`<b>${out}</b>`;
+    if(st.fontStyle==='italic') out=`<i>${out}</i>`;
+    if(/line-through/.test(st.textDecoration||'')) out=`<s>${out}</s>`;
+    else if(/underline/.test(st.textDecoration||'')) out=`<u>${out}</u>`;
+    const tag=TAGS[t];
+    if(tag==='h') return `<div class="h">${out}</div>`;
+    if(tag) return `<${tag}>${out}</${tag}>`;
+    return /^(block|flex|grid|list-item|table)$/.test(getComputedStyle(n).display)?`<div>${out}</div>`:out;
   };
   const out=[]; let lastAuthor='';
   for (const e of items.slice(-40)){
@@ -135,7 +166,12 @@ MSGS_JS = r"""
       const si=my&&my.querySelector('[class*="statusIcon"]'); status=si?(si.getAttribute('aria-label')||'').trim():''; }
     // Teams scrive "Edited" in un span dell'intestazione del messaggio
     const edited=[...it.querySelectorAll('span')].some(x=>!x.closest('[id^="content-"]') && /^(Edited|Modificato)$/i.test((x.textContent||'').trim()));
-    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files, reactions:reactions, status:status, edited:edited});
+    let html=bd?toHtml(bd):'';
+    // contenitori vuoti (es. quello della GIF, estratta a parte) e paragrafi vuoti in testa o in coda
+    for(let k=0;k<4;k++) html=html.replace(/<div>\s*<\/div>/g,'');
+    html=html.replace(/^(\s|<div>|<p>[\s\u00a0]*<\/p>)+/,m=>m.replace(/<p>[\s\u00a0]*<\/p>/g,'')).replace(/(<p>[\s\u00a0]*<\/p>|\s)+(?=(<\/div>)*$)/,'').slice(0,20000);
+    const mentionsMe=!!(bd && bd.querySelector('[data-mention-type][aria-label="Mentioned you"]'));
+    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files, reactions:reactions, status:status, edited:edited, html:html, mentionsMe:mentionsMe});
   }
   return out;
 }
@@ -184,6 +220,7 @@ def db_init():
             c.execute("CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, source TEXT, title TEXT, body TEXT)")
             # niente DROP: a ogni riavvio dell'agent la web app deve continuare a mostrare chat e messaggi
             c.execute("CREATE TABLE IF NOT EXISTS chats(name TEXT PRIMARY KEY, preview TEXT, pos INTEGER, ts INTEGER, tm TEXT, unread INTEGER, mention INTEGER)")
+            if "muted" not in {r[1] for r in c.execute("PRAGMA table_info(chats)")}: c.execute("ALTER TABLE chats ADD COLUMN muted INTEGER DEFAULT 0")
             c.execute("CREATE TABLE IF NOT EXISTS chat_messages(chat TEXT, idx INTEGER, mid TEXT, author TEXT, text TEXT, mine INTEGER, reacts TEXT, extra TEXT)")
             cols={r[1] for r in c.execute("PRAGMA table_info(chat_messages)")}
             if "extra" not in cols: c.execute("ALTER TABLE chat_messages ADD COLUMN extra TEXT")
@@ -207,12 +244,12 @@ def save_chats(chats, replace=False):
     try:
         with dbc() as c:
             seen = {ch["name"] for ch in chats}
-            old = [dict(name=r[0], preview=r[1], time=r[2], unread=r[3], mention=r[4])
-                   for r in c.execute("SELECT name,preview,tm,unread,mention FROM chats ORDER BY pos")]
+            old = [dict(name=r[0], preview=r[1], time=r[2], unread=r[3], mention=r[4], muted=r[5])
+                   for r in c.execute("SELECT name,preview,tm,unread,mention,muted FROM chats ORDER BY pos")]
             if not replace: chats = (list(chats) + [o for o in old if o["name"] not in seen])[:40]
             c.execute("DELETE FROM chats")
             for i,ch in enumerate(chats):
-                c.execute("INSERT OR REPLACE INTO chats(name,preview,pos,ts,tm,unread,mention) VALUES(?,?,?,?,?,?,?)",(ch["name"],ch.get("preview",""),i,int(time.time()),ch.get("time",""),1 if ch.get("unread") else 0,1 if ch.get("mention") else 0))
+                c.execute("INSERT OR REPLACE INTO chats(name,preview,pos,ts,tm,unread,mention,muted) VALUES(?,?,?,?,?,?,?,?)",(ch["name"],ch.get("preview",""),i,int(time.time()),ch.get("time",""),1 if ch.get("unread") else 0,1 if ch.get("mention") else 0,1 if ch.get("muted") else 0))
     except Exception as e: print("save_chats:", e, flush=True)
 
 def save_chat_messages(chat, msgs):
@@ -220,7 +257,7 @@ def save_chat_messages(chat, msgs):
         with dbc() as c:
             c.execute("DELETE FROM chat_messages WHERE chat=?",(chat,))
             for i,m in enumerate(msgs):
-                extra={k:m[k] for k in ("quote","images","files","reactions","status","edited","readby") if m.get(k)}
+                extra={k:m[k] for k in ("quote","images","files","reactions","status","edited","readby","html","mentionsMe") if m.get(k)}
                 c.execute("INSERT INTO chat_messages(chat,idx,mid,author,text,mine,reacts,extra) VALUES(?,?,?,?,?,?,?,?)",(chat,i,m.get("mid",""),m.get("author",""),m.get("text",""),1 if m.get("mine") else 0,m.get("reacts",""),json.dumps(extra,ensure_ascii=False) if extra else ""))
     except Exception as e: print("save_cm:", e, flush=True)
 
@@ -314,7 +351,7 @@ def scan_new_messages(chats):
         if not _scan_primed:
             _prev_sig[name] = sig; _prev_unread[name] = unread
             continue
-        if "(you)" in name.lower():
+        if "(you)" in name.lower() or ch.get("muted"):
             _prev_sig[name] = sig; _prev_unread[name] = unread; continue
         low = prev.lower()
         outbound = low.startswith("you:") or low.startswith("tu:")

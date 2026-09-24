@@ -126,7 +126,7 @@ def activity_refresh(request: Request):
     check(request); return {"ok": True, "id": command("activity")}
 @app.get("/api/chats")
 def chats(request: Request):
-    check(request); return JSONResponse(q("SELECT name,preview,tm,unread,mention FROM chats ORDER BY pos"))
+    check(request); return JSONResponse(q("SELECT name,preview,tm,unread,mention,muted FROM chats ORDER BY pos"))
 @app.get("/api/messages")
 def messages(request: Request, name: str):
     check(request)

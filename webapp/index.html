@@ -60,6 +60,7 @@
   .rtime{ font-size:12px; color:var(--sub); flex:none; }
   .rbot{ display:flex; align-items:center; gap:8px; margin-top:2px; }
   .rprev{ flex:1; color:var(--sub); font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .rprev.unread{ color:var(--ink); font-weight:600; }
+  .av.muted{ background:var(--accent); color:var(--sub); }
   .dot{ width:11px; height:11px; border-radius:50%; background:var(--red); flex:none; }
   .sep{ height:1px; background:var(--line); margin:0 0 0 66px; }
   .empty{ text-align:center; color:var(--sub); margin-top:44px; padding:0 24px; font-size:14.5px; }
@@ -80,6 +81,16 @@
   .b.me{ align-self:flex-end; background:var(--brand); color:#fff; border-top-right-radius:2px; }
   .b .au{ font-size:11px; color:var(--brand); font-weight:700; margin-bottom:2px; }
   .b .st{ font-size:10.5px; margin-top:3px; text-align:right; opacity:.8; }
+  /* corpo formattato come in Teams (HTML ridotto prodotto dall'agent) */
+  .b .tx{ white-space:normal; } .b .tx p{ margin:0; } .b .tx .h{ font-weight:800; }
+  .b .tx pre{ white-space:pre-wrap; font:13px/1.4 ui-monospace,Consolas,monospace; background:rgba(0,0,0,.06); padding:6px 9px; border-radius:6px; margin:4px 0; }
+  .b .tx code{ font:13px ui-monospace,Consolas,monospace; background:rgba(0,0,0,.06); padding:0 4px; border-radius:4px; }
+  .b .tx pre code{ background:none; padding:0; }
+  .b .tx ul, .b .tx ol{ margin:3px 0; padding-left:22px; } .b .tx blockquote{ margin:4px 0; padding-left:9px; border-left:3px solid currentColor; opacity:.85; }
+  .b .tx a{ color:inherit; text-decoration:underline; }
+  .b .mn{ color:var(--brand); font-weight:700; } .b .mn.me{ color:#c4314b; }
+  .b.me .mn{ color:#fff; text-decoration:underline; }
+  .b .atme{ color:#c4314b; font-weight:900; float:right; margin-left:10px; }
   .b .q{ border-left:3px solid currentColor; opacity:.75; padding:2px 8px; margin:2px 0 6px; font-size:13px; white-space:normal; }
   .b .q .qa{ font-weight:700; font-size:11.5px; }
   .b .im{ display:block; margin:2px 0 4px; } .b .im img{ display:block; max-width:100%; height:auto; max-height:320px; object-fit:contain; border-radius:6px; }
@@ -179,6 +190,7 @@
   const $=id=>document.getElementById(id);
   const esc=s=>{const e=document.createElement('div');e.textContent=s||'';return e.innerHTML;};
   const isSelf=n=>/\(you\)/i.test(n||'');
+  const BELL_OFF='<svg viewBox="0 0 20 20" width="20" height="20" fill="currentColor" aria-label="Silenziata"><path d="M4 7.57c.04-.82.24-1.59.58-2.28L2.15 2.85a.5.5 0 1 1 .7-.7l15 15a.5.5 0 0 1-.7.7L14.3 15h-1.8v.17a2.5 2.5 0 0 1-5 0V15H4a1 1 0 0 1-.26-.03l-.13-.04a1 1 0 0 1-.6-1.05l.02-.13.05-.13L4 11.4V7.57ZM13.3 14 5.34 6.05a4.6 4.6 0 0 0-.32 1.33L5 7.6V11.5l-.04.2L4 14h9.3Zm-1.8 1h-3v.14a1.5 1.5 0 0 0 1.36 1.34l.14.01c.78 0 1.42-.6 1.5-1.36V15ZM10 3a5 5 0 0 1 5 4.78V11.4l.87 2.1-.95-.95L14 10.6V8a4 4 0 0 0-6.63-3.01l-.7-.7A4.98 4.98 0 0 1 10 3Z"/></svg>';
   const initials=s=>{s=(s||'?').trim().replace(/\(.*?\)/g,'').trim();const p=s.split(/[\s,]+/).filter(Boolean);return((p[0]?.[0]||'')+(p[1]?.[0]||'')||s[0]||'?').toUpperCase();};
   const AVC=['#6264a7','#0a7cbb','#498205','#c19c00','#ca5010','#b4009e','#008272','#e3008c','#5c2e91','#986f0b'];
   const avColor=s=>{let h=0;for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return AVC[h%AVC.length];};
@@ -250,11 +262,11 @@
       if(!sortDesc) rest=rest.slice().reverse();
       const list = self ? [self,...rest] : rest;
       const box=$('listB'); const ptr=$('ptr').outerHTML;
-      let unreadN=chats.filter(c=>c.unread&&!isSelf(c.name)).length;
+      let unreadN=chats.filter(c=>c.unread&&!c.muted&&!isSelf(c.name)).length;   // come Teams: le silenziate non contano
       if(!list.length){ box.innerHTML=ptr+'<div class="empty">Nessuna conversazione'+(filterMode!=='all'?' con questo filtro':'')+'.</div>'; }
       else{ let html=ptr; list.forEach((c,i)=>{
         html+=`<div class="row" onclick="enterConv(this.dataset.n)" data-n="${esc(c.name)}">
-          <div class="av" style="background:${avColor(c.name)}">${isSelf(c.name)?'★':esc(initials(c.name))}</div>
+          <div class="av${c.muted?' muted':''}" style="background:${c.muted?'':avColor(c.name)}">${c.muted?BELL_OFF:(isSelf(c.name)?'★':esc(initials(c.name)))}</div>
           <div class="rc"><div class="rtop"><div class="rname${c.unread?' unread':''}">${esc(c.name)}</div><div class="rtime">${esc(c.tm||'')}</div></div>
           <div class="rbot"><div class="rprev${c.unread?' unread':''}">${esc(c.preview||'')}</div>${c.unread?'<div class="dot"></div>':''}</div></div></div>`;
         if(i<list.length-1) html+='<div class="sep"></div>';
@@ -305,7 +317,7 @@
       const qHtml=m.quote?`<div class="q"><div class="qa">${esc(m.quote.author)}</div>${esc(m.quote.text)}</div>`:'';
       const iHtml=imgs.map(i=>{ const u=i.f?'/media/'+i.f:i.url; return `<a class="im" href="${esc(u)}" target="_blank" onclick="event.stopPropagation()"><img src="${esc(u)}" alt=""${i.w&&i.h?` width="${i.w}" height="${i.h}"`:''}></a>`; }).join('');
       const fHtml=files.map(f=>`<a class="fl" href="${esc(f.url)}" data-url="${esc(f.url)}" data-name="${esc(f.name)}" onclick="event.stopPropagation(); return getFile(event,this)">📎 ${esc(f.name)}<span class="fl-s">Tocca per scaricare</span></a>`).join('');
-      html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}</div>`:'')}${qHtml}${iHtml}${esc(pe||m.text)}${fHtml}${!m.mine&&m.edited?'<div class="st">Modificato</div>':''}${m.mine?`<div class="st">${st}</div>`:''}${rcHtml}</div>`; });
+      html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}${m.mentionsMe?'<span class="atme">@</span>':''}</div>`:'')}${qHtml}${iHtml}${(!pe&&m.html)?`<div class="tx">${m.html}</div>`:esc(pe||m.text)}${fHtml}${!m.mine&&m.edited?'<div class="st">Modificato</div>':''}${m.mine?`<div class="st">${st}</div>`:''}${rcHtml}</div>`; });
     pending.forEach(p=>{ const failed=Date.now()-p.ts>14000; html+=`<div class="b me" style="opacity:.72">${esc(p.text)}<div class="st ${failed?'err':''}">${failed?'✗ Non inviato — riprova':'🕓 Invio…'}</div></div>`; });
     // riscrive il DOM solo se qualcosa è cambiato: altrimenti a ogni poll le immagini lampeggiano
     if(html===box._html && !first) return;
