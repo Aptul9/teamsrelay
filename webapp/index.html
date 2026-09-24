@@ -43,7 +43,7 @@
   .reactbar{ position:fixed; z-index:60; background:var(--card); border:1px solid var(--line); border-radius:26px; box-shadow:0 8px 30px rgba(0,0,0,.32); padding:5px 8px; display:flex; gap:2px; }
   .reactbar button{ border:0; background:transparent; font-size:25px; padding:5px 6px; border-radius:50%; line-height:1; }
   .reactbar button:active{ background:var(--accent); transform:scale(1.15); }
-  .react{ display:inline-block; background:var(--card); border:1px solid var(--line); border-radius:11px; padding:1px 7px; font-size:13px; margin-top:4px; }
+  .react{ display:inline-block; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:11px; padding:1px 7px; font-size:13px; margin-top:4px; white-space:nowrap; }
   main{ flex:1; overflow:hidden; position:relative; }
   .view{ position:absolute; inset:0; display:none; flex-direction:column; } .view.on{ display:flex; }
   .list{ overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:4px 8px 20px; flex:1; }
@@ -213,11 +213,15 @@
     let html='';
     lastMsgs.forEach(m=>{ const imgs=m.images||[], files=m.files||[];
       if(!(m.text||'').trim() && !imgs.length && !files.length) return; const mid=String(m.mid||''); const rc=localReacts[mid]||[];
-      const rcHtml=rc.length?`<div class="react">${rc.map(e=>EMO[e]||'').join(' ')}</div>`:'';
+      // reazioni lette da Teams, più quelle appena messe dall'app e non ancora comparse su Teams
+      const tr=(m.reactions||[]).map(r=>r.e+(r.n>1?' '+r.n:''));
+      const lr=rc.map(e=>EMO[e]||'').filter(x=>x && !(m.reactions||[]).some(r=>r.e===x));
+      const rcAll=tr.concat(lr); const rcHtml=rcAll.length?`<div>${rcAll.map(x=>`<span class="react">${esc(x)}</span>`).join(' ')}</div>`:'';
+      const st=/seen|read/i.test(m.status||'')?'👁 Visualizzato':'✓ Inviato';
       const qHtml=m.quote?`<div class="q"><div class="qa">${esc(m.quote.author)}</div>${esc(m.quote.text)}</div>`:'';
       const iHtml=imgs.map(i=>{ const u=i.f?'/media/'+i.f:i.url; return `<a class="im" href="${esc(u)}" target="_blank" onclick="event.stopPropagation()"><img src="${esc(u)}" alt=""${i.w&&i.h?` width="${i.w}" height="${i.h}"`:''}></a>`; }).join('');
       const fHtml=files.map(f=>`<a class="fl" href="${esc(f.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📎 ${esc(f.name)}</a>`).join('');
-      html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}</div>`:'')}${qHtml}${iHtml}${esc(m.text)}${fHtml}${m.mine?'<div class="st">✓ Inviato</div>':''}${rcHtml}</div>`; });
+      html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}</div>`:'')}${qHtml}${iHtml}${esc(m.text)}${fHtml}${m.mine?`<div class="st">${st}</div>`:''}${rcHtml}</div>`; });
     pending.forEach(p=>{ const failed=Date.now()-p.ts>14000; html+=`<div class="b me" style="opacity:.72">${esc(p.text)}<div class="st ${failed?'err':''}">${failed?'✗ Non inviato — riprova':'🕓 Invio…'}</div></div>`; });
     // riscrive il DOM solo se qualcosa è cambiato: altrimenti a ogni poll le immagini lampeggiano
     if(html===box._html && !first) return;

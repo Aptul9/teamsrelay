@@ -41,6 +41,8 @@ TeamsRelay risolve così: un Chromium in un container sul tuo server tiene apert
 
 - **Chat stile Teams mobile**: avatar, nome, anteprima, orario, pallino dei non letti, contatore sul tab. La chat con te stesso resta fissata in alto.
 - **Leggi e rispondi** alle chat 1:1 e di gruppo, con il nome dell'autore nei gruppi.
+- **Immagini, GIF, emoji, file e citazioni** come su Teams: le immagini vengono scaricate dall'agent in `data/media`, i file compaiono col nome e il link SharePoint.
+- **Reazioni e "Visualizzato"** letti da Teams: le reazioni ricevute sotto ogni messaggio e lo stato *Inviato* / *Visualizzato* dei tuoi messaggi.
 - **Stato di invio reale**: il messaggio passa da *Invio…* a **✓ Inviato** solo quando compare davvero nella conversazione su Teams. Se non compare entro 14 secondi vedi *✗ Non inviato*.
 - **Reazioni** 👍 ❤️ 😂 😮 😢 😡: tocchi un messaggio, scegli la reazione e questa viene applicata davvero su Teams.
 - **Filtri**: Tutte / Non lette / @Menzioni / ordine dalle più recenti o dalle meno recenti.
@@ -87,7 +89,6 @@ Questi punti sono stati verificati sul campo, non sono supposizioni:
 | Limite | Dettaglio |
 |---|---|
 | **Presenza (verde/giallo) non impostabile** | Nei test Teams ha lasciato lo stato su "Unknown" in tutti i casi provati: scheda visibile, attività simulata, pulsante "Disponibile" e API di presenza. È probabile che dipenda dalle policy del tenant, ma non è dimostrato. La presenza si imposta da un client Teams "vero" (per esempio dal PC). |
-| **"Visualizzato" / conferme di lettura** | Teams web non espone lo stato "letto" dei tuoi messaggi nella pagina, quindi TeamsRelay non può mostrarlo. |
 | **La sessione Teams scade periodicamente** | Il conditional access invalida i token. Teams passa in "modalità ridotta" (`REDUCED_CAPABILITIES_CHATS`, "Chats are temporarily unavailable") e **smette di sincronizzare**, mostrando la cache vecchia. TeamsRelay se ne accorge (stato rosso + push) e tu **rifai il login** dal desktop remoto. Vedi [Manutenzione](#stato-rosso-login-scaduto). |
 | **Solo chat** | Chat 1:1 e di gruppo: le prime 25 della lista e gli ultimi 40 messaggi della chat aperta. I canali dei Team non sono gestiti. |
 | **Latenza** | Rilevamento ogni ~3–4 s, più il tempo di consegna della push. |

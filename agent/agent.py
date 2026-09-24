@@ -126,8 +126,14 @@ MSGS_JS = r"""
         if(name && !files.some(f=>f.url===url)) files.push({name:name.trim().slice(0,160), url:url});
       }
     }
-    let reacts=''; try{ const rc=[...e.querySelectorAll('[aria-label*="reaction" i]')]; reacts=rc.map(x=>(x.getAttribute('aria-label')||'').trim()).filter(Boolean).join(' | ').slice(0,160); }catch(_){}
-    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files});
+    // reazioni presenti su Teams: una pill per emoji, col conteggio nel testo ("2 Like reactions.")
+    const reactions=[...it.querySelectorAll('[data-tid="diverse-reaction-pill-button"]')].map(x=>({
+      e:[...x.querySelectorAll('img')].map(i=>i.alt).join(''), n:parseInt((x.innerText||'').trim(),10)||1 })).filter(r=>r.e);
+    const reacts=reactions.map(r=>r.e+(r.n>1?r.n:'')).join(' ');
+    // stato dei miei messaggi: Teams mette l'icona "Seen" sull'ultimo letto dall'altra parte
+    let status=''; if(mine){ const my=e.closest('.fui-ChatMyMessage')||it.querySelector('.fui-ChatMyMessage');
+      const si=my&&my.querySelector('[class*="statusIcon"]'); status=si?(si.getAttribute('aria-label')||'').trim():''; }
+    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files, reactions:reactions, status:status});
   }
   return out;
 }
@@ -180,7 +186,7 @@ def save_chat_messages(chat, msgs):
         with dbc() as c:
             c.execute("DELETE FROM chat_messages WHERE chat=?",(chat,))
             for i,m in enumerate(msgs):
-                extra={k:m[k] for k in ("quote","images","files") if m.get(k)}
+                extra={k:m[k] for k in ("quote","images","files","reactions","status") if m.get(k)}
                 c.execute("INSERT INTO chat_messages(chat,idx,mid,author,text,mine,reacts,extra) VALUES(?,?,?,?,?,?,?,?)",(chat,i,m.get("mid",""),m.get("author",""),m.get("text",""),1 if m.get("mine") else 0,m.get("reacts",""),json.dumps(extra,ensure_ascii=False) if extra else ""))
     except Exception as e: print("save_cm:", e, flush=True)
 
