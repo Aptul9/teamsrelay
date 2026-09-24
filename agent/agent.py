@@ -1017,14 +1017,17 @@ def main():
                     if ctype not in ("react","edit","download","activity","reply","delete","undodelete"): done_command(cid)
                     # i comandi possono durare secondi: la lista chat non deve restare ferma nel frattempo
                     scan_chats(page)
-                if tick % 300 == 1: scan_chats_full(page)
+                # finché Teams non è connesso (login da fare o sessione scaduta) non c'è nulla da scorrere o leggere
+                try: teams_ok = json.loads(get_state("health") or "{}").get("teams") == "ok"
+                except Exception: teams_ok = False
+                if tick % 300 == 1 and teams_ok: scan_chats_full(page)
                 elif tick % 3 == 0: scan_chats(page)
-                if tick % 150 == 5: read_activity(page)
+                if tick % 150 == 5 and teams_ok: read_activity(page)
                 if tick % 5 == 0:
                     update_health(page)
                 ac=get_state("active_chat")
                 if ac: save_open_chat(page, ac)
-                if ac and tick % 2 == 0 and not pending_commands(): prefetch_readby(page, ac)
+                if ac and teams_ok and tick % 2 == 0 and not pending_commands(): prefetch_readby(page, ac)
                 # check programmato 2x/giorno
                 slot=selfcheck_slot()
                 if slot:
