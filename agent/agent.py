@@ -47,12 +47,22 @@ DRAIN_JS = "() => { const m=window.__teamsMsgs||[]; window.__teamsMsgs=[]; retur
 CHATS_JS = r"""
 () => {
   const STAT=/\b(Unread|Offline|Away|Available|Busy|Do not disturb|Be right back|Presence unknown|Out of office)\b/gi;
-  const tis=[...document.querySelectorAll('[role="treeitem"][id^="menu"]')];
+  // Le chat sono solo i figli (aria-level 2) delle sezioni Chats e Favorites; Quick views (Mentions, Drafts) no.
+  // Se una sezione è chiusa le sue chat non sono nel DOM: la riapre.
+  const SECT=/^(Chats|Chat|Favorites|Preferiti)\b/i;
+  const hd=s=>s.querySelector(':scope > :not([role="group"])')||s;
+  const head=s=>(hd(s).innerText||'').replace(/\s+/g,' ').trim();
+  for (const s of document.querySelectorAll('[role="treeitem"][aria-level="1"][aria-expanded="false"]')){
+    if(SECT.test(head(s))) hd(s).click();
+  }
+  const tis=[...document.querySelectorAll('[role="treeitem"][aria-level="2"][id^="menu"]')].filter(e=>{
+    const s=e.parentElement && e.parentElement.closest('[role="treeitem"][aria-level="1"]');
+    return s && SECT.test(head(s));
+  });
   const out=[]; const seen=new Set();
   for (const e of tis){
     let txt=(e.innerText||'').replace(/\s+/g,' ').trim();
     if(!txt) continue;
-    if(e.querySelector('[role="treeitem"]')) continue;   // salta i contenitori/sezioni che concatenano piu' chat
     if(/^(Copilot|Drafts|Quick views.*|Favorites|Chats|Meet now|Activity|Unread)$/i.test(txt)) continue;
     const unread = !!e.querySelector('[data-tid="unread"]');
     let clean=txt.replace(/^(Favorites|Chats|Quick views|Recent|Drafts)\s+/i,'').replace(STAT,'').replace(/\s+/g,' ').trim();
@@ -295,7 +305,8 @@ def teams_page(ctx):
         u=""
         try: u=p.url or ""
         except Exception: continue
-        if "teams.microsoft.com" in u and "serviceworker" not in u: return p
+        # Teams web ora reindirizza da teams.microsoft.com a teams.cloud.microsoft
+        if ("teams.microsoft.com" in u or "teams.cloud.microsoft" in u) and "serviceworker" not in u: return p
     return None
 
 def open_chat(page, name):
