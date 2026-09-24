@@ -1,0 +1,27 @@
+# Local test overlay (Docker Desktop). Not for production.
+#   docker compose -f docker-compose.yml -f compose.local.yml up -d --build chromium agent webapp
+# Caddy is left out: http://localhost:8090 is already a secure context, so the
+# service worker and Web Push work without a certificate.
+# SQLite and the Chromium profile live in named volumes instead of bind mounts
+# on the Windows filesystem, where file locking and symlinks are unreliable.
+# No login on either page: both listen on 127.0.0.1 only.
+services:
+  chromium:
+    environment:
+      - PASSWORD=
+    volumes:
+      - tr_config:/config
+  agent:
+    volumes:
+      - tr_data:/data
+  webapp:
+    environment:
+      - NO_AUTH=1
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - tr_data:/data
+
+volumes:
+  tr_config:
+  tr_data:

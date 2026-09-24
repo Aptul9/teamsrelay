@@ -9,7 +9,9 @@ import uvicorn
 DB_PATH     = os.environ.get("DB_PATH", "/data/messages.db")
 UI_USER     = os.environ.get("UI_USER", "")
 UI_PASS     = os.environ.get("UI_PASS", "")
-if not UI_USER or not UI_PASS:
+# NO_AUTH=1 solo per il test locale (compose.local.yml): la web app ascolta su 127.0.0.1 e non chiede login.
+NO_AUTH     = os.environ.get("NO_AUTH", "0") == "1"
+if not NO_AUTH and (not UI_USER or not UI_PASS):
     raise SystemExit("UI_USER e UI_PASS sono obbligatori: impostali nel file .env")
 # URL del desktop remoto (tab "Desktop"). Se esiste data/desktop_url.txt (scritto dal tunnel) ha la precedenza.
 DESKTOP_URL = os.environ.get("DESKTOP_URL", "")
@@ -26,6 +28,8 @@ def _tok():
     return hmac.new(SECRET.encode(), b"sess", hashlib.sha256).hexdigest()
 
 def authed(request: Request) -> bool:
+    if NO_AUTH:
+        return True
     ck = request.cookies.get("sess")
     if ck and hmac.compare_digest(ck, _tok()):
         return True

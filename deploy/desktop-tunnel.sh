@@ -5,6 +5,8 @@
 TR_DIR="${TR_DIR:-/opt/teamsrelay}"
 CF="${CLOUDFLARED:-$(command -v cloudflared)}"
 [ -x "$CF" ] || { echo "cloudflared non trovato: installalo (vedi README)" >&2; exit 1; }
+# Il tunnel rende il desktop pubblico: senza DESKTOP_PASS chiunque abbia l'URL entrerebbe nel tuo Teams.
+grep -qE '^DESKTOP_PASS=.+' "$TR_DIR/.env" 2>/dev/null || { echo "DESKTOP_PASS vuota in $TR_DIR/.env: tunnel non avviato" >&2; exit 1; }
 LOG=/tmp/cf-desktop.log; rm -f "$LOG"
 "$CF" tunnel --url http://localhost:3000 --no-autoupdate > "$LOG" 2>&1 &
 CFPID=$!

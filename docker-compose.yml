@@ -11,8 +11,8 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=${TZ:-UTC}
-      - CUSTOM_USER=${DESKTOP_USER:?imposta DESKTOP_USER in .env}
-      - PASSWORD=${DESKTOP_PASS:?imposta DESKTOP_PASS in .env}
+      - CUSTOM_USER=${DESKTOP_USER:-}
+      - PASSWORD=${DESKTOP_PASS:-}
       - CHROME_CLI=--remote-debugging-port=9222 --remote-allow-origins=* https://teams.microsoft.com/
     volumes:
       - ./config:/config
@@ -53,8 +53,8 @@ services:
     container_name: teams-webapp
     environment:
       - DB_PATH=/data/messages.db
-      - UI_USER=${UI_USER:?imposta UI_USER in .env}
-      - UI_PASS=${UI_PASS:?imposta UI_PASS in .env}
+      - UI_USER=${UI_USER:-}
+      - UI_PASS=${UI_PASS:-}
       - SESSION_SECRET=${SESSION_SECRET:-}
       - DESKTOP_URL=${DESKTOP_URL:-}
       - VAPID_APPKEY=/vapid/appkey.txt
