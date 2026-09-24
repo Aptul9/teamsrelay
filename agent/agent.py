@@ -189,6 +189,7 @@ def db_init():
             if "extra" not in cols: c.execute("ALTER TABLE chat_messages ADD COLUMN extra TEXT")
             c.execute("CREATE TABLE IF NOT EXISTS commands(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, type TEXT, arg1 TEXT, arg2 TEXT, status TEXT DEFAULT 'pending')")
             c.execute("CREATE TABLE IF NOT EXISTS state(k TEXT PRIMARY KEY, v TEXT)")
+            c.execute("CREATE TABLE IF NOT EXISTS readby(mid TEXT PRIMARY KEY, chat TEXT, label TEXT, names TEXT, ts INTEGER)")
             c.execute("CREATE TABLE IF NOT EXISTS activity(id TEXT PRIMARY KEY, pos INTEGER, kind TEXT, actor TEXT, title TEXT, emoji TEXT, preview TEXT, tm TEXT, chat TEXT, unread INTEGER, ts INTEGER)")
             if "channel" not in {r[1] for r in c.execute("PRAGMA table_info(activity)")}: c.execute("ALTER TABLE activity ADD COLUMN channel INTEGER")
             c.execute("CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, sub TEXT)")
@@ -219,7 +220,7 @@ def save_chat_messages(chat, msgs):
         with dbc() as c:
             c.execute("DELETE FROM chat_messages WHERE chat=?",(chat,))
             for i,m in enumerate(msgs):
-                extra={k:m[k] for k in ("quote","images","files","reactions","status","edited") if m.get(k)}
+                extra={k:m[k] for k in ("quote","images","files","reactions","status","edited","readby") if m.get(k)}
                 c.execute("INSERT INTO chat_messages(chat,idx,mid,author,text,mine,reacts,extra) VALUES(?,?,?,?,?,?,?,?)",(chat,i,m.get("mid",""),m.get("author",""),m.get("text",""),1 if m.get("mine") else 0,m.get("reacts",""),json.dumps(extra,ensure_ascii=False) if extra else ""))
     except Exception as e: print("save_cm:", e, flush=True)
 
@@ -485,7 +486,53 @@ def read_open_messages(page, chat):
             if fn: imgs.append({"f": fn, "w": im.get("w", 0), "h": im.get("h", 0)})
             elif (im.get("src") or "").startswith("https://"): imgs.append({"url": im["src"], "w": im.get("w", 0), "h": im.get("h", 0)})
         m["images"] = imgs
+    rb = readby_cache([m.get("mid", "") for m in msgs if m.get("mine")])
+    for m in msgs:
+        if m.get("mid") in rb: m["readby"] = rb[m["mid"]]
     return msgs
+
+# ---- "Letto da" nei gruppi, raccolto in background ----
+# Teams lo espone solo nel menu More options di ogni messaggio: l'agent lo legge quando è libero,
+# un messaggio alla volta, e la web app lo mostra già pronto sotto il messaggio.
+READBY_RECENT = 5        # quanti miei messaggi recenti tenere aggiornati per chat
+READBY_EVERY  = 60       # secondi fra due letture dello stesso messaggio finché non l'hanno letto tutti
+
+def readby_cache(mids):
+    if not mids: return {}
+    try:
+        with dbc() as c:
+            q = "SELECT mid,label,names FROM readby WHERE mid IN (%s)" % ",".join("?" * len(mids))
+            return {r[0]: {"label": r[1], "names": json.loads(r[2] or "[]")} for r in c.execute(q, mids)}
+    except Exception: return {}
+
+def readby_done(label):
+    m = re.match(r"Read by (\d+) of (\d+)", label or "")
+    return bool(m) and m.group(1) == m.group(2)
+
+def prefetch_readby(page, chat):
+    """Aggiorna il "letto da" di un mio messaggio recente della chat aperta. Ritorna True se ha lavorato."""
+    if not chat or get_state(f"chat_1to1:{chat}") == "1": return False
+    try:
+        with dbc() as c:
+            mine = [r[0] for r in c.execute("SELECT mid FROM chat_messages WHERE chat=? AND mine=1 AND mid<>'' ORDER BY idx DESC LIMIT ?", (chat, READBY_RECENT))]
+            known = {r[0]: (r[1], r[2]) for r in c.execute("SELECT mid,label,ts FROM readby WHERE chat=?", (chat,))}
+    except Exception: return False
+    now = int(time.time())
+    todo = [mid for mid in mine if mid not in known or (not readby_done(known[mid][0]) and now - known[mid][1] > READBY_EVERY)]
+    if not todo: return False
+    mid = todo[0]
+    res = read_receipts(page, chat, mid)
+    if res is None: return True
+    if not res.get("label"):
+        set_state(f"chat_1to1:{chat}", "1")      # chat 1:1: basta lo stato Seen
+        return True
+    try:
+        with dbc() as c:
+            c.execute("INSERT OR REPLACE INTO readby(mid,chat,label,names,ts) VALUES(?,?,?,?,?)",
+                      (mid, chat, res["label"], json.dumps(res.get("names") or [], ensure_ascii=False), now))
+    except Exception as e: print("readby save:", e, flush=True)
+    save_open_chat(page, chat)
+    return True
 
 def save_open_chat(page, chat):
     msgs = read_open_messages(page, chat)
@@ -801,13 +848,6 @@ def main():
                         fn=download_file(page,a1,args.get("name",""))
                         if fn: set_state(f"cmd_result:{cid}", json.dumps({"f": fn}))
                         set_cmd_result(cid, "done" if fn else "failed")
-                    elif ctype=="readby":
-                        try: args=json.loads(a2 or "{}")
-                        except Exception: args={}
-                        res=read_receipts(page,a1,args.get("mid",""))
-                        if res is not None: set_state(f"cmd_result:{cid}", json.dumps(res, ensure_ascii=False))
-                        set_cmd_result(cid, "done" if res is not None else "failed")
-                        set_state("active_chat",a1); save_open_chat(page, a1)
                     elif ctype in ("react","edit"):
                         # arg1 = chat, arg2 = JSON {mid, emoji|text}
                         try: args=json.loads(a2 or "{}")
@@ -817,7 +857,7 @@ def main():
                         else: ok=edit_message(page,a1,args.get("mid",""),args.get("text",""))
                         set_cmd_result(cid, "done" if ok else "failed")
                         set_state("active_chat",a1); save_open_chat(page, a1)
-                    if ctype not in ("react","edit","readby","download","activity"): done_command(cid)
+                    if ctype not in ("react","edit","download","activity"): done_command(cid)
                     # i comandi possono durare secondi: la lista chat non deve restare ferma nel frattempo
                     scan_chats(page)
                 if tick % 300 == 1: scan_chats_full(page)
@@ -827,6 +867,7 @@ def main():
                     update_health(page)
                 ac=get_state("active_chat")
                 if ac: save_open_chat(page, ac)
+                if ac and tick % 2 == 0 and not pending_commands(): prefetch_readby(page, ac)
                 # check programmato 2x/giorno
                 slot=selfcheck_slot()
                 if slot:

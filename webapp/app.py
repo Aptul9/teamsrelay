@@ -223,14 +223,6 @@ def edit_api(request: Request, r: EditReq):
     if not r.text.strip(): raise HTTPException(400, detail="Testo vuoto")
     return {"ok": True, "id": command("edit", r.name, json.dumps({"mid": r.mid, "text": r.text}))}
 
-class ReadByReq(BaseModel):
-    name: str
-    mid: str
-@app.post("/api/readby")
-def readby_api(request: Request, r: ReadByReq):
-    check(request)
-    return {"ok": True, "id": command("readby", r.name, json.dumps({"mid": r.mid}))}
-
 class DownloadReq(BaseModel):
     url: str
     name: str

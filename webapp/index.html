@@ -90,11 +90,6 @@
   .editbar{ display:flex; align-items:center; gap:8px; padding:7px 14px; background:var(--accent); color:var(--brand); font-size:13.5px; font-weight:700; border-top:1px solid var(--line); }
   .editbar span{ flex:1; } .editbar button{ border:0; background:transparent; color:var(--brand); font-size:17px; font-weight:800; }
   .reactbar .rb-edit{ font-size:14px; font-weight:700; color:var(--brand); border-radius:16px; padding:6px 10px; border-left:1px solid var(--line); }
-  .sheet{ position:fixed; inset:0; z-index:90; background:rgba(0,0,0,.35); display:none; align-items:flex-end; justify-content:center; }
-  .sheet.on{ display:flex; }
-  .sh{ background:var(--card); width:min(520px,100%); border-radius:16px 16px 0 0; padding:16px 16px calc(env(safe-area-inset-bottom) + 12px); max-height:70vh; overflow:auto; }
-  .sh-t{ font-weight:800; font-size:16px; margin-bottom:8px; } .sh-x{ width:100%; margin-top:12px; border:0; border-radius:10px; padding:11px; font-weight:700; background:var(--accent); color:var(--brand); }
-  .rd-l{ color:var(--sub); font-size:13px; margin-bottom:6px; } .rd{ display:flex; align-items:center; gap:10px; padding:7px 0; font-size:15px; border-bottom:1px solid var(--line); }
   .actsub{ font-size:12px; color:var(--sub); padding:4px 4px 0; min-height:16px; }
   .act{ display:flex; gap:12px; padding:10px; border-radius:12px; align-items:flex-start; }
   .act:active{ background:var(--accent); }
@@ -173,9 +168,8 @@
     <button onclick="doReact('cry')">😢</button>
     <button onclick="doReact('angry')">😠</button>
     <button id="editBtn" class="rb-edit" onclick="startEdit()" style="display:none">✏️ Modifica</button>
-    <button id="readBtn" class="rb-edit" onclick="showReadBy()" style="display:none">👁 Letto da</button>
   </div>
-  <div id="sheet" class="sheet" onclick="if(event.target===this) this.classList.remove('on')"><div class="sh"><div class="sh-t" id="shT"></div><div class="sh-b" id="shB"></div><button class="sh-x" onclick="$('sheet').classList.remove('on')">Chiudi</button></div></div>
+
   <div id="toast" class="toast"></div>
 <script>
   const DESKTOP_URL="__DESKTOP_URL__";
@@ -279,6 +273,14 @@
   let pending=[], lastMsgs=[], pendingEdits={}, editMid=null;
   // stato dei miei messaggi come lo scrive Teams: Sent / Seen / Seen by everyone
   function statusLabel(s){ s=s||''; if(/everyone/i.test(s)) return "👁 Visualizzato da tutti"; if(/seen|read/i.test(s)) return '👁 Visualizzato'; return '✓ Inviato'; }
+  // nei gruppi il "letto da" arriva già pronto dall'agent: si mostra sotto il messaggio, come l'occhio di Teams
+  function readLabel(m){
+    const rb=m.readby, mm=rb&&(rb.label||'').match(/^Read by (\d+) of (\d+)$/i);
+    if(!mm) return statusLabel(m.status);
+    if(+mm[1]===0) return '✓ Inviato · non ancora letto';
+    const who=esc((rb.names||[]).join(', '));
+    return (mm[1]===mm[2]?'👁 Letto da tutti':`👁 Letto da ${mm[1]} su ${mm[2]}`)+(who?`: ${who}`:'');
+  }
   function toast(t){ const e=$('toast'); e.textContent=t; e.classList.add('on'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('on'),3500); }
   // segue un comando dell'agent finché Teams non conferma (done) o fallisce (failed)
   async function followCmd(id){
@@ -299,7 +301,7 @@
       const lr=rc.map(e=>EMO[e]||'').filter(x=>x && !(m.reactions||[]).some(r=>r.e===x)).map(x=>({t:x, mine:true, pend:true}));
       const rcAll=tr.concat(lr); const rcHtml=rcAll.length?`<div>${rcAll.map(x=>`<span class="react${x.mine?' mine':''}"${x.pend?' style="opacity:.6"':''}${x.e?` data-e="${esc(x.e)}" onclick="tapPill(event,'${mid}',this.dataset.e)"`:''}>${esc(x.t)}</span>`).join(' ')}</div>`:'';
       const pe=pendingEdits[mid];
-      const st=pe?'🕓 Modifica…':statusLabel(m.status)+(m.edited?' · Modificato':'');
+      const st=pe?'🕓 Modifica…':readLabel(m)+(m.edited?' · Modificato':'');
       const qHtml=m.quote?`<div class="q"><div class="qa">${esc(m.quote.author)}</div>${esc(m.quote.text)}</div>`:'';
       const iHtml=imgs.map(i=>{ const u=i.f?'/media/'+i.f:i.url; return `<a class="im" href="${esc(u)}" target="_blank" onclick="event.stopPropagation()"><img src="${esc(u)}" alt=""${i.w&&i.h?` width="${i.w}" height="${i.h}"`:''}></a>`; }).join('');
       const fHtml=files.map(f=>`<a class="fl" href="${esc(f.url)}" data-url="${esc(f.url)}" data-name="${esc(f.name)}" onclick="event.stopPropagation(); return getFile(event,this)">📎 ${esc(f.name)}<span class="fl-s">Tocca per scaricare</span></a>`).join('');
@@ -334,8 +336,7 @@
   function openReact(ev, mid){
     if(!mid) return; ev.stopPropagation();
     reactMid=mid; const bar=$('reactBar'); const m=lastMsgs.find(x=>String(x.mid)===mid);
-    $('editBtn').style.display=(m&&m.mine&&(m.text||'').trim())?'':'none';
-    $('readBtn').style.display=(m&&m.mine)?'':'none'; bar.style.display='flex';
+    $('editBtn').style.display=(m&&m.mine&&(m.text||'').trim())?'':'none'; bar.style.display='flex';
     const bw=bar.offsetWidth||258, bh=bar.offsetHeight||50;
     let x=(ev.clientX||innerWidth/2)-bw/2; x=Math.max(8,Math.min(x,innerWidth-bw-8));
     let y=(ev.clientY||200)-bh-12; if(y<64) y=(ev.clientY||200)+18;
@@ -370,28 +371,6 @@
     const mid=reactMid, m=lastMsgs.find(x=>String(x.mid)===mid); hideReact(); if(!m) return;
     editMid=mid; const ta=$('ta'); ta.value=m.text||''; $('editBar').style.display='flex'; ta.focus();
     ta.style.height='auto'; ta.style.height=Math.min(120,ta.scrollHeight)+'px';
-  }
-  async function showReadBy(){
-    const mid=reactMid, chat=openChat, m=lastMsgs.find(x=>String(x.mid)===mid); hideReact(); if(!m) return;
-    $('shT').textContent="Letto da"; $('shB').innerHTML='<div class="spin" style="margin:14px 0"><div class="ring"></div>Chiedo a Teams…</div>'; $('sheet').classList.add('on');
-    let r={status:'failed'}; try{ const c=await api('/api/readby',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chat,mid})}); r=await followCmd(c.id); }catch(e){}
-    if(r.status!=='done'||!r.result){ $('shB').innerHTML='<div class="empty" style="margin:10px 0">Teams non ha risposto. Riprova.</div>'; return; }
-    const res=r.result, names=res.names||[];
-    // chat 1:1: Teams non ha l'elenco, vale lo stato del messaggio
-    if(!res.label){ $('shB').innerHTML=`<div class="rd">${esc(statusLabel(m.status))}</div>`; return; }
-    const lab=res.label.replace(/^Read by (\d+) of (\d+)$/i,"Letto da $1 su $2");
-    $('shB').innerHTML=`<div class="rd-l">${esc(lab)}</div>`+(names.length?names.map(n=>`<div class="rd"><span class="av" style="width:30px;height:30px;font-size:12px;background:${avColor(n)}">${esc(initials(n))}</span>${esc(n)}</div>`).join(''):'<div class="rd">Nessuno per ora</div>');
-  }
-  // gli allegati stanno su SharePoint: li scarica l'agent con la sessione Teams, poi il browser li salva
-  async function getFile(ev, a){
-    ev.preventDefault(); if(a.dataset.busy) return false; a.dataset.busy='1';
-    const s=a.querySelector('.fl-s'); s.textContent='Scarico…';
-    let r={status:'failed'}; try{ const c=await api('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:a.dataset.url,name:a.dataset.name})}); r=await followCmd(c.id); }catch(e){}
-    delete a.dataset.busy;
-    if(r.status!=='done'||!r.result){ s.textContent='Download non riuscito, tocca per riprovare'; return false; }
-    s.textContent='Tocca per scaricare';
-    const l=document.createElement('a'); l.href='/files/'+r.result.f+'?name='+encodeURIComponent(a.dataset.name); l.download=a.dataset.name; document.body.appendChild(l); l.click(); l.remove();
-    return false;
   }
   function cancelEdit(){ editMid=null; $('editBar').style.display='none'; const ta=$('ta'); ta.value=''; ta.style.height='auto'; }
 
