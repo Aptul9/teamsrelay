@@ -120,13 +120,13 @@ def activity(request: Request):
     check(request)
     ts = q("SELECT v FROM state WHERE k='activity_ts'")
     return {"ts": int(ts[0]["v"]) if ts else 0,
-            "items": q("SELECT id,kind,actor,title,emoji,preview,tm,chat,channel,unread FROM activity ORDER BY pos")}
+            "items": q("SELECT id,kind,actor,title,emoji,preview,tm,chat,channel,unread,av FROM activity ORDER BY pos")}
 @app.post("/api/activity/refresh")
 def activity_refresh(request: Request):
     check(request); return {"ok": True, "id": command("activity")}
 @app.get("/api/chats")
 def chats(request: Request):
-    check(request); return JSONResponse(q("SELECT name,preview,tm,unread,mention,muted FROM chats ORDER BY pos"))
+    check(request); return JSONResponse(q("SELECT name,preview,tm,unread,mention,muted,av FROM chats ORDER BY pos"))
 @app.get("/api/messages")
 def messages(request: Request, name: str):
     check(request)

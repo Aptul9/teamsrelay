@@ -80,7 +80,8 @@ CHATS_JS = r"""
     const mention = !!e.querySelector('[data-tid*="mention" i],[class*="mention" i]') || /mention|menzion/i.test(al);
     // chat silenziata: Teams lo scrive sulla riga e mette la campanella barrata al posto dell'avatar
     const muted = e.getAttribute('data-item-type')==='muted-chat' || !!e.querySelector('[data-testid="muted-icon"]');
-    out.push({name:name.slice(0,60), preview:prev.slice(0,120), time:tm, unread:unread, mention:mention, muted:muted});
+    const avi=e.querySelector('img.fui-Avatar__image');
+    out.push({name:name.slice(0,60), preview:prev.slice(0,120), time:tm, unread:unread, mention:mention, muted:muted, avsrc:(avi&&avi.naturalWidth)?(avi.currentSrc||avi.src):''});
     if(out.length>=40) break;
   }
   return out;
@@ -166,12 +167,14 @@ MSGS_JS = r"""
       const si=my&&my.querySelector('[class*="statusIcon"]'); status=si?(si.getAttribute('aria-label')||'').trim():''; }
     // Teams scrive "Edited" in un span dell'intestazione del messaggio
     const edited=[...it.querySelectorAll('span')].some(x=>!x.closest('[id^="content-"]') && /^(Edited|Modificato)$/i.test((x.textContent||'').trim()));
+    const avi=it.querySelector('[data-tid="message-avatar"] img.fui-Avatar__image, [data-tid="message-avatar"] img');
+    const avsrc=(avi&&avi.naturalWidth)?(avi.currentSrc||avi.src):'';
     let html=bd?toHtml(bd):'';
     // contenitori vuoti (es. quello della GIF, estratta a parte) e paragrafi vuoti in testa o in coda
     for(let k=0;k<4;k++) html=html.replace(/<div>\s*<\/div>/g,'');
     html=html.replace(/^(\s|<div>|<p>[\s\u00a0]*<\/p>)+/,m=>m.replace(/<p>[\s\u00a0]*<\/p>/g,'')).replace(/(<p>[\s\u00a0]*<\/p>|\s)+(?=(<\/div>)*$)/,'').slice(0,20000);
     const mentionsMe=!!(bd && bd.querySelector('[data-mention-type][aria-label="Mentioned you"]'));
-    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files, reactions:reactions, status:status, edited:edited, html:html, mentionsMe:mentionsMe});
+    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files, reactions:reactions, status:status, edited:edited, html:html, mentionsMe:mentionsMe, avsrc:avsrc});
   }
   return out;
 }
@@ -195,7 +198,8 @@ ACTIVITY_JS = r"""() => [...document.querySelectorAll('[data-tid="activity-feed-
   if(/^In chat with you$/i.test(chat)) chat=actor;                        // 1:1: il luogo è la persona
   if(/\d{1,2}:\d{2}\s?(AM|PM)?\s*-\s*\d{1,2}:\d{2}/i.test(chat)) kind='meeting';  // invito a riunione
   const w=parseInt(getComputedStyle(tEl||it).fontWeight,10)||400;
-  return {id, title, kind, actor, emoji, preview:preview.slice(0,300), tm, chat, channel:place.length>1, unread:w>=600};
+  const avi=[...it.querySelectorAll('img')].find(i=>!i.alt && i.naturalWidth);
+  return {id, title, kind, actor, emoji, preview:preview.slice(0,300), tm, chat, channel:place.length>1, unread:w>=600, avsrc:avi?(avi.currentSrc||avi.src):''};
 })"""
 
 # nome della chat aperta in Teams (per non salvare i messaggi di una chat sotto il nome di un'altra)
@@ -220,7 +224,9 @@ def db_init():
             c.execute("CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, source TEXT, title TEXT, body TEXT)")
             # niente DROP: a ogni riavvio dell'agent la web app deve continuare a mostrare chat e messaggi
             c.execute("CREATE TABLE IF NOT EXISTS chats(name TEXT PRIMARY KEY, preview TEXT, pos INTEGER, ts INTEGER, tm TEXT, unread INTEGER, mention INTEGER)")
-            if "muted" not in {r[1] for r in c.execute("PRAGMA table_info(chats)")}: c.execute("ALTER TABLE chats ADD COLUMN muted INTEGER DEFAULT 0")
+            cols = {r[1] for r in c.execute("PRAGMA table_info(chats)")}
+            if "muted" not in cols: c.execute("ALTER TABLE chats ADD COLUMN muted INTEGER DEFAULT 0")
+            if "av" not in cols: c.execute("ALTER TABLE chats ADD COLUMN av TEXT")
             c.execute("CREATE TABLE IF NOT EXISTS chat_messages(chat TEXT, idx INTEGER, mid TEXT, author TEXT, text TEXT, mine INTEGER, reacts TEXT, extra TEXT)")
             cols={r[1] for r in c.execute("PRAGMA table_info(chat_messages)")}
             if "extra" not in cols: c.execute("ALTER TABLE chat_messages ADD COLUMN extra TEXT")
@@ -228,7 +234,9 @@ def db_init():
             c.execute("CREATE TABLE IF NOT EXISTS state(k TEXT PRIMARY KEY, v TEXT)")
             c.execute("CREATE TABLE IF NOT EXISTS readby(mid TEXT PRIMARY KEY, chat TEXT, label TEXT, names TEXT, ts INTEGER)")
             c.execute("CREATE TABLE IF NOT EXISTS activity(id TEXT PRIMARY KEY, pos INTEGER, kind TEXT, actor TEXT, title TEXT, emoji TEXT, preview TEXT, tm TEXT, chat TEXT, unread INTEGER, ts INTEGER)")
-            if "channel" not in {r[1] for r in c.execute("PRAGMA table_info(activity)")}: c.execute("ALTER TABLE activity ADD COLUMN channel INTEGER")
+            acols = {r[1] for r in c.execute("PRAGMA table_info(activity)")}
+            if "channel" not in acols: c.execute("ALTER TABLE activity ADD COLUMN channel INTEGER")
+            if "av" not in acols: c.execute("ALTER TABLE activity ADD COLUMN av TEXT")
             c.execute("CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, sub TEXT)")
     except Exception as e: print("db_init:", e, flush=True)
 
@@ -244,12 +252,15 @@ def save_chats(chats, replace=False):
     try:
         with dbc() as c:
             seen = {ch["name"] for ch in chats}
-            old = [dict(name=r[0], preview=r[1], time=r[2], unread=r[3], mention=r[4], muted=r[5])
-                   for r in c.execute("SELECT name,preview,tm,unread,mention,muted FROM chats ORDER BY pos")]
+            old = [dict(name=r[0], preview=r[1], time=r[2], unread=r[3], mention=r[4], muted=r[5], av=r[6])
+                   for r in c.execute("SELECT name,preview,tm,unread,mention,muted,av FROM chats ORDER BY pos")]
+            oldav = {o["name"]: o["av"] for o in old if o["av"]}
+            for ch in chats:                       # foto non ancora copiata in questo giro: resta quella nota
+                if not ch.get("av") and oldav.get(ch["name"]): ch["av"] = oldav[ch["name"]]
             if not replace: chats = (list(chats) + [o for o in old if o["name"] not in seen])[:40]
             c.execute("DELETE FROM chats")
             for i,ch in enumerate(chats):
-                c.execute("INSERT OR REPLACE INTO chats(name,preview,pos,ts,tm,unread,mention,muted) VALUES(?,?,?,?,?,?,?,?)",(ch["name"],ch.get("preview",""),i,int(time.time()),ch.get("time",""),1 if ch.get("unread") else 0,1 if ch.get("mention") else 0,1 if ch.get("muted") else 0))
+                c.execute("INSERT OR REPLACE INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av) VALUES(?,?,?,?,?,?,?,?,?)",(ch["name"],ch.get("preview",""),i,int(time.time()),ch.get("time",""),1 if ch.get("unread") else 0,1 if ch.get("mention") else 0,1 if ch.get("muted") else 0,ch.get("av","")))
     except Exception as e: print("save_chats:", e, flush=True)
 
 def save_chat_messages(chat, msgs):
@@ -257,7 +268,7 @@ def save_chat_messages(chat, msgs):
         with dbc() as c:
             c.execute("DELETE FROM chat_messages WHERE chat=?",(chat,))
             for i,m in enumerate(msgs):
-                extra={k:m[k] for k in ("quote","images","files","reactions","status","edited","readby","html","mentionsMe") if m.get(k)}
+                extra={k:m[k] for k in ("quote","images","files","reactions","status","edited","readby","html","mentionsMe","av") if m.get(k)}
                 c.execute("INSERT INTO chat_messages(chat,idx,mid,author,text,mine,reacts,extra) VALUES(?,?,?,?,?,?,?,?)",(chat,i,m.get("mid",""),m.get("author",""),m.get("text",""),1 if m.get("mine") else 0,m.get("reacts",""),json.dumps(extra,ensure_ascii=False) if extra else ""))
     except Exception as e: print("save_cm:", e, flush=True)
 
@@ -470,6 +481,32 @@ def open_chat(page, name):
     return True
 
 MEDIA_FAILED = set()
+
+# Le foto profilo arrivano da un'API di Teams che vuole il suo token: fetch() viene rifiutata.
+# Sono però già disegnate nella pagina e sono dello stesso dominio, quindi si copiano da un canvas.
+GRAB_AVATAR_JS = r"""(src)=>{ const i=[...document.querySelectorAll('img')].find(x=>(x.currentSrc||x.src)===src && x.naturalWidth);
+  if(!i) return null; const c=document.createElement('canvas'); c.width=i.naturalWidth; c.height=i.naturalHeight;
+  try{ c.getContext('2d').drawImage(i,0,0); return c.toDataURL('image/png').split(',')[1]; }catch(e){ return null; } }"""
+
+def avatar_file(page, src, budget=[0]):
+    """Nome file della foto (in data/media) per l'URL `src`; la copia una volta sola. `budget` limita le copie per giro."""
+    if not src: return ""
+    fn = hashlib.sha1(src.encode()).hexdigest()[:16] + ".png"
+    if os.path.exists(os.path.join(MEDIA_DIR, fn)): return fn
+    if budget[0] <= 0: return ""
+    budget[0] -= 1
+    try: data = page.evaluate(GRAB_AVATAR_JS, src)
+    except Exception: data = None
+    if not data: return ""
+    os.makedirs(MEDIA_DIR, exist_ok=True)
+    with open(os.path.join(MEDIA_DIR, fn), "wb") as f: f.write(base64.b64decode(data))
+    return fn
+
+def attach_avatars(page, items, limit=8):
+    budget = [limit]
+    for it in items:
+        it["av"] = avatar_file(page, it.pop("avsrc", ""), budget)
+    return items
 FILES_DIR = os.path.join(os.path.dirname(DB_PATH), "files")
 
 def download_file(page, url, name):
@@ -523,6 +560,7 @@ def read_open_messages(page, chat):
             if fn: imgs.append({"f": fn, "w": im.get("w", 0), "h": im.get("h", 0)})
             elif (im.get("src") or "").startswith("https://"): imgs.append({"url": im["src"], "w": im.get("w", 0), "h": im.get("h", 0)})
         m["images"] = imgs
+    attach_avatars(page, msgs)
     rb = readby_cache([m.get("mid", "") for m in msgs if m.get("mine")])
     for m in msgs:
         if m.get("mid") in rb: m["readby"] = rb[m["mid"]]
@@ -777,7 +815,7 @@ def read_activity(page):
             moved = page.evaluate(SCROLL_ACTIVITY_JS)
             if not moved: break
             time.sleep(0.6)
-        items = [acc[k] for k in order][:40]
+        items = attach_avatars(page, [acc[k] for k in order][:40], limit=40)
     except Exception as e:
         print("activity:", str(e).splitlines()[0][:120], flush=True)
     finally:
@@ -792,8 +830,8 @@ def read_activity(page):
         with dbc() as c:
             c.execute("DELETE FROM activity")
             for i, a in enumerate(items):
-                c.execute("INSERT OR REPLACE INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,channel,unread,ts) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                          (a.get("id") or f"x{i}", i, a.get("kind",""), a.get("actor",""), a.get("title",""), a.get("emoji",""), a.get("preview",""), a.get("tm",""), a.get("chat",""), 1 if a.get("channel") else 0, 1 if a.get("unread") else 0, int(time.time())))
+                c.execute("INSERT OR REPLACE INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,channel,unread,ts,av) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                          (a.get("id") or f"x{i}", i, a.get("kind",""), a.get("actor",""), a.get("title",""), a.get("emoji",""), a.get("preview",""), a.get("tm",""), a.get("chat",""), 1 if a.get("channel") else 0, 1 if a.get("unread") else 0, int(time.time()), a.get("av","")))
         set_state("activity_ts", str(int(time.time())))
     except Exception as e: print("activity save:", e, flush=True)
     return len(items)
@@ -808,7 +846,7 @@ def scan_chats_full(page):
         page.evaluate(SCROLL_CHATS_JS, "top"); time.sleep(0.4)
         acc, order = {}, []
         for _ in range(8):
-            for ch in page.evaluate(CHATS_JS):
+            for ch in attach_avatars(page, page.evaluate(CHATS_JS), limit=20):
                 if ch["name"] not in acc: order.append(ch["name"])
                 acc[ch["name"]] = ch
             if len(order) >= 40 or not page.evaluate(SCROLL_CHATS_JS, "down"): break
@@ -823,6 +861,7 @@ def scan_chats(page):
     try:
         chats = page.evaluate(CHATS_JS)
         if not chats: return
+        attach_avatars(page, chats)
         save_chats(chats)
         set_state("last_scan_ts", str(int(time.time())))
         for nm, pv in scan_new_messages(chats):
