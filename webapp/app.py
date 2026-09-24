@@ -218,6 +218,26 @@ def readby_api(request: Request, r: ReadByReq):
     check(request)
     return {"ok": True, "id": command("readby", r.name, json.dumps({"mid": r.mid}))}
 
+class DownloadReq(BaseModel):
+    url: str
+    name: str
+@app.post("/api/download")
+def download_api(request: Request, r: DownloadReq):
+    check(request)
+    # solo allegati SharePoint/OneDrive: l'agent li scarica con la sessione Teams dell'utente
+    if not re.fullmatch(r"https://[a-z0-9-]+\.sharepoint\.com/\S+", r.url): raise HTTPException(400, detail="Link non supportato")
+    return {"ok": True, "id": command("download", r.url, json.dumps({"name": r.name}))}
+
+FILES_DIR = os.path.join(os.path.dirname(DB_PATH), "files")
+@app.get("/files/{fn}")
+def files(request: Request, fn: str, name: str = "file"):
+    check(request)
+    if not re.fullmatch(r"[0-9a-f]{16}(\.[a-z0-9]{1,8})?", fn): raise HTTPException(404)
+    path = os.path.join(FILES_DIR, fn)
+    if not os.path.exists(path): raise HTTPException(404)
+    safe = re.sub(r'[\\/:*?"<>|\r\n]+', "_", name)[:150] or "file"
+    return FileResponse(path, filename=safe)
+
 @app.get("/api/cmd/{cid}")
 def cmd_status(request: Request, cid: int):
     check(request)

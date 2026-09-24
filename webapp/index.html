@@ -84,6 +84,7 @@
   .b .im{ display:block; margin:2px 0 4px; } .b .im img{ display:block; max-width:100%; height:auto; max-height:320px; object-fit:contain; border-radius:6px; }
   .b .fl{ display:block; margin-top:4px; padding:6px 9px; border-radius:6px; background:rgba(0,0,0,.06); color:inherit; text-decoration:none; font-size:13.5px; white-space:normal; }
   .b.me .fl{ background:rgba(255,255,255,.18); }
+  .b .fl .fl-s{ display:block; font-size:11px; opacity:.75; margin-top:2px; }
   .b.me .st{ color:rgba(255,255,255,.85); } .b .st.err{ color:#ffbcbc; font-weight:700; }
   .editbar{ display:flex; align-items:center; gap:8px; padding:7px 14px; background:var(--accent); color:var(--brand); font-size:13.5px; font-weight:700; border-top:1px solid var(--line); }
   .editbar span{ flex:1; } .editbar button{ border:0; background:transparent; color:var(--brand); font-size:17px; font-weight:800; }
@@ -246,7 +247,7 @@
       const st=pe?'🕓 Modifica…':statusLabel(m.status)+(m.edited?' · Modificato':'');
       const qHtml=m.quote?`<div class="q"><div class="qa">${esc(m.quote.author)}</div>${esc(m.quote.text)}</div>`:'';
       const iHtml=imgs.map(i=>{ const u=i.f?'/media/'+i.f:i.url; return `<a class="im" href="${esc(u)}" target="_blank" onclick="event.stopPropagation()"><img src="${esc(u)}" alt=""${i.w&&i.h?` width="${i.w}" height="${i.h}"`:''}></a>`; }).join('');
-      const fHtml=files.map(f=>`<a class="fl" href="${esc(f.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📎 ${esc(f.name)}</a>`).join('');
+      const fHtml=files.map(f=>`<a class="fl" href="${esc(f.url)}" data-url="${esc(f.url)}" data-name="${esc(f.name)}" onclick="event.stopPropagation(); return getFile(event,this)">📎 ${esc(f.name)}<span class="fl-s">Tocca per scaricare</span></a>`).join('');
       html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}</div>`:'')}${qHtml}${iHtml}${esc(pe||m.text)}${fHtml}${!m.mine&&m.edited?'<div class="st">Modificato</div>':''}${m.mine?`<div class="st">${st}</div>`:''}${rcHtml}</div>`; });
     pending.forEach(p=>{ const failed=Date.now()-p.ts>14000; html+=`<div class="b me" style="opacity:.72">${esc(p.text)}<div class="st ${failed?'err':''}">${failed?'✗ Non inviato — riprova':'🕓 Invio…'}</div></div>`; });
     // riscrive il DOM solo se qualcosa è cambiato: altrimenti a ogni poll le immagini lampeggiano
@@ -313,6 +314,17 @@
     if(!res.label){ $('shB').innerHTML=`<div class="rd">${esc(statusLabel(m.status))}</div>`; return; }
     const lab=res.label.replace(/^Read by (\d+) of (\d+)$/i,"Letto da $1 su $2");
     $('shB').innerHTML=`<div class="rd-l">${esc(lab)}</div>`+(names.length?names.map(n=>`<div class="rd"><span class="av" style="width:30px;height:30px;font-size:12px;background:${avColor(n)}">${esc(initials(n))}</span>${esc(n)}</div>`).join(''):'<div class="rd">Nessuno per ora</div>');
+  }
+  // gli allegati stanno su SharePoint: li scarica l'agent con la sessione Teams, poi il browser li salva
+  async function getFile(ev, a){
+    ev.preventDefault(); if(a.dataset.busy) return false; a.dataset.busy='1';
+    const s=a.querySelector('.fl-s'); s.textContent='Scarico…';
+    let r={status:'failed'}; try{ const c=await api('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:a.dataset.url,name:a.dataset.name})}); r=await followCmd(c.id); }catch(e){}
+    delete a.dataset.busy;
+    if(r.status!=='done'||!r.result){ s.textContent='Download non riuscito, tocca per riprovare'; return false; }
+    s.textContent='Tocca per scaricare';
+    const l=document.createElement('a'); l.href='/files/'+r.result.f+'?name='+encodeURIComponent(a.dataset.name); l.download=a.dataset.name; document.body.appendChild(l); l.click(); l.remove();
+    return false;
   }
   function cancelEdit(){ editMid=null; $('editBar').style.display='none'; const ta=$('ta'); ta.value=''; ta.style.height='auto'; }
 

@@ -1,4 +1,4 @@
-import os, time, json, sqlite3, urllib.request, hashlib, base64
+import os, re, time, json, sqlite3, urllib.request, hashlib, base64
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 try:
@@ -403,6 +403,29 @@ def open_chat(page, name):
     return True
 
 MEDIA_FAILED = set()
+FILES_DIR = os.path.join(os.path.dirname(DB_PATH), "files")
+
+def download_file(page, url, name):
+    """Scarica un allegato SharePoint/OneDrive con la sessione del browser di Teams (dal telefono il link chiederebbe il login)."""
+    from urllib.parse import urlparse
+    host = urlparse(url).hostname or ""
+    if not url.startswith("https://") or not host.endswith(".sharepoint.com"): return None
+    ext = os.path.splitext(name or "")[1].lower()
+    ext = ext if re.fullmatch(r"\.[a-z0-9]{1,8}", ext or "") else ""
+    fn = hashlib.sha1(url.encode()).hexdigest()[:16] + ext
+    path = os.path.join(FILES_DIR, fn)
+    if os.path.exists(path): return fn
+    os.makedirs(FILES_DIR, exist_ok=True)
+    try:
+        r = page.context.request.get(url + ("&" if "?" in url else "?") + "download=1", max_redirects=10, timeout=60000)
+        ct = r.headers.get("content-type", "")
+        if r.status != 200 or ct.startswith("text/html"): print("download:", r.status, ct, flush=True); return None
+        body = r.body()
+        if len(body) > 100e6: return None
+        with open(path, "wb") as f: f.write(body)
+        return fn
+    except Exception as e:
+        print("download:", str(e).splitlines()[0][:120], flush=True); return None
 
 def fetch_media(page, key, src):
     """Salva in MEDIA_DIR l'immagine vista nella pagina; ritorna il nome file o None. Una volta sola per immagine."""
@@ -648,6 +671,12 @@ def main():
                     elif ctype=="recheck":
                         ok,why=self_check(page)
                         push_all("Teams", "✓ Tutto funziona" if ok else ("⚠️ Problema: "+why))
+                    elif ctype=="download":
+                        try: args=json.loads(a2 or "{}")
+                        except Exception: args={}
+                        fn=download_file(page,a1,args.get("name",""))
+                        if fn: set_state(f"cmd_result:{cid}", json.dumps({"f": fn}))
+                        set_cmd_result(cid, "done" if fn else "failed")
                     elif ctype=="readby":
                         try: args=json.loads(a2 or "{}")
                         except Exception: args={}
@@ -663,7 +692,7 @@ def main():
                         else: ok=edit_message(page,a1,args.get("mid",""),args.get("text",""))
                         set_cmd_result(cid, "done" if ok else "failed")
                         set_state("active_chat",a1); save_open_chat(page, a1)
-                    if ctype not in ("react","edit","readby"): done_command(cid)
+                    if ctype not in ("react","edit","readby","download"): done_command(cid)
                     # i comandi possono durare secondi: la lista chat non deve restare ferma nel frattempo
                     scan_chats(page)
                 if tick % 3 == 0: scan_chats(page)
