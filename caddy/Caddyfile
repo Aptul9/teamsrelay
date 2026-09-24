@@ -12,6 +12,10 @@
 	handle /desktop/* {
 		forward_auth webapp:8090 {
 			uri /api/authcheck
+			# la verifica è una richiesta HTTP normale anche quando quella originale è un websocket
+			# (lo stream del desktop): con Upgrade la web app risponderebbe 403
+			header_up -Upgrade
+			header_up -Connection
 		}
 		reverse_proxy chromium:3000
 	}
