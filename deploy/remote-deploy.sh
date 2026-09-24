@@ -35,6 +35,12 @@ case "${1:-}" in
     [ -f .env ] || { echo ".env mancante in $TR_DIR: il primo setup va fatto a mano (vedi README)" >&2; exit 1; }
     echo "deploy $sha"
     docker compose up -d --build --remove-orphans
+    # Caddy non ha un'immagine da ricostruire e legge il Caddyfile montato: rsync lo sostituisce con un file
+    # nuovo e il container continuerebbe a vedere il vecchio. Se è cambiato, si riavvia (i certificati restano nel volume).
+    caddy_sum="$(sha256sum caddy/Caddyfile | cut -d' ' -f1)"
+    if [ "$caddy_sum" != "$(cat .caddyfile-sum 2>/dev/null)" ]; then
+      docker compose restart caddy && echo "$caddy_sum" > .caddyfile-sum
+    fi
     if healthy; then
       echo "$sha" > .deployed-sha
       docker image prune -f >/dev/null
