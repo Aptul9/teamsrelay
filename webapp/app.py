@@ -210,12 +210,23 @@ def edit_api(request: Request, r: EditReq):
     if not r.text.strip(): raise HTTPException(400, detail="Testo vuoto")
     return {"ok": True, "id": command("edit", r.name, json.dumps({"mid": r.mid, "text": r.text}))}
 
+class ReadByReq(BaseModel):
+    name: str
+    mid: str
+@app.post("/api/readby")
+def readby_api(request: Request, r: ReadByReq):
+    check(request)
+    return {"ok": True, "id": command("readby", r.name, json.dumps({"mid": r.mid}))}
+
 @app.get("/api/cmd/{cid}")
 def cmd_status(request: Request, cid: int):
     check(request)
     rows = q("SELECT status FROM commands WHERE id=?", (cid,))
     if not rows: raise HTTPException(404)
-    return {"status": rows[0]["status"]}
+    res = q("SELECT v FROM state WHERE k=?", (f"cmd_result:{cid}",))
+    try: result = json.loads(res[0]["v"]) if res else None
+    except Exception: result = None
+    return {"status": rows[0]["status"], "result": result}
 
 @app.get("/healthz")
 def healthz(): return {"ok": True}

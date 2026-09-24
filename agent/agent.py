@@ -534,6 +534,34 @@ def react_message(page, chat, mid, emoji):
         if my_reactions(page, mid) != before: return True
     print("react: nessun cambio su Teams", mid, emoji, flush=True); return False
 
+def read_receipts(page, chat, mid):
+    """Chi ha letto un mio messaggio: voce "Read by X of Y" del menu More options e il suo sottomenu coi nomi."""
+    if not clear_overlays(page) or not open_chat(page, chat): return None
+    try:
+        rr = page.locator('[data-tid="message-actions-read-receipt"]:visible').first
+        found = menu_seen = False
+        for _ in range(2):
+            if not click_bar_button(page, mid, "message-actions-more"):
+                if menu_seen: break
+                return None
+            try: page.locator('[role="menu"]:visible').first.wait_for(timeout=3000)
+            except Exception: clear_overlays(page); continue
+            menu_seen = True
+            try: rr.wait_for(timeout=1500); found = True; break
+            except Exception: clear_overlays(page); time.sleep(0.5)
+        if not found:
+            # menu aperto ma senza "Read by": chat 1:1, dove basta lo stato Seen
+            return {"label": "", "names": []} if menu_seen else None
+        label = (rr.inner_text() or "").strip()
+        rr.hover(); time.sleep(1.0)
+        names = page.evaluate(r"""()=>{ const ms=[...document.querySelectorAll('[role="menu"]')].filter(m=>m.getClientRects().length && !m.querySelector('[data-tid="message-actions-read-receipt"]'));
+          return ms.flatMap(m=>[...m.querySelectorAll('[role="menuitem"]')].map(x=>(x.innerText||'').trim()).filter(Boolean)); }""")
+        return {"label": label, "names": names}
+    except Exception as e:
+        print("readby:", str(e).splitlines()[0][:120], flush=True); return None
+    finally:
+        clear_overlays(page); page.mouse.move(2, 2)
+
 def edit_message(page, chat, mid, text):
     """Modifica un mio messaggio. Ritorna True se il testo su Teams è quello nuovo."""
     text = (text or "").strip()
@@ -620,6 +648,13 @@ def main():
                     elif ctype=="recheck":
                         ok,why=self_check(page)
                         push_all("Teams", "✓ Tutto funziona" if ok else ("⚠️ Problema: "+why))
+                    elif ctype=="readby":
+                        try: args=json.loads(a2 or "{}")
+                        except Exception: args={}
+                        res=read_receipts(page,a1,args.get("mid",""))
+                        if res is not None: set_state(f"cmd_result:{cid}", json.dumps(res, ensure_ascii=False))
+                        set_cmd_result(cid, "done" if res is not None else "failed")
+                        set_state("active_chat",a1); save_open_chat(page, a1)
                     elif ctype in ("react","edit"):
                         # arg1 = chat, arg2 = JSON {mid, emoji|text}
                         try: args=json.loads(a2 or "{}")
@@ -628,7 +663,7 @@ def main():
                         else: ok=edit_message(page,a1,args.get("mid",""),args.get("text",""))
                         set_cmd_result(cid, "done" if ok else "failed")
                         set_state("active_chat",a1); save_open_chat(page, a1)
-                    if ctype not in ("react","edit"): done_command(cid)
+                    if ctype not in ("react","edit","readby"): done_command(cid)
                     # i comandi possono durare secondi: la lista chat non deve restare ferma nel frattempo
                     scan_chats(page)
                 if tick % 3 == 0: scan_chats(page)
