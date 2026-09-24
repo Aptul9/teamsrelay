@@ -128,7 +128,7 @@ MSGS_JS = r"""
     }
     // reazioni presenti su Teams: una pill per emoji, col conteggio nel testo ("2 Like reactions.")
     const reactions=[...it.querySelectorAll('[data-tid="diverse-reaction-pill-button"]')].map(x=>({
-      e:[...x.querySelectorAll('img')].map(i=>i.alt).join(''), n:parseInt((x.innerText||'').trim(),10)||1 })).filter(r=>r.e);
+      e:[...x.querySelectorAll('img')].map(i=>i.alt).join(''), n:parseInt((x.innerText||'').trim(),10)||1, mine:x.getAttribute('aria-pressed')==='true' })).filter(r=>r.e);
     const reacts=reactions.map(r=>r.e+(r.n>1?r.n:'')).join(' ');
     // stato dei miei messaggi: Teams mette l'icona "Seen" sull'ultimo letto dall'altra parte
     let status=''; if(mine){ const my=e.closest('.fui-ChatMyMessage')||it.querySelector('.fui-ChatMyMessage');
@@ -159,10 +159,11 @@ def db_init():
     try:
         with dbc() as c:
             c.execute("CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, source TEXT, title TEXT, body TEXT)")
-            c.execute("DROP TABLE IF EXISTS chats")
-            c.execute("CREATE TABLE chats(name TEXT PRIMARY KEY, preview TEXT, pos INTEGER, ts INTEGER, tm TEXT, unread INTEGER, mention INTEGER)")
-            c.execute("DROP TABLE IF EXISTS chat_messages")
-            c.execute("CREATE TABLE chat_messages(chat TEXT, idx INTEGER, mid TEXT, author TEXT, text TEXT, mine INTEGER, reacts TEXT, extra TEXT)")
+            # niente DROP: a ogni riavvio dell'agent la web app deve continuare a mostrare chat e messaggi
+            c.execute("CREATE TABLE IF NOT EXISTS chats(name TEXT PRIMARY KEY, preview TEXT, pos INTEGER, ts INTEGER, tm TEXT, unread INTEGER, mention INTEGER)")
+            c.execute("CREATE TABLE IF NOT EXISTS chat_messages(chat TEXT, idx INTEGER, mid TEXT, author TEXT, text TEXT, mine INTEGER, reacts TEXT, extra TEXT)")
+            cols={r[1] for r in c.execute("PRAGMA table_info(chat_messages)")}
+            if "extra" not in cols: c.execute("ALTER TABLE chat_messages ADD COLUMN extra TEXT")
             c.execute("CREATE TABLE IF NOT EXISTS commands(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, type TEXT, arg1 TEXT, arg2 TEXT, status TEXT DEFAULT 'pending')")
             c.execute("CREATE TABLE IF NOT EXISTS state(k TEXT PRIMARY KEY, v TEXT)")
             c.execute("CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, sub TEXT)")
@@ -174,6 +175,7 @@ def db_msg(title, body):
     except Exception as e: print("db_msg:", e, flush=True)
 
 def save_chats(chats):
+    if not chats: return
     try:
         with dbc() as c:
             c.execute("DELETE FROM chats")
@@ -204,6 +206,11 @@ def pending_commands():
     try:
         with dbc() as c: return c.execute("SELECT id,type,arg1,arg2 FROM commands WHERE status='pending' ORDER BY id").fetchall()
     except Exception: return []
+def set_cmd_result(cid, status):
+    try:
+        with dbc() as c: c.execute("UPDATE commands SET status=? WHERE id=?",(status,cid))
+    except Exception as e: print("cmd result:", e, flush=True)
+
 def done_command(cid):
     try:
         with dbc() as c: c.execute("UPDATE commands SET status='done' WHERE id=?",(cid,))
@@ -443,45 +450,92 @@ def do_send(page, name, text):
         time.sleep(1.0); return True
     except Exception as e: print("send err:", e, flush=True); return False
 
-# ---------------- REAZIONI ----------------
+# ---------------- REAZIONI E MODIFICA ----------------
+# Le azioni di Teams compaiono solo con un hover vero del mouse: gli eventi sintetici via JS non bastano.
 QUICK_REACTS    = {"like":"message-actions-like","heart":"message-actions-heart","laugh":"message-actions-laugh","surprised":"message-actions-surprised"}
-EXPANDED_REACTS = {"cry":"emoticon-button-cry","angry":"emoticon-button-angry","hearteyes":"emoticon-button-hearteyes","rofl":"emoticon-button-rofl"}
+EXPANDED_REACTS = {"cry":"emoticon-button-cry","angry":"emoticon-button-angry"}
 
-def react_message(page, mid, emoji):
-    hov = page.evaluate("""(mid) => {
-      const msgs=[...document.querySelectorAll('[data-tid="chat-pane-message"]')];
-      let m = mid ? msgs.find(x=>x.getAttribute('data-mid')===mid) : null;
-      if(!m) m = msgs[msgs.length-1];
-      if(!m) return false;
-      m.scrollIntoView({block:'center'});
-      for(const ev of ['mouseover','mouseenter','pointerover','pointerenter','mousemove']){
-        try{ m.dispatchEvent(new MouseEvent(ev,{bubbles:true})); }catch(e){}
-      }
-      window.__rt = m; return true;
-    }""", mid or "")
-    if not hov:
-        return False
-    time.sleep(0.7)
-    if emoji in QUICK_REACTS:
-        ok = page.evaluate("""(tid) => {
-          const m=window.__rt; if(!m) return false;
-          let b=m.querySelector('[data-tid="'+tid+'"]');
-          if(!b){ b=[...document.querySelectorAll('[data-tid="'+tid+'"]')].find(x=>x.offsetParent!==null); }
-          if(b){ b.click(); return true; } return false;
-        }""", QUICK_REACTS[emoji])
-        time.sleep(0.4)
-        return bool(ok)
-    if emoji in EXPANDED_REACTS:
-        page.evaluate("""() => {
-          const m=window.__rt;
-          let e = (m && m.querySelector('[data-tid="expanded-reactions-picker-entry"]')) || [...document.querySelectorAll('[data-tid="expanded-reactions-picker-entry"]')].find(x=>x.offsetParent!==null);
-          if(e)e.click();
-        }""")
-        time.sleep(0.9)
-        ok = page.evaluate("""(tid) => { const b=document.querySelector('[data-tid="'+tid+'"]'); if(b){b.click(); return true;} return false; }""", EXPANDED_REACTS[emoji])
-        time.sleep(0.4)
-        return bool(ok)
+def hover_message(page, mid):
+    """Porta il mouse sul messaggio finché Teams mostra la sua barra azioni."""
+    m = page.locator(f'[data-tid="chat-pane-message"][data-mid="{mid}"]')
+    if m.count() == 0: return False
+    bar = page.locator('[data-tid="message-actions-container"]:visible')
+    for _ in range(4):
+        try:
+            m.scroll_into_view_if_needed(timeout=3000)
+            page.mouse.move(2, 2); time.sleep(0.15)
+            m.hover(timeout=3000)
+            bar.first.wait_for(timeout=1500)
+            return True
+        except Exception:
+            time.sleep(0.4)
     return False
+
+def my_reactions(page, mid):
+    return page.evaluate(r"""(mid)=>{ const m=document.querySelector('[data-tid="chat-pane-message"][data-mid="'+mid+'"]'); if(!m) return [];
+      const it=m.closest('[data-tid="chat-pane-item"]')||m;
+      return [...it.querySelectorAll('[data-tid="diverse-reaction-pill-button"][aria-pressed="true"]')].map(x=>(x.getAttribute('aria-labelledby')||'').split('-')[1]||''); }""", mid)
+
+def react_message(page, chat, mid, emoji):
+    """Mette (o toglie, se già messa) una reazione. Ritorna True se lo stato su Teams è cambiato."""
+    if emoji not in QUICK_REACTS and emoji not in EXPANDED_REACTS: return False
+    if not open_chat(page, chat): return False
+    before = my_reactions(page, mid)
+    if not hover_message(page, mid): print("react: barra azioni non comparsa", mid, flush=True); return False
+    try:
+        if emoji in QUICK_REACTS:
+            page.locator(f'[data-tid="{QUICK_REACTS[emoji]}"]:visible').first.click(timeout=3000)
+        else:
+            page.locator('[data-tid="expanded-reactions-picker-entry"]:visible').first.click(timeout=3000)
+            page.locator(f'[data-tid="{EXPANDED_REACTS[emoji]}"]:visible').first.click(timeout=4000)
+    except Exception as e:
+        print("react:", str(e).splitlines()[0][:120], flush=True); page.keyboard.press("Escape"); return False
+    finally:
+        page.mouse.move(2, 2)
+    for _ in range(12):
+        time.sleep(0.25)
+        if my_reactions(page, mid) != before: return True
+    print("react: nessun cambio su Teams", mid, emoji, flush=True); return False
+
+def edit_message(page, chat, mid, text):
+    """Modifica un mio messaggio. Ritorna True se il testo su Teams è quello nuovo."""
+    text = (text or "").strip()
+    if not text or not open_chat(page, chat): return False
+    if not hover_message(page, mid): print("edit: barra azioni non comparsa", mid, flush=True); return False
+    item = page.locator(f'[data-tid="chat-pane-item"]:has([data-mid="{mid}"])')
+    try:
+        page.locator('[data-tid="message-actions-edit"]:visible').first.click(timeout=3000)
+        ed = item.locator('[data-tid="ckeditor"]').first
+        ed.wait_for(timeout=4000); ed.click()
+        page.keyboard.press("Control+A"); page.keyboard.press("Delete")
+        page.keyboard.insert_text(text); time.sleep(0.2)
+        item.locator('[data-tid="newMessageCommands-send"]').first.click(timeout=3000)
+    except Exception as e:
+        print("edit:", str(e).splitlines()[0][:120], flush=True)
+        # annulla l'editor rimasto aperto senza toccare il messaggio
+        try:
+            item.locator('[data-tid="newMessageCommands-discard-draft"]').first.click(timeout=2000)
+            page.locator('[data-tid="messagedraft-discard-confirm"]').click(timeout=2000)
+        except Exception: pass
+        return False
+    finally:
+        page.mouse.move(2, 2)
+    for _ in range(16):
+        time.sleep(0.25)
+        cur = page.evaluate("""(mid)=>{const b=document.querySelector('#content-'+mid); return b?b.innerText.trim():null}""", mid)
+        if cur is not None and cur.replace("\u00a0", " ").strip() == text: return True
+    print("edit: testo non aggiornato su Teams", mid, flush=True); return False
+
+def scan_chats(page):
+    try:
+        chats = page.evaluate(CHATS_JS)
+        if not chats: return
+        save_chats(chats)
+        set_state("last_scan_ts", str(int(time.time())))
+        for nm, pv in scan_new_messages(chats):
+            print("NEWMSG:", nm, "|", pv[:50], flush=True)
+            notify_msg(nm, pv)
+    except Exception as e: print("chats:", e, flush=True)
 
 def selfcheck_slot():
     now = datetime.now()
@@ -528,20 +582,18 @@ def main():
                     elif ctype=="recheck":
                         ok,why=self_check(page)
                         push_all("Teams", "✓ Tutto funziona" if ok else ("⚠️ Problema: "+why))
-                    elif ctype=="react":
-                        react_message(page,a1,a2)
-                        ac=get_state("active_chat")
-                        if ac: save_open_chat(page, ac)
-                    done_command(cid)
-                if tick % 3 == 0:
-                    try:
-                        chats = page.evaluate(CHATS_JS)
-                        save_chats(chats)
-                        set_state("last_scan_ts", str(int(time.time())))
-                        for nm, pv in scan_new_messages(chats):
-                            print("NEWMSG:", nm, "|", pv[:50], flush=True)
-                            notify_msg(nm, pv)
-                    except Exception as e: print("chats:", e, flush=True)
+                    elif ctype in ("react","edit"):
+                        # arg1 = chat, arg2 = JSON {mid, emoji|text}
+                        try: args=json.loads(a2 or "{}")
+                        except Exception: args={}
+                        if ctype=="react": ok=react_message(page,a1,args.get("mid",""),args.get("emoji",""))
+                        else: ok=edit_message(page,a1,args.get("mid",""),args.get("text",""))
+                        set_cmd_result(cid, "done" if ok else "failed")
+                        set_state("active_chat",a1); save_open_chat(page, a1)
+                    if ctype not in ("react","edit"): done_command(cid)
+                    # i comandi possono durare secondi: la lista chat non deve restare ferma nel frattempo
+                    scan_chats(page)
+                if tick % 3 == 0: scan_chats(page)
                 if tick % 5 == 0:
                     update_health(page)
                 ac=get_state("active_chat")

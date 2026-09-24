@@ -43,6 +43,7 @@
   .reactbar{ position:fixed; z-index:60; background:var(--card); border:1px solid var(--line); border-radius:26px; box-shadow:0 8px 30px rgba(0,0,0,.32); padding:5px 8px; display:flex; gap:2px; }
   .reactbar button{ border:0; background:transparent; font-size:25px; padding:5px 6px; border-radius:50%; line-height:1; }
   .reactbar button:active{ background:var(--accent); transform:scale(1.15); }
+  .react.mine{ border-color:var(--brand); background:var(--accent); }
   .react{ display:inline-block; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:11px; padding:1px 7px; font-size:13px; margin-top:4px; white-space:nowrap; }
   main{ flex:1; overflow:hidden; position:relative; }
   .view{ position:absolute; inset:0; display:none; flex-direction:column; } .view.on{ display:flex; }
@@ -84,6 +85,11 @@
   .b .fl{ display:block; margin-top:4px; padding:6px 9px; border-radius:6px; background:rgba(0,0,0,.06); color:inherit; text-decoration:none; font-size:13.5px; white-space:normal; }
   .b.me .fl{ background:rgba(255,255,255,.18); }
   .b.me .st{ color:rgba(255,255,255,.85); } .b .st.err{ color:#ffbcbc; font-weight:700; }
+  .editbar{ display:flex; align-items:center; gap:8px; padding:7px 14px; background:var(--accent); color:var(--brand); font-size:13.5px; font-weight:700; border-top:1px solid var(--line); }
+  .editbar span{ flex:1; } .editbar button{ border:0; background:transparent; color:var(--brand); font-size:17px; font-weight:800; }
+  .reactbar .rb-edit{ font-size:14px; font-weight:700; color:var(--brand); border-radius:16px; padding:6px 10px; border-left:1px solid var(--line); }
+  .toast{ position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom) + 84px); transform:translateX(-50%); z-index:80; background:#242424; color:#fff; padding:9px 15px; border-radius:10px; font-size:14px; box-shadow:0 6px 24px rgba(0,0,0,.3); display:none; max-width:90vw; }
+  .toast.on{ display:block; }
   .compose{ display:flex; gap:8px; align-items:flex-end; padding:8px calc(env(safe-area-inset-left) + 10px) calc(env(safe-area-inset-bottom) + 8px) 10px; background:var(--card); border-top:1px solid var(--line); }
   .compose textarea{ flex:1; resize:none; border:1px solid var(--line); border-radius:22px; padding:10px 15px; font:inherit; background:var(--bg); color:var(--ink); max-height:120px; -webkit-user-select:text; user-select:text; }
   .compose button{ border:0; background:var(--brand); color:#fff; border-radius:50%; width:44px; height:44px; font-size:18px; flex:none; }
@@ -128,6 +134,7 @@
       <div class="conv" id="conv">
         <div class="cbar"><button class="back" onclick="closeConv()">‹</button><div class="cav" id="convAv"></div><div class="t" id="convTitle"></div></div>
         <div class="msgs" id="msgs"></div>
+        <div class="editbar" id="editBar" style="display:none"><span>✏️ Modifica messaggio</span><button onclick="cancelEdit()">✕</button></div>
         <div class="compose"><textarea id="ta" rows="1" placeholder="Scrivi un messaggio…"></textarea><button onclick="sendMsg()">➤</button></div>
       </div>
     </div>
@@ -139,16 +146,18 @@
   <div id="reactBar" class="reactbar" style="display:none">
     <button onclick="doReact('like')">👍</button>
     <button onclick="doReact('heart')">❤️</button>
-    <button onclick="doReact('laugh')">😂</button>
+    <button onclick="doReact('laugh')">😆</button>
     <button onclick="doReact('surprised')">😮</button>
     <button onclick="doReact('cry')">😢</button>
     <button onclick="doReact('angry')">😡</button>
+    <button id="editBtn" class="rb-edit" onclick="startEdit()" style="display:none">✏️ Modifica</button>
   </div>
+  <div id="toast" class="toast"></div>
 <script>
   const DESKTOP_URL="__DESKTOP_URL__";
   let cur='B', openChat=null, poll=null, deskLoaded=false, statusOpen=false, filterMode='all', sortDesc=true;
   let localReacts={}, reactMid=null;
-  const EMO={like:'👍',heart:'❤️',laugh:'😂',surprised:'😮',cry:'😢',angry:'😡'};
+  const EMO={like:'👍',heart:'❤️',laugh:'😆',surprised:'😮',cry:'😢',angry:'😡'};
   const $=id=>document.getElementById(id);
   const esc=s=>{const e=document.createElement('div');e.textContent=s||'';return e.innerHTML;};
   const isSelf=n=>/\(you\)/i.test(n||'');
@@ -204,7 +213,14 @@
     refreshMsgs(true); clearInterval(poll); poll=setInterval(()=>refreshMsgs(false),1400);
   }
   function closeConv(){ clearInterval(poll); poll=null; openChat=null; $('conv').classList.remove('on'); loadChats(); }
-  let pending=[], lastMsgs=[];
+  let pending=[], lastMsgs=[], pendingEdits={}, editMid=null;
+  function toast(t){ const e=$('toast'); e.textContent=t; e.classList.add('on'); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove('on'),3500); }
+  // segue un comando dell'agent finché Teams non conferma (done) o fallisce (failed)
+  async function followCmd(id){
+    for(let i=0;i<45;i++){ await new Promise(r=>setTimeout(r,700));
+      try{ const r=await api('/api/cmd/'+id); if(r.status==='done'||r.status==='failed') return r.status; }catch(e){} }
+    return 'failed';
+  }
   function renderMsgs(first){
     const box=$('msgs');
     const atBottom = box.scrollHeight-box.scrollTop-box.clientHeight < 70;
@@ -214,14 +230,15 @@
     lastMsgs.forEach(m=>{ const imgs=m.images||[], files=m.files||[];
       if(!(m.text||'').trim() && !imgs.length && !files.length) return; const mid=String(m.mid||''); const rc=localReacts[mid]||[];
       // reazioni lette da Teams, più quelle appena messe dall'app e non ancora comparse su Teams
-      const tr=(m.reactions||[]).map(r=>r.e+(r.n>1?' '+r.n:''));
-      const lr=rc.map(e=>EMO[e]||'').filter(x=>x && !(m.reactions||[]).some(r=>r.e===x));
-      const rcAll=tr.concat(lr); const rcHtml=rcAll.length?`<div>${rcAll.map(x=>`<span class="react">${esc(x)}</span>`).join(' ')}</div>`:'';
-      const st=/seen|read/i.test(m.status||'')?'👁 Visualizzato':'✓ Inviato';
+      const tr=(m.reactions||[]).map(r=>({t:r.e+(r.n>1?' '+r.n:''), mine:r.mine}));
+      const lr=rc.map(e=>EMO[e]||'').filter(x=>x && !(m.reactions||[]).some(r=>r.e===x)).map(x=>({t:x, mine:true, pend:true}));
+      const rcAll=tr.concat(lr); const rcHtml=rcAll.length?`<div>${rcAll.map(x=>`<span class="react${x.mine?' mine':''}"${x.pend?' style="opacity:.6"':''}>${esc(x.t)}</span>`).join(' ')}</div>`:'';
+      const pe=pendingEdits[mid];
+      const st=pe?'🕓 Modifica…':(/seen|read/i.test(m.status||'')?'👁 Visualizzato':'✓ Inviato')+(m.edited?' · Modificato':'');
       const qHtml=m.quote?`<div class="q"><div class="qa">${esc(m.quote.author)}</div>${esc(m.quote.text)}</div>`:'';
       const iHtml=imgs.map(i=>{ const u=i.f?'/media/'+i.f:i.url; return `<a class="im" href="${esc(u)}" target="_blank" onclick="event.stopPropagation()"><img src="${esc(u)}" alt=""${i.w&&i.h?` width="${i.w}" height="${i.h}"`:''}></a>`; }).join('');
       const fHtml=files.map(f=>`<a class="fl" href="${esc(f.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📎 ${esc(f.name)}</a>`).join('');
-      html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}</div>`:'')}${qHtml}${iHtml}${esc(m.text)}${fHtml}${m.mine?`<div class="st">${st}</div>`:''}${rcHtml}</div>`; });
+      html+=`<div class="b ${m.mine?'me':'them'}" data-mid="${mid}" onclick="openReact(event,'${mid}')">${(!m.mine&&m.author?`<div class="au">${esc(m.author)}</div>`:'')}${qHtml}${iHtml}${esc(pe||m.text)}${fHtml}${!m.mine&&m.edited?'<div class="st">Modificato</div>':''}${m.mine?`<div class="st">${st}</div>`:''}${rcHtml}</div>`; });
     pending.forEach(p=>{ const failed=Date.now()-p.ts>14000; html+=`<div class="b me" style="opacity:.72">${esc(p.text)}<div class="st ${failed?'err':''}">${failed?'✗ Non inviato — riprova':'🕓 Invio…'}</div></div>`; });
     // riscrive il DOM solo se qualcosa è cambiato: altrimenti a ogni poll le immagini lampeggiano
     if(html===box._html && !first) return;
@@ -238,6 +255,9 @@
   }
   async function sendMsg(){
     const ta=$('ta'); const text=ta.value.trim(); if(!text||!openChat) return; ta.value=''; ta.style.height='auto';
+    if(editMid){ const mid=editMid, chat=openChat; cancelEdit(); pendingEdits[mid]=text; renderMsgs(false);
+      let st='failed'; try{ const r=await api('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chat,mid,text})}); st=await followCmd(r.id); }catch(e){}
+      delete pendingEdits[mid]; if(st!=='done') toast('Modifica non riuscita su Teams'); await refreshMsgs(false); renderMsgs(false); return; }
     pending.push({text, ts:Date.now()}); renderMsgs(false);
     try{ await api('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:openChat,text})}); }catch(e){}
     setTimeout(()=>refreshMsgs(false),1100);
@@ -248,7 +268,8 @@
   // ---- reazioni ----
   function openReact(ev, mid){
     if(!mid) return; ev.stopPropagation();
-    reactMid=mid; const bar=$('reactBar'); bar.style.display='flex';
+    reactMid=mid; const bar=$('reactBar'); const m=lastMsgs.find(x=>String(x.mid)===mid);
+    $('editBtn').style.display=(m&&m.mine&&(m.text||'').trim())?'':'none'; bar.style.display='flex';
     const bw=bar.offsetWidth||258, bh=bar.offsetHeight||50;
     let x=(ev.clientX||innerWidth/2)-bw/2; x=Math.max(8,Math.min(x,innerWidth-bw-8));
     let y=(ev.clientY||200)-bh-12; if(y<64) y=(ev.clientY||200)+18;
@@ -257,11 +278,22 @@
   function hideReact(){ $('reactBar').style.display='none'; reactMid=null; }
   document.addEventListener('click',e=>{ const bar=$('reactBar'); if(bar.style.display==='flex' && !bar.contains(e.target) && !e.target.closest('.b')) hideReact(); });
   async function doReact(emoji){
-    if(!reactMid) return; const mid=reactMid;
-    localReacts[mid]=[...new Set([...(localReacts[mid]||[]),emoji])];
+    if(!reactMid||!openChat) return; const mid=reactMid, chat=openChat;
+    const m=lastMsgs.find(x=>String(x.mid)===mid);
+    const mineAlready=m&&(m.reactions||[]).some(r=>r.e===EMO[emoji]&&r.mine);
+    if(!mineAlready) localReacts[mid]=[...new Set([...(localReacts[mid]||[]),emoji])];
     hideReact(); renderMsgs(false);
-    try{ await api('/api/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mid,emoji})}); }catch(e){}
+    let st='failed'; try{ const r=await api('/api/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chat,mid,emoji})}); st=await followCmd(r.id); }catch(e){}
+    localReacts[mid]=(localReacts[mid]||[]).filter(e=>e!==emoji);
+    if(st!=='done') toast('Reazione non applicata su Teams');
+    await refreshMsgs(false); renderMsgs(false);
   }
+  function startEdit(){
+    const mid=reactMid, m=lastMsgs.find(x=>String(x.mid)===mid); hideReact(); if(!m) return;
+    editMid=mid; const ta=$('ta'); ta.value=m.text||''; $('editBar').style.display='flex'; ta.focus();
+    ta.style.height='auto'; ta.style.height=Math.min(120,ta.scrollHeight)+'px';
+  }
+  function cancelEdit(){ editMid=null; $('editBar').style.display='none'; const ta=$('ta'); ta.value=''; ta.style.height='auto'; }
 
   // ---- pull-to-refresh (lista chat) ----
   (function(){

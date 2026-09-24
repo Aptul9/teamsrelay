@@ -180,7 +180,17 @@ def resync(request: Request):
 def recheck(request: Request):
     check(request); ex("INSERT INTO commands(ts,type) VALUES(?,?)", (int(time.time()), "recheck")); return {"ok": True}
 
+def command(ctype, arg1="", arg2=""):
+    """Accoda un comando per l'agent e ne ritorna l'id, per seguirne l'esito."""
+    try:
+        with closing(dbc()) as c:
+            cur = c.execute("INSERT INTO commands(ts,type,arg1,arg2) VALUES(?,?,?,?)", (int(time.time()), ctype, arg1, arg2)); c.commit()
+            return cur.lastrowid
+    except Exception as e:
+        print("command:", e, flush=True); raise HTTPException(500)
+
 class ReactReq(BaseModel):
+    name: str
     mid: str
     emoji: str
 @app.post("/api/react")
@@ -188,8 +198,24 @@ def react_api(request: Request, r: ReactReq):
     check(request)
     if r.emoji not in REACTIONS:
         raise HTTPException(400, detail="Reazione non supportata")
-    ex("INSERT INTO commands(ts,type,arg1,arg2) VALUES(?,?,?,?)", (int(time.time()), "react", r.mid, r.emoji))
-    return {"ok": True}
+    return {"ok": True, "id": command("react", r.name, json.dumps({"mid": r.mid, "emoji": r.emoji}))}
+
+class EditReq(BaseModel):
+    name: str
+    mid: str
+    text: str
+@app.post("/api/edit")
+def edit_api(request: Request, r: EditReq):
+    check(request)
+    if not r.text.strip(): raise HTTPException(400, detail="Testo vuoto")
+    return {"ok": True, "id": command("edit", r.name, json.dumps({"mid": r.mid, "text": r.text}))}
+
+@app.get("/api/cmd/{cid}")
+def cmd_status(request: Request, cid: int):
+    check(request)
+    rows = q("SELECT status FROM commands WHERE id=?", (cid,))
+    if not rows: raise HTTPException(404)
+    return {"status": rows[0]["status"]}
 
 @app.get("/healthz")
 def healthz(): return {"ok": True}
