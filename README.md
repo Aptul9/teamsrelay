@@ -22,13 +22,13 @@ TeamsRelay è una web app self-hosted (installabile come app sull'iPhone) che ti
 11. [Opzionale: condividere la porta 443 con OpenVPN (sslh)](#opzionale-condividere-la-porta-443-con-openvpn-sslh)
 12. [Deploy automatico (GitHub Actions)](#deploy-automatico-github-actions)
 13. [Manutenzione e risoluzione problemi](#manutenzione-e-risoluzione-problemi)
-13. [Riferimento API](#riferimento-api)
-14. [Dettagli tecnici](#dettagli-tecnici)
-15. [Struttura del progetto](#struttura-del-progetto)
-16. [Sicurezza](#sicurezza)
-17. [Appendice A — Inoltrare le email con Power Automate](#appendice-a--inoltrare-le-email-con-power-automate)
-18. [Appendice B — Copiare le riunioni su un altro calendario](#appendice-b--copiare-le-riunioni-su-un-altro-calendario)
-19. [Licenza](#licenza)
+14. [Riferimento API](#riferimento-api)
+15. [Dettagli tecnici](#dettagli-tecnici)
+16. [Struttura del progetto](#struttura-del-progetto)
+17. [Sicurezza](#sicurezza)
+18. [Appendice A — Inoltrare le email con Power Automate](#appendice-a--inoltrare-le-email-con-power-automate)
+19. [Appendice B — Copiare le riunioni su un altro calendario](#appendice-b--copiare-le-riunioni-su-un-altro-calendario)
+20. [Licenza](#licenza)
 
 ---
 
