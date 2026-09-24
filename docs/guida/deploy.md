@@ -71,7 +71,7 @@ La chiave di deploy si genera così e la parte privata va nel secret `DEPLOY_SSH
 ssh-keygen -t ed25519 -N "" -C "teamsrelay-deploy@github-actions" -f teamsrelay-deploy
 ```
 
-Al primo deploy manca solo il login a Teams nel browser remoto, da fare a mano ([Installazione, passo 7](/guida/installazione#_7-primo-login-a-teams)).
+Al primo deploy manca solo il login a Teams, da fare a mano su `https://<DOMAIN>/desktop/` ([Installazione, passo 7](/guida/installazione#_7-primo-login-a-teams)).
 
 ## Rollback manuale
 

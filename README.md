@@ -29,13 +29,13 @@ Server Linux con Docker, porte 80 e 443 aperte:
 
 ```bash
 git clone <url-del-repository> /opt/teamsrelay && cd /opt/teamsrelay
-cp .env.example .env && nano .env          # DOMAIN, UI_USER, UI_PASS, DESKTOP_USER, DESKTOP_PASS
+cp .env.example .env && nano .env          # DOMAIN, UI_USER, UI_PASS
 docker run --rm -v "$PWD:/w" -w /w python:3.12-slim \
   sh -c "pip install -q cryptography && python tools/gen_vapid.py vapid"
 docker compose up -d --build
 ```
 
-Poi il login a Teams nel browser remoto (`ssh -L 3100:localhost:3000 utente@server`, `http://localhost:3100`) e l'app sul telefono da `https://<DOMAIN>`. Passo per passo: [Installazione](docs/guida/installazione.md).
+Poi il login a Teams su `https://<DOMAIN>/desktop/` (stesse credenziali dell'app) e l'app sul telefono da `https://<DOMAIN>`. Passo per passo: [Installazione](docs/guida/installazione.md).
 
 ## Licenza
 

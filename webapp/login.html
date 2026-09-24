@@ -33,7 +33,9 @@
     const u=document.getElementById('u').value.trim(), p=document.getElementById('p').value;
     try{
       const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:u,password:p})});
-      if(r.ok){ location.href='/'; } else { document.getElementById('err').textContent='Credenziali errate'; }
+      const nx=new URLSearchParams(location.search).get('next')||'/';
+      if(r.ok){ location.href=(nx.startsWith('/')&&!nx.startsWith('//'))?nx:'/'; }
+      else { document.getElementById('err').textContent=r.status===429?'Troppi tentativi, riprova fra qualche minuto':'Credenziali errate'; }
     }catch(e){ document.getElementById('err').textContent='Errore di rete'; }
   }
   document.getElementById('p').addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });

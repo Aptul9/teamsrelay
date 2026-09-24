@@ -44,6 +44,9 @@ jobs:
           docker compose config -q
           docker compose -f docker-compose.yml -f compose.local.yml config -q
 
+      - name: Caddyfile
+        run: docker run --rm -e DOMAIN=example.com -v "$PWD/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
+
       - name: Build images
         run: |
           docker build -q -t teamsrelay-agent ./agent

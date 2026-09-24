@@ -14,7 +14,7 @@ docker compose restart agent webapp
 
 Il caso più frequente. Il conditional access invalida la sessione e Teams mostra *"Chats are temporarily unavailable"* o *"We need you to sign in again"*: non sincronizza più e la lista resta ferma.
 
-1. Apri il [desktop remoto](/guida/desktop-remoto).
+1. Apri il [desktop remoto](/guida/desktop-remoto): pannello di stato → **Apri Teams remoto**, oppure `https://<DOMAIN>/desktop/`.
 2. In Teams clicca **Sign in** o ricarica la pagina, e accedi di nuovo con MFA.
 3. Entro un minuto lo stato torna verde.
 

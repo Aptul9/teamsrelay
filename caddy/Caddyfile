@@ -6,7 +6,18 @@
 }
 
 {$DOMAIN} {
-	reverse_proxy webapp:8090
+	# Desktop remoto (Teams nel Chromium del server) sullo stesso dominio, protetto dal login di TeamsRelay:
+	# Caddy chiede a /api/authcheck se il cookie di sessione è valido prima di far passare la richiesta.
+	redir /desktop /desktop/
+	handle /desktop/* {
+		forward_auth webapp:8090 {
+			uri /api/authcheck
+		}
+		reverse_proxy chromium:3000
+	}
+	handle {
+		reverse_proxy webapp:8090
+	}
 }
 
 # ---- Opzionale: desktop remoto su un sottodominio ----

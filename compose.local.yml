@@ -9,6 +9,7 @@ services:
   chromium:
     environment:
       - PASSWORD=
+      - SUBFOLDER=/
     volumes:
       - tr_config:/config
   agent:

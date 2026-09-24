@@ -63,7 +63,7 @@ openssl rand -hex 32               # da mettere in SESSION_SECRET
 nano .env
 ```
 
-Obbligatori in produzione: `DOMAIN`, `UI_USER`, `UI_PASS`, `DESKTOP_USER`, `DESKTOP_PASS`. Tutte le voci: [Configurazione](/guida/configurazione). Senza `UI_USER` e `UI_PASS` la web app non si avvia.
+Obbligatori in produzione: `DOMAIN`, `UI_USER`, `UI_PASS`. `UI_PASS` protegge anche il desktop remoto, quindi va scelta robusta. Tutte le voci: [Configurazione](/guida/configurazione). Senza `UI_USER` e `UI_PASS` la web app non si avvia.
 
 ## 5. Chiavi per le notifiche push
 
@@ -86,18 +86,12 @@ Caddy ottiene il certificato da solo. `https://<dominio>` deve mostrare la pagin
 
 ## 7. Primo login a Teams
 
-Il browser remoto ascolta solo su localhost del server. Dal PC si raggiunge con un tunnel SSH:
-
-```bash
-ssh -L 3100:localhost:3000 utente@ip-del-server
-```
-
-1. Apri `http://localhost:3100` ed entra con `DESKTOP_USER` / `DESKTOP_PASS`.
+1. Apri `https://<DOMAIN>/desktop/` ed entra con `UI_USER` / `UI_PASS`.
 2. Nel Chromium remoto è aperto Teams: accedi con il tuo account, password e MFA.
 3. Chiudi i popup di benvenuto e aspetta la lista chat.
 4. Imposta la lingua di Teams su **English**: alcuni testi letti dall'agent sono in inglese e le etichette tradotte dalla web app partono da quelli.
 
-Da qui l'agent lavora da solo. Per raggiungere il desktop anche dal telefono: [Desktop remoto](/guida/desktop-remoto).
+Da qui l'agent lavora da solo. Il desktop resta raggiungibile dall'app quando serve rifare il login: [Desktop remoto](/guida/desktop-remoto).
 
 ## 8. Verifica
 

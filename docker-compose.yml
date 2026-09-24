@@ -14,6 +14,8 @@ services:
       - CUSTOM_USER=${DESKTOP_USER:-}
       - PASSWORD=${DESKTOP_PASS:-}
       - CHROME_CLI=--remote-debugging-port=9222 --remote-allow-origins=* https://teams.microsoft.com/
+      # pubblicato da Caddy su https://<DOMAIN>/desktop/, dietro il login della web app
+      - SUBFOLDER=/desktop/
     volumes:
       - ./config:/config
     ports:

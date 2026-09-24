@@ -39,10 +39,11 @@ Le azioni su Teams sono asincrone: la risposta contiene l'`id` di un comando, e 
 | Metodo | Percorso | Risposta |
 |---|---|---|
 | GET | `/` | la PWA, oppure la pagina di login |
-| POST | `/api/login` | `{user, password}`, imposta il cookie |
+| POST | `/api/login` | `{user, password}`, imposta il cookie; `429` dopo 10 errori in 15 minuti dallo stesso IP |
 | GET | `/api/vapidkey` | chiave pubblica VAPID |
 | GET | `/sw.js`, `/manifest.webmanifest`, `/static/*` | service worker, manifest, icone |
 | GET | `/healthz` | liveness della web app |
+| GET | `/api/authcheck` | usata da Caddy per `/desktop/`: 200 con sessione valida, altrimenti redirect al login con `next` |
 
 ## `/api/health`
 

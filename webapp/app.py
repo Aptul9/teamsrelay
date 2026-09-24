@@ -1,7 +1,7 @@
 import os, re, sqlite3, secrets, time, hmac, hashlib, base64, json
 from contextlib import closing
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -88,11 +88,33 @@ def vapidkey():
 class LoginReq(BaseModel):
     user: str
     password: str
+# Il login protegge anche il desktop remoto, cioè la sessione Teams: pausa a ogni errore e blocco per IP
+LOGIN_FAILS = {}           # ip -> [tentativi falliti, primo fallimento]
+LOGIN_MAX, LOGIN_WINDOW = 10, 900
+def client_ip(request: Request):
+    return (request.headers.get("x-forwarded-for", "").split(",")[0].strip()) or (request.client.host if request.client else "?")
 @app.post("/api/login")
-def login(r: LoginReq):
+def login(r: LoginReq, request: Request):
+    ip, now = client_ip(request), time.time()
+    n, first = LOGIN_FAILS.get(ip, (0, now))
+    if now - first > LOGIN_WINDOW: n, first = 0, now
+    if n >= LOGIN_MAX:
+        raise HTTPException(429, detail="Troppi tentativi, riprova fra qualche minuto")
     if secrets.compare_digest(r.user, UI_USER) and secrets.compare_digest(r.password, UI_PASS):
+        LOGIN_FAILS.pop(ip, None)
         return set_sess(JSONResponse({"ok": True}))
+    LOGIN_FAILS[ip] = (n + 1, first)
+    time.sleep(1.5)
     raise HTTPException(401, detail="Credenziali errate")
+
+@app.get("/api/authcheck")
+def authcheck(request: Request):
+    """Usata da Caddy (forward_auth) per il desktop remoto: 200 se la sessione è valida, altrimenti al login."""
+    if authed(request): return {"ok": True}
+    nxt = request.headers.get("x-forwarded-uri", "/desktop/")
+    if not nxt.startswith("/") or nxt.startswith("//"): nxt = "/desktop/"
+    from urllib.parse import quote
+    return Response(status_code=302, headers={"Location": "/?next=" + quote(nxt)})
 
 # ---- root: app o login ----
 def desktop_url():
@@ -101,7 +123,7 @@ def desktop_url():
         if u.startswith("http"): return u
     except Exception:
         pass
-    return DESKTOP_URL
+    return DESKTOP_URL or "/desktop/"
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
