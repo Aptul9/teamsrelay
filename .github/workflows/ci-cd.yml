@@ -49,6 +49,16 @@ jobs:
           docker build -q -t teamsrelay-agent ./agent
           docker build -q -t teamsrelay-webapp ./webapp
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Documentation build
+        run: |
+          npm ci --no-audit --no-fund
+          npm run docs:build
+
   deploy:
     name: Deploy
     needs: check
