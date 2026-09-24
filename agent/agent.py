@@ -133,7 +133,9 @@ MSGS_JS = r"""
     // stato dei miei messaggi: Teams mette l'icona "Seen" sull'ultimo letto dall'altra parte
     let status=''; if(mine){ const my=e.closest('.fui-ChatMyMessage')||it.querySelector('.fui-ChatMyMessage');
       const si=my&&my.querySelector('[class*="statusIcon"]'); status=si?(si.getAttribute('aria-label')||'').trim():''; }
-    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files, reactions:reactions, status:status});
+    // Teams scrive "Edited" in un span dell'intestazione del messaggio
+    const edited=[...it.querySelectorAll('span')].some(x=>!x.closest('[id^="content-"]') && /^(Edited|Modificato)$/i.test((x.textContent||'').trim()));
+    out.push({mid:e.getAttribute('data-mid')||'', author:author.slice(0,60), text:text.slice(0,2000), mine:!!mine, reacts:reacts, quote:quote, images:images, files:files, reactions:reactions, status:status, edited:edited});
   }
   return out;
 }
@@ -188,7 +190,7 @@ def save_chat_messages(chat, msgs):
         with dbc() as c:
             c.execute("DELETE FROM chat_messages WHERE chat=?",(chat,))
             for i,m in enumerate(msgs):
-                extra={k:m[k] for k in ("quote","images","files","reactions","status") if m.get(k)}
+                extra={k:m[k] for k in ("quote","images","files","reactions","status","edited") if m.get(k)}
                 c.execute("INSERT INTO chat_messages(chat,idx,mid,author,text,mine,reacts,extra) VALUES(?,?,?,?,?,?,?,?)",(chat,i,m.get("mid",""),m.get("author",""),m.get("text",""),1 if m.get("mine") else 0,m.get("reacts",""),json.dumps(extra,ensure_ascii=False) if extra else ""))
     except Exception as e: print("save_cm:", e, flush=True)
 
@@ -382,7 +384,8 @@ def open_chat(page, name):
         const s=e.parentElement && e.parentElement.closest('[role="treeitem"][aria-level="1"]'); return s && SECT.test(head(s)); });
       let t=tis.find(e => clean(e.innerText).startsWith(name));
       if(!t) t=tis.find(e => clean(e.innerText).indexOf(name)>-1);
-      if(t){ (t.querySelector('a,[role=button]')||t).click(); return true; }
+      // click sulla riga: l'unico pulsante dentro la riga è "More chat options" (menu con Hide, Remove chat history...)
+      if(t){ t.click(); return true; }
       return false;
     }""", name)
     if not ok: return False
@@ -455,6 +458,14 @@ def do_send(page, name, text):
 QUICK_REACTS    = {"like":"message-actions-like","heart":"message-actions-heart","laugh":"message-actions-laugh","surprised":"message-actions-surprised"}
 EXPANDED_REACTS = {"cry":"emoticon-button-cry","angry":"emoticon-button-angry"}
 
+def clear_overlays(page):
+    """Chiude menu o finestre rimasti aperti sopra la chat, che intercetterebbero il mouse."""
+    for _ in range(3):
+        n = page.evaluate("""()=>[...document.querySelectorAll('[role="menu"],[role="dialog"],[role="alertdialog"]')].filter(e=>e.getClientRects().length).length""")
+        if not n: return True
+        page.keyboard.press("Escape"); time.sleep(0.4)
+    return False
+
 def hover_message(page, mid):
     """Porta il mouse sul messaggio finché Teams mostra la sua barra azioni."""
     m = page.locator(f'[data-tid="chat-pane-message"][data-mid="{mid}"]')
@@ -462,13 +473,40 @@ def hover_message(page, mid):
     bar = page.locator('[data-tid="message-actions-container"]:visible')
     for _ in range(4):
         try:
-            m.scroll_into_view_if_needed(timeout=3000)
-            page.mouse.move(2, 2); time.sleep(0.15)
-            m.hover(timeout=3000)
+            m.evaluate("e => e.scrollIntoView({block:'center'})")
+            box = m.bounding_box()
+            if not box: time.sleep(0.3); continue
+            # movimento diretto del mouse: hover() di Playwright aspetta la fine delle animazioni di Teams (anche 10 s)
+            page.mouse.move(2, 2); time.sleep(0.1)
+            page.mouse.move(box["x"] + box["width"] / 2, box["y"] + min(box["height"] / 2, 20), steps=3)
             bar.first.wait_for(timeout=1500)
             return True
         except Exception:
-            time.sleep(0.4)
+            time.sleep(0.3)
+    return False
+
+BAR_BUTTON_JS = r"""([mid, tid]) => {
+  // Teams disegna le barre azioni in un portal fuori dal messaggio e ne possono essere visibili più d'una:
+  // si usa quella più vicina al messaggio richiesto.
+  const m=document.querySelector('[data-tid="chat-pane-message"][data-mid="'+mid+'"]'); if(!m) return null;
+  const r=m.getBoundingClientRect();
+  const bars=[...document.querySelectorAll('[data-tid="message-actions-container"]')].filter(b=>b.offsetParent!==null);
+  let best=null, bd=1e9;
+  for(const b of bars){ const q=b.getBoundingClientRect(); const d=Math.abs((q.top+q.bottom)/2-(r.top+Math.min(r.height,40)/2)); if(d<bd){bd=d; best=b;} }
+  if(!best || bd>120) return null;
+  const btn=best.querySelector('[data-tid="'+tid+'"]'); if(!btn || btn.offsetParent===null) return null;
+  const q=btn.getBoundingClientRect(); return {x:q.left+q.width/2, y:q.top+q.height/2};
+}"""
+
+def click_bar_button(page, mid, tid):
+    """Hover sul messaggio e click sul pulsante `tid` della sua barra azioni."""
+    for _ in range(3):
+        if not hover_message(page, mid): return False
+        pt = page.evaluate(BAR_BUTTON_JS, [mid, tid])
+        if pt:
+            page.mouse.click(pt["x"], pt["y"])   # salto diretto: il mouse non passa su altri messaggi
+            return True
+        time.sleep(0.3)
     return False
 
 def my_reactions(page, mid):
@@ -479,14 +517,13 @@ def my_reactions(page, mid):
 def react_message(page, chat, mid, emoji):
     """Mette (o toglie, se già messa) una reazione. Ritorna True se lo stato su Teams è cambiato."""
     if emoji not in QUICK_REACTS and emoji not in EXPANDED_REACTS: return False
+    if not clear_overlays(page): print("react: finestra aperta sopra la chat", flush=True); return False
     if not open_chat(page, chat): return False
     before = my_reactions(page, mid)
-    if not hover_message(page, mid): print("react: barra azioni non comparsa", mid, flush=True); return False
     try:
-        if emoji in QUICK_REACTS:
-            page.locator(f'[data-tid="{QUICK_REACTS[emoji]}"]:visible').first.click(timeout=3000)
-        else:
-            page.locator('[data-tid="expanded-reactions-picker-entry"]:visible').first.click(timeout=3000)
+        tid = QUICK_REACTS.get(emoji, "expanded-reactions-picker-entry")
+        if not click_bar_button(page, mid, tid): print("react: pulsante non trovato", mid, tid, flush=True); return False
+        if emoji in EXPANDED_REACTS:
             page.locator(f'[data-tid="{EXPANDED_REACTS[emoji]}"]:visible').first.click(timeout=4000)
     except Exception as e:
         print("react:", str(e).splitlines()[0][:120], flush=True); page.keyboard.press("Escape"); return False
@@ -500,11 +537,12 @@ def react_message(page, chat, mid, emoji):
 def edit_message(page, chat, mid, text):
     """Modifica un mio messaggio. Ritorna True se il testo su Teams è quello nuovo."""
     text = (text or "").strip()
-    if not text or not open_chat(page, chat): return False
-    if not hover_message(page, mid): print("edit: barra azioni non comparsa", mid, flush=True); return False
+    if not text: return False
+    if not clear_overlays(page): print("edit: finestra aperta sopra la chat", flush=True); return False
+    if not open_chat(page, chat): return False
     item = page.locator(f'[data-tid="chat-pane-item"]:has([data-mid="{mid}"])')
     try:
-        page.locator('[data-tid="message-actions-edit"]:visible').first.click(timeout=3000)
+        if not click_bar_button(page, mid, "message-actions-edit"): print("edit: pulsante non trovato", mid, flush=True); return False
         ed = item.locator('[data-tid="ckeditor"]').first
         ed.wait_for(timeout=4000); ed.click()
         page.keyboard.press("Control+A"); page.keyboard.press("Delete")

@@ -149,7 +149,7 @@
     <button onclick="doReact('laugh')">😆</button>
     <button onclick="doReact('surprised')">😮</button>
     <button onclick="doReact('cry')">😢</button>
-    <button onclick="doReact('angry')">😡</button>
+    <button onclick="doReact('angry')">😠</button>
     <button id="editBtn" class="rb-edit" onclick="startEdit()" style="display:none">✏️ Modifica</button>
   </div>
   <div id="toast" class="toast"></div>
@@ -157,7 +157,7 @@
   const DESKTOP_URL="__DESKTOP_URL__";
   let cur='B', openChat=null, poll=null, deskLoaded=false, statusOpen=false, filterMode='all', sortDesc=true;
   let localReacts={}, reactMid=null;
-  const EMO={like:'👍',heart:'❤️',laugh:'😆',surprised:'😮',cry:'😢',angry:'😡'};
+  const EMO={like:'👍',heart:'❤️',laugh:'😆',surprised:'😮',cry:'😢',angry:'😠'};
   const $=id=>document.getElementById(id);
   const esc=s=>{const e=document.createElement('div');e.textContent=s||'';return e.innerHTML;};
   const isSelf=n=>/\(you\)/i.test(n||'');
