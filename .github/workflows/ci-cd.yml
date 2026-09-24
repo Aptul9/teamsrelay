@@ -1,0 +1,100 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python syntax
+        run: python -m py_compile agent/agent.py webapp/app.py tools/gen_vapid.py tools/genicons.py
+
+      - name: JavaScript syntax (index.html, login.html, service worker)
+        run: |
+          python - <<'EOF'
+          import re, pathlib
+          for f in ["webapp/index.html", "webapp/login.html"]:
+              html = pathlib.Path(f).read_text(encoding="utf-8")
+              js = "\n".join(re.findall(r"<script>(.*?)</script>", html, re.S))
+              pathlib.Path("/tmp/" + pathlib.Path(f).stem + ".js").write_text(js, encoding="utf-8")
+          EOF
+          for f in /tmp/index.js /tmp/login.js webapp/static/sw.js; do node --check "$f"; done
+
+      - name: Shell syntax
+        run: bash -n deploy/remote-deploy.sh deploy/desktop-tunnel.sh
+
+      - name: Compose files
+        env:
+          DOMAIN: example.com
+        run: |
+          docker compose config -q
+          docker compose -f docker-compose.yml -f compose.local.yml config -q
+
+      - name: Build images
+        run: |
+          docker build -q -t teamsrelay-agent ./agent
+          docker build -q -t teamsrelay-webapp ./webapp
+
+  deploy:
+    name: Deploy
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ vars.DEPLOY_DOMAIN }}
+    # un deploy alla volta, senza interrompere quello in corso
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    env:
+      TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+      TR_DIR: /opt/teamsrelay
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: SSH setup
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          # host key fissata: niente StrictHostKeyChecking=no
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Backup of the running version
+        run: ssh "$TARGET" "test ! -x $TR_DIR/deploy/remote-deploy.sh || $TR_DIR/deploy/remote-deploy.sh backup"
+
+      - name: Upload code
+        run: |
+          # i dati di runtime (.env, profilo Chromium, database, chiavi VAPID) restano sul server
+          rsync -az --delete \
+            --exclude .git/ --exclude .github/ --exclude .env \
+            --exclude /config/ --exclude /data/ --exclude /vapid/ --exclude .deployed-sha \
+            ./ "$TARGET:$TR_DIR/"
+
+      - name: Build and restart
+        run: ssh "$TARGET" "$TR_DIR/deploy/remote-deploy.sh up ${{ github.sha }}"
+
+      - name: Public HTTPS check
+        run: |
+          for i in $(seq 1 20); do
+            if curl -fsS --max-time 10 "https://${{ vars.DEPLOY_DOMAIN }}/healthz"; then echo; exit 0; fi
+            sleep 6
+          done
+          echo "https://${{ vars.DEPLOY_DOMAIN }}/healthz non risponde" >&2; exit 1

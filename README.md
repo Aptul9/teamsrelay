@@ -20,7 +20,8 @@ TeamsRelay è una web app self-hosted (installabile come app sull'iPhone) che ti
 9. [Uso quotidiano](#uso-quotidiano)
 10. [Desktop remoto](#desktop-remoto)
 11. [Opzionale: condividere la porta 443 con OpenVPN (sslh)](#opzionale-condividere-la-porta-443-con-openvpn-sslh)
-12. [Manutenzione e risoluzione problemi](#manutenzione-e-risoluzione-problemi)
+12. [Deploy automatico (GitHub Actions)](#deploy-automatico-github-actions)
+13. [Manutenzione e risoluzione problemi](#manutenzione-e-risoluzione-problemi)
 13. [Riferimento API](#riferimento-api)
 14. [Dettagli tecnici](#dettagli-tecnici)
 15. [Struttura del progetto](#struttura-del-progetto)
@@ -307,6 +308,27 @@ sudo systemctl restart sslh && sudo systemctl enable sslh
 ```
 
 In questa modalità apri sempre il sito con `https://`: il redirect automatico da `http://` includerebbe la porta 8443.
+
+## Deploy automatico (GitHub Actions)
+
+Il workflow `.github/workflows/ci-cd.yml` ha due job:
+
+- **Check**, a ogni push e pull request: sintassi Python, JavaScript e shell, validazione dei file compose, build delle immagini.
+- **Deploy**, a ogni push su `main` (o a mano da *Actions → CI/CD → Run workflow*): copia il codice sul server con rsync, ricostruisce e riavvia con `docker compose up -d --build`, controlla che la web app risponda e infine verifica `https://<dominio>/healthz` da Internet.
+
+Sul server restano sempre `.env`, `config/` (sessione Teams), `data/` e `vapid/`: il deploy non li tocca. Se dopo il riavvio la web app non risponde, `deploy/remote-deploy.sh` rimette la versione precedente e il job fallisce.
+
+**Secrets e variabili del repository** (*Settings → Secrets and variables → Actions*):
+
+| Nome | Tipo | Contenuto |
+|---|---|---|
+| `DEPLOY_HOST` | secret | IP o nome del server |
+| `DEPLOY_USER` | secret | utente di deploy sul server, nel gruppo `docker` |
+| `DEPLOY_SSH_KEY` | secret | chiave privata SSH dedicata al deploy |
+| `DEPLOY_KNOWN_HOSTS` | secret | riga di `ssh-keyscan -t ed25519 <host>`: la host key è fissata |
+| `DEPLOY_DOMAIN` | variabile | dominio pubblico, per il controllo HTTPS finale |
+
+**Primo setup del server**, una volta sola: utente di deploy con la chiave pubblica in `authorized_keys`, cartella `/opt/teamsrelay` di sua proprietà con dentro `.env` (vedi [Configurazione](#configurazione-env)) e le chiavi VAPID in `vapid/`, porte 80 e 443 aperte. Poi il primo push su `main` fa il resto; il login a Teams nel browser remoto va fatto a mano come al passo 7.
 
 ## Manutenzione e risoluzione problemi
 
