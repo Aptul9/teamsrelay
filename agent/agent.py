@@ -614,6 +614,31 @@ def read_receipts(page, chat, mid):
     finally:
         clear_overlays(page); page.mouse.move(2, 2)
 
+PILL_JS = r"""([mid, emo]) => {
+  const m=document.querySelector('[data-tid="chat-pane-message"][data-mid="'+mid+'"]'); if(!m) return null;
+  const it=m.closest('[data-tid="chat-pane-item"]')||m;
+  const b=[...it.querySelectorAll('[data-tid="diverse-reaction-pill-button"]')].find(x=>[...x.querySelectorAll('img')].some(i=>i.alt===emo));
+  if(!b) return {found:false};
+  const r=b.getBoundingClientRect(); return {found:true, x:r.left+r.width/2, y:r.top+r.height/2, pressed:b.getAttribute('aria-pressed')==='true'};
+}"""
+
+def toggle_pill(page, chat, mid, emo):
+    """Click sulla reazione `emo` sotto il messaggio, come in Teams: se è mia la toglie, altrimenti aggiunge la stessa."""
+    if not emo or not clear_overlays(page) or not open_chat(page, chat): return False
+    m = page.locator(f'[data-tid="chat-pane-message"][data-mid="{mid}"]')
+    if m.count() == 0: return False
+    m.evaluate("e => e.scrollIntoView({block:'center'})"); time.sleep(0.4)
+    pt = page.evaluate(PILL_JS, [mid, emo])
+    if not pt or not pt.get("found"): print("pill: reazione non trovata", mid, emo, flush=True); return False
+    was = pt["pressed"]
+    page.mouse.click(pt["x"], pt["y"]); page.mouse.move(2, 2)
+    for _ in range(12):
+        time.sleep(0.25)
+        now = page.evaluate(PILL_JS, [mid, emo])
+        if now and ((not now.get("found")) or now.get("pressed") != was): return True
+    clear_overlays(page)
+    print("pill: nessun cambio su Teams", mid, emo, flush=True); return False
+
 def edit_message(page, chat, mid, text):
     """Modifica un mio messaggio. Ritorna True se il testo su Teams è quello nuovo."""
     text = (text or "").strip()
@@ -787,7 +812,8 @@ def main():
                         # arg1 = chat, arg2 = JSON {mid, emoji|text}
                         try: args=json.loads(a2 or "{}")
                         except Exception: args={}
-                        if ctype=="react": ok=react_message(page,a1,args.get("mid",""),args.get("emoji",""))
+                        if ctype=="react" and args.get("pill"): ok=toggle_pill(page,a1,args.get("mid",""),args["pill"])
+                        elif ctype=="react": ok=react_message(page,a1,args.get("mid",""),args.get("emoji",""))
                         else: ok=edit_message(page,a1,args.get("mid",""),args.get("text",""))
                         set_cmd_result(cid, "done" if ok else "failed")
                         set_state("active_chat",a1); save_open_chat(page, a1)

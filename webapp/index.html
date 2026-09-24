@@ -44,6 +44,7 @@
   .reactbar button{ border:0; background:transparent; font-size:25px; padding:5px 6px; border-radius:50%; line-height:1; }
   .reactbar button:active{ background:var(--accent); transform:scale(1.15); }
   .react.mine{ border-color:var(--brand); background:var(--accent); }
+  .react[data-e]{ cursor:pointer; }
   .react{ display:inline-block; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:11px; padding:1px 7px; font-size:13px; margin-top:4px; white-space:nowrap; }
   main{ flex:1; overflow:hidden; position:relative; }
   .view{ position:absolute; inset:0; display:none; flex-direction:column; } .view.on{ display:flex; }
@@ -294,9 +295,9 @@
     lastMsgs.forEach(m=>{ const imgs=m.images||[], files=m.files||[];
       if(!(m.text||'').trim() && !imgs.length && !files.length) return; const mid=String(m.mid||''); const rc=localReacts[mid]||[];
       // reazioni lette da Teams, più quelle appena messe dall'app e non ancora comparse su Teams
-      const tr=(m.reactions||[]).map(r=>({t:r.e+(r.n>1?' '+r.n:''), mine:r.mine}));
+      const tr=(m.reactions||[]).filter(r=>!(pillPending[mid]||{})[r.e]).map(r=>({t:r.e+(r.n>1?' '+r.n:''), e:r.e, mine:r.mine}));
       const lr=rc.map(e=>EMO[e]||'').filter(x=>x && !(m.reactions||[]).some(r=>r.e===x)).map(x=>({t:x, mine:true, pend:true}));
-      const rcAll=tr.concat(lr); const rcHtml=rcAll.length?`<div>${rcAll.map(x=>`<span class="react${x.mine?' mine':''}"${x.pend?' style="opacity:.6"':''}>${esc(x.t)}</span>`).join(' ')}</div>`:'';
+      const rcAll=tr.concat(lr); const rcHtml=rcAll.length?`<div>${rcAll.map(x=>`<span class="react${x.mine?' mine':''}"${x.pend?' style="opacity:.6"':''}${x.e?` data-e="${esc(x.e)}" onclick="tapPill(event,'${mid}',this.dataset.e)"`:''}>${esc(x.t)}</span>`).join(' ')}</div>`:'';
       const pe=pendingEdits[mid];
       const st=pe?'🕓 Modifica…':statusLabel(m.status)+(m.edited?' · Modificato':'');
       const qHtml=m.quote?`<div class="q"><div class="qa">${esc(m.quote.author)}</div>${esc(m.quote.text)}</div>`:'';
@@ -351,6 +352,18 @@
     let st='failed'; try{ const r=await api('/api/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chat,mid,emoji})}); st=(await followCmd(r.id)).status; }catch(e){}
     localReacts[mid]=(localReacts[mid]||[]).filter(e=>e!==emoji);
     if(st!=='done') toast('Reazione non applicata su Teams');
+    await refreshMsgs(false); renderMsgs(false);
+  }
+  // tocco su una reazione sotto il messaggio, come in Teams: se è mia la toglie, altrimenti aggiunge la stessa
+  let pillPending={};
+  async function tapPill(ev, mid, e){
+    ev.stopPropagation(); if(!openChat) return; const chat=openChat;
+    const m=lastMsgs.find(x=>String(x.mid)===mid), r=m&&(m.reactions||[]).find(x=>x.e===e); const wasMine=!!(r&&r.mine);
+    if(wasMine){ (pillPending[mid]=pillPending[mid]||{})[e]=1; } else { localReacts[mid]=[...new Set([...(localReacts[mid]||[]),Object.keys(EMO).find(k=>EMO[k]===e)||''])].filter(Boolean); }
+    renderMsgs(false);
+    let st='failed'; try{ const c=await api('/api/react',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:chat,mid,pill:e})}); st=(await followCmd(c.id)).status; }catch(err){}
+    if(pillPending[mid]) delete pillPending[mid][e]; localReacts[mid]=(localReacts[mid]||[]).filter(k=>EMO[k]!==e);
+    if(st!=='done') toast(wasMine?'Reazione non tolta su Teams':'Reazione non applicata su Teams');
     await refreshMsgs(false); renderMsgs(false);
   }
   function startEdit(){
@@ -443,6 +456,8 @@
     if(!has) $('pushBanner').style.display='block';
   })();
 
+  // da PC (mouse, niente touch) il tab Desktop non serve: il desktop remoto si apre direttamente nel browser
+  if(matchMedia('(hover:hover) and (pointer:fine)').matches && !('ontouchstart' in window)) $('tC').style.display='none';
   loadChats(); refreshStatus();
   setInterval(()=>{ if(cur==='B'&&!openChat) loadChats(); if(cur==='A') loadFeed(); }, 8000);
   setInterval(refreshStatus, 15000);

@@ -201,10 +201,14 @@ def command(ctype, arg1="", arg2=""):
 class ReactReq(BaseModel):
     name: str
     mid: str
-    emoji: str
+    emoji: str = ""
+    pill: str = ""      # emoji di una reazione già presente sotto il messaggio: click sulla pill, come in Teams
 @app.post("/api/react")
 def react_api(request: Request, r: ReactReq):
     check(request)
+    if r.pill:
+        if len(r.pill) > 16: raise HTTPException(400, detail="Reazione non valida")
+        return {"ok": True, "id": command("react", r.name, json.dumps({"mid": r.mid, "pill": r.pill}))}
     if r.emoji not in REACTIONS:
         raise HTTPException(400, detail="Reazione non supportata")
     return {"ok": True, "id": command("react", r.name, json.dumps({"mid": r.mid, "emoji": r.emoji}))}
