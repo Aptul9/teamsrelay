@@ -30,11 +30,13 @@ import {
   ApiError,
   call,
   isSelf,
+  loadSeen,
   markActivitySeen,
   parseSeen,
   post,
   readStorage,
   runCmd,
+  seenKey,
   toLogin,
   unseenActivity,
   writeStorage,
@@ -61,9 +63,6 @@ const onVisibility = (cb: () => void) => {
   return () => document.removeEventListener("visibilitychange", cb);
 };
 const visibleNow = () => document.visibilityState === "visible";
-
-// notification ids already seen on this device, per account
-const seenKey = (n: number) => `actseen:${n}`;
 
 function CountBadge({ n }: { n: number }) {
   if (!n) return null;
@@ -95,6 +94,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   // switching account drops everything that belonged to the previous one
   const accRef = useRef(0);
+  const accountsRef = useRef<Account[]>([]);
   const switchTo = useCallback((n: number) => {
     if (accRef.current === n) return;
     accRef.current = n;
@@ -116,8 +116,9 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   }, [listTab]);
   const noteActivity = useCallback((n: number, d: { ts: number; items: ActivityItem[] }, looking: boolean) => {
     setActivity(d);
-    if (!n || !d.ts) return; // the agent has not read the Teams feed yet
-    const key = seenKey(n);
+    const a = accountsRef.current.find((x) => x.slot === n);
+    if (!a || !d.ts) return; // account list not in yet (it comes first on the stream), or Teams feed not read yet
+    const key = seenKey(a);
     const stored = parseSeen(readStorage(key));
     const seen = stored && !looking ? stored : markActivitySeen(stored, d.items);
     if (seen !== stored) writeStorage(key, JSON.stringify(seen));
@@ -134,20 +135,11 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   const applyAccounts = useCallback(
     (d: { accounts: Account[]; max: number; free: number }) => {
+      accountsRef.current = d.accounts;
       setAccounts(d.accounts);
       setLimits({ max: d.max, free: d.free });
-      // the account menu counts the notifications of every account. One met here for the first time takes the unread
-      // ones it has now as seen, like the first feed of the selected account: only what comes later counts
-      const seen: Record<number, string[]> = {};
-      for (const a of d.accounts) {
-        const stored = parseSeen(readStorage(seenKey(a.slot)));
-        if (stored) seen[a.slot] = stored;
-        else if (a.unreadActivity) {
-          seen[a.slot] = a.unreadActivity;
-          writeStorage(seenKey(a.slot), JSON.stringify(a.unreadActivity));
-        }
-      }
-      setSeenAct(seen);
+      // the account menu counts the notifications of every account, not only of the selected one
+      setSeenAct(loadSeen(d.accounts));
       if (d.accounts.some((a) => a.slot === accRef.current)) return;
       const saved = Number(readStorage("acc")) || 0;
       const pick = d.accounts.find((a) => a.slot === saved) ?? d.accounts[0];

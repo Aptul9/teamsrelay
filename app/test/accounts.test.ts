@@ -1,7 +1,7 @@
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { accountSummary, healthFor } from "@/lib/accounts";
-import { appDb, claimSlot, migrateAppSchema, setSlotStopped, slotsOf } from "@/lib/appdb";
+import { appDb, claimSlot, migrateAppSchema, releaseSlot, setSlotStopped, slotsOf } from "@/lib/appdb";
 import { queue } from "@/lib/commands";
 import { createSlotDb, tempDir } from "./helpers";
 
@@ -54,5 +54,14 @@ describe("the unread counts of an account", () => {
 
     slotDb.prepare("INSERT INTO state(k, v) VALUES('activity_ts', ?)").run(String(Math.floor(Date.now() / 1000)));
     expect(summary("u3", n)).toMatchObject({ unread: 1, unreadActivity: ["x1"] });
+  });
+
+  it("carry when the account took its slot, which changes when another account takes the slot", () => {
+    const n = claimSlot(appDb(), "u4", { slotCount: 4, perUser: 4 });
+    appDb().prepare("UPDATE teams_accounts SET added=? WHERE slot=?").run(1790000000, n);
+    expect(summary("u4", n).added).toBe(1790000000);
+    releaseSlot(appDb(), n);
+    expect(claimSlot(appDb(), "u4", { slotCount: 4, perUser: 4 })).toBe(n);
+    expect(summary("u4", n).added).toBeGreaterThan(1790000000);
   });
 });

@@ -13,9 +13,11 @@ export type AccountSummary = {
   overall: string;
   stopped: boolean;
   unread: number;
-  // ids of the unread items of the Teams Activity feed, null until the agent reads it: the app counts the ones its
-  // device has not shown yet
+  // ids of the unread items of the Teams Activity feed, null until the agent has saved the feed once: the app counts
+  // the ones its device has not shown yet
   unreadActivity: string[] | null;
+  // Unix seconds the account took its slot: a slot freed and taken by another account gets a new value
+  added: number;
   desktop: string;
 };
 
@@ -55,6 +57,7 @@ export function accountSummary(s: Slot): AccountSummary {
     stopped: !!s.stopped,
     unread,
     unreadActivity,
+    added: s.added,
     desktop: desktopUrlOf(s.slot),
   };
 }

@@ -1,5 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { accountUnread, markActivitySeen, parseSeen, unseenActivity, unseenIds, type Account, type ActivityItem } from "@/lib/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  accountUnread,
+  loadSeen,
+  markActivitySeen,
+  parseSeen,
+  seenKey,
+  unseenActivity,
+  unseenIds,
+  type Account,
+  type ActivityItem,
+} from "@/lib/client";
 
 const item = (id: string, unread = 1): ActivityItem => ({
   id,
@@ -13,6 +23,22 @@ const item = (id: string, unread = 1): ActivityItem => ({
   chat: "",
   channel: 0,
   av: "",
+});
+
+const account = (extra: Partial<Account> = {}): Account => ({
+  slot: 2,
+  name: "Anna Rossi",
+  email: "anna.rossi@contoso.example",
+  tenant: "Contoso",
+  av: "",
+  teams: "ok",
+  overall: "green",
+  stopped: false,
+  unread: 2,
+  unreadActivity: ["n2", "n1"],
+  added: 1790000000,
+  desktop: "",
+  ...extra,
 });
 
 describe("unseenActivity", () => {
@@ -53,21 +79,6 @@ describe("unseenIds", () => {
 });
 
 describe("accountUnread", () => {
-  const account = (extra: Partial<Account> = {}): Account => ({
-    slot: 2,
-    name: "Anna Rossi",
-    email: "anna.rossi@contoso.example",
-    tenant: "Contoso",
-    av: "",
-    teams: "ok",
-    overall: "green",
-    stopped: false,
-    unread: 2,
-    unreadActivity: ["n2", "n1"],
-    desktop: "",
-    ...extra,
-  });
-
   it("counts unread chats and the notifications this device has not shown", () => {
     expect(accountUnread(account(), ["n1"])).toEqual({ chats: 2, notifications: 1 });
   });
@@ -79,6 +90,38 @@ describe("accountUnread", () => {
 
   it("counts nothing for a stopped account, whose numbers would stay until it starts", () => {
     expect(accountUnread(account({ stopped: true }), [])).toEqual({ chats: 0, notifications: 0 });
+  });
+});
+
+describe("loadSeen", () => {
+  let store: Map<string, string>;
+  beforeEach(() => {
+    store = new Map();
+    vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("takes as seen what an account met for the first time has unread, and keeps it", () => {
+    expect(loadSeen([account()])).toEqual({ 2: ["n2", "n1"] });
+    expect(store.get(seenKey(account()))).toBe(JSON.stringify(["n2", "n1"]));
+    const later = account({ unreadActivity: ["n3", "n2", "n1"] });
+    const seen = loadSeen([later]);
+    expect(seen).toEqual({ 2: ["n2", "n1"] });
+    expect(accountUnread(later, seen[2])).toEqual({ chats: 2, notifications: 1 });
+  });
+
+  it("stores nothing for an account whose feed the agent has not saved yet", () => {
+    expect(loadSeen([account({ unreadActivity: null })])).toEqual({});
+    expect(store.size).toBe(0);
+  });
+
+  it("does not give the list of a removed account to the next one on the same slot", () => {
+    loadSeen([account({ added: 1790000000, unreadActivity: ["old"] })]);
+    const next = account({ added: 1790003600, unreadActivity: ["b1", "b2"] });
+    const seen = loadSeen([next]);
+    expect(accountUnread(next, seen[2])).toEqual({ chats: 2, notifications: 0 });
   });
 });
 

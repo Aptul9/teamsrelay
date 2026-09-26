@@ -13,6 +13,7 @@ export type Account = {
   stopped: boolean;
   unread: number;
   unreadActivity: string[] | null;
+  added: number;
   desktop: string;
 };
 export type { ActivityItem, Chat, Message, Reaction } from "@/shared/slot-db/rows";
@@ -144,6 +145,25 @@ export function parseSeen(raw: string | null): string[] | null {
   } catch {
     return null;
   }
+}
+
+// Per slot and per time the slot was taken: an account added on a freed slot does not get the list of the removed one
+export const seenKey = (a: Pick<Account, "slot" | "added">) => `actseen:${a.slot}:${a.added}`;
+
+// Notification ids already seen on this device, per slot. An account met here for the first time takes the unread
+// ones it has now as seen, like the first feed of the selected account: only what comes later counts. Nothing is
+// stored for an account whose feed the agent has not saved yet.
+export function loadSeen(accounts: Account[]): Record<number, string[]> {
+  const seen: Record<number, string[]> = {};
+  for (const a of accounts) {
+    const stored = parseSeen(readStorage(seenKey(a)));
+    if (stored) seen[a.slot] = stored;
+    else if (a.unreadActivity) {
+      seen[a.slot] = a.unreadActivity;
+      writeStorage(seenKey(a), JSON.stringify(a.unreadActivity));
+    }
+  }
+  return seen;
 }
 
 export function initials(s: string): string {
