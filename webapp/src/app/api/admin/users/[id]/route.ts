@@ -15,7 +15,7 @@ export const DELETE = route<Ctx>(async (req, { params }) => {
   if (id === admin.id) throw new HttpError(400, "You cannot delete yourself");
   const db = appDb();
   for (const { slot } of slotsOf(db, id)) {
-    await removeAccount(slot, dockerClient(), { db, dataDir: config.dataDir, configDir: config.configDir });
+    await removeAccount(slot, dockerClient(), { db, dataDir: config.dataDir, wipeDir: config.wipeDir });
   }
   deletePushSubscriptionsOf(db, id);
   await auth().api.removeUser({ body: { userId: id }, headers: req.headers });

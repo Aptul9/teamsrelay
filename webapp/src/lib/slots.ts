@@ -3,11 +3,12 @@ import path from "node:path";
 import type Database from "better-sqlite3";
 import { claimSlot, listSlots, releaseSlot } from "./appdb";
 import type { DockerClient } from "./docker";
+import { HttpError } from "./http";
 
-export type SlotPaths = { dataDir: string; configDir: string };
+export type SlotPaths = { dataDir: string; wipeDir: string };
 export type SlotOptions = SlotPaths & { db: Database.Database; slotCount: number; perUser: number };
 
-const containers = (n: number) => ({ chromium: `teams-chromium-${n}`, agent: `teams-agent-${n}` });
+const containers = (n: number) => ({ chromium: `teams-chromium-${n}`, agent: `teams-agent-${n}`, wipe: `teams-wipe-${n}` });
 
 // The agent uses the network of its Chromium: browser first on the way up, agent first on the way down.
 export async function slotUp(docker: DockerClient, n: number) {
@@ -20,12 +21,21 @@ export async function slotDown(docker: DockerClient, n: number) {
   await docker.stop(containers(n).chromium);
 }
 
-// Browser profile (the Microsoft session) and agent data of the slot. config/N is a bind mount of the
-// Chromium container, so its content goes and the directory stays.
-export function wipeSlot(n: number, paths: SlotPaths) {
-  const cfg = path.join(paths.configDir, String(n));
-  if (fs.existsSync(cfg)) {
-    for (const entry of fs.readdirSync(cfg)) fs.rmSync(path.join(cfg, entry), { recursive: true, force: true });
+// Browser profile (the Microsoft session) and agent data of the slot, with the slot stopped. The web app
+// has no access to the profiles: config/N is mounted only by chromium-N and by teams-wipe-N, which
+// empties it. The container deletes only when it finds the request file in the wipe volume, so a
+// "docker compose up" of the whole profile starts it for nothing.
+export async function wipeSlot(docker: DockerClient, n: number, paths: SlotPaths) {
+  const wipe = containers(n).wipe;
+  const request = path.join(paths.wipeDir, String(n));
+  fs.mkdirSync(paths.wipeDir, { recursive: true });
+  fs.writeFileSync(request, "");
+  try {
+    await docker.start(wipe);
+    const code = await docker.wait(wipe);
+    if (code !== 0) throw new HttpError(502, `Wipe of slot ${n} failed (exit code ${code}): see docker logs ${wipe}`);
+  } finally {
+    fs.rmSync(request, { force: true });
   }
   fs.rmSync(path.join(paths.dataDir, String(n)), { recursive: true, force: true });
 }
@@ -43,7 +53,7 @@ export function addAccount(userId: string, docker: DockerClient, o: SlotOptions)
     const n = claimSlot(o.db, userId, { slotCount: o.slotCount, perUser: o.perUser });
     try {
       await slotDown(docker, n).catch(() => undefined);
-      wipeSlot(n, o);
+      await wipeSlot(docker, n, o);
       await slotUp(docker, n);
     } catch (e) {
       releaseSlot(o.db, n);
@@ -56,7 +66,7 @@ export function addAccount(userId: string, docker: DockerClient, o: SlotOptions)
 export function removeAccount(n: number, docker: DockerClient, o: Omit<SlotOptions, "slotCount" | "perUser">): Promise<void> {
   return exclusive(async () => {
     await slotDown(docker, n);
-    wipeSlot(n, o);
+    await wipeSlot(docker, n, o);
     releaseSlot(o.db, n);
   });
 }

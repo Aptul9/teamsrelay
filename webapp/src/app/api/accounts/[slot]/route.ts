@@ -14,6 +14,6 @@ export const DELETE = route<Ctx>(async (req, { params }) => {
   const n = Number((await params).slot);
   const owner = Number.isInteger(n) ? slotOwner(appDb(), n) : null;
   if (!owner || (owner !== user.id && user.role !== "admin")) throw new HttpError(404, "Account not found");
-  await removeAccount(n, dockerClient(), { db: appDb(), dataDir: config.dataDir, configDir: config.configDir });
+  await removeAccount(n, dockerClient(), { db: appDb(), dataDir: config.dataDir, wipeDir: config.wipeDir });
   return Response.json({ ok: true });
 });
