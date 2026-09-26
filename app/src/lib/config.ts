@@ -44,6 +44,10 @@ export const config = {
   get authSecret() {
     return process.env.BETTER_AUTH_SECRET || process.env.SESSION_SECRET || "";
   },
+  // Bearer token of the MCP endpoint (/mcp); empty turns the endpoint off
+  get mcpToken() {
+    return process.env.MCP_TOKEN || "";
+  },
 };
 
 export function desktopUrlOf(slot: number): string {
