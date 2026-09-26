@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { acquireLock, LockError } from "@/local/lock";
 import { tempDir } from "../helpers";
 
@@ -68,6 +68,10 @@ describe("profile lock", () => {
 });
 
 describe("lock left behind", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   // after a reboot the pid of the old relay may belong to any process: the relay would never start again
   it("is taken over when written before the machine started, whoever has its pid now", () => {
     const file = lockIn();
@@ -75,11 +79,14 @@ describe("lock left behind", () => {
     expect(refusal(file)).toBeNull();
   });
 
-  // the relay waits for a sign-in lock: one the sign-in forgot would keep it waiting for ever
+  // the relay waits for a sign-in lock: one the sign-in forgot would keep it waiting for ever. The machine is up for
+  // a day here, so that the lock is from after it started (a CI runner may be up for minutes only).
   it("is taken over when it is a sign-in lock older than a sign-in can last", () => {
+    vi.spyOn(os, "uptime").mockReturnValue(24 * 3600);
     const file = lockIn();
-    leftBy(file, { mode: "login", since: Math.max(Date.now() - 25 * MINUTE, bootedAt() + 1000) });
-    // a machine up for less than 25 minutes: the lock is from before it started, stale all the same
+    leftBy(file, { mode: "login", since: Date.now() - 19 * MINUTE });
+    expect(refusal(file)?.heldBy).toBe("login");
+    leftBy(file, { mode: "login", since: Date.now() - 25 * MINUTE });
     expect(refusal(file)).toBeNull();
   });
 
