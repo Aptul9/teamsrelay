@@ -17,6 +17,9 @@ dist/
 next-env.d.ts
 *.tsbuildinfo
 
+# Code graph of graphify, rebuilt with: graphify update .
+graphify-out/
+
 *.bak
 .DS_Store
 Thumbs.db
