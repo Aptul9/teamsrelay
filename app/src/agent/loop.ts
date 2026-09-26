@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import type { BrowserContext, Page } from "playwright-core";
 import { STATE } from "@/shared/slot-db/state";
 import { runPendingCommands } from "./commands";
 import type { Agent } from "./context";
@@ -17,16 +17,17 @@ import { sleep, TeamsPage } from "./teams/page";
 
 // Seconds between two inputs on the Teams page
 export const ACTIVE_EVERY = 60;
-// Without a Teams tab for this long the agent exits and Docker starts it again (restart: unless-stopped)
-const NO_TAB_EXIT_MS = 60_000;
+// Pages that show nothing: a tab just opened, an error page of the browser
+const BLANK = /^(about:|chrome:|edge:|chrome-error:)/;
 
 type Round = { onTeams: boolean; want: string };
 
-// The agent loop of agent.py, one job per step, in the same order and at the same rounds
+// The agent loop of agent.py, one job per step, in the same order and at the same rounds. Activity feed and
+// "Read by" only for a product whose app shows them.
 export function agentJobs(a: Agent): Job<Round>[] {
   const teamsOk = () => a.health?.teams === "ok";
   const active = () => a.store.getState(STATE.activeChat);
-  return [
+  const jobs: (Job<Round> | false)[] = [
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
     { name: "input", every: { seconds: ACTIVE_EVERY }, run: () => keepActive(a) },
     { name: "parking", every: { rounds: 5, offset: 2 }, run: (r) => park(a, r.want) },
@@ -35,7 +36,7 @@ export function agentJobs(a: Agent): Job<Round>[] {
     // until Teams is connected (sign-in to do, session expired) there is nothing to scroll or read
     { name: "chats-full", every: { rounds: 300, offset: 1 }, when: teamsOk, run: () => scanChatsFull(a) },
     { name: "chats", every: { rounds: 3 }, run: () => scanChats(a) },
-    { name: "activity", every: { rounds: 150, offset: 5 }, when: teamsOk, run: () => readActivity(a) },
+    a.config.activity && { name: "activity", every: { rounds: 150, offset: 5 }, when: teamsOk, run: () => readActivity(a) },
     { name: "identity", every: { rounds: 300, offset: 7 }, force: () => !a.store.getState(STATE.me), when: teamsOk, run: () => saveIdentity(a) },
     { name: "health", every: { rounds: 5 }, anyPage: true, run: () => updateHealth(a) },
     {
@@ -46,7 +47,7 @@ export function agentJobs(a: Agent): Job<Round>[] {
         if (chat) await saveOpenChat(a, chat);
       },
     },
-    {
+    a.config.readBy && {
       name: "read-by",
       every: { rounds: 2 },
       when: (r) => !!r.want && active() === r.want && teamsOk() && !a.store.hasPendingCommands(),
@@ -54,52 +55,39 @@ export function agentJobs(a: Agent): Job<Round>[] {
     },
     { name: "self-check", every: { rounds: 1 }, when: () => !!selfCheckDue(a), run: () => scheduledSelfCheck(a) },
   ];
+  return jobs.filter((j): j is Job<Round> => !!j);
 }
 
-async function connect(cdp: string): Promise<{ browser: Browser; context: BrowserContext }> {
-  for (;;) {
-    try {
-      const browser = await chromium.connectOverCDP(cdp);
-      const context = browser.contexts()[0];
-      if (!context) {
-        await browser.close();
-        throw new Error("the browser has no context yet");
-      }
-      await context.grantPermissions(["notifications"]).catch(() => undefined);
-      log.info("cdp", "connected", { cdp });
-      return { browser, context };
-    } catch (e) {
-      log.warn("cdp", `waiting: ${errorText(e)}`);
-      await sleep(3000);
-    }
-  }
-}
+// The browser as the loop sees it. Where it comes from belongs to the product: the Chromium of a slot reached over
+// its DevTools port (src/agent/cdp.ts), or the browser the local relay launches on its profile (src/local/browser.ts).
+export type BrowserSource = {
+  // The browser context of the moment. Throws while there is no browser: the loop reports it and asks again.
+  context(): Promise<BrowserContext>;
+  // No Teams tab for `ms` milliseconds; `url` is the page shown instead, "" for a blank tab. True when the source
+  // did something about it (Teams opened again in the tab): the count starts again.
+  noTeamsTab(context: BrowserContext, away: { ms: number; url: string }): Promise<boolean>;
+};
 
-export async function runAgent(a: Omit<Agent, "tp" | "health">): Promise<never> {
+// About one round a second, until `signal` aborts (never, for the agent of a slot)
+export async function runAgent(a: Omit<Agent, "tp" | "health">, browser: BrowserSource, signal?: AbortSignal): Promise<void> {
   const agent = { ...a, health: null } as Agent;
   const scheduler = new Scheduler<Round>(agentJobs(agent), (job, e) => log.warn("job", errorText(e), { job }));
   const pages = new WeakMap<Page, TeamsPage>();
-  let { browser, context } = await connect(a.config.cdp);
-  let noTabSince: number | null = null;
-  for (;;) {
+  let awaySince: number | null = null;
+  while (!signal?.aborted) {
     try {
-      // a closed connection (browser restarted, CDP dropped): a new one, the browser is not touched
-      if (!browser.isConnected()) {
-        log.warn("cdp", "connection lost");
-        ({ browser, context } = await connect(a.config.cdp));
-      }
+      const context = await browser.context();
       const page = pickTeamsPage(context.pages());
       if (!page) {
         noTabHealth(agent);
-        noTabSince ??= Date.now();
-        if (Date.now() - noTabSince > NO_TAB_EXIT_MS) {
-          log.warn("agent", "no Teams tab for 60 s: exiting, Docker starts the agent again");
-          process.exit(1);
-        }
+        awaySince ??= Date.now();
+        // the page that is not blank, if any: the source may treat a sign-in page apart
+        const url = context.pages().map((p) => p.url()).find((u) => !BLANK.test(u)) ?? "";
+        if (await browser.noTeamsTab(context, { ms: Date.now() - awaySince, url })) awaySince = null;
         await sleep(3000);
         continue;
       }
-      noTabSince = null;
+      awaySince = null;
       let tp = pages.get(page);
       if (!tp) {
         tp = new TeamsPage(page, agent.store);

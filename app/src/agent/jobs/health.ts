@@ -25,7 +25,7 @@ export async function updateHealth(a: Agent): Promise<AgentHealth> {
   }
   const h = computeHealth({
     probe,
-    pushSubs: a.app.pushTargets().length,
+    pushSubs: a.notifier.deviceCount(),
     lastMsgTs: a.store.lastNotificationTs(),
     lastScanTs: Number(a.store.getState(STATE.lastScanTs)) || 0,
     now: nowSeconds(),

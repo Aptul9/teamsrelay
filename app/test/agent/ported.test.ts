@@ -157,8 +157,8 @@ describe("OwnerPush", () => {
   const label = () => accountLabel(app.ownerHasManyAccounts(), parseState(Identity, store.getState(STATE.me), Identity.parse({})), 1);
 
   it("targets the devices of the owner", () => {
-    expect(app.pushTargets().map((t) => t.endpoint).sort()).toEqual(["https://push/u1-pc", "https://push/u1-phone"]);
-    expect(app.pushTargets()).toHaveLength(2);
+    expect(app.targets().map((t) => t.endpoint).sort()).toEqual(["https://push/u1-pc", "https://push/u1-phone"]);
+    expect(app.targets()).toHaveLength(2);
   });
 
   it("adds no label with a single account", () => {
@@ -174,7 +174,7 @@ describe("OwnerPush", () => {
   });
 
   it("creates no table in app.db", () => {
-    app.pushTargets();
+    app.targets();
     app.ownerHasManyAccounts();
     const db = new Database(appDbFile, { readonly: true });
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").pluck().all();

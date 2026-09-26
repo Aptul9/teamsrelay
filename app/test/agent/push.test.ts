@@ -76,9 +76,8 @@ describe("notifier", () => {
 
   const notifier = (clock = () => 1_000_000) =>
     new Notifier({
-      slot: 1,
       store,
-      app: new AppStore(appDbFile, 1),
+      devices: new AppStore(appDbFile, 1),
       vapid,
       subject: "mailto:admin@example.com",
       ntfy: null,
@@ -118,7 +117,7 @@ describe("notifier", () => {
   });
 
   it("sends nothing without keys", async () => {
-    const n = new Notifier({ slot: 1, store, app: new AppStore(appDbFile, 1), vapid: null, subject: "mailto:a@b.c", ntfy: null });
+    const n = new Notifier({ store, devices: new AppStore(appDbFile, 1), vapid: null, subject: "mailto:a@b.c", ntfy: null });
     expect(await n.push("x", "y")).toBe(0);
   });
 });

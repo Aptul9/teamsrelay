@@ -1,24 +1,34 @@
 import webpush from "web-push";
 import { Identity, parseState, STATE } from "@/shared/slot-db/state";
-import { accountLabel, PUSH_TTL, pushTitle, RecentPushes } from "../logic/notify";
+import { PUSH_TTL, pushTitle, RecentPushes } from "../logic/notify";
 import { errorText, log } from "../log";
-import type { AppStore } from "../store/app-store";
 import type { SlotStore } from "../store/slot-store";
 import type { VapidKeys } from "./vapid";
 
 type Send = (subscription: webpush.PushSubscription, payload: string, options: webpush.RequestOptions) => Promise<unknown>;
 export type Ntfy = { url: string; topic: string } | null;
+export type PushTarget = { endpoint: string; sub: string };
 
-// Notifications of the slot: Web Push to the devices of the slot owner, ntfy when enabled, and the history
-// of the messages notified (messages table).
+// The devices a push goes to: those of the slot owner in app.db (AppStore), those subscribed from the app of the
+// local relay (src/local/devices.ts)
+export type PushDevices = {
+  targets(): PushTarget[];
+  // a subscription the push service reports as gone
+  remove(endpoint: string): void;
+  // the account the notification comes from, for an app that shows more than one: its slot (acc, the app opens
+  // it), and its name after the title when the owner has more than one
+  account?(me: Identity): { acc: number; label: string };
+};
+
+// Notifications of the account: Web Push to its devices, ntfy when enabled, and the history of the messages
+// notified (messages table).
 export class Notifier {
   private readonly recent: RecentPushes;
 
   constructor(
     private readonly o: {
-      slot: number;
       store: SlotStore;
-      app: AppStore;
+      devices: PushDevices;
       vapid: VapidKeys | null;
       subject: string;
       ntfy: Ntfy;
@@ -37,15 +47,18 @@ export class Notifier {
     await this.push(title, body);
   }
 
-  // Push to every device of the owner; subscriptions the push service reports as gone are removed
+  deviceCount(): number {
+    return this.o.devices.targets().length;
+  }
+
+  // Push to every device; subscriptions the push service reports as gone are removed
   async push(title: string, body: string): Promise<number> {
-    const { vapid, app, store, slot } = this.o;
+    const { vapid, devices, store } = this.o;
     if (!vapid) return 0;
-    const targets = app.pushTargets();
+    const targets = devices.targets();
     if (!targets.length) return 0;
-    const me = parseState(Identity, store.getState(STATE.me), Identity.parse({}));
-    // acc: the notification opens the app on this account
-    const payload = JSON.stringify({ title: pushTitle(title, accountLabel(app.ownerHasManyAccounts(), me, slot)), body: body || "", acc: slot });
+    const account = devices.account?.(parseState(Identity, store.getState(STATE.me), Identity.parse({})));
+    const payload = JSON.stringify({ title: pushTitle(title, account?.label ?? ""), body: body || "", ...(account ? { acc: account.acc } : {}) });
     const send: Send = this.o.send ?? webpush.sendNotification;
     let sent = 0;
     for (const t of targets) {
@@ -57,7 +70,7 @@ export class Notifier {
         sent++;
       } catch (e) {
         const status = (e as { statusCode?: number }).statusCode;
-        if (status === 404 || status === 410) app.deleteSubscription(t.endpoint);
+        if (status === 404 || status === 410) devices.remove(t.endpoint);
         else log.warn("push", errorText(e), { status });
       }
     }

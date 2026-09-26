@@ -4,6 +4,7 @@
 //   node agent.cjs --check   loads the runtime dependencies and the page scripts, then exits
 import Database from "better-sqlite3";
 import { chromium } from "playwright-core";
+import { CdpBrowser } from "./cdp";
 import { ConfigError, loadConfig } from "./config";
 import { NewMessageDetector } from "./logic/new-messages";
 import { errorText, log } from "./log";
@@ -50,12 +51,14 @@ async function main() {
   for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => process.exit(0));
   const config = loadConfig();
   const store = SlotStore.open(config.dbPath);
-  const app = new AppStore(config.appDb, config.slot);
   const vapid = loadVapidKeys(config.vapid.privateKeyFile, config.vapid.appKeyFile);
   if (!vapid) log.warn("push", "no VAPID private key: push notifications off", { file: config.vapid.privateKeyFile });
-  const notifier = new Notifier({ slot: config.slot, store, app, vapid, subject: config.vapid.subject, ntfy: config.ntfy });
+  // pushes go to the devices of the slot owner, in the web app's database
+  const devices = new AppStore(config.appDb, config.slot);
+  const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy });
   log.info("agent", "start", { slot: config.slot, cdp: config.cdp, push: !!vapid, ntfy: !!config.ntfy });
-  await runAgent({ config, store, app, notifier, media: new Media(config.mediaDir, config.filesDir), detector: new NewMessageDetector() });
+  const media = new Media(config.mediaDir, config.filesDir);
+  await runAgent({ config, store, notifier, media, detector: new NewMessageDetector() }, new CdpBrowser(config.cdp));
 }
 
 main().catch((e: unknown) => {

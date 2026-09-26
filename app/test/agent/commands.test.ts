@@ -7,7 +7,6 @@ import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { agentJobs } from "@/agent/loop";
 import type { Media } from "@/agent/media";
 import type { Notifier } from "@/agent/push/notifier";
-import type { AppStore } from "@/agent/store/app-store";
 import { SlotStore } from "@/agent/store/slot-store";
 import * as actions from "@/agent/teams/actions";
 import * as mentionActions from "@/agent/teams/mentions";
@@ -76,9 +75,8 @@ function agent(): Agent {
     isOpen: async () => opens,
   } as unknown as TeamsPage;
   return {
-    config: { slot: 1, uploadsDir: uploads } as Agent["config"],
+    config: { uploadsDir: uploads, activity: true, readBy: true },
     store,
-    app: { pushTargets: () => [] } as unknown as AppStore,
     notifier: { push: async () => 0, message: async () => undefined } as unknown as Notifier,
     media: { download: async () => downloaded, avatar: async () => "", avatars: async (_: unknown, rows: unknown[]) => rows, image: async () => null } as unknown as Media,
     detector: new NewMessageDetector(),
