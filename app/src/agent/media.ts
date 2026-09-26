@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Page } from "playwright-core";
-import { avatarFile, downloadFile, downloadUrl, isSharePointUrl, MAX_DOWNLOAD, MEDIA_EXT } from "./logic/files";
+import { avatarFile, downloadFile, downloadUrl, isPlaceholderImage, isSharePointUrl, MAX_DOWNLOAD, MEDIA_EXT } from "./logic/files";
 import { errorText, log } from "./log";
 import { copyImage, fetchImage } from "./teams/scripts/media";
 
@@ -10,7 +10,8 @@ const MAX_IMAGE = 8e6;
 
 // Images, profile pictures (data/N/media) and attachments (data/N/files), written once each.
 export class Media {
-  // images the page could not fetch (Giphy GIFs without CORS...): their public link stays, no new attempt
+  // addresses the page could not fetch (Giphy GIFs without CORS...), per image: their public link stays, no new
+  // attempt; another address of the same image (Teams loaded it meanwhile) is tried
   private readonly failed = new Set<string>();
 
   constructor(
@@ -21,9 +22,14 @@ export class Media {
   // File of the image `key` of a message, fetched by the page; null when it cannot be read
   async image(page: Page, key: string, src: string): Promise<string | null> {
     for (const ext of Object.values(MEDIA_EXT)) {
-      if (fs.existsSync(path.join(this.mediaDir, `${key}.${ext}`))) return `${key}.${ext}`;
+      const file = path.join(this.mediaDir, `${key}.${ext}`);
+      const st = fs.statSync(file, { throwIfNoEntry: false });
+      if (!st) continue;
+      if (st.size > 1000 || !isPlaceholderImage(fs.readFileSync(file))) return `${key}.${ext}`;
+      fs.rmSync(file);
+      log.info("media", "placeholder removed", { file: `${key}.${ext}` });
     }
-    if (!src || this.failed.has(key)) return null;
+    if (!src || this.failed.has(`${key} ${src}`)) return null;
     let r: { type: string; data: string } | null = null;
     try {
       r = await page.evaluate(fetchImage, { src, max: MAX_IMAGE });
@@ -32,11 +38,14 @@ export class Media {
     }
     const ext = r ? MEDIA_EXT[r.type] : undefined;
     if (!r || !ext) {
-      this.failed.add(key);
+      this.failed.add(`${key} ${src}`);
       return null;
     }
+    const data = Buffer.from(r.data, "base64");
+    // still loading in Teams: the next read gets the image
+    if (isPlaceholderImage(data)) return null;
     fs.mkdirSync(this.mediaDir, { recursive: true });
-    fs.writeFileSync(path.join(this.mediaDir, `${key}.${ext}`), Buffer.from(r.data, "base64"));
+    fs.writeFileSync(path.join(this.mediaDir, `${key}.${ext}`), data);
     return `${key}.${ext}`;
   }
 

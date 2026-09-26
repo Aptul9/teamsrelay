@@ -31,7 +31,8 @@ export async function readOpenMessages(a: Agent, chat: string): Promise<SavedMes
     for (const [i, im] of m.images.entries()) {
       const f = await a.media.image(page, imageKey(chat, m.mid, i), im.src);
       if (f) images.push({ f, w: im.w, h: im.h });
-      else if (im.src.startsWith("https://")) images.push({ url: im.src, w: im.w, h: im.h });
+      // the address of an image Teams has not loaded yet works only inside the Teams session
+      else if (im.loaded && im.src.startsWith("https://")) images.push({ url: im.src, w: im.w, h: im.h });
     }
     const av = await a.media.avatar(page, m.avsrc, budget);
     const extra = extraOf({

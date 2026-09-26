@@ -70,9 +70,10 @@ function capture({ part, s, keep, limit, hovered }: { part: Part; s: Selectors; 
         return pre + core.replace(/[\p{L}\p{N}]+/gu, (w) => (KEEP.has(w) ? w : /^\d{1,2}$/.test(w) ? w : fakeWord(w))) + post;
       })
       .join("");
-  // ids, message ids and thread ids: the same value always gets the same replacement, links between attributes stay
+  // ids, message ids, thread ids and image object ids: the same value always gets the same replacement, links
+  // between attributes stay
   const ident = (v: string) =>
-    v.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(19|8|28):[^\s"]+|\d{5,}/gi, (t) => {
+    v.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(19|8|28):[^\s"]+|[0-9a-f]{16,}|\d{5,}/gi, (t) => {
       let f = tokens.get(t);
       if (!f) {
         f = /^\d+$/.test(t) ? String(1790000000000 + tokens.size + 1).slice(-t.length) : `x${tokens.size + 1}`;
@@ -82,7 +83,7 @@ function capture({ part, s, keep, limit, hovered }: { part: Part; s: Selectors; 
     });
   const picture = (w: number, h: number) =>
     `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="#6b70dd"/></svg>`)}`;
-  const KEEP_ATTRS = ["role", "aria-level", "aria-expanded", "aria-pressed", "aria-label", "aria-labelledby", "id", "data-tid", "data-testid", "data-item-type", "data-mid", "data-mention-type", "itemtype", "alt", "href", "src", "class", "contenteditable"];
+  const KEEP_ATTRS = ["role", "aria-level", "aria-expanded", "aria-pressed", "aria-label", "aria-labelledby", "id", "data-tid", "data-testid", "data-item-type", "data-mid", "data-mention-type", "itemtype", "alt", "href", "src", s.lazyImageSource, "class", "contenteditable"];
   const BODY_STYLE = ["color", "background-color", "font-weight", "font-style", "text-decoration"];
 
   // copy of `el` with its geometry relative to `box` when absolute (the action bar needs real coordinates)
@@ -100,6 +101,8 @@ function capture({ part, s, keep, limit, hovered }: { part: Part; s: Selectors; 
       } else if (name === "src") {
         const img = el as HTMLImageElement;
         out.setAttribute(name, picture(img.naturalWidth || 0, img.naturalHeight || 0));
+      } else if (name === s.lazyImageSource) {
+        out.setAttribute(name, `https://eu-prod.asyncgw.teams.microsoft.com/v1/objects/fixture-${++urls}/views/imgo_webp`);
       } else if (name === "class") {
         const cls = v.split(/\s+/).filter((c) => /^(fui-|feeditem_)/.test(c) || /MyMessage|statusIcon|Avatar|mention/i.test(c));
         if (cls.length) out.setAttribute(name, cls.join(" "));

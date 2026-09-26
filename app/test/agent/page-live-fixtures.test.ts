@@ -85,6 +85,42 @@ describe("conversation captured from Teams", () => {
   });
 });
 
+describe("image message captured from Teams", () => {
+  // Teams draws this 1x1 GIF until it has loaded the image, then a blob: address (AMS image component)
+  const PLACEHOLDER = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+  const ORIGINAL = "https://eu-prod.asyncgw.teams.microsoft.com/v1/objects/fixture-1/views/imgo_webp";
+
+  // images of the messages, after `prepare` changed the page
+  async function images(prepare?: (arg: { placeholder: string; attr: string }) => void) {
+    await chrome.page.setContent(fixture("conversation-image.html"));
+    if (prepare) await chrome.page.evaluate(prepare, { placeholder: PLACEHOLDER, attr: SEL.lazyImageSource });
+    await chrome.page.waitForFunction(() => [...document.images].every((i) => i.complete));
+    const msgs = await chrome.page.evaluate(readMessages, { s: SEL, t: TEXTS });
+    return msgs.filter((m) => m.images.length).map((m) => m.images);
+  }
+
+  it("reads the loaded image with its size", async () => {
+    expect(await images()).toEqual([[{ src: expect.stringContaining("data:image/svg+xml"), w: 554, h: 554, loaded: true }]]);
+  });
+
+  it("takes the address of an image still showing the placeholder", async () => {
+    const found = await images(({ placeholder, attr }) => {
+      for (const i of document.querySelectorAll(`img[${attr}]`)) i.setAttribute("src", placeholder);
+    });
+    expect(found).toEqual([[{ src: ORIGINAL, w: 0, h: 0, loaded: false }]]);
+  });
+
+  it("leaves out an image still showing the placeholder when it has no address", async () => {
+    const found = await images(({ placeholder, attr }) => {
+      for (const i of document.querySelectorAll(`img[${attr}]`)) {
+        i.setAttribute("src", placeholder);
+        i.removeAttribute(attr);
+      }
+    });
+    expect(found).toEqual([]);
+  });
+});
+
 describe("action bar captured from Teams", () => {
   async function bar(file: string) {
     await chrome.page.setContent(fixture(file));
