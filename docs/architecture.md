@@ -7,10 +7,12 @@
 | `chromium-1` ... `chromium-4` | `lscr.io/linuxserver/chromium`, pinned by digest | Teams web of slot N, profile in `config/N/`, CDP on `127.0.0.1:9222`, desktop stream on port 3000 | `slotN` |
 | `agent-1` ... `agent-4` | `teamsrelay`, built from `./app`, runs `node agent.cjs` | Reads and drives Teams of slot N over the Chrome DevTools Protocol (Playwright), sends the push notifications | network namespace of `chromium-N` |
 | `webapp` | `teamsrelay`, built from `./app` (Next.js, Node 24; UI on Tailwind CSS and shadcn/ui), runs `node server.js` | PWA, API, users and sessions, event stream, slot start and stop | `default`, `control` |
-| `dockerproxy` | `wollomatic/socket-proxy` | Docker socket filter: only `POST /containers/teams-(chromium\|agent)-N/(start\|stop)` | `control` (internal) |
+| `dockerproxy` | `wollomatic/socket-proxy` | Docker socket filter: only `POST /containers/teams-(chromium\|agent)-N/(start\|stop)` and `POST /containers/teams-wipe-N/(start\|wait)` | `control` (internal) |
 | `caddy` | `caddy:2.11.4-alpine` | HTTPS, reverse proxy, desktop routes gated by `/api/authcheck` | `default`, `slot1` ... `slot4` |
+| `wipe-1` ... `wipe-4` | `busybox`, pinned by digest | One-shot: empties `config/N/` when the web app adds or removes the account of slot N | none |
 
-- `chromium-N` and `agent-N` belong to the `accounts` profile: `docker compose up -d` does not start them. The deploy creates them stopped; the web app starts the slots that have an owner and keeps them running (check every 60 s).
+- `chromium-N`, `agent-N` and `wipe-N` belong to the `accounts` profile: `docker compose up -d` does not start them. The deploy creates them stopped; the web app starts the slots that have an owner and keeps them running (check every 60 s), except those their owner stopped from the account menu (`stopped` in `teams_accounts`), which keep their session and data until started again.
+- The web app does not mount `config/`. To wipe slot N it stops the slot, writes the request file `N` in the `wipe` volume, starts `wipe-N` and waits for exit code 0, then removes the request. Without the request `wipe-N` deletes nothing, so starting it by hand or with the whole profile is harmless.
 - A slot network holds one browser and Caddy. A page open in the browser of slot 1 cannot reach the browser of slot 2, the web app or the socket proxy.
 - The agent connects to `http://127.0.0.1:9222`: Chromium binds CDP on IPv4 only, and `localhost` in the container resolves to `::1` first. CDP has no authentication, so the agent stays one process per slot inside the network namespace of its browser; the web app never reaches CDP.
 - One image serves the web app and the agents. It holds the Next.js standalone output, `agent.cjs` (esbuild bundle of `app/src/agent`) and the two packages the agent loads at runtime, `playwright-core` and `better-sqlite3`. The build runs `node agent.cjs --check`, which fails when a package or a page script does not load in the image.
@@ -117,7 +119,7 @@ A message is new when the preview or the time of a chat changes with an incoming
 | Table | Content |
 |---|---|
 | `user`, `session`, `account`, `verification` | better-auth: users (with `role`), sessions per device, password hashes |
-| `teams_accounts` | slot, owner user id, time added |
+| `teams_accounts` | slot, owner user id, time added, stopped by its owner (0/1), time of the last start from the app |
 | `push_subscriptions` | endpoint, user id, Web Push subscription |
 | `accounts`, `push_subs` | tables of the single-user release, read once for the migration and kept for a rollback |
 

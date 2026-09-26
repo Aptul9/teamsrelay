@@ -1,6 +1,6 @@
 "use client";
 
-import { BellIcon, BellRingIcon, ExternalLinkIcon, MessageSquareIcon, MessagesSquareIcon, MonitorIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
+import { BellIcon, BellRingIcon, ExternalLinkIcon, MessageSquareIcon, MessagesSquareIcon, MonitorIcon, PlusIcon, PowerIcon, PowerOffIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
@@ -81,6 +81,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [refreshing, setRefreshing] = useState(false);
   const [deskOpened, setDeskOpened] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [toggling, setToggling] = useState(0);
   const [removing, setRemoving] = useState<Account | null>(null);
   const isPc = useSyncExternalStore(noSubscribe, isPcNow, () => false);
   const onScreen = useSyncExternalStore(onVisibility, visibleNow, () => true);
@@ -227,6 +228,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   // Microsoft login (and MFA) in the remote browser of the account: new tab on a PC, a view of its own elsewhere
   function openDesktop(n: number) {
+    if (accounts?.find((a) => a.slot === n)?.stopped) {
+      toast.info("This account is stopped", { description: "Start it from the account menu to open its remote Teams." });
+      return;
+    }
     if (isPc) {
       window.open(deskUrl(n), "_blank", "noopener");
       return;
@@ -247,6 +252,21 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       toast.error(e instanceof ApiError ? e.message : "Account not added");
     } finally {
       setAdding(false);
+    }
+  }
+
+  // Stop keeps the Microsoft session: the account only stops reading Teams and sending notifications
+  async function setRunning(a: Account, running: boolean) {
+    setToggling(a.slot);
+    try {
+      await call(`/api/accounts/${a.slot}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ running }) }, 0);
+      await loadAccounts();
+      if (running) toast.success(`${accName(a)} started`, { description: "Teams is back within a couple of minutes." });
+      else toast.success(`${accName(a)} stopped`, { description: "Still signed in. No new messages or notifications until you start it again." });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : running ? "Account not started" : "Account not stopped");
+    } finally {
+      setToggling(0);
     }
   }
 
@@ -329,7 +349,9 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             canAdd={canAdd}
             addLabel={addLabel}
             adding={adding}
+            toggling={toggling}
             onSelect={selectAccount}
+            onSetRunning={(a, running) => void setRunning(a, running)}
             onAdd={() => void addAccount()}
             onOpenDesktop={openDesktop}
             onRemove={setRemoving}
@@ -359,6 +381,21 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
           </Tabs>
         )}
 
+        {current?.stopped && (
+          <div className="px-3 pb-2">
+            <Alert>
+              <PowerOffIcon />
+              <AlertTitle>This account is stopped</AlertTitle>
+              <AlertDescription>
+                <p>Still signed in to Microsoft. The chats are the last ones read: no new messages or notifications until you start it.</p>
+                <Button size="sm" className="mt-2 h-9 md:h-8" disabled={toggling === current.slot} onClick={() => void setRunning(current, true)}>
+                  {toggling === current.slot ? <Spinner /> : <PowerIcon />}
+                  Start
+                </Button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
         {current && (needsLogin(current) || current.teams === "starting") && (
           <div className="px-3 pb-2">
             {current.teams === "starting" ? (
@@ -455,6 +492,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               chat={openChat}
               entry={(chats ?? []).find((c) => c.name === openChat)}
               rows={messages?.chat === openChat ? messages.rows : null}
+              stopped={!!current?.stopped}
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}
             />

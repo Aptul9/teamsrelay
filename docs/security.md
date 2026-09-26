@@ -24,12 +24,13 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 
 ## Docker
 
-- The web app reaches Docker only through `dockerproxy`, which allows `POST` on `/containers/teams-(chromium|agent)-N/(start|stop)` and refuses every other method, path and container (checked: 403 on another container, 403 on create, 405 on list).
+- The web app reaches Docker only through `dockerproxy`, which allows `POST` on `/containers/teams-(chromium|agent)-N/(start|stop)` and `/containers/teams-wipe-N/(start|wait)`, and refuses every other method, path and container (checked: 403 on another container, on `stop` of a wipe container and on create, 405 on list).
 - The proxy runs read-only, without capabilities, on the internal network `control`, reachable only from the web app.
 
 ## Data at rest
 
 - `config/N/` is the Microsoft session of slot N, stored unencrypted by Chromium. Protect the server and encrypt the backups.
+- Only `chromium-N` and `wipe-N` mount `config/N/`; the web app, the component exposed to the Internet, mounts no profile. `wipe-N` runs without network, on a read-only filesystem, without capabilities, as the owner of the profile, and deletes only on a request of the web app.
 - Never publish `.env`, `config/`, `data/`, `vapid/`: they are in `.gitignore` and the deploy neither copies nor touches them.
 
 ## Content

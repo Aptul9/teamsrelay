@@ -14,8 +14,9 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 
 | Method | Path | Answer |
 |---|---|---|
-| GET | `/api/accounts` | `{accounts: [{slot, name, email, tenant, av, teams, overall, unread, desktop}], max, free}`: accounts of the user, per-user cap, free slots on the server |
+| GET | `/api/accounts` | `{accounts: [{slot, name, email, tenant, av, teams, overall, stopped, unread, desktop}], max, free}`: accounts of the user, per-user cap, free slots on the server. A stopped account has `teams` `stopped` and `overall` `grey` |
 | POST | `/api/accounts` | `{ok, slot, desktop}`. Takes the first free slot for the user and starts its browser and agent (409 when no slot is free or the cap is reached, 502/503 when Docker does not answer) |
+| PATCH | `/api/accounts/{n}` | `{running: false}` stops browser and agent of slot N and keeps its Teams session and data, `{running: true}` starts them again; answers `{ok, running}`. While stopped: no sync, no notifications, commands answer 409. Owner, or an administrator |
 | DELETE | `/api/accounts/{n}` | `{ok}`. Stops slot N and deletes its Teams session and data. Owner, or an administrator |
 
 ## Reading, per account

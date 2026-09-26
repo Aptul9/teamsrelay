@@ -106,6 +106,8 @@ Muted chats never notify, like in Teams. On iPhone the app must be opened from t
 
 **Web app does not start.** The log says why: `BETTER_AUTH_SECRET must be set` or `No users yet: set ADMIN_EMAIL and ADMIN_PASSWORD`.
 
+**Adding or removing an account fails with "Wipe of slot N failed".** `docker logs teams-wipe-N` lists what could not be deleted. The container runs as `1000:1000`, the owner of the profile: a non-empty directory created as root inside `config/N/` (for example through `docker exec` as root) blocks it; give it back to `1000:1000` and try again.
+
 ## Backup
 
 - `.env` (secrets), `vapid/` (push keys).

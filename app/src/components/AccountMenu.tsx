@@ -15,12 +15,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import type { Account } from "@/lib/client";
 
 export const accName = (a: Account) => a.name || a.email || `Account ${a.slot}`;
-export const needsLogin = (a: Account) => a.teams === "login" || (a.teams !== "starting" && a.teams !== "ok" && !a.name);
+export const needsLogin = (a: Account) => !a.stopped && (a.teams === "login" || (a.teams !== "starting" && a.teams !== "ok" && !a.name));
 
 export function accSub(a: Account): { text: string; warn: boolean } {
+  if (a.stopped) return { text: "Stopped · still signed in", warn: false };
   if (a.teams === "starting") return { text: "Starting the browser…", warn: false };
   if (a.teams === "login") return { text: "Microsoft sign-in needed", warn: true };
   if (!a.name) return { text: "Waiting for sign-in", warn: true };
@@ -28,7 +30,7 @@ export function accSub(a: Account): { text: string; warn: boolean } {
   return { text: [a.email, a.tenant].filter(Boolean).join(" · "), warn: false };
 }
 
-// Switch between the Teams accounts of the user, add or remove one, reach settings and sign out
+// Switch between the Teams accounts of the user, stop or start one, add or remove one, reach settings and sign out
 export function AccountMenu({
   user,
   accounts,
@@ -36,7 +38,9 @@ export function AccountMenu({
   canAdd,
   addLabel,
   adding,
+  toggling,
   onSelect,
+  onSetRunning,
   onAdd,
   onOpenDesktop,
   onRemove,
@@ -48,7 +52,9 @@ export function AccountMenu({
   canAdd: boolean;
   addLabel: string;
   adding: boolean;
+  toggling: number;
   onSelect: (slot: number) => void;
+  onSetRunning: (a: Account, running: boolean) => void;
   onAdd: () => void;
   onOpenDesktop: (slot: number) => void;
   onRemove: (a: Account) => void;
@@ -77,16 +83,38 @@ export function AccountMenu({
         <DropdownMenuGroup>
           {(accounts ?? []).map((a) => {
             const sub = accSub(a);
+            const busy = toggling === a.slot;
             return (
-              <DropdownMenuItem key={a.slot} onSelect={() => onSelect(a.slot)} className="gap-3 py-2">
-                <Avatar name={accName(a)} av={a.av} acc={a.slot} className="size-8" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{accName(a)}</div>
-                  <div className={cn("truncate text-xs", sub.warn ? "text-destructive" : "text-muted-foreground")}>{sub.text}</div>
-                </div>
-                {a.unread > 0 && <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums">{a.unread}</Badge>}
-                {a.slot === current?.slot && <CheckIcon className="text-primary" />}
-              </DropdownMenuItem>
+              <div key={a.slot} className="flex items-center gap-1">
+                <DropdownMenuItem onSelect={() => onSelect(a.slot)} className="min-w-0 flex-1 gap-3 py-2">
+                  <Avatar name={accName(a)} av={a.av} acc={a.slot} className={cn("size-8", a.stopped && "opacity-50 grayscale")} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{accName(a)}</div>
+                    <div className={cn("truncate text-xs", sub.warn ? "text-destructive" : "text-muted-foreground")}>{sub.text}</div>
+                  </div>
+                  {a.unread > 0 && <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums">{a.unread}</Badge>}
+                  {a.slot === current?.slot && <CheckIcon className="text-primary" />}
+                </DropdownMenuItem>
+                {/* on: green, off: grey. The menu stays open to show the switch move */}
+                <DropdownMenuItem
+                  role="menuitemcheckbox"
+                  aria-checked={!a.stopped}
+                  aria-label={`${a.stopped ? "Start" : "Stop"} ${accName(a)}`}
+                  title={a.stopped ? "Stopped: click to start" : "Running: click to stop, the account stays signed in"}
+                  disabled={busy}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    onSetRunning(a, a.stopped);
+                  }}
+                  className="shrink-0 justify-center self-stretch px-2"
+                >
+                  {busy ? (
+                    <Spinner />
+                  ) : (
+                    <Switch checked={!a.stopped} tabIndex={-1} aria-hidden className="pointer-events-none data-[state=checked]:bg-success" />
+                  )}
+                </DropdownMenuItem>
+              </div>
             );
           })}
           <DropdownMenuItem disabled={!canAdd || adding} onSelect={onAdd}>
@@ -98,7 +126,7 @@ export function AccountMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem onSelect={() => onOpenDesktop(current.slot)}>
+              <DropdownMenuItem disabled={current.stopped} onSelect={() => onOpenDesktop(current.slot)}>
                 <MonitorIcon />
                 {needsLogin(current) ? "Sign in to Microsoft" : "Open the remote Teams"}
               </DropdownMenuItem>

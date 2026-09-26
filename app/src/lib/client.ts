@@ -10,6 +10,7 @@ export type Account = {
   av: string;
   teams: string;
   overall: string;
+  stopped: boolean;
   unread: number;
   desktop: string;
 };

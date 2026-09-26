@@ -62,7 +62,7 @@ describe("notifier", () => {
     appDbFile = path.join(tempDir(), "app.db");
     const db = openAppDb(appDbFile);
     migrateAppSchema(db);
-    db.prepare("INSERT INTO teams_accounts VALUES(1, 'u1', 0), (2, 'u2', 0)").run();
+    db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(1, 'u1', 0), (2, 'u2', 0)").run();
     db.prepare("INSERT INTO push_subscriptions VALUES(?, 'u1', ?, 0), (?, 'u1', ?, 0), (?, 'u2', ?, 0)").run(
       "https://push/u1-phone",
       sub("https://push/u1-phone"),
@@ -100,7 +100,7 @@ describe("notifier", () => {
 
   it("names the account when the owner has more", async () => {
     const db = new Database(appDbFile);
-    db.prepare("INSERT INTO teams_accounts VALUES(3, 'u1', 0)").run();
+    db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(3, 'u1', 0)").run();
     db.close();
     store.setState(STATE.me, JSON.stringify({ name: "Anna", email: "anna@contoso.example", tenant: "Contoso", av: "" }));
     await notifier().push("Anna Rossi", "ciao");

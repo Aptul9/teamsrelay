@@ -8,7 +8,9 @@ import { HttpError } from "./http";
 // The agents read teams_accounts and push_subscriptions (src/agent/store/app-store.ts): keep the column names.
 const SCHEMA_VERSION = 2;
 
-export type Slot = { slot: number; owner_id: string; added: number };
+// stopped: 1 while the owner keeps the account switched off (browser and agent stopped, session kept).
+// started: last start from the app, 0 if never; the grace of a browser still starting counts from there.
+export type Slot = { slot: number; owner_id: string; added: number; stopped: number; started: number };
 
 let shared: Database.Database | null = null;
 
@@ -32,6 +34,9 @@ export function migrateAppSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS push_subscriptions(endpoint TEXT PRIMARY KEY, user_id TEXT NOT NULL, sub TEXT NOT NULL, created INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS push_subscriptions_user ON push_subscriptions(user_id);
   `);
+  const columns = db.prepare("SELECT name FROM pragma_table_info('teams_accounts')").pluck().all();
+  if (!columns.includes("stopped")) db.exec("ALTER TABLE teams_accounts ADD COLUMN stopped INTEGER NOT NULL DEFAULT 0");
+  if (!columns.includes("started")) db.exec("ALTER TABLE teams_accounts ADD COLUMN started INTEGER NOT NULL DEFAULT 0");
 }
 
 const hasTable = (db: Database.Database, name: string) =>
@@ -61,11 +66,20 @@ export function adoptLegacyData(db: Database.Database, userId: string): { slots:
 }
 
 export function listSlots(db: Database.Database): Slot[] {
-  return db.prepare("SELECT slot, owner_id, added FROM teams_accounts ORDER BY slot").all() as Slot[];
+  return db.prepare("SELECT slot, owner_id, added, stopped, started FROM teams_accounts ORDER BY slot").all() as Slot[];
 }
 
 export function slotsOf(db: Database.Database, userId: string): Slot[] {
-  return db.prepare("SELECT slot, owner_id, added FROM teams_accounts WHERE owner_id=? ORDER BY slot").all(userId) as Slot[];
+  return db.prepare("SELECT slot, owner_id, added, stopped, started FROM teams_accounts WHERE owner_id=? ORDER BY slot").all(userId) as Slot[];
+}
+
+export function isSlotStopped(db: Database.Database, slot: number): boolean {
+  return !!db.prepare("SELECT stopped FROM teams_accounts WHERE slot=?").pluck().get(slot);
+}
+
+export function setSlotStopped(db: Database.Database, slot: number, stopped: boolean) {
+  if (stopped) db.prepare("UPDATE teams_accounts SET stopped=1 WHERE slot=?").run(slot);
+  else db.prepare("UPDATE teams_accounts SET stopped=0, started=? WHERE slot=?").run(Math.floor(Date.now() / 1000), slot);
 }
 
 export function slotOwner(db: Database.Database, slot: number): string | null {

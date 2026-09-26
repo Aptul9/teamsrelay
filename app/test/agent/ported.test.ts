@@ -144,8 +144,8 @@ describe("OwnerPush", () => {
     appDbFile = path.join(tempDir(), "app.db");
     const db = openAppDb(appDbFile);
     migrateAppSchema(db);
-    db.prepare("INSERT INTO teams_accounts VALUES(?, ?, 0)").run(1, "u1");
-    db.prepare("INSERT INTO teams_accounts VALUES(?, ?, 0)").run(2, "u2");
+    db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(?, ?, 0)").run(1, "u1");
+    db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(?, ?, 0)").run(2, "u2");
     const sub = db.prepare("INSERT INTO push_subscriptions VALUES(?, ?, '{}', 0)");
     sub.run("https://push/u1-phone", "u1");
     sub.run("https://push/u1-pc", "u1");
@@ -167,7 +167,7 @@ describe("OwnerPush", () => {
 
   it("labels the notification when the owner has more accounts", () => {
     const db = new Database(appDbFile);
-    db.prepare("INSERT INTO teams_accounts VALUES(3, 'u1', 0)").run();
+    db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(3, 'u1', 0)").run();
     db.close();
     store.setState(STATE.me, '{"tenant": "Contoso"}');
     expect(label()).toBe("Contoso");

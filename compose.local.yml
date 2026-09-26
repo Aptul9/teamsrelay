@@ -31,14 +31,21 @@ services:
   agent-4:
     volumes:
       - tr_data:/data
+  wipe-1:
+    volumes:
+      - tr_config:/config
+  wipe-2:
+    volumes:
+      - tr_config_2:/config
+  wipe-3:
+    volumes:
+      - tr_config_3:/config
+  wipe-4:
+    volumes:
+      - tr_config_4:/config
   webapp:
-    volumes: !override
-      - ./vapid:/vapid:ro
+    volumes:
       - tr_data:/data
-      - tr_config:/config/1
-      - tr_config_2:/config/2
-      - tr_config_3:/config/3
-      - tr_config_4:/config/4
   caddy:
     ports: !override
       - "127.0.0.1:8090:8090"

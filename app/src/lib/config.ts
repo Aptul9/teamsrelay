@@ -13,8 +13,9 @@ export const config = {
   get dataDir() {
     return path.dirname(config.appDb);
   },
-  get configDir() {
-    return process.env.CONFIG_DIR || "/config";
+  // Wipe requests for the teams-wipe-N containers (see wipeSlot)
+  get wipeDir() {
+    return process.env.WIPE_DIR || "/wipe";
   },
   get dockerApi() {
     return process.env.DOCKER_API || "";

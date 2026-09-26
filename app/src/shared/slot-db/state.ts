@@ -56,8 +56,14 @@ export const AgentHealth = z.object({
 export type AgentHealth = z.infer<typeof AgentHealth>;
 
 // Health as the web app serves it (/api/health, health event): the agent's, plus agent, whether the agent
-// still writes it; teams also takes "starting" and "unknown" there
-export type SlotHealth = Partial<Omit<AgentHealth, "teams">> & { teams?: string; agent?: "ok" | "stale" };
+// still writes it; teams also takes "starting" and "unknown" there. A slot its owner stopped is "stopped"
+// and grey, whatever its agent wrote last.
+export type SlotHealth = Partial<Omit<AgentHealth, "teams" | "watcher" | "overall">> & {
+  teams?: string;
+  agent?: "ok" | "stale" | "stopped";
+  watcher?: "ok" | "stale" | "stopped";
+  overall?: AgentHealth["overall"] | "grey";
+};
 
 // JSON of a state row; missing, broken or of another shape gives the fallback
 export function parseState<T>(schema: z.ZodType<T>, value: string | null | undefined, fallback: T): T {
