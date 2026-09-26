@@ -6,7 +6,7 @@ A Tauri 2 app that shows the TeamsRelay web app of a server in an app window. St
 
 - First start: a page bundled with the app asks for the address of the TeamsRelay server, keeps it (`localStorage` of the bundled page) and opens it. `https://` only; `http://` is accepted for `localhost` and `127.0.0.1`, to reach a local stack through `adb reverse tcp:8090 tcp:8090`.
 - Next starts: the saved server opens directly.
-- Changing the server: Back from the first server page right after typing the address shows the form again; otherwise Android Settings, Apps, TeamsRelay, Storage, **Clear storage** (it also signs out).
+- Changing the server: Android Settings, Apps, TeamsRelay, Storage, **Clear storage** (it also signs out). Back from the first server page right after typing the address also shows the form again in Chrome (tested); in the app that depends on the Tauri back button handling, not tried on a device yet.
 - The server page runs as in a browser, with its own session cookie. No Tauri capability names a remote URL, so the server page cannot call Tauri.
 - Android WebView has no Push API and no service worker notifications (MDN compatibility data): the web app button to enable notifications does nothing inside the app.
 
