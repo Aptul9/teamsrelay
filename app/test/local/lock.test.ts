@@ -96,6 +96,26 @@ describe("lock left behind", () => {
     expect(refusal(file)).toBeNull();
   });
 
+  // two processes judge the same stale lock: the one that takes it over first keeps it
+  it("leaves alone a lock another process took over while this one judged the old one", () => {
+    const file = lockIn();
+    leftBy(file, { pid: deadPid() });
+    const real = fs.readFileSync;
+    let swapped = false;
+    vi.spyOn(fs, "readFileSync").mockImplementation(((p: fs.PathOrFileDescriptor, o?: unknown) => {
+      const content = real(p, o as BufferEncoding);
+      if (!swapped && p === file) {
+        // the other process takes the stale lock over right after this one read it
+        swapped = true;
+        fs.writeFileSync(file, JSON.stringify({ pid: process.ppid, mode: "login", since: new Date().toISOString() }));
+      }
+      return content;
+    }) as typeof fs.readFileSync);
+    expect(refusal(file)?.heldBy).toBe("login");
+    vi.restoreAllMocks();
+    expect(JSON.parse(fs.readFileSync(file, "utf8"))).toMatchObject({ pid: process.ppid, mode: "login" });
+  });
+
   it("holds while its holder keeps it up to date", () => {
     const file = lockIn();
     leftBy(file, {}, 20_000);

@@ -29,14 +29,24 @@ export class LockError extends Error {
 
 type Holder = { pid: number; mode: string; since: string };
 
-function holder(file: string): Holder | null {
+function read(file: string): string | null {
   try {
-    const h = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<Holder> | null;
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function parse(raw: string | null): Holder | null {
+  try {
+    const h = JSON.parse(raw ?? "") as Partial<Holder> | null;
     return h && typeof h.pid === "number" ? { pid: h.pid, mode: String(h.mode ?? ""), since: String(h.since ?? "") } : null;
   } catch {
     return null;
   }
 }
+
+const holder = (file: string) => parse(read(file));
 
 function alive(pid: number): boolean {
   try {
@@ -88,9 +98,12 @@ export function acquireLock(file: string, mode: "relay" | "login", beatMs = BEAT
         // released meanwhile: taken on the next round
         continue;
       }
-      const h = holder(file);
+      const raw = read(file);
+      const h = parse(raw);
       const why = stale(h, touched);
       if (!why) throw new LockError(h ? `the ${h.mode} is running on this profile (pid ${h.pid}, since ${h.since})` : `another process is taking ${file}`, h?.mode ?? "");
+      // another process judging the same lock may have taken it over meanwhile: its lock is not the one judged
+      if (read(file) !== raw) continue;
       log.info("lock", `taken over: ${why}`, { pid: h?.pid, mode: h?.mode });
       fs.rmSync(file, { force: true });
     }
