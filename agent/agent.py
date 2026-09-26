@@ -189,21 +189,26 @@ ACTIVITY_JS = r"""() => [...document.querySelectorAll('[data-tid="activity-feed-
   const id=((it.getAttribute('aria-labelledby')||'').match(/activity-feed-item-title-(\d+)/)||[])[1]||'';
   const tEl=it.querySelector('[data-tid="activity-feed-item-title"]');
   const title=tEl?(tEl.innerText||'').replace(/\s+/g,' ').trim():'';
-  const leaves=[...it.querySelectorAll('*')].filter(x=>x.children.length===0 && (x.textContent||'').trim() && !(tEl&&tEl.contains(x)))
+  // text outside the title and outside buttons (item menu, "Call" and "Chat" of a missed call)
+  const leaves=[...it.querySelectorAll('*')].filter(x=>x.children.length===0 && (x.textContent||'').trim() && !(tEl&&tEl.contains(x)) && !x.closest('button'))
     .map(x=>x.textContent.replace(/\s+/g,' ').trim());
   // riga dell'orario riconosciuta dal formato: prima c'è l'anteprima, dopo il luogo (chat, oppure team > canale)
   const TM=/^(\d{1,2}:\d{2}\s?(AM|PM)?|\d{1,2}\/\d{1,2}(\/\d{2,4})?|Yesterday|Ieri|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/i;
   let ti=leaves.findIndex(x=>TM.test(x)); if(ti<0) ti=leaves.length;
   const tm=leaves[ti]||'', preview=leaves.slice(0,ti).join(' '), place=leaves.slice(ti+1);
   const emoji=[...it.querySelectorAll('img')].map(i=>i.alt||'').filter(Boolean).join('');
-  let kind=/reacted/i.test(title)?'reaction':/mentioned/i.test(title)?'mention':/repl/i.test(title)?'reply':'message';
-  const actor=title?title.replace(/\s+(reacted|mentioned|replied|liked|sent|posted|invited|scheduled)\b.*$/i,'').trim():'';
-  let chat=place.join(' › ');
-  if(/^In chat with you$/i.test(chat)) chat=actor;                        // 1:1: il luogo è la persona
+  // the person comes before the action ("Anna Rossi assigned you a task"), except in "Missed call from Anna Rossi"
+  const call=title.match(/^Missed call from (.+)$/i);
+  const actor=call?call[1].trim():title.replace(/\s+(reacted|mentioned|replied|liked|sent|posted|invited|scheduled|assigned|updated|added|removed|shared|commented|canceled|cancelled|accepted|declined|started|joined|changed|created|edited|forwarded)\b.*$/i,'').trim();
+  let kind=call?'call':/reacted/i.test(title)?'reaction':/mentioned/i.test(title)?'mention':/repl/i.test(title)?'reply':/assigned you a task/i.test(title)?'task':/added you to/i.test(title)?'team':'message';
+  // a channel is written "Team > Channel" on one line, or on two
+  const channel=place.length>1 || /\s>\s/.test(place.join(' '));
+  let chat=place.join(' › ').replace(/\s+>\s+/g,' › ');
+  if(/^In chat with you$/i.test(chat) || call) chat=actor;               // 1:1: il luogo è la persona
   if(/\d{1,2}:\d{2}\s?(AM|PM)?\s*-\s*\d{1,2}:\d{2}/i.test(chat)) kind='meeting';  // invito a riunione
   const w=parseInt(getComputedStyle(tEl||it).fontWeight,10)||400;
   const avi=[...it.querySelectorAll('img')].find(i=>!i.alt && i.naturalWidth);
-  return {id, title, kind, actor, emoji, preview:preview.slice(0,300), tm, chat, channel:place.length>1, unread:w>=600, avsrc:avi?(avi.currentSrc||avi.src):''};
+  return {id, title, kind, actor, emoji, preview:preview.slice(0,300), tm, chat, channel, unread:w>=600, avsrc:avi?(avi.currentSrc||avi.src):''};
 })"""
 
 # nome della chat aperta in Teams (per non salvare i messaggi di una chat sotto il nome di un'altra)
