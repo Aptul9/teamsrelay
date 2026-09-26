@@ -20,7 +20,7 @@ Every Teams account of a server belongs to one person ([decision](decisions/2026
 
 ## Web app and agent
 
-The web app and the agent of a slot never call each other. They share `data/N/messages.db` (SQLite, WAL): the agent writes chats, messages, activity and state, the web app reads them and queues commands. Tables, row shapes, command types and arguments and state keys are described once, in `app/src/shared/slot-db`, and both sides use that module. The Python agent of earlier releases used the same tables, so either agent can run a slot.
+The web app and the agent of a slot never call each other. They share `data/N/messages.db` (SQLite, WAL): the agent writes chats, messages, activity and state, the web app reads them and queues commands. Tables, row shapes, command types and arguments and state keys are described once, in `app/src/shared/slot-db`, and both sides use that module; the checks of what an app sends with a command are in `app/src/shared/command-input.ts`, used by the web app and by the [local relay](#local-relay). The Python agent of earlier releases used the same tables, so either agent can run a slot.
 
 ```mermaid
 sequenceDiagram
@@ -68,11 +68,11 @@ About one round per second. Each step is a job of a small scheduler (`app/src/ag
 | every round | notifications caught by the hook (secondary source), queued commands (the chat list is read after each one) |
 | every 300 rounds, Teams connected | full chat list, scrolled from top to bottom |
 | every 3 rounds | visible chat list: pictures, previews, unread, muted; new message detection and push |
-| every 150 rounds, Teams connected | Activity feed (switches to the Activity view and back) |
+| every 150 rounds, Teams connected | Activity feed (switches to the Activity view and back); not in the local relay |
 | every 300 rounds, or while unknown | identity: name, email, organization, picture |
-| every 5 rounds, sign-in page included | health; if the session expired, one push |
+| every 5 rounds, sign-in page included | health; a push when Teams stays signed out for a minute, another when it is back |
 | every round | open conversation |
-| every 2 rounds, no commands | "Read by" of one of your recent messages in the open group chat |
+| every 2 rounds, no commands | "Read by" of one of your recent messages in the open group chat; not in the local relay |
 | 8-11 and 17-20 | automatic check with a push of the outcome |
 
 A message is new when the preview or the time of a chat changes with an incoming text, or when the chat turns unread. Muted chats and the chat with yourself do not notify; identical notifications within 150 s are dropped.
@@ -80,8 +80,9 @@ A message is new when the preview or the time of a chat changes with an incoming
 ### Resilience
 
 - **Virtualized lists**: Teams renders only the rows that fit the window, and the window depends on who looks at the remote desktop. Partial reads update the top of the list and keep the rest; the full read scrolls the list and rewrites it in one transaction.
-- **Teams reloads**: the agent finds the Teams tab again at the next round and reopens the chat in use; if it cannot see the Teams tab for 60 s it exits and the supervisor starts it again. A lost CDP connection (browser restarted) is opened again every 3 s, without touching the browser.
+- **Teams reloads**: the agent finds the Teams tab again at the next round and reopens the chat in use; if it cannot see the Teams tab for 60 s it exits and the supervisor starts it again. A lost CDP connection (browser restarted) is opened again every 3 s, without touching the browser. The local relay instead opens Teams again in a blank tab after 5 s, and after 10 minutes on any other page (a sign-in may be in progress), and launches its browser again when it closes.
 - **Errors**: a failing step is logged under its name and the round goes on; a command that throws ends as failed and is not run again.
+- **Commands**: a command is `running` while the agent works on it. One left running by an agent that stopped (restart, crash) ends as `unconfirmed` and is never run again: a message may be out already, a reaction set. A command that waited more than 2 minutes ends as failed without touching Teams.
 - **Right chat**: rows are matched by the exact name the app shows, a prefix only when a single row matches. Before saving a conversation the agent checks the title of the open chat (`[data-tid="chat-title"]`); a title that is another chat of the list never matches. Sending refuses to type when the open chat is not the requested one.
 
 ## How actions are performed
@@ -89,7 +90,8 @@ A message is new when the preview or the time of a chat changes with an incoming
 - **Action bar**: appears only with a real mouse hover, synthetic JavaScript events are ignored. It is drawn in a portal outside the message and two of them can be visible: the one closest to the message is used, clicked by coordinates.
 - **Opening a chat**: click on the row. The only button inside the row is *More chat options*, with entries such as *Hide* and *Remove chat history*.
 - **Reactions**: quick buttons of the bar, or the picker for 😢 and 😠. Removing or adding from the pill under the message is a click on the pill (`aria-pressed` tells whether it is yours).
-- **Reply**: *Reply with quote*, on the bar for other people's messages and in *More options* for yours. After the quote the cursor is already in the box: the text is typed without clicking and sent with Enter.
+- **Send**: refused when Teams shows another chat or the compose box already holds a draft, which would go out with it. The text is typed, checked in the box and sent; whatever fails before the send leaves the box empty. Done once Teams shows the new message with its status icon (*Sending...* then *Sent*, drawn under the last message of yours only), unconfirmed when the message went out and Teams did not show it sent within 15 s: sending it again could make two.
+- **Reply**: *Reply with quote*, on the bar for other people's messages and in *More options* for yours. After the quote the cursor is already in the box: the text is typed without clicking and sent with Enter. Done, failed or unconfirmed like a send.
 - **Edit**: inline editor in the message, *Done* button. When something goes wrong the draft is discarded (*Discard draft*) and the message stays as it was.
 - **Delete**: *More options → Delete*, immediate; *Undo* stays available for a short time.
 - **Read by**: *Read by X of Y* entry of *More options* and its submenu with the names.
@@ -114,9 +116,9 @@ A message is new when the preview or the time of a chat changes with an incoming
 | `chat_messages` | messages of the open chats; rich fields (HTML, images, files, reactions, status, read by) in `extra` as JSON |
 | `readby` | "Read by" per message |
 | `activity` | Activity feed |
-| `commands` | commands queued by the web app, with outcome |
+| `commands` | commands queued by the web app, with outcome: `pending`, `running`, `done`, `failed`, `unconfirmed` (the web app reports `running` as `pending`, `unconfirmed` as `failed`); `key`, set by the app of the local relay, one command per key |
 | `messages` | history of the notifications sent |
-| `state` | health (with your Teams status), active chat, chat on screen in the app (`viewing`), identity (name, email, tenant, picture), command results |
+| `state` | health (with your Teams status), active chat, chat on screen in the app (`viewing`), identity (name, email, tenant, picture), command results, how long Teams has been signed out or the browser down (`login_watch`, `browser_watch`) |
 
 `data/app.db`, shared:
 
@@ -126,6 +128,19 @@ A message is new when the preview or the time of a chat changes with an incoming
 | `teams_accounts` | slot, owner user id, time added, stopped by its owner (0/1), time of the last start from the app |
 | `push_subscriptions` | endpoint, user id, Web Push subscription |
 | `accounts`, `push_subs` | tables of the single-user release, read once for the migration and kept for a rollback |
+
+## Local relay
+
+One Teams account on a machine with a desktop session, without the containers: `node dist/relay.cjs`, the esbuild bundle of `app/src/local`, launches Chrome or Edge on a profile of its own (`app/state/profile`, signed in once with `npm run relay:login`), runs the agent above on it, pushes over Web Push and answers one bearer-token API with a text-only phone app (`app/src/local/web`, with the service worker, manifest and icons of `app/public`). pm2 keeps it running. Design, and what differs from the agent of a slot: [2026-09-26-local-relay.md](design/2026-09-26-local-relay.md).
+
+| | Server product | Local relay |
+|---|---|---|
+| Browser | Chromium of the `browsers` container, DevTools port, supervisor | Chrome or Edge launched by Playwright over a pipe, headful, kept running by the relay |
+| Sign-in | remote desktop `/desktop/` | the relay window |
+| Database | `data/N/messages.db` per slot, `data/app.db` | `app/state/relay.db`: the tables of a slot database, plus `push_subscriptions` |
+| Devices | per user, in `app.db` | subscribed from the app, in `relay.db` |
+| Phone | web app (Next.js), users and sessions, event stream | one page, one token, polling ([api.md](api.md#local-relay)) |
+| Activity feed, "Read by", @, images, downloads | yes | no |
 
 ## Repository
 
@@ -139,14 +154,16 @@ teamsrelay/
 │   ├── src/app, src/components, src/lib, src/server   Next.js web app
 │   ├── src/agent          agent: loop, jobs, commands, Teams page scripts and selectors, push
 │   ├── src/supervisor     supervisor of the browsers container: processes, accounts, control API
+│   ├── src/local          local relay (dist/relay.cjs): config, browser keeper, lock, API, devices; web/ its phone app
 │   ├── docker/browsers    s6 service of the supervisor, desktop autostart without browser
-│   ├── src/shared/slot-db contract of data/N/messages.db, used by both
-│   ├── scripts/           gen-vapid.mjs (push keys), seed-slot.mjs, capture-fixture.ts
-│   └── test/              Vitest: web app, agent, page scripts in Chrome on captured fixtures
+│   ├── src/shared         slot-db: contract of data/N/messages.db; checks of command input and HttpError
+│   ├── scripts/           gen-vapid.mjs (push keys), seed-slot.mjs, capture-fixture.ts, relay-setup.mjs, relay-autostart.ps1
+│   ├── ecosystem.config.cjs, relay.env.example   pm2 and settings of the local relay
+│   └── test/              Vitest: web app, agent, page scripts in Chrome on captured fixtures, local relay
 ├── caddy/Caddyfile        routes, HTTPS, desktop gate
 ├── deploy/                remote-deploy.sh: deploy and rollback on the server
 ├── .github/               CI/CD, Dependabot
 └── docs/                  this documentation, decisions, plans
 ```
 
-Created at runtime, never in git: `config/N/` (browser profiles), `data/app.db`, `data/N/` (database, `media/`, `files/`, `uploads/`), `vapid/`, `.caddyfile-sum`, `.deployed-sha`.
+Created at runtime, never in git: `config/N/` (browser profiles), `data/app.db`, `data/N/` (database, `media/`, `files/`, `uploads/`), `vapid/`, `.caddyfile-sum`, `.deployed-sha`; for the local relay `app/state/` (profile, `relay.db`, `media/`, `vapid/`, `token`, `relay.lock`) and `app/relay.env`, also kept out of the Docker build context.

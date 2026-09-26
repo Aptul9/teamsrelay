@@ -1,6 +1,6 @@
 # Teams selectors
 
-Everything the agent knows about Teams web is in `app/src/agent/teams/selectors.ts`: hosts, selectors and the English texts read on the page. When Microsoft changes the interface, the change goes there. The page scripts (`app/src/agent/teams/scripts/`) receive those values as argument and run inside the Teams page; they import nothing at runtime, which a lint rule enforces. Checked on Teams web in English (`teams.cloud.microsoft`) in September 2026.
+Everything the agent knows about Teams web is in `app/src/agent/teams/selectors.ts`: hosts, selectors and the English texts read on the page. The agent of a slot and the local relay use the same file. When Microsoft changes the interface, the change goes there. The page scripts (`app/src/agent/teams/scripts/`) receive those values as argument and run inside the Teams page; they import nothing at runtime, which a lint rule enforces. Checked on Teams web in English (`teams.cloud.microsoft`) in September 2026.
 
 Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-written pages and on fixtures captured from live Teams (`app/test/agent/fixtures/`, structure only, names and texts invented). After an interface change, capture the part again with `app/scripts/capture-fixture.ts` (the header of the script has the commands) and run `npm test` from `app/`.
 
@@ -32,7 +32,7 @@ Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-
 | Attachments | `[data-tid="file-attachment-grid"]`, name and URL in `aria-label` |
 | Quote | `[data-tid="quoted-reply-card"]`, `[data-tid="quoted-reply-preview-content"]` |
 | Reactions | `[data-tid="diverse-reaction-pill-button"]`, `aria-pressed="true"` when it is yours |
-| Status | `[class*="fui-ChatMyMessage__statusIcon"]`, `aria-label` `Sent`, `Seen`, `Seen by everyone` |
+| Status | `[class*="fui-ChatMyMessage__statusIcon"]`, drawn under the last message of yours only: `aria-label` `Sending...` while Teams sends it, then `Sent`, `Seen`, `Seen by everyone`; a label with *fail* is a message Teams could not send. A new message counts as sent once its icon says so, not before |
 | Edited | span with the text `Edited` in the message header |
 | Deleted | `[data-tid="message-tombstone"]`, `[data-tid="message-undo-delete-btn"]` |
 

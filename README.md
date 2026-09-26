@@ -35,6 +35,7 @@ flowchart LR
 - Actions in the web app become commands in the database of the account. The agent performs them on the Teams page and confirms once Teams shows the change.
 - Web app, agent and supervisor are one TypeScript package (`app/`) with two images: `teamsrelay` runs the web app, `teamsrelay-browsers` Chromium, the agents and the supervisor.
 - AI clients (Claude Code, opencode) can read the chats through the MCP endpoint `/mcp`, read only, when `MCP_TOKEN` is set: [docs/mcp.md](docs/mcp.md).
+- **Local relay**: for one account there is a lighter way, with no server and no containers. A Node process on an always-on machine drives Chrome or Edge on a profile of its own, signed in once in its window, and relays the chats to a small app on the phone: [docs/setup.md](docs/setup.md#local-relay). Both use the same agent code.
 
 ## Quick start
 
@@ -53,7 +54,7 @@ Open `https://<DOMAIN>`, sign in as the administrator, add a Teams account and s
 
 | Topic | Page |
 |---|---|
-| Installation, users, first account, phone, local development | [docs/setup.md](docs/setup.md) |
+| Installation, users, first account, phone, local development, local relay | [docs/setup.md](docs/setup.md) |
 | `.env` variables | [docs/configuration.md](docs/configuration.md) |
 | Containers, agent loop, data | [docs/architecture.md](docs/architecture.md) |
 | Deploy pipeline, updates, backup, troubleshooting | [docs/operations.md](docs/operations.md) |
