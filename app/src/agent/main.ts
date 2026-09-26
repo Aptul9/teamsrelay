@@ -1,4 +1,4 @@
-// TeamsRelay agent of one slot: drives Teams web in chromium-N over the Chrome DevTools Protocol, keeps
+// TeamsRelay agent of one slot: drives Teams web in its Chromium over the Chrome DevTools Protocol, keeps
 // data/N/messages.db for the web app, sends the push notifications. Built into dist/agent.cjs (esbuild).
 //   node agent.cjs           runs the agent (environment: src/agent/config.ts)
 //   node agent.cjs --check   loads the runtime dependencies and the page scripts, then exits
