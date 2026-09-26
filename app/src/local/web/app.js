@@ -422,8 +422,13 @@ $("text").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("composer").requestSubmit();
 });
 
+// One message on its way at a time: the Send button is disabled meanwhile, and Ctrl+Enter (requestSubmit) does not
+// look at the button
+let sending = false;
+
 $("composer").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (sending) return;
   const text = $("text").value;
   if (!text.trim() || !current) return;
   const body =
@@ -433,6 +438,7 @@ $("composer").addEventListener("submit", async (e) => {
         ? { type: "edit", chat: current, mid: compose.m.mid, text }
         : { type: "send", chat: current, text };
   const chat = current;
+  sending = true;
   $("send").disabled = true;
   try {
     const status = await command(body);
@@ -452,6 +458,7 @@ $("composer").addEventListener("submit", async (e) => {
   } catch (err) {
     failed(err);
   } finally {
+    sending = false;
     $("send").disabled = false;
   }
   await loadMessages();

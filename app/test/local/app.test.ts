@@ -276,6 +276,20 @@ describe("compose box of the app", () => {
     expect(await text()).toBe("for Luca");
   }, 60_000);
 
+  // the Send button is disabled while a message is on its way; the keyboard must respect that too
+  it("sends once when Ctrl+Enter is pressed again while the message is on its way", async () => {
+    const posted: string[] = [];
+    page.on("request", (r) => r.method() === "POST" && r.url().endsWith("/api/cmd") && posted.push((r.postDataJSON() as { text?: string }).text ?? ""));
+    await openChat("Anna Rossi");
+    await page.locator("#text").fill("just once");
+    await page.locator("#text").press("Control+Enter");
+    await page.locator("#text").press("Control+Enter");
+    await expect.poll(() => text(), { timeout: 15_000 }).toBe("");
+    await page.waitForTimeout(500);
+    expect(posted.filter((t) => t === "just once")).toHaveLength(1);
+    expect(sends()).toEqual(["just once"]);
+  }, 60_000);
+
   it("gives the draft back when an edit started over it is cancelled", async () => {
     await openChat("Anna Rossi");
     await page.locator("#text").fill("my draft");
