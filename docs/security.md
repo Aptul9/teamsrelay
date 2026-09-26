@@ -16,6 +16,12 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 - Administrators manage users and can free a slot. They do not read other users' chats and do not reach their desktops.
 - A device receives the notifications of its user only: the agent of slot N pushes to the subscriptions of the owner of N.
 
+## MCP endpoint
+
+- `/mcp` answers only when `MCP_TOKEN` is set (404 otherwise). Its bearer reads every chat TeamsRelay holds for the administrator of `.env` and can open a chat in Teams (`refresh_chat`, which marks it read): keep the token like a password, out of files that go to git.
+- The token is compared in constant time. No session cookie counts on `/mcp`, and a request carrying an `Origin` header (a web page) answers 403, so a page open in a browser signed in to TeamsRelay cannot use the endpoint.
+- No tool writes to Teams. Message texts reach the model as data written by other people; a client that also has tools reaching the network or the shell can still be steered by them.
+
 ## Remote desktops
 
 - `/desktop/N/` is the browser of slot N, the live Teams session of its owner. Caddy asks `/api/authcheck` before every request: no session means a redirect to the login, a session of another user means 403.

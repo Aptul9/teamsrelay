@@ -77,6 +77,7 @@ Administrators only.
 | GET | `/` | the PWA, or a redirect to `/login` |
 | GET | `/healthz` | *public*. Liveness of the web app |
 | GET | `/api/authcheck` | used by Caddy for `/desktop/N/`: 200 for the owner of slot N, 302 to the login without a session, 403 for another user |
+| POST | `/mcp` | MCP endpoint for AI clients, read only: `Authorization: Bearer <MCP_TOKEN>` instead of a session, 404 while `MCP_TOKEN` is empty. Tools: [mcp.md](mcp.md) |
 
 ## Health (`/api/health`, `health` event)
 
