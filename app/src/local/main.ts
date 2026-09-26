@@ -81,6 +81,10 @@ async function relayLock(file: string): Promise<() => void> {
 }
 
 async function run(config: Config) {
+  // stop handling from the first moment: pm2 may stop the relay while it waits for the sign-in or starts, and must not
+  // have to kill it. What to close grows as the relay opens it.
+  let close = async () => undefined;
+  onStop(() => close());
   const release = await relayLock(config.lockFile);
   process.on("exit", release);
   const token = readToken(config.tokenFile);
@@ -96,14 +100,14 @@ async function run(config: Config) {
   // the app sends no download command: files/ stays empty
   const media = new Media(config.mediaDir, path.join(config.stateDir, "files"));
   const loop = runAgent({ config, store, notifier, media, detector: new NewMessageDetector() }, keeper, stopped.signal);
-  onStop(async () => {
+  close = async () => {
     stopped.abort();
     await keeper.close();
     await loop;
     await server.close();
     devices.close();
     store.close();
-  });
+  };
   await loop;
 }
 
