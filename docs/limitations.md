@@ -12,6 +12,8 @@
 | Language | Teams web must stay in English: some texts read by the agent (message status, feed titles, expired session) are English. |
 | Teams interface | When Microsoft changes the [selectors](teams-selectors.md), the affected functions stop working until they are updated. |
 | Same display name | Chats are identified by the name shown in the list. With two chats of identical name, only the first one in the list is reachable. |
+| Group chats named "Name, +2" | Teams lists an unnamed group chat as its first members plus a count, and titles it with the full names once open: the agent does not recognize the title and the chat does not open from the app. |
+| Offline phones | The push service keeps a notification for one hour; a device offline longer misses it (the chat list still shows the message). |
 | Bots without preview | New message detection relies on the preview: bots that show none can be missed. |
 | Sending attachments | Not supported: text only. Receiving images and downloading files works. |
 | iPhone | Push notifications reach only the app installed on the Home Screen. |

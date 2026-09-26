@@ -20,7 +20,7 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 
 - `/desktop/N/` is the browser of slot N, the live Teams session of its owner. Caddy asks `/api/authcheck` before every request: no session means a redirect to the login, a session of another user means 403.
 - Port 3000 of `chromium-N` has no password of its own (`DESKTOP_PASS` empty) and is reachable only on network `slotN`, shared with Caddy alone.
-- CDP (`9222`) listens on `127.0.0.1` inside the network namespace shared by `chromium-N` and `agent-N`.
+- CDP (`9222`) listens on `127.0.0.1` inside the network namespace shared by `chromium-N` and `agent-N`, without authentication. The agents stay one process per slot for this reason: a single process for every slot would need CDP on the slot networks.
 
 ## Docker
 

@@ -1,6 +1,8 @@
 # Teams selectors
 
-Everything the agent knows about Teams web is in `agent/agent.py`. When Microsoft changes the interface, the change goes there. Checked on Teams web in English (`teams.cloud.microsoft`) in September 2026. `app/test/agent-chats.test.ts` runs the chat list scripts against a static copy of the list.
+Everything the agent knows about Teams web is in `app/src/agent/teams/selectors.ts`: hosts, selectors and the English texts read on the page. When Microsoft changes the interface, the change goes there. The page scripts (`app/src/agent/teams/scripts/`) receive those values as argument and run inside the Teams page; they import nothing at runtime, which a lint rule enforces. Checked on Teams web in English (`teams.cloud.microsoft`) in September 2026.
+
+Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-written pages and on fixtures captured from live Teams (`app/test/agent/fixtures/`, structure only, names and texts invented). After an interface change, capture the part again with `app/scripts/capture-fixture.ts` (the header of the script has the commands) and run `npm test` from `app/`.
 
 ## Page and chat list
 

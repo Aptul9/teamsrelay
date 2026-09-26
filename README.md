@@ -14,7 +14,7 @@ flowchart LR
     CA -- "/desktop/N/, owner only" --> CH
     subgraph Slot["slot N, one per Teams account"]
       CH["chromium-N<br/>Teams web signed in"]
-      AG["agent-N<br/>Playwright over CDP"]
+      AG["agent-N<br/>Node, Playwright over CDP"]
       DB[("data/N/messages.db")]
     end
     WA -- "commands, reads" --> DB
@@ -29,6 +29,7 @@ flowchart LR
 - Every person signs in to the web app with their own user and adds their Teams accounts. Each Teams account runs in its own slot: browser, agent, database and network.
 - The Microsoft sign-in (password, MFA) happens in the remote browser of the slot, at `/desktop/N/`, reachable only by the owner of the slot.
 - Actions in the web app become commands in the database of the slot. The agent performs them on the Teams page and confirms once Teams shows the change.
+- Web app and agent are one TypeScript package (`app/`) and one image: the web app runs `node server.js`, each agent `node agent.cjs`.
 
 ## Quick start
 
@@ -37,8 +38,7 @@ A Linux server with Docker Compose, a DNS name pointing to it, ports 80 and 443 
 ```bash
 git clone <repository> /opt/teamsrelay && cd /opt/teamsrelay
 cp .env.example .env          # DOMAIN, BETTER_AUTH_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
-docker run --rm -v "$PWD:/w" -w /w python:3.14-slim \
-  sh -c "pip install -q cryptography && python tools/gen_vapid.py vapid"
+docker run --rm -v "$PWD:/w" -w /w node:24-slim node app/scripts/gen-vapid.mjs vapid
 docker compose --profile accounts create --build
 docker compose up -d
 ```
