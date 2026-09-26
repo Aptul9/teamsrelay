@@ -26,7 +26,7 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 | GET | `/api/events?a=N&chat=<name>` | server-sent events: `accounts`, `health`, `chats`, `activity`, `messages` (`{chat, rows}`), each sent when its content changes |
 | GET | `/api/chats` | `name, preview, tm, unread, mention, muted, av` |
 | GET | `/api/messages?name=<chat>` | per message `mid, author, text, mine, reacts` and, when present, `html, quote, images, files, reactions, status, readby, edited, deleted, mentionsMe, av` |
-| GET | `/api/activity` | `{ts, items}`, items with `id, kind, actor, title, emoji, preview, tm, chat, channel, unread, av`; `kind` is `reaction`, `mention`, `reply`, `message` or `meeting` |
+| GET | `/api/activity` | `{ts, items}`, items with `id, kind, actor, title, emoji, preview, tm, chat, channel, unread, av`; `kind` is `reaction`, `mention`, `reply`, `task`, `team`, `call`, `meeting` or `message` |
 | GET | `/api/feed` | history of the notifications sent |
 | GET | `/api/health` | health, see below |
 | GET | `/api/cmd/{id}` | `{status, result}`, `status` is `pending`, `done` or `failed` |

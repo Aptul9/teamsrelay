@@ -24,17 +24,42 @@ preflight() {
 }
 
 healthy() {
-  # the web app answers inside its container, then no agent may be in a restart loop
+  # the web app answers inside its container, then every running agent works
   for _ in $(seq 1 30); do
     if docker compose exec -T webapp node -e "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" >/dev/null 2>&1; then
       # the web app starts the slots of the accounts a few seconds after its start
       sleep 25
-      bad="$(docker ps --filter name=teams-agent- --filter status=restarting --format '{{.Names}}')"
-      [ -z "$bad" ] && return 0
-      echo "agent in a restart loop: $bad" >&2; return 1
+      agents_ok
+      return
     fi
     sleep 4
   done
+  return 1
+}
+
+# An agent works when it keeps running and writes its health row (state 'health' of data/N/messages.db,
+# rewritten every few seconds). One that stops at start (wrong environment, VAPID key not matching appkey.txt)
+# restarts in a loop, which a single look at the container status can miss: its restart count moves.
+agents_ok() {
+  local names n stale before
+  names="$(docker ps --filter name=teams-agent- --format '{{.Names}}' | sort)"
+  [ -n "$names" ] || return 0
+  # shellcheck disable=SC2086
+  before="$(docker inspect -f '{{.RestartCount}}' $names | tr '\n' ' ')"
+  for _ in $(seq 1 18); do
+    sleep 5
+    # shellcheck disable=SC2086
+    if [ "$(docker inspect -f '{{.RestartCount}}' $names | tr '\n' ' ')" != "$before" ]; then
+      echo "agent restarting: $(tr '\n' ' ' <<<"$names")" >&2
+      return 1
+    fi
+    stale=""
+    for n in $names; do
+      docker compose exec -T webapp node -e "const D=require('better-sqlite3');const r=new D('/data/'+process.argv[1]+'/messages.db',{readonly:true,fileMustExist:true}).prepare(\"SELECT v FROM state WHERE k='health'\").get();process.exit(r&&Date.now()/1000-(JSON.parse(r.v).ts||0)<60?0:1)" "${n##*-}" >/dev/null 2>&1 || stale="$stale $n"
+    done
+    [ -z "$stale" ] && return 0
+  done
+  echo "agent without a recent health row:$stale" >&2
   return 1
 }
 

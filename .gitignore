@@ -12,11 +12,11 @@ caddy_config/
 # Web app build
 node_modules/
 .next/
+# Agent bundle (npm run build:agent)
+dist/
 next-env.d.ts
 *.tsbuildinfo
 
 *.bak
-__pycache__/
-*.pyc
 .DS_Store
 Thumbs.db

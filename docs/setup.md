@@ -22,11 +22,10 @@ Required in `.env`: `DOMAIN`, `BETTER_AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWO
 ## 2. Push keys
 
 ```bash
-docker run --rm -v "$PWD:/w" -w /w python:3.14-slim \
-  sh -c "pip install -q cryptography && python tools/gen_vapid.py vapid"
+docker run --rm -v "$PWD:/w" -w /w node:24-slim node app/scripts/gen-vapid.mjs vapid
 ```
 
-Creates `vapid/private_key.pem` and `vapid/appkey.txt`. Generate them once: new keys force every device to enable notifications again.
+Creates `vapid/private_key.pem` and `vapid/appkey.txt`. Generate them once: new keys force every device to enable notifications again, so the script never replaces an existing key. Keys made by the Python tool of earlier releases work as they are. The agents stop at start when the private key does not match `appkey.txt`.
 
 ## 3. Start
 
@@ -86,17 +85,17 @@ docker compose --env-file compose.local.env -f docker-compose.yml -f compose.loc
 - Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` of `compose.local.env`, local test values.
 - Caddy serves plain HTTP: `localhost` is a secure context, so the service worker and Web Push work without a certificate.
 - Named volumes (`tr_data`, `tr_config`...) replace `data/` and `config/`: on the Windows filesystem SQLite locking and the symlinks of the Chromium profile are unreliable.
-- Sample chats without a signed-in Teams: `docker compose cp webapp/scripts/seed-slot.mjs webapp:/app/seed-slot.mjs`, then `docker compose exec webapp node /app/seed-slot.mjs /data 1` (slot 1 must belong to your user).
+- Sample chats without a signed-in Teams: `docker compose cp app/scripts/seed-slot.mjs webapp:/app/seed-slot.mjs`, then `docker compose exec webapp node /app/seed-slot.mjs /data 1` (slot 1 must belong to your user).
 
-Web app code: `webapp/` (Next.js). Checks, from `webapp/`:
+Code: `app/`, one package for the web app (Next.js) and the agent (`src/agent`). Checks, from `app/`:
 
 ```bash
 npm ci
 npm run lint && npm run typecheck && npm test && npm run build
 ```
 
-`npm test` includes the agent page scripts run against a static copy of the Teams chat list, in the local Google Chrome. Agent tests: `python -m unittest -v test_agent` from `agent/` with the packages of `agent/requirements.txt`.
+`npm test` covers the web app and the agent: unit tests, the page scripts in the local Google Chrome on pages captured from Teams, and the agent bundle run as a process against a local Chrome (about two minutes: it waits for the real 60 s exit). `npm run build` builds the web app and the agent (`dist/agent.cjs`).
 
-After a change, rebuild the image of the web app (`docker compose ... up -d --build webapp`). `agent/agent.py` is mounted in the agent containers: `docker compose ... restart agent-1` is enough.
+After a change, rebuild the image (`docker compose ... up -d --build webapp`), then recreate the agents from it: `docker compose ... --profile accounts up -d --no-deps agent-1 agent-2`. The agent code is inside the image, nothing is mounted.
 
 Stop everything with `docker compose -f docker-compose.yml -f compose.local.yml down`; `down -v` also deletes the volumes, Teams sessions included.

@@ -18,6 +18,23 @@ Every setting is in `.env`, next to `docker-compose.yml`. Template: [.env.exampl
 | `HTTPS_PORT`, `HTTPS_BIND` | no | Port and bind address of Caddy for HTTPS. Default `443` on `0.0.0.0`. |
 | `NTFY_ENABLED`, `NTFY_URL`, `NTFY_TOPIC` | no | Notifications through ntfy as well (`NTFY_ENABLED=1` and a topic). Every account of the server posts to the same topic. |
 
+## Agent environment
+
+Set per slot by `docker-compose.yml`, not in `.env`. The agent checks these at start (`app/src/agent/config.ts`) and stops with the name of the wrong variable.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CDP` | `http://localhost:9222` | DevTools of the slot browser; Compose sets `http://127.0.0.1:9222` |
+| `ACCOUNT` | `1` | Slot number |
+| `DB_PATH` | `/data/1/messages.db` | Database of the slot; images go to `media/` and attachments to `files/` next to it |
+| `APP_DB` | `/data/app.db` | Shared database of the web app, read for the slot owner and their devices |
+| `VAPID_PRIVATE`, `VAPID_APPKEY` | `/vapid/private_key.pem`, `/vapid/appkey.txt` | Push keys. Without the private key push is off; a private key that does not match the public key stops the agent |
+| `VAPID_SUBJECT` | `mailto:admin@example.com` | From `.env`, `mailto:` or `https://` |
+| `NTFY_ENABLED`, `NTFY_URL`, `NTFY_TOPIC` | `0`, `https://ntfy.sh`, empty | From `.env`; `NTFY_ENABLED` is `0` or `1` |
+| `TZ` | `UTC` | From `.env`: time zone of the automatic checks |
+
+Push notifications are kept by the push service for up to one hour when a device is offline, then dropped.
+
 ## Files outside `.env`
 
 | Path | Content |

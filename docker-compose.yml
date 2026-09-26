@@ -49,11 +49,12 @@ x-wipe: &wipe
   restart: "no"
 
 x-agent: &agent
-  # Reads and drives Teams through the Chrome DevTools Protocol, sends the push notifications
-  build: ./agent
-  image: teamsrelay-agent
+  # Reads and drives Teams through the Chrome DevTools Protocol, sends the push notifications. Same image as
+  # the web app (built by the webapp service), other entrypoint.
+  image: teamsrelay
+  pull_policy: never
+  command: ["node", "agent.cjs"]
   volumes:
-    - ./agent/agent.py:/app/agent.py:ro
     - ./data:/data
     - ./vapid:/vapid:ro
   profiles: ["accounts"]
@@ -64,7 +65,9 @@ x-agent-env: &agent-env
   # 127.0.0.1, not localhost: Chromium binds CDP on IPv4 only, localhost resolves to ::1 first
   CDP: http://127.0.0.1:9222
   APP_DB: /data/app.db
+  # the agent stops at start when the private key does not match the public key the devices subscribed with
   VAPID_PRIVATE: /vapid/private_key.pem
+  VAPID_APPKEY: /vapid/appkey.txt
   VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
   NTFY_ENABLED: ${NTFY_ENABLED:-0}
   NTFY_URL: ${NTFY_URL:-https://ntfy.sh}
@@ -150,8 +153,8 @@ services:
 
   webapp:
     # Installable web app (PWA), API and user management; starts and stops the slots of its users
-    build: ./webapp
-    image: teamsrelay-webapp
+    build: ./app
+    image: teamsrelay
     container_name: teams-webapp
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}

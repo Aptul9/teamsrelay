@@ -1,6 +1,6 @@
 # Multi-user self-hosted, web app on Next.js
 
-Date: 2026-09-26. Status: accepted.
+Date: 2026-09-26. Status: accepted; the agent part is superseded by [2026-09-26-agent-typescript.md](2026-09-26-agent-typescript.md).
 
 ## Context
 
