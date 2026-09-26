@@ -113,9 +113,25 @@ export class SlotStore {
     return rows.map(({ extra, ...m }) => ({ ...m, ...parseExtra(extra) }));
   }
 
-  enqueue(type: CommandType, arg1 = "", arg2 = ""): number {
-    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?,?,?,?)").run(nowSeconds(), type, arg1, arg2);
+  // A command with a key already queued is not queued again: its id comes back
+  enqueue(type: CommandType, arg1 = "", arg2 = "", key: string | null = null): number {
+    if (key) {
+      const known = this.db.prepare("SELECT id FROM commands WHERE key=?").get(key) as { id: number } | undefined;
+      if (known) return known.id;
+    }
+    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2, key) VALUES(?,?,?,?,?)").run(nowSeconds(), type, arg1, arg2, key);
     return Number(r.lastInsertRowid);
+  }
+
+  // The agent takes the command: from here on a stop of the relay leaves it running, never pending again
+  startCommand(id: number) {
+    this.db.prepare("UPDATE commands SET status='running' WHERE id=? AND status='pending'").run(id);
+  }
+
+  // At start: commands the relay was running when it stopped may have reached Teams. They are not run again.
+  // Number of commands.
+  interruptedCommands(): number {
+    return this.db.prepare("UPDATE commands SET status='unconfirmed' WHERE status='running'").run().changes;
   }
 
   commandStatus(id: number): CommandStatus | null {
@@ -133,7 +149,7 @@ export class SlotStore {
     return !!this.db.prepare("SELECT 1 FROM commands WHERE status='pending' LIMIT 1").get();
   }
 
-  finishCommand(id: number, status: Exclude<CommandStatus, "pending">) {
+  finishCommand(id: number, status: Exclude<CommandStatus, "pending" | "running">) {
     this.db.prepare("UPDATE commands SET status=? WHERE id=?").run(status, id);
   }
 

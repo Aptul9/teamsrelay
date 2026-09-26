@@ -6,8 +6,13 @@ import { z } from "zod";
 export const COMMAND_TYPES = ["open", "send", "reply", "react", "edit", "delete", "undodelete", "resync", "recheck"] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 
-export const COMMAND_STATUSES = ["pending", "done", "failed"] as const;
+// pending: queued; running: on Teams now; done; failed: not applied on Teams; unconfirmed: applied (a message typed and
+// sent) but Teams did not show it done in time, or the relay stopped while it ran: it may have gone out
+export const COMMAND_STATUSES = ["pending", "running", "done", "failed", "unconfirmed"] as const;
 export type CommandStatus = (typeof COMMAND_STATUSES)[number];
+
+// Key the app gives a command so that sending it again (answer lost on the phone's network) does not queue it twice
+export const COMMAND_KEY = /^[A-Za-z0-9_-]{8,64}$/;
 
 export const REACTIONS = ["like", "heart", "laugh", "surprised", "cry", "angry"] as const;
 export type ReactionName = (typeof REACTIONS)[number];
