@@ -1,42 +1,64 @@
 # TeamsRelay
 
-Microsoft Teams sul telefono anche quando le app native sono bloccate. Un Chromium sul tuo server tiene aperto Teams web con il tuo account; una web app installabile ti dà chat, notifiche push e le azioni di Teams (rispondi, reagisci, modifica, elimina), con lo stesso aspetto dell'app.
+Microsoft Teams on the phone for accounts whose organization allows Teams only in a desktop browser. A Chromium on your server keeps Teams web signed in, an agent reads and drives it, and an installable web app shows the chats, sends push notifications and performs the Teams actions: send, reply, react, edit, delete.
 
-> Usa TeamsRelay solo con il tuo account e nel rispetto delle policy della tua organizzazione. Il progetto non è affiliato né approvato da Microsoft; "Microsoft Teams" è un marchio di Microsoft.
+> Use TeamsRelay only with your own accounts and within the policies of your organization. The project is not affiliated with or endorsed by Microsoft; "Microsoft Teams" is a trademark of Microsoft.
 
-## Documentazione
+## How it works
 
-La documentazione completa è in [`docs/`](docs/) ed è un sito VitePress:
-
-```bash
-npm install
-npm run docs:dev          # http://localhost:5173
+```mermaid
+flowchart LR
+  PH["Phone or PC<br/>TeamsRelay web app"] -- HTTPS --> CA["caddy"]
+  subgraph Server["Linux server, Docker Compose"]
+    CA --> WA["webapp<br/>Next.js: users, API, events"]
+    CA -- "/desktop/N/, owner only" --> CH
+    subgraph Slot["slot N, one per Teams account"]
+      CH["chromium-N<br/>Teams web signed in"]
+      AG["agent-N<br/>Playwright over CDP"]
+      DB[("data/N/messages.db")]
+    end
+    WA -- "commands, reads" --> DB
+    AG -- "chats, messages, state" --> DB
+    AG -- CDP --> CH
+    WA -- "start, stop" --> DP["dockerproxy"]
+    WA --> APP[("data/app.db<br/>users, slots, devices")]
+  end
+  AG -- "Web Push" --> PH
 ```
 
-| Argomento | Pagina |
-|---|---|
-| Cosa fa e come funziona | [docs/guida/introduzione.md](docs/guida/introduzione.md) |
-| Installazione su un server | [docs/guida/installazione.md](docs/guida/installazione.md) |
-| Variabili di `.env` | [docs/guida/configurazione.md](docs/guida/configurazione.md) |
-| Deploy automatico con GitHub Actions | [docs/guida/deploy.md](docs/guida/deploy.md) |
-| Prova sul PC con Docker Desktop | [docs/guida/sviluppo-locale.md](docs/guida/sviluppo-locale.md) |
-| Problemi frequenti | [docs/guida/manutenzione.md](docs/guida/manutenzione.md) |
-| Architettura, API, selettori di Teams | [docs/riferimento/](docs/riferimento/) |
+- Every person signs in to the web app with their own user and adds their Teams accounts. Each Teams account runs in its own slot: browser, agent, database and network.
+- The Microsoft sign-in (password, MFA) happens in the remote browser of the slot, at `/desktop/N/`, reachable only by the owner of the slot.
+- Actions in the web app become commands in the database of the slot. The agent performs them on the Teams page and confirms once Teams shows the change.
 
-## Avvio rapido
+## Quick start
 
-Server Linux con Docker, porte 80 e 443 aperte:
+A Linux server with Docker Compose, a DNS name pointing to it, ports 80 and 443 reachable.
 
 ```bash
-git clone <url-del-repository> /opt/teamsrelay && cd /opt/teamsrelay
-cp .env.example .env && nano .env          # DOMAIN, UI_USER, UI_PASS
-docker run --rm -v "$PWD:/w" -w /w python:3.12-slim \
+git clone <repository> /opt/teamsrelay && cd /opt/teamsrelay
+cp .env.example .env          # DOMAIN, BETTER_AUTH_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
+docker run --rm -v "$PWD:/w" -w /w python:3.14-slim \
   sh -c "pip install -q cryptography && python tools/gen_vapid.py vapid"
-docker compose up -d --build
+docker compose --profile accounts create --build
+docker compose up -d
 ```
 
-Poi apri l'app su `https://<DOMAIN>` (credenziali UI_USER e UI_PASS), aggiungi il tuo account Teams, e accedi dal desktop remoto. Passo per passo: [Installazione](docs/guida/installazione.md).
+Open `https://<DOMAIN>`, sign in as the administrator, add a Teams account and sign in to Microsoft in its remote desktop. Step by step: [docs/setup.md](docs/setup.md).
 
-## Licenza
+## Documentation
 
-Vedi [LICENSE](LICENSE).
+| Topic | Page |
+|---|---|
+| Installation, users, first account, phone, local development | [docs/setup.md](docs/setup.md) |
+| `.env` variables | [docs/configuration.md](docs/configuration.md) |
+| Containers, agent loop, data | [docs/architecture.md](docs/architecture.md) |
+| Deploy pipeline, updates, backup, troubleshooting | [docs/operations.md](docs/operations.md) |
+| Security model | [docs/security.md](docs/security.md) |
+| HTTP API | [docs/api.md](docs/api.md) |
+| Teams selectors used by the agent | [docs/teams-selectors.md](docs/teams-selectors.md) |
+| Known limitations | [docs/limitations.md](docs/limitations.md) |
+| Decisions and plans | [docs/decisions/](docs/decisions/), [docs/design/](docs/design/) |
+
+## License
+
+See [LICENSE](LICENSE).
