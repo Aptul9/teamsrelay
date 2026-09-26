@@ -429,10 +429,36 @@ async function subscription() {
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
-async function renderPush() {
-  const on = !!(await subscription().catch(() => null)) && Notification.permission === "granted";
-  $("push-btn").textContent = on ? "Notifications on" : "Notifications";
-  $("push-btn").classList.toggle("on", on);
+// Notifications are on once the relay answered that it has the subscription of this browser, not before
+let pushOn = false;
+
+function renderPush() {
+  $("push-btn").textContent = pushOn ? "Notifications on" : "Notifications";
+  $("push-btn").classList.toggle("on", pushOn);
+}
+
+async function register(sub) {
+  pushOn = false;
+  const r = await api("/api/push", { method: "POST", body: sub.toJSON() });
+  pushOn = true;
+  return r;
+}
+
+// At every start the subscription of this browser, if any, goes to the relay again: the push service may have
+// renewed it, and the relay forgets one the push service reports gone
+async function syncPush() {
+  pushOn = false;
+  try {
+    const sub = typeof Notification !== "undefined" && Notification.permission === "granted" ? await subscription() : null;
+    if (!sub) return;
+    const { key } = await api("/api/vapid");
+    // subscribed with keys the relay no longer has: the button subscribes again
+    if (key && sameKey(sub.options.applicationServerKey, key)) await register(sub);
+  } catch (e) {
+    if (e instanceof Unauthorized) failed(e);
+  } finally {
+    renderPush();
+  }
 }
 
 async function enablePush() {
@@ -451,7 +477,7 @@ async function enablePush() {
     sub = null;
   }
   sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes(key) });
-  const r = await api("/api/push", { method: "POST", body: sub.toJSON() });
+  const r = await register(sub);
   toast(`Notifications on (${r.devices} device${r.devices === 1 ? "" : "s"})`);
 }
 
@@ -517,6 +543,7 @@ function start() {
     // keeps the service worker of this page current; it only shows notifications
     navigator.serviceWorker?.register("/sw.js").catch(() => undefined);
   }
+  syncPush();
   route();
 }
 

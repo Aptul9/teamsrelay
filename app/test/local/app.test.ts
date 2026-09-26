@@ -29,6 +29,42 @@ let page: Page;
 // how the stand-in agent ends the commands other than open
 let outcome: "done" | "failed" | "unconfirmed" = "done";
 
+// Push inside the page, as a phone that allowed notifications has it: a service worker registration whose push
+// manager holds one subscription (subscribed: true) or none yet. window.fakePush counts what the app asked of it.
+function fakePush({ key, subscribed }: { key: string; subscribed: boolean }) {
+  const bytes = (b64: string) => Uint8Array.from(atob(b64.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (b64.length % 4)) % 4)), (c) => c.charCodeAt(0));
+  const counts = { subscribe: 0, unsubscribe: 0 };
+  (window as unknown as { fakePush: typeof counts }).fakePush = counts;
+  type Sub = { endpoint: string; options: { applicationServerKey: ArrayBuffer }; toJSON(): object; unsubscribe(): Promise<boolean> };
+  let current: Sub | null = null;
+  const make = (): Sub => ({
+    endpoint: "https://push.example/this-phone",
+    options: { applicationServerKey: bytes(key).buffer },
+    toJSON: () => ({ endpoint: "https://push.example/this-phone", expirationTime: null, keys: { p256dh: "B".repeat(87), auth: "a".repeat(22) } }),
+    unsubscribe: async () => {
+      counts.unsubscribe++;
+      current = null;
+      return true;
+    },
+  });
+  if (subscribed) current = make();
+  const registration = {
+    pushManager: {
+      getSubscription: async () => current,
+      subscribe: async () => {
+        counts.subscribe++;
+        current = make();
+        return current;
+      },
+    },
+  };
+  const serviceWorker = { register: async () => registration, ready: Promise.resolve(registration), getRegistration: async () => registration, addEventListener: () => undefined };
+  Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: serviceWorker });
+  (window as unknown as { PushManager: unknown }).PushManager = function PushManager() {};
+  Object.defineProperty(Notification, "permission", { configurable: true, get: () => "granted" });
+  Notification.requestPermission = async () => "granted";
+}
+
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const db = () => (store as unknown as { db: import("better-sqlite3").Database }).db;
 const sends = () => db().prepare("SELECT arg2 FROM commands WHERE type='send' ORDER BY id").pluck().all() as string[];
@@ -75,6 +111,10 @@ afterEach(async () => {
   devices.close();
   store.close();
 });
+
+async function withPush(subscribed: boolean) {
+  await context.addInitScript(fakePush, { key: VAPID_KEY, subscribed });
+}
 
 async function openChat(chat: string) {
   await page.goto(`${base}/#chat=${encodeURIComponent(chat)}`);
@@ -140,5 +180,39 @@ describe("sending from the app", () => {
     await page.locator("#send").click();
     await expect.poll(async () => (await toast().isVisible()) && (await toast().innerText()), { timeout: 15_000 }).toMatch(/not sent|not applied/i);
     expect(await page.locator("#text").inputValue()).toBe("not out");
+  }, 60_000);
+});
+
+describe("notifications of the app", () => {
+  const button = () => page.locator("#push-btn");
+
+  // the push service may renew a subscription: the relay then drops the old one (404, 410) and needs the new one
+  it("sends the subscription of this phone to the relay at every start, and shows it on once the relay has it", async () => {
+    await withPush(true);
+    await page.goto(`${base}/`);
+    await expect.poll(() => devices.count(), { timeout: 15_000 }).toBe(1);
+    expect(JSON.parse(devices.targets()[0].sub).endpoint).toBe("https://push.example/this-phone");
+    await expect.poll(() => button().innerText(), { timeout: 15_000 }).toBe("Notifications on");
+  }, 60_000);
+
+  it("does not show notifications on while the relay does not have the subscription", async () => {
+    await withPush(true);
+    let refused = 0;
+    await page.route("**/api/push", (route) => (refused++, route.fulfill({ status: 503, contentType: "application/json", body: '{"detail":"down"}' })));
+    await page.goto(`${base}/`);
+    await expect.poll(() => refused, { timeout: 15_000 }).toBeGreaterThan(0);
+    await page.waitForTimeout(1000);
+    expect(await button().innerText()).toBe("Notifications");
+    expect(devices.count()).toBe(0);
+  }, 60_000);
+
+  it("turns notifications on from the button", async () => {
+    await withPush(false);
+    await page.goto(`${base}/`);
+    await page.locator("#chats li").first().waitFor();
+    expect(await button().innerText()).toBe("Notifications");
+    await button().click();
+    await expect.poll(() => button().innerText(), { timeout: 15_000 }).toBe("Notifications on");
+    expect(devices.count()).toBe(1);
   }, 60_000);
 });
