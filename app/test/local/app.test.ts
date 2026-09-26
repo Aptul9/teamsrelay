@@ -23,7 +23,8 @@ let store: SlotStore;
 let devices: RelayDevices;
 let server: http.Server;
 let base = "";
-let agent: NodeJS.Timeout;
+// stops the stand-in agent, finishes it had planned included: they would reach a database already closed
+let stopAgent: () => void;
 let context: BrowserContext;
 let page: Page;
 // how the stand-in agent ends the commands other than open
@@ -91,21 +92,27 @@ beforeEach(async () => {
   server = http.createServer(handler);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  agent = setInterval(() => {
-    store.setState(STATE.health, JSON.stringify({ cdp: "ok", teams: "ok", watcher: "ok", overall: "green", ts: nowSeconds() }));
-    for (const c of store.pendingCommands()) {
-      store.startCommand(c.id);
-      if (c.type === "open") store.setState(STATE.activeChat, c.arg1);
-      setTimeout(() => store.finishCommand(c.id, c.type === "open" ? "done" : outcome), 200);
+  const s = store;
+  const later = new Set<NodeJS.Timeout>();
+  const agent = setInterval(() => {
+    s.setState(STATE.health, JSON.stringify({ cdp: "ok", teams: "ok", watcher: "ok", overall: "green", ts: nowSeconds() }));
+    for (const c of s.pendingCommands()) {
+      s.startCommand(c.id);
+      if (c.type === "open") s.setState(STATE.activeChat, c.arg1);
+      later.add(setTimeout(() => s.finishCommand(c.id, c.type === "open" ? "done" : outcome), 200));
     }
   }, 100);
+  stopAgent = () => {
+    clearInterval(agent);
+    for (const t of later) clearTimeout(t);
+  };
   context = await browser.newContext({ viewport: { width: 390, height: 800 } });
   await context.addInitScript((token) => localStorage.setItem("teamsrelay-token", token), TOKEN);
   page = await context.newPage();
 });
 
 afterEach(async () => {
-  clearInterval(agent);
+  stopAgent();
   await context?.close();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   devices.close();
@@ -227,5 +234,54 @@ describe("notifications of the app", () => {
     await button().click();
     await expect.poll(() => button().innerText(), { timeout: 15_000 }).toBe("Notifications on");
     expect(devices.count()).toBe(1);
+  }, 60_000);
+});
+
+describe("compose box of the app", () => {
+  const text = () => page.locator("#text").inputValue();
+
+  async function goTo(chat: string) {
+    await page.locator("#back").click();
+    await page.locator("#chats button", { hasText: chat }).click();
+    await page.locator("#chat-name").filter({ hasText: chat }).waitFor();
+  }
+
+  async function editOwnMessage() {
+    await page.locator("#messages li.mine").first().click();
+    await page.locator("#sheet-actions button", { hasText: "Edit" }).click();
+  }
+
+  // the text of an edit left in the box would go out as a new message in the next chat
+  it("drops the text of an edit left unfinished when another chat opens", async () => {
+    await openChat("Anna Rossi");
+    await editOwnMessage();
+    expect(await text()).toBe("last message of Anna Rossi");
+    await goTo("Luca Bianchi");
+    expect(await text()).toBe("");
+    expect(await page.locator("#compose-context").isHidden()).toBe(true);
+    await goTo("Anna Rossi");
+    expect(await text()).toBe("");
+    expect(sends()).toEqual([]);
+  }, 60_000);
+
+  it("keeps a draft per chat", async () => {
+    await openChat("Anna Rossi");
+    await page.locator("#text").fill("for Anna");
+    await goTo("Luca Bianchi");
+    expect(await text()).toBe("");
+    await page.locator("#text").fill("for Luca");
+    await goTo("Anna Rossi");
+    expect(await text()).toBe("for Anna");
+    await goTo("Luca Bianchi");
+    expect(await text()).toBe("for Luca");
+  }, 60_000);
+
+  it("gives the draft back when an edit started over it is cancelled", async () => {
+    await openChat("Anna Rossi");
+    await page.locator("#text").fill("my draft");
+    await editOwnMessage();
+    expect(await text()).toBe("last message of Anna Rossi");
+    await page.locator("#compose-cancel").click();
+    expect(await text()).toBe("my draft");
   }, 60_000);
 });

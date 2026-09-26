@@ -34,6 +34,8 @@ let state = null;
 let current = "";
 let compose = null;
 const media = new Map();
+// what was typed in each chat and not sent yet; never the text of an edit, which is the message itself
+const drafts = new Map();
 
 class Unauthorized extends Error {}
 // no answer at all: what was sent may or may not have reached the relay
@@ -181,11 +183,13 @@ function renderChats() {
 
 async function openChat(name) {
   const fresh = current !== name;
+  if (fresh) leaveChat();
   current = name;
   show("chat");
   $("chat-name").textContent = name;
   if (fresh) {
-    setCompose(null);
+    $("text").value = drafts.get(name) ?? "";
+    keepBottom(autosize);
     $("messages").replaceChildren();
     $("chat-state").textContent = "";
   }
@@ -205,10 +209,25 @@ async function openChat(name) {
 }
 
 function closeChat() {
+  leaveChat();
   current = "";
-  setCompose(null);
   show("list");
   refresh();
+}
+
+// Keeps what was typed as the draft of the chat being left, and empties the box. An edit in progress is dropped: its
+// text is the message itself, and in the next chat it would go out as a new one.
+function saveDraft() {
+  const typed = $("text").value;
+  if (typed.trim()) drafts.set(current, typed);
+  else drafts.delete(current);
+}
+
+function leaveChat() {
+  if (!current) return;
+  if (compose?.kind !== "edit") saveDraft();
+  setCompose(null);
+  $("text").value = "";
 }
 
 async function loadMessages() {
@@ -329,6 +348,8 @@ async function act(label, body) {
 }
 
 function setCompose(next) {
+  // an edit takes the box over: what was typed there is put aside, and comes back when the edit ends
+  if (next?.kind === "edit" && compose?.kind !== "edit" && current) saveDraft();
   compose = next;
   keepBottom(() => {
     $("compose-context").hidden = !next;
@@ -386,8 +407,9 @@ $("sheet-cancel").addEventListener("click", closeSheet);
 $("sheet").addEventListener("click", (e) => e.target === $("sheet") && closeSheet());
 $("back").addEventListener("click", () => (location.hash = ""));
 $("compose-cancel").addEventListener("click", () => {
-  if (compose?.kind === "edit") $("text").value = "";
+  if (compose?.kind === "edit") $("text").value = drafts.get(current) ?? "";
   setCompose(null);
+  keepBottom(autosize);
 });
 
 function autosize() {
@@ -410,14 +432,19 @@ $("composer").addEventListener("submit", async (e) => {
       : compose?.kind === "edit"
         ? { type: "edit", chat: current, mid: compose.m.mid, text }
         : { type: "send", chat: current, text };
+  const chat = current;
   $("send").disabled = true;
   try {
     const status = await command(body);
-    // unconfirmed: it may be in the chat already, the text goes so that it is not sent twice by mistake
+    // unconfirmed: it may be in the chat already, the text goes so that it is not sent twice by mistake. An edit gives
+    // back the draft it had put aside. The box changes only if its chat is still the one shown.
     if (status === "done" || status === "unconfirmed") {
-      $("text").value = "";
-      setCompose(null);
-      autosize();
+      if (body.type !== "edit") drafts.delete(chat);
+      if (current === chat) {
+        $("text").value = body.type === "edit" ? (drafts.get(chat) ?? "") : "";
+        setCompose(null);
+        autosize();
+      }
     }
     if (status === "unconfirmed") toast("Teams did not confirm the message: check the chat before sending it again");
     else if (status === "failed") toast("Not sent on Teams: the text is still here");
