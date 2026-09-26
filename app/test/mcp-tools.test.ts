@@ -1,8 +1,8 @@
 import path from "node:path";
 import type Database from "better-sqlite3";
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { appDb, claimSlot, migrateAppSchema, setSlotStopped } from "@/lib/appdb";
-import { listAccounts, listActivity, listChats, messageTime, readChat } from "@/lib/mcp/tools";
+import { listAccounts, listActivity, listChats, messageTime, readChat, refreshChat } from "@/lib/mcp/tools";
 import { createSlotDb, tempDir } from "./helpers";
 
 let mine: number;
@@ -137,5 +137,60 @@ describe("list_activity", () => {
       ],
     });
     expect(listActivity("u1", { unread_only: true }).items).toHaveLength(1);
+  });
+});
+
+describe("refresh_chat", () => {
+  let stopAgent: (() => void) | undefined;
+  afterEach(() => stopAgent?.());
+
+  // The agent runs an open command: the chat is in use from now, Teams opens it when it can, its messages are saved
+  function agent(outcome: "opens" | "does-not-open" | "fails") {
+    const timer = setInterval(() => {
+      const cmd = db.prepare("SELECT id, arg1 FROM commands WHERE type='open' AND status='pending'").get() as { id: number; arg1: string } | undefined;
+      if (!cmd) return;
+      setState("viewing", JSON.stringify({ chat: cmd.arg1, ts: now() }));
+      if (outcome === "opens") {
+        setState("active_chat", cmd.arg1);
+        db.prepare("INSERT INTO chat_messages(chat, idx, mid, author, text, mine, reacts, extra) VALUES(?,?,?,?,?,?,?,?)").run(cmd.arg1, 0, "1790432000000", "VERDI Carla", "New here", 0, "", "");
+      }
+      db.prepare("UPDATE commands SET status=? WHERE id=?").run(outcome === "fails" ? "failed" : "done", cmd.id);
+    }, 20);
+    stopAgent = () => clearInterval(timer);
+  }
+  const fast = { timeoutMs: 1000, pollMs: 20 };
+  const commands = () => db.prepare("SELECT type, arg1, status FROM commands").all();
+
+  it("opens the chat in Teams and gives its current messages", async () => {
+    agent("opens");
+    const r = await refreshChat("u1", { chat: "Cloud team" }, fast);
+    expect(r.live).toBe(true);
+    expect(r.messages).toEqual([{ id: "1790432000000", time: "2026-09-26T14:13:20.000Z", author: "VERDI Carla", mine: false, text: "New here" }]);
+    expect(commands()).toEqual([{ type: "open", arg1: "Cloud team", status: "done" }]);
+  });
+
+  it("says so when Teams did not open the chat", async () => {
+    setState("active_chat", "BIANCHI Luca");
+    agent("does-not-open");
+    await expect(refreshChat("u1", { chat: "Cloud team" }, fast)).rejects.toThrow(/did not open/);
+  });
+
+  it("says so when the command failed", async () => {
+    agent("fails");
+    await expect(refreshChat("u1", { chat: "Cloud team" }, fast)).rejects.toThrow(/could not open/);
+  });
+
+  it("gives up after the timeout", async () => {
+    await expect(refreshChat("u1", { chat: "Cloud team" }, { timeoutMs: 100, pollMs: 20 })).rejects.toThrow(/within/);
+  });
+
+  it("queues nothing for an unknown chat, a stopped account or a Teams not working", async () => {
+    await expect(refreshChat("u1", { chat: "Nobody" }, fast)).rejects.toThrow(/list_chats/);
+    health("login");
+    await expect(refreshChat("u1", { chat: "Cloud team" }, fast)).rejects.toThrow(/not working/);
+    health();
+    setSlotStopped(appDb(), mine, true);
+    await expect(refreshChat("u1", { chat: "Cloud team" }, fast)).rejects.toThrow(/stopped/);
+    expect(commands()).toEqual([]);
   });
 });

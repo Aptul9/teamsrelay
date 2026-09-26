@@ -4,6 +4,7 @@ import { STATE, Viewing } from "@/shared/slot-db/state";
 import { accountSummary, upSince } from "../accounts";
 import { appDb, slotsOf, type Slot } from "../appdb";
 import { pickSlot } from "../authz";
+import { queue } from "../commands";
 import { withSlot, type SlotReader } from "../slotdb";
 
 // Read-only tools of /mcp, as functions of the user the token acts as
@@ -110,6 +111,34 @@ export function listChats(userId: string, { account, unread_only }: Account & { 
 export function readChat(userId: string, { account, chat }: Account & { chat: string }) {
   const s = accountOf(userId, account);
   return withSlot(s.slot, (r) => chatMessages(r, s, chat));
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Opens the chat in Teams with the open command of the app and waits for the agent: Teams marks the chat as read
+export async function refreshChat(userId: string, { account, chat }: Account & { chat: string }, wait = { timeoutMs: 30_000, pollMs: 500 }) {
+  const s = accountOf(userId, account);
+  if (s.stopped) throw new ToolError("This Teams account is stopped: start it from the account menu of TeamsRelay");
+  withSlot(s.slot, (r) => {
+    if (!r.chats().some((c) => c.name === chat)) throw new ToolError("No chat with this name: use a name as list_chats gives it");
+    const h = r.health(upSince(s));
+    if (h.agent !== "ok") throw new ToolError("Teams is not working on this account (agent not running): see list_accounts");
+    if (h.teams !== "ok") throw new ToolError(`Teams is not working on this account (${h.teams}): see list_accounts`);
+  });
+  const id = queue(s.slot, "open", chat);
+  const deadline = Date.now() + wait.timeoutMs;
+  for (;;) {
+    const status = withSlot(s.slot, (r) => r.commandStatus(id))?.status;
+    if (status === "done") break;
+    if (status === "failed") throw new ToolError("Teams could not open this chat");
+    if (Date.now() > deadline) throw new ToolError(`Teams did not open this chat within ${wait.timeoutMs / 1000} s: see list_accounts`);
+    await sleep(wait.pollMs);
+  }
+  return withSlot(s.slot, (r) => {
+    // open ends as done even when Teams did not open the chat: only then it becomes the active chat
+    if (r.activeChat() !== chat) throw new ToolError('Teams did not open this chat (group chats listed as "Name, +2" cannot be opened)');
+    return chatMessages(r, s, chat);
+  });
 }
 
 export function listActivity(userId: string, { account, unread_only }: Account & { unread_only?: boolean }) {
