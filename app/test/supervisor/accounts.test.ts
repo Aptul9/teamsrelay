@@ -181,6 +181,7 @@ describe("Accounts", () => {
     const a = accounts();
 
     await a.wipe(3);
+    expect(fs.existsSync(path.join(cfg.profilesDir, "3"))).toBe(false);
     await a.start(3);
 
     expect(fs.readdirSync(path.join(cfg.profilesDir, "3"))).toEqual([]);
