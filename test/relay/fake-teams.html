@@ -1,0 +1,147 @@
+<!doctype html>
+<!-- Stands in for Teams web in the relay test: the selectors of src/agent/teams/selectors.ts, and the behaviour the
+     agent relies on (a row click opens the chat, Enter sends, a new message of yours shows Sending... then Sent,
+     the sign-out banner). window.fakeTeams lets the test play the other side. -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Chat | Microsoft Teams</title>
+  <style>body { font: 14px sans-serif; } #pane { margin-top: 12px; } [data-tid="ckeditor"] { border: 1px solid #999; min-height: 24px; }</style>
+</head>
+<body>
+  <div data-tid="me-control-avatar"><span data-tid="me-control-avatar-presence" aria-label="Available"></span></div>
+  <div role="tree">
+    <div role="treeitem" aria-level="1" aria-expanded="true" id="menu-section-chats">
+      <div>Chats</div>
+      <div role="group" id="rows"></div>
+    </div>
+  </div>
+  <div id="pane">
+    <h2 data-tid="chat-title"></h2>
+    <div id="conversation"></div>
+    <div data-tid="ckeditor" contenteditable="true" role="textbox" aria-label="Type a message"><p><br></p></div>
+  </div>
+  <script>
+    localStorage.setItem("tmp.auth.v1.GLOBAL.User.User", JSON.stringify({ item: { profile: { name: "Test User", preferred_username: "test.user@contoso.example", tid: "t1" } } }));
+    localStorage.setItem("tmp.auth.v1.t1.Tenants.Tenants", JSON.stringify({ item: [{ tenantId: "t1", tenantName: "Contoso" }] }));
+    // like Teams, the chats outlive a restart of the browser: they are kept in the profile
+    const saved = JSON.parse(localStorage.getItem("fake-teams") || "null");
+    let next = saved ? saved.next : 1790000000100;
+    const chats = saved ? saved.chats : {
+      "Test User (You)": { time: "", preview: "", messages: [] },
+      "Anna Rossi": { time: "10:30", preview: "see you later", messages: [{ mid: "1790000000001", author: "Anna Rossi", text: "see you later" }] },
+      "Luca Bianchi": { time: "9/24", preview: "ok", messages: [{ mid: "1790000000002", author: "Luca Bianchi", text: "ok" }] },
+    };
+    const save = () => localStorage.setItem("fake-teams", JSON.stringify({ next, chats }));
+    let open = "";
+    const rows = document.getElementById("rows");
+    const conversation = document.getElementById("conversation");
+    const box = document.querySelector('[data-tid="ckeditor"]');
+
+    function div(text) {
+      const d = document.createElement("div");
+      d.textContent = text;
+      return d;
+    }
+
+    function renderList() {
+      save();
+      rows.replaceChildren(
+        ...Object.entries(chats).map(([name, c], i) => {
+          const row = document.createElement("div");
+          row.setAttribute("role", "treeitem");
+          row.setAttribute("aria-level", "2");
+          row.id = "menu-chat-" + i;
+          row.append(div(name), div(c.time), div(c.preview));
+          if (c.unread) {
+            const u = document.createElement("span");
+            u.setAttribute("data-tid", "unread");
+            row.append(u);
+          }
+          row.addEventListener("click", () => openChat(name));
+          return row;
+        }),
+      );
+    }
+
+    function openChat(name) {
+      open = name;
+      chats[name].unread = false;
+      document.querySelector('[data-tid="chat-title"]').textContent = name;
+      renderConversation();
+      renderList();
+    }
+
+    function renderConversation() {
+      const c = chats[open];
+      if (!c) return;
+      conversation.replaceChildren(
+        ...c.messages.map((m) => {
+          const item = document.createElement("div");
+          item.setAttribute("data-tid", "chat-pane-item");
+          const message = document.createElement("div");
+          message.setAttribute("data-tid", "chat-pane-message");
+          message.setAttribute("data-mid", m.mid);
+          const body = div(m.text);
+          body.id = "content-" + m.mid;
+          message.append(body);
+          if (m.mine) {
+            const mine = document.createElement("div");
+            mine.className = "fui-ChatMyMessage";
+            const icon = document.createElement("span");
+            icon.className = "fui-ChatMyMessage__statusIcon";
+            icon.setAttribute("aria-label", m.status);
+            mine.append(message, icon);
+            item.append(mine);
+          } else {
+            const author = div(m.author);
+            author.setAttribute("data-tid", "message-author-name");
+            item.append(author, message);
+          }
+          return item;
+        }),
+      );
+    }
+
+    box.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.shiftKey) return;
+      e.preventDefault();
+      const text = box.innerText.trim();
+      const c = chats[open];
+      if (!text || !c) return;
+      const m = { mid: "tmp-" + next++, text, mine: true, status: "Sending..." };
+      c.messages.push(m);
+      c.preview = "You: " + text;
+      c.time = "10:45";
+      box.innerHTML = "<p><br></p>";
+      renderConversation();
+      renderList();
+      setTimeout(() => {
+        m.mid = String(next++);
+        m.status = "Sent";
+        save();
+        renderConversation();
+      }, 600);
+    });
+
+    window.fakeTeams = {
+      incoming(name, text) {
+        const c = chats[name];
+        c.messages.push({ mid: String(next++), author: name, text });
+        c.preview = text;
+        c.time = "10:50";
+        c.unread = open !== name;
+        renderList();
+        renderConversation();
+      },
+      signOut() {
+        document.body.append(Object.assign(document.createElement("div"), { id: "lost", textContent: "We need you to sign in again" }));
+      },
+      signIn() {
+        document.getElementById("lost")?.remove();
+      },
+    };
+    renderList();
+  </script>
+</body>
+</html>
