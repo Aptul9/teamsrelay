@@ -200,11 +200,16 @@ async function loadMessages() {
   }
 }
 
-function renderMessages(list) {
+// Runs `change` and keeps the last message in view if it was: the list shrinks when the compose box grows
+function keepBottom(change) {
   const box = $("messages");
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-  box.replaceChildren(...list.map(messageItem));
+  change();
   if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+function renderMessages(list) {
+  keepBottom(() => $("messages").replaceChildren(...list.map(messageItem)));
 }
 
 function messageItem(m) {
@@ -216,7 +221,7 @@ function messageItem(m) {
   for (const image of m.images) li.append(imageItem(image));
   for (const f of m.files) li.append(el("div", { class: "file" }, `File: ${f.name}`));
   const meta = [m.reactions.map((r) => `${r.e}${r.n > 1 ? r.n : ""}`).join(" "), m.edited ? "Edited" : "", m.mine ? m.status : ""].filter(Boolean);
-  if (meta.length) li.append(el("div", { class: "meta" }, meta.join("  ")));
+  if (meta.length) li.append(el("div", { class: "meta" }, meta.join(" · ")));
   const act = () => openSheet(m);
   li.addEventListener("click", act);
   li.addEventListener("keydown", (e) => e.key === "Enter" && act());
@@ -269,13 +274,15 @@ async function act(label, body) {
 
 function setCompose(next) {
   compose = next;
-  $("compose-context").hidden = !next;
-  if (!next) return;
-  const snippet = (next.m.text || "").slice(0, 80);
-  $("compose-label").textContent = next.kind === "reply" ? `Reply to ${next.m.author || "you"}: ${snippet}` : "Edit message";
-  if (next.kind === "edit") $("text").value = next.m.text;
-  autosize();
-  $("text").focus();
+  keepBottom(() => {
+    $("compose-context").hidden = !next;
+    if (!next) return;
+    const snippet = (next.m.text || "").slice(0, 80);
+    $("compose-label").textContent = next.kind === "reply" ? `Reply to ${next.m.author || "you"}: ${snippet}` : "Edit message";
+    if (next.kind === "edit") $("text").value = next.m.text;
+    autosize();
+  });
+  if (next) $("text").focus();
 }
 
 function openSheet(m) {
@@ -332,7 +339,7 @@ function autosize() {
   t.style.height = "auto";
   t.style.height = `${t.scrollHeight}px`;
 }
-$("text").addEventListener("input", autosize);
+$("text").addEventListener("input", () => keepBottom(autosize));
 $("text").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("composer").requestSubmit();
 });
