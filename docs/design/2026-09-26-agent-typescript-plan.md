@@ -127,6 +127,6 @@ Anonymous memory of the agent containers (cgroup `memory.stat`), sampled every 3
 | Python (Python process plus its Playwright Node driver) | 120-161 MB |
 | TypeScript, `node --enable-source-maps agent.cjs` | 206 MB after start |
 | TypeScript, `node agent.cjs`, during the live checks | 75-136 MB, garbage collector cycles included |
-| TypeScript, `node agent.cjs`, idle, both slots, 8 minutes | 77-85 MB (slot 1), 97-112 MB (slot 2); CPU about 1% of a core |
+| TypeScript, `node agent.cjs`, idle, both slots, 10 minutes | 77-85 MB (slot 1), 97-136 MB (slot 2); CPU median 0.9% of a core, peak 8.9% |
 
 `--enable-source-maps` alone took 28 MB (92 against 120 MB at idle), so the agent command runs without it.
