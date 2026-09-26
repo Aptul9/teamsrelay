@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { COMMAND_TYPES, DownloadArgs, IMAGE_TYPES, ImageArgs, MessageArgs, parseArgs, ReactArgs, TextArgs, UPLOAD_NAME } from "@/shared/slot-db/commands";
-import { AgentHealth, cmdResultKey, Identity, oneToOneKey, parseState, selfCheckKey, Viewing } from "@/shared/slot-db/state";
+import { COMMAND_TYPES, DownloadArgs, IMAGE_TYPES, ImageArgs, MentionArgs, MessageArgs, parseArgs, ReactArgs, TextArgs, UPLOAD_NAME } from "@/shared/slot-db/commands";
+import { AgentHealth, cmdResultKey, Identity, Members, membersKey, oneToOneKey, parseState, selfCheckKey, Viewing } from "@/shared/slot-db/state";
 
 describe("command types", () => {
   it("keeps the names of earlier releases and adds sendimage", () => {
-    expect(COMMAND_TYPES).toEqual(["open", "send", "reply", "react", "edit", "delete", "undodelete", "download", "activity", "resync", "recheck", "sendimage"]);
+    expect(COMMAND_TYPES).toEqual(["open", "send", "reply", "react", "edit", "delete", "undodelete", "download", "activity", "resync", "recheck", "sendimage", "members", "sendmentions"]);
   });
 });
 
@@ -17,6 +17,18 @@ describe("image commands", () => {
   it("name uploads with 16 hex characters and the extension of an accepted type", () => {
     for (const ext of Object.keys(IMAGE_TYPES)) expect(UPLOAD_NAME.test(`0123456789abcdef.${ext}`), ext).toBe(true);
     for (const bad of ["../1/app.db", "0123456789abcdef.svg", "0123456789ABCDEF.png", "0123456789abcdef.png/x", ""]) expect(UPLOAD_NAME.test(bad), bad).toBe(false);
+  });
+});
+
+describe("mention commands", () => {
+  it("read the parts of the message, text and people in order", () => {
+    const parts = [{ text: "Hi " }, { mention: "Anna Rossi" }, { text: ", can you check?" }];
+    expect(parseArgs(MentionArgs, JSON.stringify({ parts }))).toEqual({ parts });
+  });
+
+  it("read broken parts as none", () => {
+    expect(parseArgs(MentionArgs, "{")).toEqual({ parts: [] });
+    expect(parseArgs(MentionArgs, '{"parts":"Anna"}')).toEqual({ parts: [] });
   });
 });
 
@@ -65,6 +77,11 @@ describe("state rows", () => {
 
   it("fills the missing fields of the identity", () => {
     expect(parseState(Identity, '{"email":"anna.rossi@contoso.example"}', null)).toEqual({ name: "", email: "anna.rossi@contoso.example", tenant: "", av: "" });
+  });
+
+  it("reads the members of a chat, as the agent saves them", () => {
+    expect(parseState(Members, JSON.stringify({ ts: 1790432400, names: ["Anna Rossi", "Luca Bianchi"] }), null)).toEqual({ ts: 1790432400, names: ["Anna Rossi", "Luca Bianchi"] });
+    expect(membersKey("Cloud team")).toBe("members:Cloud team");
   });
 
   it("builds the per-item keys", () => {

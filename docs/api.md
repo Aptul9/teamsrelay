@@ -38,7 +38,8 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 | Method | Path | Body |
 |---|---|---|
 | POST | `/api/open` | `{name}`: opens the chat in the remote Teams |
-| POST | `/api/send` | `{name, text}` |
+| POST | `/api/send` | `{name, text, mentions?}`: `mentions` lists the people tagged in `text` as `@name`, by the names `/api/members` gives (up to 20); each one is picked in the Teams list of people when sent |
+| POST | `/api/members` | `{name}`: `{names, id?}`, the people of the chat that can be tagged, as Teams names them, you excluded. When the names are older than an hour the agent reads them again: `id` is that command, and the answer after it has the new names |
 | POST | `/api/sendimage` | multipart form: `name`, `file` (PNG, JPEG, GIF or WebP, recognized by content, up to 10 MB), `text` (caption, optional). 413 above the size, 415 for another type. The image is sent as if pasted in Teams |
 | POST | `/api/reply` | `{name, mid, text}`: reply with quote |
 | POST | `/api/edit` | `{name, mid, text}`: own messages only |

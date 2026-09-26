@@ -4,12 +4,18 @@
 // Development tool, not part of the image. From app/, with the local stack up:
 //   npx esbuild scripts/capture-fixture.ts --bundle --platform=node --format=cjs --external:playwright-core --outfile=<dir>/capture.cjs
 //   docker run --rm --network container:teams-chromium-2 -v "$PWD:/w" -v "<dir>:/t" -w /w node:24-slim node /t/capture.cjs <part>
-// <part>: chat-list, conversation, toolbar-mine, toolbar-other, activity. The HTML goes to stdout.
+// <part>: chat-list, conversation, toolbar-mine, toolbar-other, activity, roster (members list of the open group
+// chat: opened by its participant count, closed with Escape, nothing inside clicked), mention-popup and
+// mention-picked (an @ typed in the empty compose box of the open chat, then the first person picked: never sent,
+// the box is emptied and checked empty afterwards; they take the name of the open chat and, optionally, letters
+// to type after the @). The HTML goes to stdout.
 import { chromium, type Page } from "playwright-core";
 import { pickTeamsPage } from "../src/agent/logic/hosts";
+import { composerText } from "../src/agent/teams/scripts/message-actions";
 import { SEL, TEXTS, type Selectors } from "../src/agent/teams/selectors";
 
-type Part = "chat-list" | "conversation" | "toolbar-mine" | "toolbar-other" | "activity";
+type Part = "chat-list" | "conversation" | "toolbar-mine" | "toolbar-other" | "activity" | "roster" | "mention-popup" | "mention-picked";
+const PARTS: Part[] = ["chat-list", "conversation", "toolbar-mine", "toolbar-other", "activity", "roster", "mention-popup", "mention-picked"];
 
 // Interface words kept as they are: the page scripts read them, and they say nothing about the user
 const KEEP = `Chats Chat Favorites Quick views Recent Drafts Copilot Meet now Activity Unread Mentions Teams channels Calendar Calls Files
@@ -106,6 +112,9 @@ function capture({ part, s, keep, limit, hovered }: { part: Part; s: Selectors; 
       } else if (name === "class") {
         const cls = v.split(/\s+/).filter((c) => /^(fui-|feeditem_)/.test(c) || /MyMessage|statusIcon|Avatar|mention/i.test(c));
         if (cls.length) out.setAttribute(name, cls.join(" "));
+      } else if (name === "data-tid" && v.startsWith(s.mentionOptionPrefix)) {
+        // the entry of a person carries the name: invented like the text, so the two still match
+        out.setAttribute(name, s.mentionOptionPrefix + text(v.slice(s.mentionOptionPrefix.length)));
       } else out.setAttribute(name, ident(v));
     }
     const cs = getComputedStyle(el);
@@ -146,6 +155,9 @@ function capture({ part, s, keep, limit, hovered }: { part: Part; s: Selectors; 
   };
   if (part === "chat-list") add(document.querySelector(s.chatRow)?.closest('[role="tree"]') ?? null);
   if (part === "activity") add(holder(s.feedItem));
+  if (part === "roster") add(document.querySelector(s.rosterName)?.closest('[role="dialog"]') ?? null);
+  if (part === "mention-popup") add(document.querySelector(s.mentionPopup));
+  if (part === "mention-picked") add([...document.querySelectorAll(s.editor)].find((x) => !x.closest(s.item) && (x as HTMLElement).offsetParent !== null) ?? null);
   if (part === "conversation") {
     add(document.querySelector(s.chatTitle));
     const pane = add(holder(s.item));
@@ -179,9 +191,26 @@ async function hover(page: Page, own: boolean): Promise<string> {
   return mid;
 }
 
+// Removes what the capture typed and checks the box is empty: nothing may stay in the compose box of a real chat
+async function emptyComposeBox(page: Page) {
+  await page.keyboard.press("Escape");
+  for (let i = 0; i < 3; i++) {
+    await page.locator(SEL.editor).last().focus();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.press("Delete");
+    await page.waitForTimeout(300);
+    const left = await page.evaluate((s) => {
+      const box = [...document.querySelectorAll(s.editor)].find((x) => !x.closest(s.item) && (x as HTMLElement).offsetParent !== null);
+      return box ? (box.textContent || "").replace(/[\u2060\u200b\s]/g, "").length + box.querySelectorAll(s.composerMention).length : 0;
+    }, SEL);
+    if (!left) return;
+  }
+  throw new Error("the compose box is not empty: empty it by hand, without pressing Enter");
+}
+
 async function main() {
   const part = process.argv[2] as Part;
-  if (!["chat-list", "conversation", "toolbar-mine", "toolbar-other", "activity"].includes(part)) throw new Error("part: chat-list | conversation | toolbar-mine | toolbar-other | activity");
+  if (!PARTS.includes(part)) throw new Error(`part: ${PARTS.join(" | ")}`);
   const browser = await chromium.connectOverCDP(process.env.CDP || "http://127.0.0.1:9222");
   try {
     const page = pickTeamsPage(browser.contexts()[0]?.pages() ?? []);
@@ -193,7 +222,38 @@ async function main() {
       await page.locator(SEL.feedItem).first().waitFor({ timeout: 8000 });
       await page.waitForTimeout(800);
     }
-    const html = await page.evaluate(capture, { part, s: SEL, keep: KEEP, limit: 15, hovered });
+    if (part === "roster") {
+      if (!(await page.locator(`${SEL.participantCount}:visible`).count())) throw new Error("the open chat is not a group chat");
+      await page.locator(`${SEL.participantCount}:visible`).first().click({ timeout: 4000 });
+      await page.locator(SEL.rosterName).first().waitFor({ timeout: 5000 });
+      await page.waitForTimeout(500);
+    }
+    const typing = part === "mention-popup" || part === "mention-picked";
+    if (typing) {
+      // typed only in the chat named on the command line, and only in an empty box: anything there is a draft
+      const title = await page.evaluate((s) => document.querySelector(s.chatTitle)?.textContent?.trim() ?? "", SEL);
+      if (!process.argv[3] || title !== process.argv[3]) throw new Error("name the open chat after the part: it is where the @ is typed");
+      if ((await page.evaluate(composerText, SEL)).replace(/[\u2060\u200b\s]/g, "")) throw new Error("the compose box holds a draft");
+      await page.locator(SEL.editor).last().focus();
+      // letters after the @, optional: the directory answers them in a chat without other people
+      await page.keyboard.type(`@${process.argv[4] ?? ""}`, { delay: 100 });
+    }
+    let html = "";
+    try {
+      if (typing) {
+        await page.locator(`${SEL.mentionPopup} [role="option"]`).first().waitFor({ timeout: 5000 });
+        if (part === "mention-picked") {
+          // a person, not the other entries of the list (share a contact...)
+          await page.locator(`${SEL.mentionPopup} [role="option"][itemtype="person"]`).first().click({ timeout: 3000 });
+          await page.locator(`${SEL.editor} ${SEL.composerMention}`).last().waitFor({ timeout: 3000 });
+        }
+        await page.waitForTimeout(500);
+      }
+      html = await page.evaluate(capture, { part, s: SEL, keep: KEEP, limit: 15, hovered });
+    } finally {
+      if (part === "roster") await page.keyboard.press("Escape");
+      if (typing) await emptyComposeBox(page);
+    }
     if (part === "activity") await page.locator(`${SEL.chatView}:visible`).first().click({ timeout: 4000 });
     if (hovered) await page.mouse.move(2, 2);
     process.stdout.write(`<!-- Teams web, captured ${new Date().toISOString().slice(0, 10)} by scripts/capture-fixture.ts (${part}): structure only, texts invented -->\n${html}\n`);

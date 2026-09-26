@@ -22,11 +22,17 @@ export const STATE = {
 export const cmdResultKey = (id: number) => `cmd_result:${id}`;
 // "1": 1:1 chat, where Teams has no "Read by" entry
 export const oneToOneKey = (chat: string) => `chat_1to1:${chat}`;
+// JSON Members of a chat, read by the agent on a members command
+export const membersKey = (chat: string) => `members:${chat}`;
 // "1" once the automatic check of that half day (YYYYMMDD, am or pm) ran
 export const selfCheckKey = (day: string, half: "am" | "pm") => `hc_${day}_${half}`;
 
 export const Viewing = z.object({ chat: z.string().catch(""), ts: z.number().catch(0) });
 export type Viewing = z.infer<typeof Viewing>;
+
+// People of a chat as Teams names them, for the @ of the app; ts: Unix seconds of the read
+export const Members = z.object({ ts: z.number().catch(0), names: z.array(z.string()).catch([]) });
+export type Members = z.infer<typeof Members>;
 
 export const Identity = z.object({
   name: z.string().catch(""),

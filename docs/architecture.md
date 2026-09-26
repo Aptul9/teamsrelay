@@ -92,6 +92,8 @@ A message is new when the preview or the time of a chat changes with an incoming
 - **Edit**: inline editor in the message, *Done* button. When something goes wrong the draft is discarded (*Discard draft*) and the message stays as it was.
 - **Delete**: *More options → Delete*, immediate; *Undo* stays available for a short time.
 - **Read by**: *Read by X of Y* entry of *More options* and its submenu with the names.
+- **People of a chat** (for the @ of the app): in a group chat the list the participant count of the header opens, read and closed with Escape (it also holds buttons that remove people and leave the chat, never clicked); in the other chats the name in the header. Kept per chat in `state` (`members:<chat>`), read again after an hour.
+- **Tagging with @**: the text is typed as it is; for each person the agent types `@` and the name word by word until the Teams list shows exactly that person, clicks it, and checks the mention in the compose box. Enter sends; the command is done once Teams shows the message sent with everyone tagged. Anything typed is removed from the compose box when a step fails, so it cannot go out with the next message.
 
 ## Content
 

@@ -38,6 +38,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message } from "@/lib/client";
+import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
 
 const EMO: Record<string, string> = { like: "👍", heart: "❤️", laugh: "😆", surprised: "😮", cry: "😢", angry: "😠" };
 const EMO_LABEL: Record<string, string> = { like: "Like", heart: "Heart", laugh: "Laugh", surprised: "Surprised", cry: "Sad", angry: "Angry" };
@@ -64,7 +65,8 @@ function readStatus(m: Message): { label: string; seen: boolean } {
   return { label: "Sent", seen: false };
 }
 
-type Pending = { text: string; ts: number; quote?: { author: string; text: string } };
+// text as shown, as Teams will show it; raw and mentions as typed, for a retry
+type Pending = { text: string; ts: number; quote?: { author: string; text: string }; raw?: string; mentions?: string[] };
 
 // Box of an image of w x h at most 20rem (320 px) high and as wide as the bubble, before it loads: no bars around
 // it, no jump when it arrives
@@ -118,6 +120,14 @@ export function Conversation({
   // image pasted or attached for the next message, shown above the box; images on their way to Teams
   const [image, setImage] = useState<{ file: File; url: string } | null>(null);
   const [imagesPending, setImagesPending] = useState<{ url: string; text: string; ts: number }[]>([]);
+  // @: people of the chat (null until the first @), those tagged in the text, the @ being typed and the entry
+  // highlighted in its list
+  const [members, setMembers] = useState<string[] | null>(null);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [mentions, setMentions] = useState<string[]>([]);
+  const [picker, setPicker] = useState<{ start: number; query: string } | null>(null);
+  const [pickIndex, setPickIndex] = useState(0);
+  const membersAsked = useRef(false);
 
   const messages = rows ?? [];
   const realMine = messages.filter((m) => m.mine).map((m) => (m.text || "").trim());
@@ -286,10 +296,50 @@ export function Conversation({
     if (r.status !== "done") toast.error(r.detail || "Image not sent on Teams");
   }
 
-  async function sendText(t: string, quote?: Pending["quote"]) {
-    setPending((p) => [...p, { text: t, ts: Date.now(), quote }]);
+  // The people of the chat come from Teams on the first @ (the list read last, meanwhile), then stay
+  async function loadMembers() {
+    if (membersAsked.current) return;
+    membersAsked.current = true;
+    setMembersLoading(true);
     try {
-      await post("/api/send", { name: chat, text: t }, acc);
+      const first = await post<{ names: string[]; id?: number }>("/api/members", { name: chat }, acc);
+      setMembers(first.names);
+      if (first.id) {
+        await followCmd(first.id, acc, 30);
+        setMembers((await post<{ names: string[] }>("/api/members", { name: chat }, acc)).names);
+      }
+    } catch {
+      setMembers((m) => m ?? []);
+    }
+    setMembersLoading(false);
+  }
+
+  // An @ right before the cursor opens the list of people, in a new message only
+  function watchMention(el: HTMLTextAreaElement) {
+    const q = !reply && !editMid && !stopped ? mentionQuery(el.value, el.selectionStart ?? el.value.length) : null;
+    if (q?.query !== picker?.query || q?.start !== picker?.start) setPickIndex(0);
+    setPicker(q);
+    if (q) void loadMembers();
+  }
+
+  function tag(name: string) {
+    const el = taRef.current;
+    if (!picker || !el) return;
+    const r = insertMention(text, picker.start, el.selectionStart ?? text.length, name);
+    setText(r.text);
+    setMentions((m) => (m.includes(name) ? m : [...m, name]));
+    setPicker(null);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(r.caret, r.caret);
+    });
+  }
+
+  async function sendText(t: string, quote?: Pending["quote"], tagged: string[] = []) {
+    // Teams shows the people tagged by name, without the @: the message waiting for it reads the same
+    setPending((p) => [...p, { text: shownText(t, tagged), ts: Date.now(), quote, raw: t, mentions: tagged }]);
+    try {
+      await post("/api/send", { name: chat, text: t, mentions: tagged.length ? tagged : undefined }, acc);
     } catch {
       toast.error("Message not queued");
     }
@@ -300,6 +350,9 @@ export function Conversation({
     const img = !reply && !editMid ? image : null;
     if (!t && !img) return;
     setText("");
+    const tagged = mentions.filter((n) => t.includes(`@${n}`));
+    setMentions([]);
+    setPicker(null);
     if (taRef.current) taRef.current.style.height = "auto";
     atBottom.current = true;
     if (img) {
@@ -328,14 +381,15 @@ export function Conversation({
       if (r.status !== "done") toast.error("Edit not applied on Teams");
       return;
     }
-    await sendText(t);
+    await sendText(t, undefined, tagged);
   }
 
   function retry(p: Pending) {
     setPending((list) => list.filter((x) => x.ts !== p.ts));
-    void sendText(p.text);
+    void sendText(p.raw ?? p.text, undefined, p.mentions ?? []);
   }
 
+  const people = picker && members ? matchPeople(members, picker.query) : [];
   const loading = rows === null || (!messages.length && !shownPending.length && now - openedAt < 5000);
   // Teams shows author and picture only on the first of consecutive messages of the same person
   const firsts: boolean[] = [];
@@ -698,7 +752,35 @@ export function Conversation({
       </div>
 
       <div className="shrink-0 border-t bg-background px-3 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:px-6 md:pb-3">
-        <div className="mx-auto w-full max-w-4xl">
+        <div className="relative mx-auto w-full max-w-4xl">
+          {picker && (
+            <div role="listbox" aria-label="People to tag" className="absolute bottom-full left-0 z-20 mb-2 w-80 max-w-full overflow-hidden rounded-xl border bg-popover p-1 text-popover-foreground shadow-md">
+              {people.length ? (
+                people.map((n, i) => (
+                  <button
+                    key={n}
+                    type="button"
+                    role="option"
+                    aria-selected={i === pickIndex}
+                    // mouse down, not click: the box keeps the focus and the cursor
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      tag(n);
+                    }}
+                    onMouseEnter={() => setPickIndex(i)}
+                    className={cn("flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm", i === pickIndex && "bg-accent text-accent-foreground")}
+                  >
+                    <Avatar name={n} av="" acc={acc} className="size-6" />
+                    <span className="truncate">{n}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                  {membersLoading ? "Loading the people of this chat…" : members?.length ? "No one with this name here" : "No one to tag in this chat"}
+                </div>
+              )}
+            </div>
+          )}
           {(reply || editMid) && (
             <div className="mb-2 flex items-start gap-2 rounded-xl border-l-[3px] border-primary bg-muted/60 py-1.5 pr-1 pl-3">
               <div className="min-w-0 flex-1 text-sm">
@@ -758,10 +840,26 @@ export function Conversation({
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
+                watchMention(e.target);
                 e.target.style.height = "auto";
                 e.target.style.height = `${Math.min(160, e.target.scrollHeight)}px`;
               }}
+              onSelect={(e) => watchMention(e.currentTarget)}
+              onBlur={() => setPicker(null)}
               onKeyDown={(e) => {
+                // the list of people takes the arrows, Enter and Tab while it shows someone
+                if (picker && people.length && ["ArrowDown", "ArrowUp", "Enter", "Tab"].includes(e.key) && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  if (e.key === "ArrowDown") setPickIndex((i) => (i + 1) % people.length);
+                  else if (e.key === "ArrowUp") setPickIndex((i) => (i - 1 + people.length) % people.length);
+                  else tag(people[Math.min(pickIndex, people.length - 1)]);
+                  return;
+                }
+                if (picker && e.key === "Escape") {
+                  e.preventDefault();
+                  setPicker(null);
+                  return;
+                }
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   void send();
@@ -788,7 +886,7 @@ export function Conversation({
             </Button>
           </div>
           <p className="mt-1.5 hidden text-[0.6875rem] text-muted-foreground md:block">
-            <Kbd>Enter</Kbd> to send, <Kbd>Shift</Kbd> + <Kbd>Enter</Kbd> for a new line
+            <Kbd>Enter</Kbd> to send, <Kbd>Shift</Kbd> + <Kbd>Enter</Kbd> for a new line, <Kbd>@</Kbd> to tag someone
           </p>
         </div>
       </div>

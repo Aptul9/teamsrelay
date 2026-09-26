@@ -72,23 +72,12 @@ export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, c
   } catch (e) {
     log.warn("image", errorText(e), { chat });
     // what was pasted must not go out with the next message
-    await emptyComposer(tp);
+    await tp.emptyComposeBox();
     return false;
   }
   if (await until(() => page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before }), 100, 300)) return true;
   log.warn("image", "message did not appear on Teams", { chat });
   return false;
-}
-
-async function emptyComposer(tp: TeamsPage) {
-  try {
-    // focus, not a click: the click could land on the image, which opens its menu
-    await tp.page.locator(SEL.editor).last().focus({ timeout: 2000 });
-    await tp.page.keyboard.press("Control+A");
-    await tp.page.keyboard.press("Delete");
-  } catch (e) {
-    log.warn("image", `compose box not emptied: ${errorText(e)}`);
-  }
 }
 
 // Reply with quote: on the bar for other people's messages, in More options for yours

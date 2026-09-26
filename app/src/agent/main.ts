@@ -18,6 +18,8 @@ import * as chatListScripts from "./teams/scripts/chat-list";
 import * as composeScripts from "./teams/scripts/compose";
 import * as conversationScripts from "./teams/scripts/conversation";
 import * as mediaScripts from "./teams/scripts/media";
+import * as memberScripts from "./teams/scripts/members";
+import * as mentionScripts from "./teams/scripts/mentions";
 import * as actionScripts from "./teams/scripts/message-actions";
 import * as pageScripts from "./teams/scripts/page-state";
 
@@ -28,7 +30,7 @@ function check() {
   const sqlite = (db.prepare("SELECT sqlite_version() AS v").get() as { v: string }).v;
   db.close();
   let scripts = 0;
-  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, actionScripts, pageScripts]) {
+  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts]) {
     for (const [name, fn] of Object.entries(scriptModule)) {
       if (typeof fn !== "function") continue;
       const source = fn.toString();

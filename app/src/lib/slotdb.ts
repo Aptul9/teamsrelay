@@ -3,7 +3,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { CommandType } from "@/shared/slot-db/commands";
 import type { ActivityItem, Chat, Message, MessageExtra } from "@/shared/slot-db/rows";
-import { cmdResultKey, STATE, type SlotHealth } from "@/shared/slot-db/state";
+import { cmdResultKey, Members, membersKey, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
 
 // data/N/messages.db is created and written by the agent of slot N; the web app reads it and
@@ -95,6 +95,16 @@ export class SlotReader {
 
   identity(): { name?: string; email?: string; tenant?: string; av?: string } {
     return this.state(STATE.me, {});
+  }
+
+  // People of a chat as the agent read them last; ts 0 when never read
+  members(chat: string): Members {
+    return Members.parse(this.state<unknown>(membersKey(chat), {}) ?? {});
+  }
+
+  // Command of this type and first argument still waiting for the agent: its id, 0 when there is none
+  pendingCommand(type: CommandType, arg1: string): number {
+    return this.all<{ id: number }>("SELECT id FROM commands WHERE type=? AND arg1=? AND status='pending' ORDER BY id DESC LIMIT 1", type, arg1)[0]?.id ?? 0;
   }
 
   unreadCount(): number {

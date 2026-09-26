@@ -49,6 +49,8 @@ Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-
 | Delete | `message-actions-delete` in the menu |
 | Read by | `message-actions-read-receipt` in the menu, names in the submenu |
 | Editor and send | `[data-tid="ckeditor"]`; send `sendMessageCommands-send` or `newMessageCommands-send` depending on the layout |
+| People to tag | `@` typed in the compose box opens `[data-tid="AutocompletePopup-Mentions"]`; a person is `li[role="option"][itemtype="person"]` with `data-tid="autocomplete-picker-item-<name>"` (the chat members but you; in the self chat only a *share a contact* entry). Picked, it becomes `[itemtype*="Mention"]` in the box, one `<mention>` per word of the name |
+| Members of a group chat | `[data-tid="chat-header-participant-count"]` (*Add people and agents, N participants*) opens a dialog with the names in `[id^="chat-roster-item-name-"]`; the same dialog has `chat-header-remove-user-button`, `chat-add-members`, `leave-chat-btn` |
 | Image in the compose box | a `paste` event with the image file in `clipboardData`; the box then holds `<inlineimage>` and `img[data-tid="image-with-loader"]`; your new message shows `Sending...` until Teams has it |
 
 ## Activity

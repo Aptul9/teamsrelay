@@ -3,7 +3,7 @@
 // for here by a box that takes the paste like it does.
 import { describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
-import { composerImages, imageMessageSent, messageIds, pasteImage } from "@/agent/teams/scripts/compose";
+import { composerImages, composerLeft, imageMessageSent, messageIds, pasteImage } from "@/agent/teams/scripts/compose";
 import { fixture, picture, withChrome } from "./chrome";
 
 const chrome = withChrome();
@@ -46,6 +46,20 @@ describe("paste of an image", () => {
     expect(await chrome.page.evaluate(composerImages, SEL)).toBe(0);
     await chrome.page.setContent(`<div data-tid="ckeditor" contenteditable="true"><p><img data-tid="image-with-loader" src="${picture(20)}"></p></div>`);
     expect(await chrome.page.evaluate(composerImages, SEL)).toBe(1);
+  });
+});
+
+describe("what is left in the compose box", () => {
+  it("counts text, images and people tagged, not the invisible marks of an empty box", async () => {
+    const left = async (inner: string) => {
+      await chrome.page.setContent(`<div data-tid="ckeditor" contenteditable="true">${inner}</div>`);
+      return chrome.page.evaluate(composerLeft, SEL);
+    };
+    expect(await left('<p class="ck-placeholder"><br></p>')).toBe(0);
+    expect(await left("<p>⁠⁠​ </p>")).toBe(0);
+    expect(await left("<p>@Ro</p>")).toBeGreaterThan(0);
+    expect(await left(`<p><img src="${picture(10)}"></p>`)).toBeGreaterThan(0);
+    expect(await left(fixture("mention-picked.html").replace(/^<!--.*-->\n/, "").replace(/<\/?div[^>]*>/g, ""))).toBeGreaterThan(0);
   });
 });
 

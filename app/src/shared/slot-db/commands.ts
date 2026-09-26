@@ -3,7 +3,22 @@ import { z } from "zod";
 // Commands the web app queues in the commands table and the agent runs on the Teams page.
 // arg1 is the chat name (the file URL for download); arg2 is the text for send, JSON for the others below.
 // New types go at the end, names never change: an agent of an earlier release ends an unknown type as done.
-export const COMMAND_TYPES = ["open", "send", "reply", "react", "edit", "delete", "undodelete", "download", "activity", "resync", "recheck", "sendimage"] as const;
+export const COMMAND_TYPES = [
+  "open",
+  "send",
+  "reply",
+  "react",
+  "edit",
+  "delete",
+  "undodelete",
+  "download",
+  "activity",
+  "resync",
+  "recheck",
+  "sendimage",
+  "members",
+  "sendmentions",
+] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 
 export const COMMAND_STATUSES = ["pending", "done", "failed"] as const;
@@ -34,6 +49,13 @@ export type DownloadArgs = z.infer<typeof DownloadArgs>;
 // caption, possibly empty
 export const ImageArgs = z.object({ file: text, text });
 export type ImageArgs = z.infer<typeof ImageArgs>;
+
+// sendmentions: the message in order, text and people tagged with @ (their names as the members list shows them).
+// members (arg1 the chat) needs no argument: the names go to the state row members:<chat>.
+const MentionPart = z.union([z.object({ text: z.string() }), z.object({ mention: z.string() })]);
+export type MentionPart = z.infer<typeof MentionPart>;
+export const MentionArgs = z.object({ parts: z.array(MentionPart).catch([]) });
+export type MentionArgs = z.infer<typeof MentionArgs>;
 
 // Images the app can send, by file extension
 export const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", gif: "image/gif", webp: "image/webp" } as const;
