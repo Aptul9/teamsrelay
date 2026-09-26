@@ -6,7 +6,7 @@
 # e la web app accende solo quelli degli account aggiunti dall'app (tramite dockerproxy).
 x-chromium: &chromium
   # Browser remoto con Microsoft Teams web loggato (la sessione resta in ./config/N)
-  image: lscr.io/linuxserver/chromium:latest
+  image: lscr.io/linuxserver/chromium:latest@sha256:cf6200ccdcb224feaf5d3bde4ce45b3783c926a7496c98059cae1e0db78e5b2f
   security_opt:
     - seccomp:unconfined
   shm_size: "1gb"
@@ -147,14 +147,29 @@ services:
     restart: unless-stopped
 
   dockerproxy:
-    # Unico accesso della web app a Docker: solo avvio e arresto di container già creati.
-    # Creare container, eseguire comandi, leggere configurazioni: tutto negato.
-    image: tecnativa/docker-socket-proxy:v0.5.0
+    # The web app's only access to Docker: start and stop of the slot containers (teams-chromium-N,
+    # teams-agent-N). Every other method and path, other containers included, is refused.
+    image: wollomatic/socket-proxy:1.13.1
     container_name: teams-dockerproxy
-    environment:
-      - POST=1
-      - ALLOW_START=1
-      - ALLOW_STOP=1
+    command:
+      - -loglevel=info
+      - -listenip=0.0.0.0
+      - -allowfrom=webapp
+      - '-allowPOST=(/v1\.[0-9]+)?/containers/teams-(chromium|agent)-[0-9]+/(start|stop)'
+      - -allowhealthcheck
+      - -shutdowngracetime=5
+    # root inside the container only to open the socket (owned by root); no capabilities, read-only
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD", "./healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [control]
@@ -162,7 +177,7 @@ services:
 
   caddy:
     # Reverse proxy con certificati HTTPS automatici (Let's Encrypt)
-    image: caddy:2
+    image: caddy:2.11.4-alpine
     container_name: teams-caddy
     environment:
       - DOMAIN=${DOMAIN:?imposta DOMAIN in .env}

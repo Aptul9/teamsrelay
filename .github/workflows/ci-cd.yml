@@ -14,11 +14,11 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - name: Python syntax
         run: python -m py_compile agent/agent.py webapp/app.py tools/gen_vapid.py tools/genicons.py
@@ -53,9 +53,9 @@ jobs:
           docker build -q -t teamsrelay-agent ./agent
           docker build -q -t teamsrelay-webapp ./webapp
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24"
           cache: npm
 
       - name: Documentation build
@@ -79,7 +79,7 @@ jobs:
       TARGET: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
       TR_DIR: /opt/teamsrelay
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: SSH setup
         env:
