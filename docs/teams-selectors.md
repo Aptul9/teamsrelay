@@ -6,7 +6,7 @@ Everything the agent knows about Teams web is in `agent/agent.py`. When Microsof
 
 | Element | Selector |
 |---|---|
-| Teams tab | URL on `teams.cloud.microsoft` (or the older `teams.microsoft.com`) |
+| Teams tab | URL on `teams.cloud.microsoft` (or the older `teams.microsoft.com`), also behind the Defender for Cloud Apps proxy, which appends `.mcas.ms`, `.mcas-gov.us` or `.mcas-gov.ms` to the host |
 | List sections | `[role="treeitem"][aria-level="1"]`: *Quick views*, *Favorites*, *Chats*; `aria-expanded` tells whether they are open |
 | Chat | `[role="treeitem"][aria-level="2"]` under *Chats* or *Favorites* |
 | Unread | `[data-tid="unread"]` in the row |

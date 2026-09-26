@@ -468,9 +468,12 @@ def self_check(page):
 # Teams web ora reindirizza da teams.microsoft.com a teams.cloud.microsoft
 TEAMS_HOSTS = ("teams.microsoft.com", "teams.cloud.microsoft", "teams.live.com")
 LOGIN_HOSTS = ("login.microsoftonline.com", "login.live.com", "login.microsoft.com")
+# Outside Edge, Defender for Cloud Apps (Conditional Access App Control) proxies the session and appends
+# its suffix to every host: teams.cloud.microsoft.mcas.ms
+PROXY_SUFFIX = re.compile(r"\.mcas(-gov)?\.(ms|us)$")
 def host_of(p):
     from urllib.parse import urlparse
-    try: return urlparse(p.url or "").hostname or ""
+    try: return PROXY_SUFFIX.sub("", urlparse(p.url or "").hostname or "")
     except Exception: return ""
 def is_teams(p):
     return host_of(p) in TEAMS_HOSTS and "serviceworker" not in (p.url or "")

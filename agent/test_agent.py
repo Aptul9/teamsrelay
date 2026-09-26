@@ -46,6 +46,42 @@ class SameChat(unittest.TestCase):
         self.assertFalse(agent.same_chat("Anna Verdi", "Mario Rossi"))
 
 
+class Page:
+    def __init__(self, url):
+        self.url = url
+
+
+class Context:
+    def __init__(self, *urls):
+        self.pages = [Page(u) for u in urls]
+
+
+class TeamsTab(unittest.TestCase):
+    """Outside Edge, Defender for Cloud Apps proxies the session and appends its suffix to every host."""
+
+    def test_teams_hosts(self):
+        for url in ("https://teams.microsoft.com/v2/", "https://teams.cloud.microsoft/", "https://teams.live.com/v2/"):
+            self.assertTrue(agent.is_teams(Page(url)), url)
+
+    def test_teams_behind_the_cloud_apps_proxy(self):
+        for url in ("https://teams.cloud.microsoft.mcas.ms/", "https://teams.microsoft.com.mcas-gov.us/v2/",
+                    "https://teams.cloud.microsoft.mcas-gov.ms/v2/?McasCtx=4&McasTsid=28"):
+            self.assertTrue(agent.is_teams(Page(url)), url)
+
+    def test_other_pages(self):
+        for url in ("https://teams.microsoft.com/v2/serviceworker.js", "https://teams.microsoft.com.example.net/",
+                    "https://outlook.office.com.mcas.ms/mail/", "chrome://newtab/"):
+            self.assertFalse(agent.is_teams(Page(url)), url)
+
+    def test_teams_tab_wins_over_the_login_tab(self):
+        ctx = Context("https://login.microsoftonline.com/common/oauth2/authorize", "https://teams.cloud.microsoft.mcas.ms/")
+        self.assertEqual(agent.teams_page(ctx).url, "https://teams.cloud.microsoft.mcas.ms/")
+
+    def test_login_tab_while_signing_in(self):
+        ctx = Context("chrome://newtab/", "https://login.microsoftonline.com/common/oauth2/authorize")
+        self.assertEqual(agent.teams_page(ctx).url, "https://login.microsoftonline.com/common/oauth2/authorize")
+
+
 class OwnerPush(unittest.TestCase):
     """Slot 1 belongs to u1, slot 2 to u2: the agent of slot 1 notifies u1's devices only."""
 
