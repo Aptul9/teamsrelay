@@ -79,12 +79,28 @@ function show(view) {
   for (const v of ["signin", "list", "chat"]) $(v).hidden = v !== view;
 }
 
-// A wrong token signs out; anything else is shown
+// Signed out, the phone stops receiving the messages of the account: its subscription goes from the relay (while
+// the token still works) and from the browser
+async function signOut({ tellRelay }) {
+  try {
+    const sub = await subscription();
+    if (sub) {
+      if (tellRelay) await api("/api/push", { method: "DELETE", body: { endpoint: sub.endpoint } }).catch(() => undefined);
+      await sub.unsubscribe();
+    }
+  } catch {
+    // no push in this browser
+  }
+  pushOn = false;
+  token = "";
+  saved.clear();
+  show("signin");
+}
+
+// A wrong token signs out (the relay has a new token: this phone is no longer allowed); anything else is shown
 function failed(e) {
   if (e instanceof Unauthorized) {
-    token = "";
-    saved.clear();
-    show("signin");
+    if (token) signOut({ tellRelay: false });
     return;
   }
   toast(e.message);
@@ -507,9 +523,7 @@ $("menu-btn").addEventListener("click", () => {
       "Sign out of this app",
       () => {
         closeSheet();
-        token = "";
-        saved.clear();
-        show("signin");
+        signOut({ tellRelay: true });
       },
       "danger",
     ),

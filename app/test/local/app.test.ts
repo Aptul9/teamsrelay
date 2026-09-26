@@ -206,6 +206,19 @@ describe("notifications of the app", () => {
     expect(devices.count()).toBe(0);
   }, 60_000);
 
+  // a phone signed out must not go on showing the messages of the account on its lock screen
+  it("signs out: the relay and the browser forget the subscription of this phone", async () => {
+    await withPush(true);
+    await page.goto(`${base}/`);
+    await expect.poll(() => devices.count(), { timeout: 15_000 }).toBe(1);
+    await page.locator("#menu-btn").click();
+    await page.getByRole("button", { name: "Sign out of this app" }).click();
+    await page.locator("#signin").waitFor();
+    await expect.poll(() => devices.count(), { timeout: 15_000 }).toBe(0);
+    expect(await page.evaluate(() => (window as unknown as { fakePush: { unsubscribe: number } }).fakePush.unsubscribe)).toBe(1);
+    expect(await page.evaluate(() => localStorage.getItem("teamsrelay-token"))).toBeNull();
+  }, 60_000);
+
   it("turns notifications on from the button", async () => {
     await withPush(false);
     await page.goto(`${base}/`);
