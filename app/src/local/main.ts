@@ -32,6 +32,7 @@ import { loadConfig, readToken, type Config } from "./config";
 import { RelayDevices } from "./devices";
 import { acquireLock, LockError } from "./lock";
 import { appFiles, startServer } from "./server";
+import { onStop } from "./stop";
 
 // the bundle is dist/relay.cjs in app/: the page of the app is in src/local/web, the files it shares with the web app
 // (service worker, manifest, icons) in public/
@@ -63,22 +64,6 @@ function check() {
   const missing = files.filter((f) => !fs.existsSync(f));
   if (missing.length) throw new Error(`app files missing: ${missing.join(", ")}`);
   log.info("relay", "check ok", { sqlite, playwright: typeof chromium.launchPersistentContext === "function", scripts, web: files.length });
-}
-
-// Stops on SIGINT, SIGTERM and the shutdown message of pm2 (Windows has no signals to send): the browser is closed
-// so that it writes its profile out
-function onStop(stop: () => Promise<void>) {
-  let stopping = false;
-  const handler = () => {
-    if (stopping) return;
-    stopping = true;
-    log.info("relay", "stopping");
-    const force = setTimeout(() => process.exit(0), 10_000);
-    force.unref();
-    stop().finally(() => process.exit(0));
-  };
-  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, handler);
-  process.on("message", (m) => m === "shutdown" && handler());
 }
 
 // The profile for the relay. While the sign-in holds it the relay waits (pm2 would otherwise restart it until it gave
