@@ -1,4 +1,4 @@
-self.addEventListener('install', e => self.skipWaiting());
+self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('push', event => {
@@ -13,7 +13,7 @@ self.addEventListener('push', event => {
   }));
 });
 
-// la notifica apre l'app sull'account da cui arriva (acc = slot)
+// the notification opens the app on the account it comes from (acc = slot)
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const acc = (event.notification.data || {}).acc;

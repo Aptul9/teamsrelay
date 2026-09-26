@@ -1,21 +1,22 @@
-# ---- Dati sensibili e di runtime: NON vanno MAI su git ----
+# ---- Runtime data and secrets: never in git ----
 .env
-# Profilo Chromium: contiene la sessione Teams loggata (chi lo possiede entra nel tuo account)
+# Chromium profiles: the signed-in Teams sessions (whoever has them is in those accounts)
 config/
-# Database dei messaggi e URL del desktop remoto
+# Databases, images and files of the accounts
 data/
-# Chiave privata Web Push
+# Web Push private key
 vapid/
 caddy_data/
 caddy_config/
+
+# Web app build
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
 
 *.bak
 __pycache__/
 *.pyc
 .DS_Store
 Thumbs.db
-
-# Documentazione (VitePress)
-node_modules/
-docs/.vitepress/dist/
-docs/.vitepress/cache/
