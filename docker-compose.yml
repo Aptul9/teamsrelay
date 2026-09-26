@@ -1,11 +1,10 @@
-# TeamsRelay — stack Docker Compose.
-# Tutta la configurazione sta in .env (copia .env.example). Vedi README.md.
+# TeamsRelay: Docker Compose stack. Configuration in .env (copy .env.example), see docs/setup.md.
 #
-# Account Teams: fino a 4 slot, ognuno con il suo browser (chromium-N) e il suo agent (agent-N).
-# Gli slot sono nel profilo "accounts": un "docker compose up -d" non li avvia. Il deploy li crea spenti
-# e la web app accende solo quelli degli account aggiunti dall'app (tramite dockerproxy).
+# Teams account slots: 4, each with its own browser (chromium-N), agent (agent-N) and network (slotN).
+# Slots are in the "accounts" profile: "docker compose up -d" does not start them. The deploy creates
+# them stopped, and the web app starts the slots that belong to a user (through dockerproxy).
 x-chromium: &chromium
-  # Browser remoto con Microsoft Teams web loggato (la sessione resta in ./config/N)
+  # Remote browser with Microsoft Teams web signed in (the session stays in ./config/N)
   image: lscr.io/linuxserver/chromium:latest@sha256:cf6200ccdcb224feaf5d3bde4ce45b3783c926a7496c98059cae1e0db78e5b2f
   security_opt:
     - seccomp:unconfined
@@ -20,12 +19,12 @@ x-chromium-env: &chromium-env
   CUSTOM_USER: ${DESKTOP_USER:-}
   PASSWORD: ${DESKTOP_PASS:-}
   CHROME_CLI: --remote-debugging-port=9222 --remote-allow-origins=* https://teams.microsoft.com/
-  # Senza GPU (VM ARM) Selkies codifica H.264 in software e il decoder del browser non ne ricava frame
-  # ("decoder produced no output"): i frame JPEG si vedono in qualsiasi browser e bastano per il login
+  # Without a GPU (ARM VMs) Selkies encodes H.264 in software and the browser decoder gets no frame
+  # ("decoder produced no output"): JPEG frames work in every browser and are enough for the login
   SELKIES_ENCODER: jpeg
 
 x-agent: &agent
-  # Legge e pilota Teams via Chrome DevTools Protocol; manda le notifiche push
+  # Reads and drives Teams through the Chrome DevTools Protocol, sends the push notifications
   build: ./agent
   image: teamsrelay-agent
   volumes:
@@ -52,10 +51,11 @@ services:
     container_name: teams-chromium-1
     environment:
       <<: *chromium-env
-      # pubblicato da Caddy su https://<DOMAIN>/desktop/1/, dietro il login della web app
+      # published by Caddy on https://<DOMAIN>/desktop/1/, only to the owner of the slot
       SUBFOLDER: /desktop/1/
     volumes:
       - ./config/1:/config
+    networks: [slot1]
   agent-1:
     <<: *agent
     container_name: teams-agent-1
@@ -74,6 +74,7 @@ services:
       SUBFOLDER: /desktop/2/
     volumes:
       - ./config/2:/config
+    networks: [slot2]
   agent-2:
     <<: *agent
     container_name: teams-agent-2
@@ -92,6 +93,7 @@ services:
       SUBFOLDER: /desktop/3/
     volumes:
       - ./config/3:/config
+    networks: [slot3]
   agent-3:
     <<: *agent
     container_name: teams-agent-3
@@ -110,6 +112,7 @@ services:
       SUBFOLDER: /desktop/4/
     volumes:
       - ./config/4:/config
+    networks: [slot4]
   agent-4:
     <<: *agent
     container_name: teams-agent-4
@@ -121,28 +124,35 @@ services:
       DB_PATH: /data/4/messages.db
 
   webapp:
-    # Web app installabile (PWA) + API; gestisce gli account e accende/spegne i loro slot
+    # Installable web app (PWA), API and user management; starts and stops the slots of its users
     build: ./webapp
+    image: teamsrelay-webapp
     container_name: teams-webapp
     environment:
-      - APP_DB=/data/app.db
-      - UI_USER=${UI_USER:-}
-      - UI_PASS=${UI_PASS:-}
-      - SESSION_SECRET=${SESSION_SECRET:-}
-      - DESKTOP_URL=${DESKTOP_URL:-}
-      - DOCKER_API=http://dockerproxy:2375
-      - VAPID_APPKEY=/vapid/appkey.txt
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      APP_URL: ${APP_URL:-}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      # variable of the single-user release, still accepted as the session key
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SLOT_COUNT: ${SLOT_COUNT:-4}
+      ACCOUNTS_PER_USER: ${ACCOUNTS_PER_USER:-}
+      DESKTOP_URL: ${DESKTOP_URL:-}
+      APP_DB: /data/app.db
+      CONFIG_DIR: /config
+      DOCKER_API: http://dockerproxy:2375
+      VAPID_APPKEY: /vapid/appkey.txt
     volumes:
-      # Montati per poter modificare i file senza ricostruire l'immagine.
-      # Dopo una modifica: docker compose restart webapp   (NON basta "up -d")
-      - ./webapp/app.py:/app/app.py:ro
-      - ./webapp/index.html:/app/index.html:ro
-      - ./webapp/login.html:/app/login.html:ro
-      - ./webapp/static:/app/static:ro
       - ./vapid:/vapid:ro
       - ./data:/data
-      # per cancellare la sessione del browser quando si toglie un account
+      # to wipe the browser session of an account when it is removed
       - ./config:/config
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks: [default, control]
     restart: unless-stopped
 
@@ -176,11 +186,11 @@ services:
     restart: unless-stopped
 
   caddy:
-    # Reverse proxy con certificati HTTPS automatici (Let's Encrypt)
+    # Reverse proxy with automatic HTTPS certificates (Let's Encrypt)
     image: caddy:2.11.4-alpine
     container_name: teams-caddy
     environment:
-      - DOMAIN=${DOMAIN:?imposta DOMAIN in .env}
+      - DOMAIN=${DOMAIN:?set DOMAIN in .env}
       - HTTPS_PORT=${HTTPS_PORT:-443}
     ports:
       - "80:80"
@@ -189,12 +199,18 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks: [default, slot1, slot2, slot3, slot4]
     restart: unless-stopped
 
 networks:
-  # solo web app e dockerproxy: i browser (che aprono pagine web) non raggiungono Docker
+  # web app and socket proxy only: the browsers, which open web pages, never reach Docker
   control:
     internal: true
+  # one network per slot, shared with Caddy only: a browser cannot reach another slot or the web app
+  slot1:
+  slot2:
+  slot3:
+  slot4:
 
 volumes:
   caddy_data:

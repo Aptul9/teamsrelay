@@ -1,11 +1,11 @@
 # Local test overlay (Docker Desktop). Not for production.
 #   docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml --profile accounts create --build
 #   docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml up -d
-# App on http://localhost:8090, desktop of account N on http://localhost:8090/desktop/N/.
-# Caddy serves plain HTTP: localhost is already a secure context, so the service worker
-# and Web Push work without a certificate. No login (NO_AUTH): Caddy listens on 127.0.0.1 only.
-# SQLite and the Chromium profiles live in named volumes instead of bind mounts
-# on the Windows filesystem, where file locking and symlinks are unreliable.
+# App on http://localhost:8090, sign in with ADMIN_EMAIL / ADMIN_PASSWORD of compose.local.env.
+# Caddy serves plain HTTP on 127.0.0.1 only: localhost is already a secure context, so the service
+# worker and Web Push work without a certificate.
+# SQLite and the Chromium profiles live in named volumes instead of bind mounts on the Windows
+# filesystem, where file locking and symlinks are unreliable.
 services:
   chromium-1:
     volumes:
@@ -32,13 +32,7 @@ services:
     volumes:
       - tr_data:/data
   webapp:
-    environment:
-      - NO_AUTH=1
     volumes: !override
-      - ./webapp/app.py:/app/app.py:ro
-      - ./webapp/index.html:/app/index.html:ro
-      - ./webapp/login.html:/app/login.html:ro
-      - ./webapp/static:/app/static:ro
       - ./vapid:/vapid:ro
       - tr_data:/data
       - tr_config:/config/1
