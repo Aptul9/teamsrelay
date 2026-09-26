@@ -13,10 +13,13 @@ import {
   avColor,
   call,
   isSelf,
+  markActivitySeen,
+  parseSeen,
   post,
   readStorage,
   runCmd,
   toLogin,
+  unseenActivity,
   writeStorage,
   type Account,
   type ActivityItem,
@@ -63,6 +66,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [chats, setChats] = useState<Chat[] | null>(null);
   const [messages, setMessages] = useState<{ chat: string; rows: Message[] } | null>(null);
   const [activity, setActivity] = useState<{ ts: number; items: ActivityItem[] } | null>(null);
+  const [seenAct, setSeenAct] = useState<string[] | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [panel, setPanel] = useState<"none" | "status" | "accounts">("none");
   const [toastText, setToastText] = useState("");
@@ -90,8 +94,25 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setChats(null);
     setMessages(null);
     setActivity(null);
+    setSeenAct(null);
     setHealth(null);
     setDeskOpened(false);
+  }, []);
+
+  // activity ids already seen in the Notifications tab, per account and device: the first feed of an account
+  // counts as seen, later ones only while the tab is on screen
+  const tabRef = useRef<Tab>("chats");
+  useEffect(() => {
+    tabRef.current = tab;
+  }, [tab]);
+  const noteActivity = useCallback((n: number, d: { ts: number; items: ActivityItem[] }, looking: boolean) => {
+    setActivity(d);
+    if (!n || !d.ts) return; // the agent has not read the Teams feed yet
+    const key = `actseen:${n}`;
+    const stored = parseSeen(readStorage(key));
+    const seen = stored && !looking ? stored : markActivitySeen(stored, d.items);
+    if (seen !== stored) writeStorage(key, JSON.stringify(seen));
+    setSeenAct(seen);
   }, []);
 
   const selectAccount = useCallback(
@@ -142,7 +163,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     on("accounts", applyAccounts);
     on<Health>("health", setHealth);
     on<Chat[]>("chats", setChats);
-    on<{ ts: number; items: ActivityItem[] }>("activity", setActivity);
+    on<{ ts: number; items: ActivityItem[] }>("activity", (d) => noteActivity(acc, d, tabRef.current === "activity"));
     on<{ chat: string; rows: Message[] }>("messages", setMessages);
     es.onerror = () => {
       // a stream refused with 401 means the session is over
@@ -151,7 +172,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       });
     };
     return () => es.close();
-  }, [acc, openChat, applyAccounts]);
+  }, [acc, openChat, applyAccounts, noteActivity]);
 
   // notification tapped while the app is open: switch to the account it comes from
   useEffect(() => {
@@ -200,7 +221,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   function show(t: Tab) {
     setTab(t);
     if (t === "desktop") setDeskOpened(true);
-    if (t === "activity") void refreshActivity();
+    if (t === "activity") {
+      if (activity) noteActivity(acc, activity, true);
+      void refreshActivity();
+    }
   }
 
   async function refreshActivity() {
@@ -262,7 +286,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   const current = accounts?.find((a) => a.slot === acc);
   const unreadChats = (chats ?? []).filter((c) => c.unread && !c.muted && !isSelf(c.name)).length;
-  const unreadActivity = (activity?.items ?? []).filter((a) => a.unread).length;
+  const unreadActivity = unseenActivity(activity?.items ?? [], seenAct);
   const otherUnread = (accounts ?? []).some((a) => a.slot !== acc && a.unread > 0);
   const overall = health?.overall || "yellow";
   const canAdd = !!accounts && accounts.length < limits.max && limits.free > 0;

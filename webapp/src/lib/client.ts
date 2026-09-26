@@ -118,6 +118,29 @@ export async function runCmd(path: string, body: unknown, acc: number): Promise<
 export const mediaUrl = (file: string, acc: number) => `/media/${encodeURIComponent(file)}?a=${acc}`;
 export const isSelf = (name: string) => /\(you\)/i.test(name || "");
 
+// Teams keeps an activity bold until it is clicked in Teams itself, while its Activity badge counts only
+// what arrived after the feed was last opened. The tab badge does the same with the ids already seen here.
+export function unseenActivity(items: ActivityItem[], seen: string[] | null): number {
+  if (!seen) return 0;
+  const known = new Set(seen);
+  return items.filter((a) => a.unread && !known.has(a.id)).length;
+}
+
+export function markActivitySeen(seen: string[] | null, items: ActivityItem[]): string[] {
+  const ids = items.map((a) => a.id);
+  const now = new Set(ids);
+  return [...ids, ...(seen ?? []).filter((id) => !now.has(id))].slice(0, 200);
+}
+
+export function parseSeen(raw: string | null): string[] | null {
+  try {
+    const v: unknown = JSON.parse(raw ?? "");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+  } catch {
+    return null;
+  }
+}
+
 export function initials(s: string): string {
   s = (s || "?").trim().replace(/\(.*?\)/g, "").trim();
   const p = s.split(/[\s,]+/).filter(Boolean);
