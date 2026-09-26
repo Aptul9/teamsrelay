@@ -39,7 +39,7 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 ## Data at rest
 
 - `config/N/` is the Microsoft session of account N, stored unencrypted by Chromium. Protect the server and encrypt the backups.
-- Only the browsers container mounts `config/`; the web app, the component exposed to the Internet, mounts no profile. The supervisor empties `config/N/` only on a request of the web app and only while account N is stopped.
+- Only the browsers container mounts `config/`; the web app, the component exposed to the Internet, mounts no profile. The supervisor deletes `config/N/` only on a request of the web app and only while account N is stopped.
 - Never publish `.env`, `config/`, `data/`, `vapid/`: they are in `.gitignore` and the deploy neither copies nor touches them.
 
 ## Content

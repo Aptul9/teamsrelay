@@ -156,13 +156,35 @@ describe("Accounts", () => {
     expect(calls).toEqual([]);
   });
 
-  it("empties the profile of a stopped account and keeps its directory", async () => {
+  it("deletes the profile of a stopped account, its directory included", async () => {
     const dir = profile(3, ".config/chromium/Default/Cookies", ".cache/chromium/x", "top.txt");
 
     await accounts().wipe(3);
 
-    expect(fs.existsSync(dir)).toBe(true);
-    expect(fs.readdirSync(dir)).toEqual([]);
+    expect(fs.existsSync(dir)).toBe(false);
+    expect(fs.readdirSync(cfg.profilesDir)).toEqual([]);
+  });
+
+  it.runIf(process.platform !== "win32" && process.getuid?.() !== 0)("empties a profile directory it cannot remove, as a mount point", async () => {
+    const dir = profile(3, ".config/chromium/Default/Cookies", "top.txt");
+    fs.chmodSync(cfg.profilesDir, 0o555);
+    try {
+      await accounts().wipe(3);
+      expect(fs.readdirSync(dir)).toEqual([]);
+    } finally {
+      fs.chmodSync(cfg.profilesDir, 0o755);
+    }
+  });
+
+  it("creates the profile directory again when a wiped account starts", async () => {
+    profile(3, "top.txt");
+    const a = accounts();
+
+    await a.wipe(3);
+    expect(fs.existsSync(path.join(cfg.profilesDir, "3"))).toBe(false);
+    await a.start(3);
+
+    expect(fs.readdirSync(path.join(cfg.profilesDir, "3"))).toEqual([]);
   });
 
   it("wipes an account that never had a profile", async () => {

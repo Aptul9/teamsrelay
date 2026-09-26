@@ -8,7 +8,7 @@ const Env = z.object({
   PROFILES_DIR: z.string().default("/profiles"),
   DATA_DIR: z.string().default("/root/data"),
   VAPID_DIR: z.string().default("/root/vapid"),
-  SLOT_COUNT: z.coerce.number().int().min(1).max(64).default(4),
+  SLOT_COUNT: z.coerce.number().int().min(1).max(100).default(4),
   PUID: z.coerce.number().int().min(1).default(1000),
   PGID: z.coerce.number().int().min(1).default(1000),
   XDG_RUNTIME_DIR: z.string().default("/config/.XDG"),

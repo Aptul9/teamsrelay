@@ -82,7 +82,7 @@ docker compose --env-file compose.local.env -f docker-compose.yml -f compose.loc
 
 - Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` of `compose.local.env`, local test values.
 - Caddy serves plain HTTP: `localhost` is a secure context, so the service worker and Web Push work without a certificate.
-- Named volumes (`tr_data`, `tr_config`...) replace `data/` and `config/`: on the Windows filesystem SQLite locking and the symlinks of the Chromium profile are unreliable.
+- Named volumes replace `data/` and `config/`: `tr_data`, and `tr_profiles` with one directory per account as in `config/`. On the Windows filesystem SQLite locking and the symlinks of the Chromium profile are unreliable.
 - Sample chats without a signed-in Teams: `docker compose cp app/scripts/seed-slot.mjs webapp:/app/seed-slot.mjs`, then `docker compose exec webapp node /app/seed-slot.mjs /data 1` (slot 1 must belong to your user).
 
 Code: `app/`, one package for the web app (Next.js), the agent (`src/agent`) and the supervisor of the browsers container (`src/supervisor`). Checks, from `app/`:
@@ -97,3 +97,20 @@ npm run lint && npm run typecheck && npm test && npm run build
 After a change, `docker compose ... up -d --build` rebuilds both images and recreates what changed; a new browsers image restarts every account. The code of agent and supervisor is inside the image, nothing is mounted.
 
 Stop everything with `docker compose -f docker-compose.yml -f compose.local.yml down`; `down -v` also deletes the volumes, Teams sessions included.
+
+### Profiles of an earlier local stack
+
+Local stacks of earlier releases kept one volume per account: `tr_config` for account 1, `tr_config_N` for account N. Copied into `tr_profiles` before the first `up` with this overlay, the accounts stay signed in; an account started before the copy already has a new, signed-out profile there. Volume names start with the Compose project, the name of the checkout directory (`teamsrelay` below): `docker volume ls -q --filter name=tr_config` lists the old ones.
+
+One `-v` per old volume, mounted read only; they stay as they are. The copy stops at an account that already has a directory in `tr_profiles` (`File exists`): with the browsers stopped, delete that directory and copy again.
+
+```bash
+docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml stop browsers
+docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml up --no-start browsers
+docker run --rm --network none --entrypoint sh \
+  -v teamsrelay_tr_config:/old/1:ro -v teamsrelay_tr_config_2:/old/2:ro -v teamsrelay_tr_profiles:/profiles \
+  teamsrelay -c 'for d in /old/*; do mkdir /profiles/${d##*/} && cp -a $d/. /profiles/${d##*/}/ || exit 1; done'
+docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml up -d
+```
+
+Once the accounts are green again, delete the old volumes mounted above: `docker volume rm teamsrelay_tr_config teamsrelay_tr_config_2`.

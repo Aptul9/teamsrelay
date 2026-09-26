@@ -149,8 +149,8 @@ export class Accounts {
     });
   }
 
-  // Deletes the Microsoft session of the account: every entry of its profile directory. The directory itself
-  // stays, it can be a mount point.
+  // Deletes the Microsoft session of the account: its profile directory, every entry first, then the directory
+  // itself. A directory that is a mount point (one volume per account) stays, empty.
   wipe(n: number) {
     return this.queued(n, async () => {
       const a = this.accounts.get(n);
@@ -166,6 +166,11 @@ export class Accounts {
       }
       const left = fs.readdirSync(dir);
       if (left.length) throw new AccountError(500, `account ${n}: not wiped, left: ${left.join(" ")}`);
+      try {
+        fs.rmdirSync(dir);
+      } catch {
+        // mount point: nothing of the session is left in it
+      }
       this.say(`account ${n} wiped`);
     });
   }
