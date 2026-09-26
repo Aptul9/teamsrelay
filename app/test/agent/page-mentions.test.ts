@@ -59,6 +59,14 @@ describe("message with people tagged, sent", () => {
     expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(true);
   });
 
+  it("is not seen before Teams draws its status icon, or when Teams failed to send it", async () => {
+    const before = await sent("DUS Saf", "Sent");
+    await chrome.page.evaluate((mid) => document.querySelector(`[data-mid="${mid}"]`)!.closest(".fui-ChatMyMessage")!.querySelector('[class*="statusIcon"]')!.remove(), TEXT_MID);
+    expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(false);
+    await sent("DUS Saf", "Failed to send");
+    expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(false);
+  });
+
   it("is not seen while sending, without the person, or among the messages already there", async () => {
     let before = await sent("DUS Saf", "Sending...");
     expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(false);

@@ -34,7 +34,9 @@ export function composerImages(s: Selectors): number {
   return box ? box.querySelectorAll("img").length : 0;
 }
 
-// A message of yours, not among `before`, that Teams no longer shows as sending (it then also has its final id)
+// A message of yours, not among `before`, whose status icon says Teams has it: not sending any more (it then also
+// has its final id), not failed. Teams draws the icon under the last message of yours only: without it, nothing is
+// known yet.
 export function ownMessageSent({ s, t, before }: { s: Selectors; t: Texts; before: string[] }): boolean {
   const known = new Set(before);
   return [...document.querySelectorAll(s.message)].some((m) => {
@@ -42,12 +44,12 @@ export function ownMessageSent({ s, t, before }: { s: Selectors; t: Texts; befor
     const mine = m.closest(s.mine) || m.querySelector(s.mine);
     if (!mid || known.has(mid) || !mine) return false;
     const icon = mine.querySelector(s.statusIcon);
-    return !t.sending.test((icon && icon.getAttribute("aria-label")) || "");
+    const status = ((icon && icon.getAttribute("aria-label")) || "").trim();
+    return !!status && !t.sending.test(status) && !t.sendFailed.test(status);
   });
 }
 
-// A message of yours with an image, not among `before`, that Teams no longer shows as sending (it then also has
-// its final id)
+// A message of yours with an image, not among `before`, whose status icon says Teams has it (see ownMessageSent)
 export function imageMessageSent({ s, t, before }: { s: Selectors; t: Texts; before: string[] }): boolean {
   const known = new Set(before);
   return [...document.querySelectorAll(s.message)].some((m) => {
@@ -57,6 +59,7 @@ export function imageMessageSent({ s, t, before }: { s: Selectors; t: Texts; bef
     if (!mine) return false;
     const image = [...m.querySelectorAll("img")].some((i) => s.imageType.test(i.getAttribute("itemtype") || "") || s.lazyImage.test(i.getAttribute("data-tid") || ""));
     const icon = mine.querySelector(s.statusIcon);
-    return image && !t.sending.test((icon && icon.getAttribute("aria-label")) || "");
+    const status = ((icon && icon.getAttribute("aria-label")) || "").trim();
+    return image && !!status && !t.sending.test(status) && !t.sendFailed.test(status);
   });
 }

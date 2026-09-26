@@ -93,9 +93,17 @@ describe("image sent, on the conversation captured from Teams", () => {
     expect(await chrome.page.evaluate(messageIds, SEL)).toEqual(["1790000000002", "1790000000003", IMAGE_MID, "1790000000006"]);
   });
 
-  it("sees a new image message of yours", async () => {
-    const mids = await conversation();
+  it("sees a new image message of yours once Teams shows it sent", async () => {
+    const mids = await conversation("Sent");
     expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before: mids.filter((m) => m !== IMAGE_MID) })).toBe(true);
+  });
+
+  // Teams draws the status icon under the last message of yours only: a new message without it is not known sent
+  it("does not take it before Teams draws its status icon, or when Teams failed to send it", async () => {
+    const before = (await conversation()).filter((m) => m !== IMAGE_MID);
+    expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
+    await conversation("Failed to send");
+    expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
   });
 
   it("waits while Teams still shows it as sending", async () => {
@@ -107,7 +115,7 @@ describe("image sent, on the conversation captured from Teams", () => {
   });
 
   it("does not take a message that was already there, or one without an image", async () => {
-    const mids = await conversation();
+    const mids = await conversation("Sent");
     expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before: mids })).toBe(false);
     const withoutText = mids.filter((m) => m !== "1790000000006");
     expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before: withoutText })).toBe(false);
@@ -139,6 +147,17 @@ describe("message sent, on the conversation captured from Teams (self chat: ever
     expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
     await conversation("Sent");
     expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before })).toBe(true);
+  });
+
+  // Teams draws the status icon under the last message of yours only, first Sending..., then Sent
+  it("waits for the status icon Teams draws under your last message, and never takes a failed one", async () => {
+    const before = (await conversation()).filter((m) => m !== LAST);
+    await chrome.page.evaluate((mid) => document.querySelector(`#read-status-icon-${mid}`)!.remove(), LAST);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
+    await conversation("Failed to send");
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
+    await conversation("");
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
   });
 
   it("does not take a message that was already there, or a new one of someone else", async () => {
