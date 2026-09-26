@@ -22,9 +22,11 @@ export type Config = {
   slot: number;
   dbPath: string;
   appDb: string;
-  // images and profile pictures, downloaded attachments: next to the slot database
+  // images and profile pictures, downloaded attachments, images the web app queued to send: next to the slot
+  // database
   mediaDir: string;
   filesDir: string;
+  uploadsDir: string;
   vapid: { privateKeyFile: string; appKeyFile: string; subject: string };
   ntfy: { url: string; topic: string } | null;
 };
@@ -47,6 +49,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     appDb: e.APP_DB,
     mediaDir: path.join(dataDir, "media"),
     filesDir: path.join(dataDir, "files"),
+    uploadsDir: path.join(dataDir, "uploads"),
     vapid: { privateKeyFile: e.VAPID_PRIVATE, appKeyFile: e.VAPID_APPKEY, subject: e.VAPID_SUBJECT },
     ntfy: e.NTFY_ENABLED === "1" && e.NTFY_TOPIC ? { url: e.NTFY_URL, topic: e.NTFY_TOPIC } : null,
   };

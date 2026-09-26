@@ -39,6 +39,7 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 |---|---|---|
 | POST | `/api/open` | `{name}`: opens the chat in the remote Teams |
 | POST | `/api/send` | `{name, text}` |
+| POST | `/api/sendimage` | multipart form: `name`, `file` (PNG, JPEG, GIF or WebP, recognized by content, up to 10 MB), `text` (caption, optional). 413 above the size, 415 for another type. The image is sent as if pasted in Teams |
 | POST | `/api/reply` | `{name, mid, text}`: reply with quote |
 | POST | `/api/edit` | `{name, mid, text}`: own messages only |
 | POST | `/api/delete` | `{name, mid}`: own messages only |

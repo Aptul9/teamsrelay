@@ -9,6 +9,7 @@ import {
   DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
+  ImagePlusIcon,
   MessageSquareDashedIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -36,7 +37,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { followCmd, mediaUrl, post, runCmd, type Chat, type Message } from "@/lib/client";
+import { followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message } from "@/lib/client";
 
 const EMO: Record<string, string> = { like: "👍", heart: "❤️", laugh: "😆", surprised: "😮", cry: "😢", angry: "😠" };
 const EMO_LABEL: Record<string, string> = { like: "Like", heart: "Heart", laugh: "Laugh", surprised: "Surprised", cry: "Sad", angry: "Angry" };
@@ -64,6 +65,10 @@ function readStatus(m: Message): { label: string; seen: boolean } {
 }
 
 type Pending = { text: string; ts: number; quote?: { author: string; text: string } };
+
+// Box of an image of w x h at most 20rem (320 px) high and as wide as the bubble, before it loads: no bars around
+// it, no jump when it arrives
+const imageWidth = (w?: number, h?: number) => (w && h ? `min(100%, ${Math.round(w * Math.min(1, 320 / h))}px)` : undefined);
 
 // Touch screens have no hover: a tap on a message opens its actions in a sheet from the bottom
 const NO_HOVER = "(hover: none)";
@@ -108,7 +113,11 @@ export function Conversation({
   const [openedAt] = useState(() => Date.now());
   const boxRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const atBottom = useRef(true);
+  // image pasted or attached for the next message, shown above the box; images on their way to Teams
+  const [image, setImage] = useState<{ file: File; url: string } | null>(null);
+  const [imagesPending, setImagesPending] = useState<{ url: string; text: string; ts: number }[]>([]);
 
   const messages = rows ?? [];
   const realMine = messages.filter((m) => m.mine).map((m) => (m.text || "").trim());
@@ -135,7 +144,10 @@ export function Conversation({
   useLayoutEffect(() => {
     const box = boxRef.current;
     if (box && atBottom.current) box.scrollTop = box.scrollHeight;
-  }, [rows, pending]);
+  }, [rows, pending, imagesPending]);
+
+  // the preview address lives as long as the image stays in the box
+  useEffect(() => () => void (image && URL.revokeObjectURL(image.url)), [image]);
 
   const onScroll = () => {
     const b = boxRef.current;
@@ -248,6 +260,32 @@ export function Conversation({
     a.remove();
   }
 
+  function pickImage(f: File | undefined) {
+    if (!f) return;
+    const problem = imageProblem(f);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+    if (reply || editMid) {
+      toast.error("Images go in a new message, not in a reply or an edit");
+      return;
+    }
+    setImage({ file: f, url: URL.createObjectURL(f) });
+    requestAnimationFrame(() => taRef.current?.focus());
+  }
+
+  // the text of the box goes with the image as its caption
+  async function sendPicked(file: File, t: string) {
+    const url = URL.createObjectURL(file);
+    const ts = Date.now();
+    setImagesPending((p) => [...p, { url, text: t, ts }]);
+    const r = await sendImage(chat, file, t, acc);
+    setImagesPending((p) => p.filter((x) => x.ts !== ts));
+    URL.revokeObjectURL(url);
+    if (r.status !== "done") toast.error(r.detail || "Image not sent on Teams");
+  }
+
   async function sendText(t: string, quote?: Pending["quote"]) {
     setPending((p) => [...p, { text: t, ts: Date.now(), quote }]);
     try {
@@ -259,10 +297,16 @@ export function Conversation({
 
   async function send() {
     const t = text.trim();
-    if (!t) return;
+    const img = !reply && !editMid ? image : null;
+    if (!t && !img) return;
     setText("");
     if (taRef.current) taRef.current.style.height = "auto";
     atBottom.current = true;
+    if (img) {
+      setImage(null);
+      await sendPicked(img.file, t);
+      return;
+    }
     if (reply) {
       const r0 = reply;
       setReply(null);
@@ -384,7 +428,14 @@ export function Conversation({
                     return (
                       <a key={i} href={u} target="_blank" rel="noopener" className="my-1 block cursor-zoom-in overflow-hidden rounded-lg transition-opacity hover:opacity-90">
                         {/* eslint-disable-next-line @next/next/no-img-element -- images saved by the agent, sizes from Teams */}
-                        <img src={u} alt="Image" width={im.w || undefined} height={im.h || undefined} className="block h-auto max-h-80 max-w-full object-contain" />
+                        <img
+                          src={u}
+                          alt="Image"
+                          width={im.w || undefined}
+                          height={im.h || undefined}
+                          style={{ width: imageWidth(im.w, im.h) }}
+                          className="block h-auto max-h-80 max-w-full object-contain"
+                        />
                       </a>
                     );
                   })}
@@ -568,7 +619,7 @@ export function Conversation({
               <Spinner className="size-6" />
               Opening the chat in Teams…
             </div>
-          ) : !messages.length && !shownPending.length ? (
+          ) : !messages.length && !shownPending.length && !imagesPending.length ? (
             <Empty className="h-60">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
@@ -614,6 +665,19 @@ export function Conversation({
                   </div>
                 );
               })}
+              {imagesPending.map((p) => (
+                <div key={p.ts} className="mt-1 flex flex-col items-end">
+                  <div className="max-w-[min(36rem,82%)] rounded-2xl rounded-r-md bg-bubble-mine px-3.5 py-2 text-[0.9375rem] leading-relaxed break-words whitespace-pre-wrap text-bubble-mine-foreground opacity-70 md:text-sm">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- local copy of the image being sent */}
+                    <img src={p.url} alt="Image being sent" className="my-1 block max-h-80 max-w-full rounded-lg object-contain" />
+                    {p.text}
+                  </div>
+                  <div className="mt-1 mr-1 flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
+                    <Spinner className="size-3" />
+                    Sending…
+                  </div>
+                </div>
+              ))}
             </>
           )}
         </div>
@@ -635,7 +699,41 @@ export function Conversation({
               </Button>
             </div>
           )}
-          <div className="flex items-end gap-2 rounded-2xl border bg-card py-1.5 pr-1.5 pl-3.5 shadow-xs transition-shadow focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+          {image && (
+            <div className="relative mb-2 w-fit">
+              {/* eslint-disable-next-line @next/next/no-img-element -- local preview of the image to send */}
+              <img src={image.url} alt="Image to send" className="block max-h-32 max-w-56 rounded-lg border object-contain" />
+              <Button variant="secondary" size="icon-xs" className="absolute -top-2 -right-2 rounded-full border shadow-xs" onClick={() => setImage(null)} aria-label="Remove image">
+                <XIcon />
+              </Button>
+            </div>
+          )}
+          <div className="flex items-end gap-1 rounded-2xl border bg-card py-1.5 pr-1.5 pl-1.5 shadow-xs transition-shadow focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 shrink-0 rounded-xl text-muted-foreground"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={stopped || !!reply || !!editMid}
+                  aria-label="Attach an image"
+                >
+                  <ImagePlusIcon />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Attach an image, or paste one in the box</TooltipContent>
+            </Tooltip>
+            <input
+              ref={fileRef}
+              type="file"
+              accept={IMAGE_ACCEPT}
+              hidden
+              onChange={(e) => {
+                pickImage(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
             <textarea
               ref={taRef}
               rows={1}
@@ -656,9 +754,21 @@ export function Conversation({
                 }
                 if (e.key === "Escape" && (reply || editMid)) cancelCompose();
               }}
+              onPaste={(e) => {
+                const f = [...e.clipboardData.files].find((x) => x.type.startsWith("image/"));
+                if (!f) return;
+                e.preventDefault();
+                pickImage(f);
+              }}
               className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-base leading-6 outline-none placeholder:text-muted-foreground md:text-sm"
             />
-            <Button size="icon" className="size-9 shrink-0 rounded-xl" onClick={() => void send()} disabled={stopped || !text.trim()} aria-label={editMid ? "Save edit" : "Send"}>
+            <Button
+              size="icon"
+              className="size-9 shrink-0 rounded-xl"
+              onClick={() => void send()}
+              disabled={stopped || (!text.trim() && !(image && !reply && !editMid))}
+              aria-label={editMid ? "Save edit" : "Send"}
+            >
               {editMid ? <CheckIcon /> : <SendHorizontalIcon />}
             </Button>
           </div>

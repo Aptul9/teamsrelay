@@ -2,6 +2,7 @@ import type { ReactionName } from "@/shared/slot-db/commands";
 import type { ReadBy } from "@/shared/slot-db/rows";
 import { errorText, log } from "../log";
 import { messageSelector, sleep, type TeamsPage } from "./page";
+import { composerImages, imageMessageSent, messageIds, pasteImage } from "./scripts/compose";
 import {
   composerText,
   deletedState,
@@ -15,7 +16,7 @@ import {
   readReceiptNames,
   undoButtonPoint,
 } from "./scripts/message-actions";
-import { ACTIONS, BAR_REACTIONS, PICKER_REACTIONS, SEL } from "./selectors";
+import { ACTIONS, BAR_REACTIONS, PICKER_REACTIONS, SEL, TEXTS } from "./selectors";
 
 // The actions on Teams. Each one checks on the page that Teams applied it and answers true only then.
 
@@ -44,6 +45,49 @@ export async function sendText(tp: TeamsPage, chat: string, text: string): Promi
   } catch (e) {
     log.warn("send", errorText(e), { chat });
     return false;
+  }
+}
+
+export type ImageFile = { name: string; type: string; data: Buffer };
+
+// The image goes in as a paste, then the caption, and Enter sends both, as a person does. Refused when Teams
+// shows another chat or the compose box holds a draft, which would go out with the image. True once Teams shows
+// the new message with the image as sent (upload included, 30 s at most).
+export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, caption: string): Promise<boolean> {
+  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return false;
+  const page = tp.page;
+  if ((await page.evaluate(composerText, SEL)).trim() || (await page.evaluate(composerImages, SEL))) {
+    log.warn("image", "compose box not empty", { chat });
+    return false;
+  }
+  const before = await page.evaluate(messageIds, SEL);
+  try {
+    if (!(await page.evaluate(pasteImage, { s: SEL, name: image.name, type: image.type, data: image.data.toString("base64") }))) {
+      throw new Error("the compose box did not take the image");
+    }
+    await page.waitForFunction(composerImages, SEL, { timeout: 5000 });
+    if (caption.trim()) await page.keyboard.insertText(caption);
+    await sleep(300);
+    await page.keyboard.press("Enter");
+  } catch (e) {
+    log.warn("image", errorText(e), { chat });
+    // what was pasted must not go out with the next message
+    await emptyComposer(tp);
+    return false;
+  }
+  if (await until(() => page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before }), 100, 300)) return true;
+  log.warn("image", "message did not appear on Teams", { chat });
+  return false;
+}
+
+async function emptyComposer(tp: TeamsPage) {
+  try {
+    // focus, not a click: the click could land on the image, which opens its menu
+    await tp.page.locator(SEL.editor).last().focus({ timeout: 2000 });
+    await tp.page.keyboard.press("Control+A");
+    await tp.page.keyboard.press("Delete");
+  } catch (e) {
+    log.warn("image", `compose box not emptied: ${errorText(e)}`);
   }
 }
 

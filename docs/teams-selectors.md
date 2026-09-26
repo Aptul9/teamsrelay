@@ -28,7 +28,7 @@ Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-
 | Author and picture | `[data-tid="message-author-name"]`, `[data-tid="message-avatar"]` in the container, only on the first of a series |
 | Mention | `[itemtype*="Mention"]` inside `[data-mention-type]`; `aria-label="Mentioned you"` when it is you |
 | Emoji | `img` with an Emoji `itemtype` or inside `[data-tid="emoticon-renderer"]`, the emoji is in `alt` |
-| Images | `itemtype` AMSImage, `data-tid="lazy-image-*"` |
+| Images | `itemtype` AMSImage, `data-tid="lazy-image-*"`; until Teams has loaded one it draws a 1x1 GIF and the address is in `data-orig-src` |
 | Attachments | `[data-tid="file-attachment-grid"]`, name and URL in `aria-label` |
 | Quote | `[data-tid="quoted-reply-card"]`, `[data-tid="quoted-reply-preview-content"]` |
 | Reactions | `[data-tid="diverse-reaction-pill-button"]`, `aria-pressed="true"` when it is yours |
@@ -49,6 +49,7 @@ Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-
 | Delete | `message-actions-delete` in the menu |
 | Read by | `message-actions-read-receipt` in the menu, names in the submenu |
 | Editor and send | `[data-tid="ckeditor"]`; send `sendMessageCommands-send` or `newMessageCommands-send` depending on the layout |
+| Image in the compose box | a `paste` event with the image file in `clipboardData`; the box then holds `<inlineimage>` and `img[data-tid="image-with-loader"]`; your new message shows `Sending...` until Teams has it |
 
 ## Activity
 

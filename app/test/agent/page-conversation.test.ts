@@ -89,7 +89,7 @@ describe("conversation page script", () => {
   });
 
   it("reads images and attachments", () => {
-    expect(rows["105"].images).toEqual([{ src: expect.stringContaining("data:image/svg+xml"), w: 300, h: 200 }]);
+    expect(rows["105"].images).toEqual([{ src: expect.stringContaining("data:image/svg+xml"), w: 300, h: 200, loaded: true }]);
     expect(rows["105"].files).toEqual([{ name: "Q3 report.pdf", url: "https://contoso.sharepoint.com/sites/ops/Q3%20report.pdf" }]);
     expect(rows["105"].author).toBe("Anna Rossi");
   });

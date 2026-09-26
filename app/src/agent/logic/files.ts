@@ -10,6 +10,10 @@ export const MEDIA_EXT: Record<string, string> = { "image/png": "png", "image/jp
 // Image number `index` of message `mid`, without the extension (it comes from the content type)
 export const imageKey = (chat: string, mid: string, index: number) => sha16(`${chat}|${mid}|${index}`);
 
+// The 1x1 GIF Teams draws while it loads an image. Earlier releases saved it in place of the image.
+export const isPlaceholderImage = (data: Buffer) =>
+  data.length >= 10 && data.subarray(0, 4).toString("latin1") === "GIF8" && data.readUInt16LE(6) <= 1 && data.readUInt16LE(8) <= 1;
+
 export const avatarFile = (src: string) => `${sha16(src)}.png`;
 
 export function downloadFile(url: string, name: string): string {

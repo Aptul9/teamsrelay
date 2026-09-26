@@ -58,6 +58,8 @@ export const SEL = {
   mentionType: /Mention/i,
   imageType: /AMSImage/i,
   lazyImage: /^lazy-image/,
+  // a message image shows a 1x1 placeholder until Teams has loaded it; its address is in this attribute
+  lazyImageSource: "data-orig-src",
   // parts of a message body left out of its text: quote, attachments, reactions, action bar
   bodySkip: '[data-tid="quoted-reply-card"],[data-tid="file-attachment-grid"],[data-tid*="reaction"],[data-tid^="message-actions"]',
 
@@ -127,6 +129,8 @@ export const TEXTS = {
   authorLabel: /^([^,]+),/,
   edited: /^(Edited|Modificato)$/i,
   mentionedYou: "Mentioned you",
+  // status of your message until Teams has it, then "Sent"
+  sending: /^Sending/i,
 
   // session expired or Teams syncing in reduced mode
   sessionLost:

@@ -2,7 +2,9 @@
 import type { Reaction } from "@/shared/slot-db/rows";
 import type { Selectors, Texts } from "../selectors";
 
-export type PageImage = { src: string; w: number; h: number };
+// loaded: drawn in the page, src is what it shows; otherwise src is the address Teams will load it from and the
+// size is not known yet (0)
+export type PageImage = { src: string; w: number; h: number; loaded: boolean };
 export type PageMessage = {
   mid: string;
   author: string;
@@ -107,7 +109,13 @@ export function readMessages({ s, t }: { s: Selectors; t: Texts }): PageMessage[
           !i.closest(s.anyAvatar) &&
           (s.imageType.test(i.getAttribute("itemtype") || "") || s.lazyImage.test(i.getAttribute("data-tid") || "") || i.naturalWidth > 64),
       )
-      .map((i) => ({ src: i.currentSrc || i.src || "", w: i.naturalWidth, h: i.naturalHeight }));
+      // Teams draws a 1x1 placeholder until it has loaded the image: meanwhile its address is in an attribute
+      .map((i): PageImage =>
+        i.complete && i.naturalWidth > 1
+          ? { src: i.currentSrc || i.src || "", w: i.naturalWidth, h: i.naturalHeight, loaded: true }
+          : { src: i.getAttribute(s.lazyImageSource) || "", w: 0, h: 0, loaded: false },
+      )
+      .filter((i) => i.src);
     const files: PageMessage["files"] = [];
     for (const grid of e.querySelectorAll(s.files)) {
       for (const x of grid.querySelectorAll(s.fileEntry)) {
