@@ -12,6 +12,7 @@ import webpush from "web-push";
 export type Received = {
   payload: unknown;
   ttl: string | undefined;
+  urgency: string | undefined;
   vapid: { aud: string; sub: string; exp: number; k: string } | null;
 };
 
@@ -63,7 +64,7 @@ export async function fakePushService() {
     } catch (e) {
       payload = { error: String(e) };
     }
-    received.push({ payload, ttl: req.headers.ttl as string | undefined, vapid: vapid(req.headers.authorization) });
+    received.push({ payload, ttl: req.headers.ttl as string | undefined, urgency: req.headers.urgency as string | undefined, vapid: vapid(req.headers.authorization) });
     res.writeHead(answer).end();
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

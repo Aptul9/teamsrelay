@@ -34,13 +34,14 @@ export class Notifier {
   }
 
   // About the relay itself (Teams signed out, check outcome): push and ntfy, no history
-  async alert(title: string, body: string): Promise<number> {
+  async alert(title: string, body: string, urgency: webpush.Urgency = "high"): Promise<number> {
     await this.ntfy(title, body);
-    return this.push(title, body);
+    return this.push(title, body, "", urgency);
   }
 
-  // Push to every device; subscriptions the push service reports as gone are removed
-  async push(title: string, body: string, chat = ""): Promise<number> {
+  // Push to every device; subscriptions the push service reports as gone are removed. Urgency high: a phone on low
+  // battery asks its push service for high only (RFC 8030 section 5.3), and web-push sends normal unless told.
+  async push(title: string, body: string, chat = "", urgency: webpush.Urgency = "high"): Promise<number> {
     const { vapid, store } = this.o;
     if (!vapid) return 0;
     const targets = store.pushSubscriptions();
@@ -53,6 +54,7 @@ export class Notifier {
         await send(JSON.parse(t.sub) as webpush.PushSubscription, payload, {
           vapidDetails: { subject: this.o.subject, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
           TTL: PUSH_TTL,
+          urgency,
           timeout: 15_000,
         });
         sent++;
