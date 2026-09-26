@@ -1,6 +1,6 @@
 import { appDb, slotOwner } from "@/lib/appdb";
 import { config } from "@/lib/config";
-import { dockerClient } from "@/lib/docker";
+import { controlClient } from "@/lib/control";
 import { body, HttpError, route } from "@/lib/http";
 import { requireUser } from "@/lib/session";
 import { removeAccount, setAccountRunning } from "@/lib/slots";
@@ -22,13 +22,13 @@ export const PATCH = route<Ctx>(async (req, { params }) => {
   const n = await accountOf(req, params);
   const { running } = await body(req);
   if (typeof running !== "boolean") throw new HttpError(400, "running must be true or false");
-  await setAccountRunning(n, running, dockerClient(), appDb());
+  await setAccountRunning(n, running, controlClient(), appDb());
   return Response.json({ ok: true, running });
 });
 
 // Like "Sign out" in Teams: stops the slot and deletes its Microsoft session and data.
 export const DELETE = route<Ctx>(async (req, { params }) => {
   const n = await accountOf(req, params);
-  await removeAccount(n, dockerClient(), { db: appDb(), dataDir: config.dataDir, wipeDir: config.wipeDir });
+  await removeAccount(n, controlClient(), { db: appDb(), dataDir: config.dataDir });
   return Response.json({ ok: true });
 });
