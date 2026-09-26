@@ -316,7 +316,7 @@ export function Conversation({
 
   // An @ right before the cursor opens the list of people, in a new message only
   function watchMention(el: HTMLTextAreaElement) {
-    const q = !reply && !editMid && !stopped ? mentionQuery(el.value, el.selectionStart ?? el.value.length) : null;
+    const q = !reply && !editMid && !stopped ? mentionQuery(el.value, el.selectionStart ?? el.value.length, mentions) : null;
     if (q?.query !== picker?.query || q?.start !== picker?.start) setPickIndex(0);
     setPicker(q);
     if (q) void loadMembers();

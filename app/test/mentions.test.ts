@@ -11,6 +11,12 @@ describe("@ in the compose box", () => {
     expect(mentionQuery("hi @lu and more", 6)).toEqual({ start: 3, query: "lu" });
   });
 
+  it("stays closed after a person already tagged, with the text that follows", () => {
+    expect(mentionQuery("hi @BIANCHI Luca ", 17, ["BIANCHI Luca"])).toBeNull();
+    expect(mentionQuery("hi @BIANCHI Luca see", 20, ["BIANCHI Luca"])).toBeNull();
+    expect(mentionQuery("hi @BIANCHI Luca ", 17, ["ROSSI Anna"])).toEqual({ start: 3, query: "BIANCHI Luca " });
+  });
+
   it("stays closed in an address, after a new line or a long query", () => {
     expect(mentionQuery("mail anna@contoso.example", 25)).toBeNull();
     expect(mentionQuery("hi @lu\nx", 8)).toBeNull();

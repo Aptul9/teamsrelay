@@ -3,13 +3,15 @@ import type { MentionPart } from "@/shared/slot-db/commands";
 // @ in the compose box of the app. Runs in the browser and in the web app: no Node imports.
 
 // The @ being typed right before the cursor: at the start of the text or after a space, at most 40 characters
-// and 4 words, on one line. null when there is none (an address such as anna@contoso.example is not one).
-export function mentionQuery(text: string, caret: number): { start: number; query: string } | null {
+// and 4 words, on one line. null when there is none (an address such as anna@contoso.example is not one) or
+// when it is a person already tagged followed by more text.
+export function mentionQuery(text: string, caret: number, tagged: readonly string[] = []): { start: number; query: string } | null {
   const before = text.slice(0, caret);
   const start = before.lastIndexOf("@");
   if (start < 0 || (start > 0 && !/\s/.test(before[start - 1]))) return null;
   const query = before.slice(start + 1);
   if (query.length > 40 || /[\n@]/.test(query) || (query.match(/ /g)?.length ?? 0) > 3) return null;
+  if (tagged.some((n) => query.startsWith(`${n} `))) return null;
   return { start, query };
 }
 
