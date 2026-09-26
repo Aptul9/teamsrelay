@@ -100,15 +100,17 @@ Stop everything with `docker compose -f docker-compose.yml -f compose.local.yml 
 
 ### Profiles of an earlier local stack
 
-Local stacks of earlier releases kept one volume per account: `tr_config` for account 1, `tr_config_N` for account N. Copied into `tr_profiles` with the browsers stopped, the accounts stay signed in. One `-v` per account that has a profile; the old volumes are mounted read only and stay as they are:
+Local stacks of earlier releases kept one volume per account: `tr_config` for account 1, `tr_config_N` for account N. Copied into `tr_profiles` before the first `up` with this overlay, the accounts stay signed in; an account started before the copy already has a new, signed-out profile there. Volume names start with the Compose project, the name of the checkout directory (`teamsrelay` below): `docker volume ls -q --filter name=tr_config` lists the old ones.
+
+One `-v` per old volume, mounted read only; they stay as they are. The copy stops at an account that already has a directory in `tr_profiles` (`File exists`): with the browsers stopped, delete that directory and copy again.
 
 ```bash
 docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml stop browsers
 docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml up --no-start browsers
 docker run --rm --network none --entrypoint sh \
   -v teamsrelay_tr_config:/old/1:ro -v teamsrelay_tr_config_2:/old/2:ro -v teamsrelay_tr_profiles:/profiles \
-  teamsrelay -c 'for d in /old/*; do mkdir /profiles/${d##*/} && cp -a $d/. /profiles/${d##*/}/; done'
+  teamsrelay -c 'for d in /old/*; do mkdir /profiles/${d##*/} && cp -a $d/. /profiles/${d##*/}/ || exit 1; done'
 docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml up -d
 ```
 
-Once the accounts are green again: `docker volume rm teamsrelay_tr_config teamsrelay_tr_config_2 teamsrelay_tr_config_3 teamsrelay_tr_config_4`.
+Once the accounts are green again, delete the old volumes mounted above: `docker volume rm teamsrelay_tr_config teamsrelay_tr_config_2`.
