@@ -3,6 +3,6 @@ import { route } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
 
 export const GET = route(async (req) => {
-  const { user, slot, added } = await requireSlot(req);
-  return Response.json(healthFor(user.id, slot, added));
+  const { user, slot } = await requireSlot(req);
+  return Response.json(healthFor(user.id, slot));
 });
