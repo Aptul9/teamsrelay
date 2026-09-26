@@ -1,6 +1,6 @@
 # Android client: Tauri app with Firebase push
 
-Status: proposed 2026-09-26, not scheduled. Web Push stays for browsers and the installed PWA; this app adds a second kind of device.
+Status: app shell built 2026-09-27 ([mobile/README.md](../../mobile/README.md)): start page, remote web app, debug APK in CI; push not built. Web Push stays for browsers and the installed PWA; this app adds a second kind of device. Android WebView has no Push API, so inside the app the web page gets no notifications until the plugin below exists.
 
 ## Goal
 
@@ -51,7 +51,7 @@ The relay sends one FCM message per device and notification. FCM `data` values a
 
 ## Registration
 
-1. First start: a page bundled in the app asks for the relay address and stores it through a plugin command (bundled code, trusted IPC), then the window navigates to the relay.
+1. First start: a page bundled in the app asks for the relay address and keeps it, then the window navigates to the relay. The shell keeps it in `localStorage` of the bundled page; the plugin will need it natively, through a plugin command (bundled code, trusted IPC).
 2. The user signs in to the web app in the window, as in a browser.
 3. After each page load on the relay origin with a session cookie, and when Firebase hands a new token (`onNewToken`), the plugin posts `POST /api/push/fcm` `{token}` with the cookie. Newer Firebase SDKs describe Firebase Installation IDs delivered by `onRegistered()`: follow the Firebase docs current at build time.
 4. The relay stores the device for the session user and answers `{key}`: 32 random bytes, base64url, generated per device. The plugin keeps it in storage protected by the Android Keystore.
