@@ -1,5 +1,7 @@
 // Browser-side helpers of the PWA: API calls, command follow-up, formatting.
 
+import type { ActivityItem } from "@/shared/slot-db/rows";
+
 export type Account = {
   slot: number;
   name: string;
@@ -11,48 +13,8 @@ export type Account = {
   unread: number;
   desktop: string;
 };
-export type Chat = { name: string; preview: string; tm: string; unread: number; mention: number; muted: number; av: string };
-export type Reaction = { e: string; n: number; mine: boolean };
-export type Message = {
-  mid: string;
-  author: string;
-  text: string;
-  mine: number;
-  reacts: string;
-  html?: string;
-  quote?: { author: string; text: string };
-  images?: { f?: string; url?: string; w?: number; h?: number }[];
-  files?: { name: string; url: string }[];
-  reactions?: Reaction[];
-  status?: string;
-  readby?: { label: string; names: string[] };
-  edited?: boolean;
-  deleted?: boolean;
-  mentionsMe?: boolean;
-  av?: string;
-};
-export type ActivityItem = {
-  id: string;
-  kind: string;
-  actor: string;
-  title: string;
-  emoji: string;
-  preview: string;
-  tm: string;
-  chat: string;
-  channel: number;
-  unread: number;
-  av: string;
-};
-export type Health = {
-  agent?: string;
-  teams?: string;
-  watcher?: string;
-  overall?: string;
-  last_msg_ts?: number;
-  push_subs?: number;
-  presence?: string;
-};
+export type { ActivityItem, Chat, Message, Reaction } from "@/shared/slot-db/rows";
+export type { SlotHealth as Health } from "@/shared/slot-db/state";
 export type CommandResult = { status: string; result: { f?: string } | null };
 
 export class ApiError extends Error {

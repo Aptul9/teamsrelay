@@ -1,7 +1,8 @@
 // Fills data/<slot>/messages.db with sample chats, messages and activity, to work on the web app
-// without a signed-in Teams. Same schema the agent creates (agent/agent.py, db_init).
+// without a signed-in Teams. Same schema the agent creates (src/shared/slot-db/schema.ts, checked by
+// test/slot-schema.test.ts).
 //   node scripts/seed-slot.mjs <data dir> <slot>
-// Local stack: docker compose cp webapp/scripts/seed-slot.mjs webapp:/app/seed-slot.mjs
+// Local stack: docker compose cp app/scripts/seed-slot.mjs webapp:/app/seed-slot.mjs
 //              docker compose exec webapp node /app/seed-slot.mjs /data 1
 import { createRequire } from "node:module";
 import fs from "node:fs";

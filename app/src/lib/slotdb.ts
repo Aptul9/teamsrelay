@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import type { CommandType } from "@/shared/slot-db/commands";
+import type { ActivityItem, Chat, Message, MessageExtra } from "@/shared/slot-db/rows";
+import { cmdResultKey, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
 
 // data/N/messages.db is created and written by the agent of slot N; the web app reads it and
@@ -12,10 +15,7 @@ export class SlotNotReady extends Error {
   }
 }
 
-export type Chat = { name: string; preview: string; tm: string; unread: number; mention: number; muted: number; av: string };
-export type Message = { mid: string; author: string; text: string; mine: number; reacts: string } & Record<string, unknown>;
-export type ActivityItem = Record<string, unknown>;
-export type Health = Record<string, unknown> & { agent?: string; teams?: string; overall?: string; ts?: number };
+export type Health = SlotHealth;
 export type CommandStatus = { status: string; result: unknown };
 
 export function slotDbPath(slot: number): string {
@@ -79,13 +79,13 @@ export class SlotReader {
     return this.all<Message & { extra: string }>(
       "SELECT mid, author, text, mine, reacts, extra FROM chat_messages WHERE chat=? ORDER BY idx",
       chat,
-    ).map(({ extra, ...m }) => ({ ...m, ...parse<Record<string, unknown>>(extra, {}) }));
+    ).map(({ extra, ...m }) => ({ ...m, ...parse<MessageExtra>(extra, {}) }));
   }
 
   activity(): { ts: number; items: ActivityItem[] } {
     return {
-      ts: Number(this.state("activity_ts", 0)) || 0,
-      items: this.all("SELECT id, kind, actor, title, emoji, preview, tm, chat, channel, unread, av FROM activity ORDER BY pos"),
+      ts: Number(this.state(STATE.activityTs, 0)) || 0,
+      items: this.all<ActivityItem>("SELECT id, kind, actor, title, emoji, preview, tm, chat, channel, unread, av FROM activity ORDER BY pos"),
     };
   }
 
@@ -94,7 +94,7 @@ export class SlotReader {
   }
 
   identity(): { name?: string; email?: string; tenant?: string; av?: string } {
-    return this.state("me", {});
+    return this.state(STATE.me, {});
   }
 
   unreadCount(): number {
@@ -105,16 +105,16 @@ export class SlotReader {
   }
 
   health(added: number): Health {
-    return healthOf(this.state("health", {}), added);
+    return healthOf(this.state(STATE.health, {}), added);
   }
 
   commandStatus(id: number): CommandStatus | null {
     const r = this.all<{ status: string }>("SELECT status FROM commands WHERE id=?", id)[0];
     if (!r) return null;
-    return { status: r.status, result: this.state<unknown>(`cmd_result:${id}`, null) };
+    return { status: r.status, result: this.state<unknown>(cmdResultKey(id), null) };
   }
 
-  enqueue(type: string, arg1 = "", arg2 = ""): number {
+  enqueue(type: CommandType, arg1 = "", arg2 = ""): number {
     const r = this.db
       .prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?,?,?,?)")
       .run(Math.floor(Date.now() / 1000), type, arg1, arg2);
@@ -122,11 +122,11 @@ export class SlotReader {
   }
 
   // The app shows this chat now. Teams keeps a visible page, which reads what is open: without a recent mark
-  // the agent goes back to the self chat (wanted_chat in agent/agent.py).
+  // the agent goes back to the self chat (wantedChat in src/agent/logic/parking.ts).
   markViewing(chat: string) {
     this.db
-      .prepare("INSERT OR REPLACE INTO state(k, v) VALUES('viewing', ?)")
-      .run(JSON.stringify({ chat, ts: Math.floor(Date.now() / 1000) }));
+      .prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)")
+      .run(STATE.viewing, JSON.stringify({ chat, ts: Math.floor(Date.now() / 1000) }));
   }
 }
 

@@ -1,8 +1,9 @@
+import { REACTIONS as REACTION_NAMES, type CommandType } from "@/shared/slot-db/commands";
 import { HttpError } from "./http";
 import { withSlot } from "./slotdb";
 
 // Commands are rows in data/N/messages.db; the agent of slot N runs them on the Teams page.
-export function queue(slot: number, type: string, arg1 = "", arg2 = ""): number {
+export function queue(slot: number, type: CommandType, arg1 = "", arg2 = ""): number {
   return withSlot(slot, (r) => r.enqueue(type, arg1, arg2));
 }
 
@@ -22,4 +23,4 @@ export function messageText(v: unknown): string {
   return v;
 }
 
-export const REACTIONS = new Set(["like", "heart", "laugh", "surprised", "cry", "angry"]);
+export const REACTIONS = new Set<string>(REACTION_NAMES);

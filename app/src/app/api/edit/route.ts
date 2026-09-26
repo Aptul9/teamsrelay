@@ -1,11 +1,12 @@
 import { chatName, messageId, messageText, queue } from "@/lib/commands";
 import { body, route } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
+import type { TextArgs } from "@/shared/slot-db/commands";
 
 // Own messages only: Teams shows the edit button on those alone
 export const POST = route(async (req) => {
   const { slot } = await requireSlot(req);
   const b = await body(req);
-  const args = JSON.stringify({ mid: messageId(b.mid), text: messageText(b.text) });
+  const args = JSON.stringify({ mid: messageId(b.mid), text: messageText(b.text) } satisfies TextArgs);
   return Response.json({ ok: true, id: queue(slot, "edit", chatName(b.name), args) });
 });
