@@ -20,17 +20,25 @@ HEALTHTAG  = "__HEALTHCHECK__"
 MEDIA_DIR  = os.path.join(os.path.dirname(DB_PATH), "media")
 MEDIA_EXT  = {"image/png":"png","image/jpeg":"jpg","image/gif":"gif","image/webp":"webp"}
 
+# Teams keeps the user Available only while its page is visible, focused and in use: the page says so from the
+# first script on (add_init_script), and keep_active() moves the mouse every minute. A visible page also marks as
+# read what arrives in the open chat, so the agent keeps open only the chat the app shows (wanted_chat).
+VISIBLE_JS = r"""
+(() => {
+  if (window.__teamsVisible) return 'already';
+  try {
+    Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => 'visible'});
+    Object.defineProperty(document, 'hidden', {configurable: true, get: () => false});
+    document.hasFocus = () => true;
+    window.__teamsVisible = true;
+    window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange'));
+    return 'installed';
+  } catch (e) { return 'failed'; }
+})()
+"""
+
 HOOK_JS = r"""
 () => {
-  if (!window.__visPatched) {
-    try {
-      Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>'hidden'});
-      Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
-      try{document.hasFocus=()=>false;}catch(e){}
-      window.dispatchEvent(new Event('blur')); document.dispatchEvent(new Event('visibilitychange'));
-      window.__visPatched=true;
-    } catch(e){}
-  }
   if (!window.__teamsHookInstalled) {
     window.__teamsMsgs = window.__teamsMsgs || [];
     const push=(t,b)=>{try{window.__teamsMsgs.push({title:String(t||''),body:String(b||'')});}catch(e){}};
@@ -419,6 +427,10 @@ def last_msg_ts():
             r=c.execute("SELECT ts FROM messages ORDER BY id DESC LIMIT 1").fetchone(); return r[0] if r else 0
     except Exception: return 0
 
+# Own status as the Teams header shows it: available, away, busy, do not disturb, be right back, offline...
+PRESENCE_JS = r"""() => { const b = document.querySelector('[data-tid="me-control-avatar-presence"]');
+  return b ? (b.getAttribute('aria-label') || '').trim().toLowerCase() : ''; }"""
+
 def update_health(page):
     h={"cdp":"ok","ts":int(time.time())}
     try:
@@ -429,6 +441,11 @@ def update_health(page):
         h["teams"] = "login" if (loggedout or reduced) else ("ok" if dom_ok else "loading")
         h["reduced"] = bool(reduced)
         h["hook"] = "ok" if page.evaluate("() => !!window.__teamsHookInstalled") else "no"
+        if is_teams(page):
+            h["presence"] = page.evaluate(PRESENCE_JS)
+            if h["presence"] and h["presence"] != get_state("presence_prev"):
+                print("presence:", get_state("presence_prev") or "-", "->", h["presence"], flush=True)
+                set_state("presence_prev", h["presence"])
     except Exception as e:
         h["teams"]="err"; h["hook"]="no"; print("health:",e,flush=True)
     h["push_subs"]=push_count(); h["last_msg_ts"]=last_msg_ts()
@@ -565,6 +582,41 @@ def open_chat(page, name):
     except Exception: pass
     time.sleep(0.4)
     return True
+
+PARK_AFTER = 90       # seconds without the app showing a chat before Teams goes back to the self chat
+ACTIVE_EVERY = 60     # seconds between two inputs on the Teams page
+
+def self_chat():
+    """The chat with yourself ("Name (You)"): the visible page can read nothing there on the user's behalf."""
+    try:
+        with dbc() as c:
+            r = c.execute("SELECT name FROM chats WHERE name LIKE '%(You)%' ORDER BY pos LIMIT 1").fetchone()
+            return r[0] if r else ""
+    except Exception: return ""
+
+def wanted_chat(active, viewing, now, own):
+    """Chat Teams must show: the one in use in the app while the app shows it (`viewing`, refreshed by the web app
+    and by every command), otherwise the self chat. Without a self chat the open chat stays."""
+    try: v = json.loads(viewing or "{}")
+    except Exception: v = {}
+    ts = v.get("ts") if isinstance(v, dict) else 0
+    if active and now - (ts if isinstance(ts, (int, float)) else 0) < PARK_AFTER: return active
+    return own or active
+
+def mark_viewing(chat):
+    set_state("viewing", json.dumps({"chat": chat, "ts": int(time.time())}, ensure_ascii=False))
+
+_visible_pages = set()
+_last_input = 0.0
+def keep_active(page):
+    """Real input through CDP, like a person at the desk: Teams keeps its endpoint active and the user Available."""
+    global _last_input
+    if time.time() - _last_input < ACTIVE_EVERY: return
+    _last_input = time.time()
+    try:
+        page.mouse.move(6, 6); page.mouse.move(2, 2)
+        page.keyboard.press("Shift")
+    except Exception as e: print("active:", str(e).splitlines()[0][:120], flush=True)
 
 MEDIA_FAILED = set()
 
@@ -969,7 +1021,8 @@ def read_activity(page):
         try:
             page.locator('button[aria-label^="Chat"]:visible').first.click(timeout=4000)
             page.locator('[role="treeitem"][aria-level="2"]').first.wait_for(timeout=8000)
-            if active: open_chat(page, active)
+            want = wanted_chat(active, get_state("viewing"), time.time(), self_chat())
+            if want: open_chat(page, want)
         except Exception as e: print("activity back:", str(e).splitlines()[0][:120], flush=True)
     if not items: return None
     try:
@@ -1053,10 +1106,18 @@ def main():
                 if not is_teams(page):
                     if tick % 5 == 0: update_health(page)
                     tick+=1; time.sleep(1); continue
-                # dopo un reload Teams riparte senza chat aperta: si riapre quella in uso nella web app
-                ac0 = get_state("active_chat")
-                if ac0 and not page.evaluate(OPEN_CHAT_JS): open_chat(page, ac0)
+                if page not in _visible_pages:
+                    try: page.add_init_script(VISIBLE_JS)
+                    except Exception as e: print("init script:", str(e).splitlines()[0][:120], flush=True)
+                    _visible_pages.add(page)
+                if page.evaluate(VISIBLE_JS)=="installed": print("page visible", flush=True)
                 if page.evaluate(HOOK_JS)=="installed": print("hook ok", flush=True)
+                keep_active(page)
+                # the visible page reads what is open: Teams shows the chat in use in the app, otherwise the self
+                # chat. After a reload Teams reopens a chat of its own choosing, put right here as well.
+                want = wanted_chat(get_state("active_chat"), get_state("viewing"), time.time(), self_chat())
+                if tick % 5 == 2 and want and not pending_commands() and not same_chat(page.evaluate(OPEN_CHAT_JS), want):
+                    print("show:", want, flush=True); open_chat(page, want)
                 for m in page.evaluate(DRAIN_JS):
                     t,b=m.get("title",""),m.get("body","")
                     if t==HEALTHTAG: continue
@@ -1066,9 +1127,10 @@ def main():
                 for cid,ctype,a1,a2 in pending_commands():
                     print("CMD",ctype,a1,flush=True)
                     if ctype=="open":
+                        mark_viewing(a1)
                         if open_chat(page,a1): set_state("active_chat",a1); save_open_chat(page, a1)
                     elif ctype=="send":
-                        do_send(page,a1,a2); set_state("active_chat",a1); save_open_chat(page, a1)
+                        mark_viewing(a1); do_send(page,a1,a2); set_state("active_chat",a1); save_open_chat(page, a1)
                     elif ctype=="resync":
                         try: save_chats(page.evaluate(CHATS_JS))
                         except Exception: pass
@@ -1093,7 +1155,7 @@ def main():
                         elif ctype=="delete": ok=delete_message(page,a1,args.get("mid",""))
                         else: ok=undo_delete(page,a1,args.get("mid",""))
                         # prima si salva il nuovo stato, poi si conferma: la web app rilegge appena vede "done"
-                        set_state("active_chat",a1); save_open_chat(page, a1)
+                        mark_viewing(a1); set_state("active_chat",a1); save_open_chat(page, a1)
                         set_cmd_result(cid, "done" if ok else "failed")
                     elif ctype in ("react","edit"):
                         # arg1 = chat, arg2 = JSON {mid, emoji|text}
@@ -1103,7 +1165,7 @@ def main():
                         elif ctype=="react": ok=react_message(page,a1,args.get("mid",""),args.get("emoji",""))
                         else: ok=edit_message(page,a1,args.get("mid",""),args.get("text",""))
                         # prima si salva il nuovo stato, poi si conferma: la web app rilegge appena vede "done"
-                        set_state("active_chat",a1); save_open_chat(page, a1)
+                        mark_viewing(a1); set_state("active_chat",a1); save_open_chat(page, a1)
                         set_cmd_result(cid, "done" if ok else "failed")
                     if ctype not in ("react","edit","download","activity","reply","delete","undodelete"): done_command(cid)
                     # i comandi possono durare secondi: la lista chat non deve restare ferma nel frattempo
@@ -1119,7 +1181,7 @@ def main():
                     update_health(page)
                 ac=get_state("active_chat")
                 if ac: save_open_chat(page, ac)
-                if ac and teams_ok and tick % 2 == 0 and not pending_commands(): prefetch_readby(page, ac)
+                if ac and ac == want and teams_ok and tick % 2 == 0 and not pending_commands(): prefetch_readby(page, ac)
                 # check programmato 2x/giorno
                 slot=selfcheck_slot()
                 if slot:

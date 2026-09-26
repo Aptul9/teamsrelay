@@ -120,6 +120,14 @@ export class SlotReader {
       .run(Math.floor(Date.now() / 1000), type, arg1, arg2);
     return Number(r.lastInsertRowid);
   }
+
+  // The app shows this chat now. Teams keeps a visible page, which reads what is open: without a recent mark
+  // the agent goes back to the self chat (wanted_chat in agent/agent.py).
+  markViewing(chat: string) {
+    this.db
+      .prepare("INSERT OR REPLACE INTO state(k, v) VALUES('viewing', ?)")
+      .run(JSON.stringify({ chat, ts: Math.floor(Date.now() / 1000) }));
+  }
 }
 
 // The agent rewrites its health every ~5 s. Older than a minute, it no longer describes reality.

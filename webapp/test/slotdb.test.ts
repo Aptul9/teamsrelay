@@ -13,6 +13,17 @@ beforeEach(() => {
 });
 
 describe("SlotReader", () => {
+  it("marks the chat on screen for the agent, with the time", () => {
+    const r = SlotReader.open(file);
+    const before = Math.floor(Date.now() / 1000);
+    r.markViewing("Anna Rossi");
+    r.markViewing("Luca Bianchi");
+    const v = JSON.parse(raw.prepare("SELECT v FROM state WHERE k='viewing'").pluck().get() as string);
+    expect(v.chat).toBe("Luca Bianchi");
+    expect(v.ts).toBeGreaterThanOrEqual(before);
+    r.close();
+  });
+
   it("refuses a slot whose agent has not created the database yet", () => {
     expect(() => SlotReader.open(path.join(tempDir(), "9", "messages.db"))).toThrow(SlotNotReady);
   });

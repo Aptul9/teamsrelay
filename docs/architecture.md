@@ -48,6 +48,8 @@ The conversation is saved before the command is marked as done: when the web app
 
 Each open app keeps one server-sent events stream, `/api/events?a=N&chat=<open chat>`. Every second the web app reads health, chat list, activity and the open conversation of slot N (the account list every 5 s) and sends an event only for the parts whose content changed. Command outcomes are polled on `/api/cmd/{id}` while an action is pending.
 
+The app names the open chat only while it is on screen. For such a stream the web app writes `viewing` (`{chat, ts}`) in the `state` table every 10 s, and the agent writes it on every command about a chat. The Teams page counts as visible and in use (presence stays Available), so it marks as read what arrives in the open chat: the agent keeps the chat of the app open while `viewing` is less than 90 s old, and otherwise shows the self chat (`wanted_chat` in `agent/agent.py`).
+
 The stream checks the session again every 60 s: a revoked session or a removed account ends it.
 
 ## Agent loop
@@ -101,7 +103,7 @@ A message is new when the preview or the time of a chat changes with an incoming
 | `activity` | Activity feed |
 | `commands` | commands queued by the web app, with outcome |
 | `messages` | history of the notifications sent |
-| `state` | health, active chat, identity (name, email, tenant, picture), command results |
+| `state` | health (with your Teams status), active chat, chat on screen in the app (`viewing`), identity (name, email, tenant, picture), command results |
 
 `data/app.db`, shared:
 

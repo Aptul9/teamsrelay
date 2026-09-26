@@ -14,6 +14,7 @@ Everything the agent knows about Teams web is in `agent/agent.py`. When Microsof
 | Picture | `img.fui-Avatar__image` |
 | Open chat | `[data-tid="chat-title"]` |
 | Activity / Chat view | side bar buttons whose `aria-label` starts with `Activity` / `Chat` |
+| Your status | `aria-label` of `[data-tid="me-control-avatar-presence"]` in the header: `available`, `away`, `busy`... |
 
 ## Messages
 

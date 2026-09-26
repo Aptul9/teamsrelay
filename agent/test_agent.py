@@ -1,4 +1,4 @@
-import os, sqlite3, tempfile, unittest
+import json, os, sqlite3, tempfile, time, unittest
 
 TMP = tempfile.mkdtemp(prefix="teamsrelay-agent-test-")
 os.environ["DB_PATH"] = os.path.join(TMP, "1", "messages.db")
@@ -80,6 +80,41 @@ class TeamsTab(unittest.TestCase):
     def test_login_tab_while_signing_in(self):
         ctx = Context("chrome://newtab/", "https://login.microsoftonline.com/common/oauth2/authorize")
         self.assertEqual(agent.teams_page(ctx).url, "https://login.microsoftonline.com/common/oauth2/authorize")
+
+
+class Parking(unittest.TestCase):
+    """The Teams page counts as seen by the user: while the app shows no chat, Teams stays on the self chat."""
+
+    SELF = "Mario Rossi (You)"
+
+    @classmethod
+    def setUpClass(cls):
+        agent.db_init()
+
+    def viewing(self, chat, age):
+        return json.dumps({"chat": chat, "ts": int(time.time()) - age})
+
+    def test_chat_on_screen_in_the_app(self):
+        self.assertEqual(agent.wanted_chat("Anna Verdi", self.viewing("Anna Verdi", 10), time.time(), self.SELF), "Anna Verdi")
+
+    def test_nobody_looking_for_a_while(self):
+        self.assertEqual(agent.wanted_chat("Anna Verdi", self.viewing("Anna Verdi", agent.PARK_AFTER + 5), time.time(), self.SELF), self.SELF)
+
+    def test_never_looked_at(self):
+        self.assertEqual(agent.wanted_chat("Anna Verdi", "", time.time(), self.SELF), self.SELF)
+        self.assertEqual(agent.wanted_chat("Anna Verdi", "{", time.time(), self.SELF), self.SELF)
+
+    def test_no_chat_opened_yet(self):
+        self.assertEqual(agent.wanted_chat("", "", time.time(), self.SELF), self.SELF)
+
+    def test_without_a_self_chat_the_open_one_stays(self):
+        self.assertEqual(agent.wanted_chat("Anna Verdi", "", time.time(), ""), "Anna Verdi")
+
+    def test_self_chat_found_in_the_list(self):
+        set_chats("Anna Verdi", self.SELF, "Luca Bianchi")
+        self.assertEqual(agent.self_chat(), self.SELF)
+        set_chats("Anna Verdi")
+        self.assertEqual(agent.self_chat(), "")
 
 
 class OwnerPush(unittest.TestCase):

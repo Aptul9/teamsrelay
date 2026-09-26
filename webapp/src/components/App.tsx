@@ -52,6 +52,14 @@ type User = { name: string; email: string; role: string };
 const noSubscribe = () => () => {};
 const isPcNow = () => window.matchMedia("(hover:hover) and (pointer:fine)").matches && !("ontouchstart" in window);
 
+// The event stream names the open chat only while the app is on screen: a background tab or a phone in the
+// pocket no longer counts as reading it, and the agent takes Teams back to the self chat
+const onVisibility = (cb: () => void) => {
+  document.addEventListener("visibilitychange", cb);
+  return () => document.removeEventListener("visibilitychange", cb);
+};
+const visibleNow = () => document.visibilityState === "visible";
+
 function CountBadge({ n }: { n: number }) {
   if (!n) return null;
   return <span className="ml-1 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-primary px-1 text-[0.6875rem] font-semibold text-primary-foreground tabular-nums">{n > 99 ? "99+" : n}</span>;
@@ -75,6 +83,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<Account | null>(null);
   const isPc = useSyncExternalStore(noSubscribe, isPcNow, () => false);
+  const onScreen = useSyncExternalStore(onVisibility, visibleNow, () => true);
 
   const deskUrl = useCallback((n: number) => desktopUrl.replace("{n}", String(n)), [desktopUrl]);
 
@@ -152,7 +161,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   useEffect(() => {
     const qs = new URLSearchParams();
     if (acc) qs.set("a", String(acc));
-    if (acc && openChat) qs.set("chat", openChat);
+    if (acc && openChat && onScreen) qs.set("chat", openChat);
     const es = new EventSource(`/api/events?${qs}`);
     const on = <T,>(name: string, fn: (d: T) => void) => es.addEventListener(name, (e) => fn(JSON.parse((e as MessageEvent).data)));
     // a stream opened for another account (first load, or a switch in progress) still delivers a few events:
@@ -172,7 +181,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       });
     };
     return () => es.close();
-  }, [acc, openChat, applyAccounts, noteActivity]);
+  }, [acc, openChat, onScreen, applyAccounts, noteActivity]);
 
   // notification tapped while the app is open: switch to the account it comes from
   useEffect(() => {

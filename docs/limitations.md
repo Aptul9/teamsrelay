@@ -2,7 +2,8 @@
 
 | Limitation | Detail |
 |---|---|
-| Presence | The status (Available, Busy...) cannot be set: in every test Teams left it on *Unknown*. It probably depends on tenant policies. |
+| Presence | While TeamsRelay runs, Teams sees an active desktop: the page counts as visible and focused and the agent moves the mouse every minute, so the status stays *Available*. Busy, Do not disturb, meetings and calls set elsewhere still win. Teams mobile, set to notify only when you are not active on a desktop, may then stay silent: the push of TeamsRelay does not depend on it. |
+| Visible page | A visible page marks as read what arrives in the open chat. The agent keeps a chat open only while the app shows it (`viewing`), otherwise Teams stays on the self chat. Without a self chat in the list, the last chat opened stays open. |
 | Expiring session | Conditional access invalidates the tokens and Teams stops syncing. TeamsRelay detects it (red status and a push); the sign-in is repeated in the remote desktop. |
 | Chats only | 1:1 and group chats, up to 40 in the list, last 40 messages of the open chat. Team channels appear in the Activity feed but do not open. |
 | Reading opens the chat | The agent reads the chat that is open in the remote Teams, so reading a chat from the app marks it as read in Teams. |

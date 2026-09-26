@@ -72,6 +72,8 @@ export const GET = route(async (req) => {
             send("chats", reader.chats());
             send("activity", reader.activity());
             if (chat) send("messages", { chat, rows: reader.messages(chat) });
+            // the app asks for a chat only while it is on screen
+            if (chat && ticks % 10 === 1) reader.markViewing(chat);
           }
           if (ticks % 20 === 0) controller.enqueue(enc.encode(": ping\n\n"));
         } catch (e) {

@@ -25,6 +25,14 @@ const teamsState = (t?: string): [string, Tone] =>
             ? ["Starting", "warn"]
             : ["Loading", "warn"];
 
+// Your status in Teams, as the Teams header shows it. The relay keeps it Available; Busy, Do not disturb,
+// meetings and calls come from you or your calendar and are fine as they are.
+const presenceState = (p?: string): [string, Tone] => {
+  if (!p) return ["Unknown", "warn"];
+  const label = p.charAt(0).toUpperCase() + p.slice(1);
+  return [label, /^(away|be right back|offline|unknown)/.test(p) ? "warn" : "ok"];
+};
+
 // Health of the selected Teams account, with the actions that fix the usual problems
 export function StatusPanel({
   acc,
@@ -49,6 +57,7 @@ export function StatusPanel({
   const rows: [string, string, Tone][] = health
     ? [
         ["Teams", ...teamsState(health.teams)],
+        ["Your Teams status", ...presenceState(health.presence)],
         ["New message detection", health.watcher === "ok" ? "Running" : "Stopped", health.watcher === "ok" ? "ok" : "warn"],
         ["Browser engine", health.agent === "ok" ? "Running" : "Not responding", health.agent === "ok" ? "ok" : "bad"],
         ["Last message", ago(health.last_msg_ts), health.last_msg_ts ? "ok" : "warn"],

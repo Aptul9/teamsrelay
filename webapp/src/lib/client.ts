@@ -51,6 +51,7 @@ export type Health = {
   overall?: string;
   last_msg_ts?: number;
   push_subs?: number;
+  presence?: string;
 };
 export type CommandResult = { status: string; result: { f?: string } | null };
 
