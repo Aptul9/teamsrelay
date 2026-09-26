@@ -20,19 +20,31 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Python syntax
-        run: python -m py_compile agent/agent.py webapp/app.py tools/gen_vapid.py tools/genicons.py
-
-      - name: JavaScript syntax (index.html, login.html, service worker)
+      - name: Agent
+        working-directory: agent
         run: |
-          python - <<'EOF'
-          import re, pathlib
-          for f in ["webapp/index.html", "webapp/login.html"]:
-              html = pathlib.Path(f).read_text(encoding="utf-8")
-              js = "\n".join(re.findall(r"<script>(.*?)</script>", html, re.S))
-              pathlib.Path("/tmp/" + pathlib.Path(f).stem + ".js").write_text(js, encoding="utf-8")
-          EOF
-          for f in /tmp/index.js /tmp/login.js webapp/static/sw.js; do node --check "$f"; done
+          python -m py_compile agent.py test_agent.py ../tools/gen_vapid.py ../tools/genicons.py
+          pip install -q -r requirements.txt
+          python -m unittest -v test_agent
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      # the agent fixture tests (test/agent-chats.test.ts) run in the Google Chrome of the runner
+      - name: Web app
+        working-directory: webapp
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+          node --check public/sw.js
 
       - name: Shell syntax
         run: bash -n deploy/remote-deploy.sh
@@ -46,22 +58,12 @@ jobs:
           docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml config -q
 
       - name: Caddyfile
-        run: docker run --rm -e DOMAIN=example.com -v "$PWD/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
+        run: docker run --rm -e DOMAIN=example.com -v "$PWD/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile
 
       - name: Build images
         run: |
           docker build -q -t teamsrelay-agent ./agent
           docker build -q -t teamsrelay-webapp ./webapp
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          cache: npm
-
-      - name: Documentation build
-        run: |
-          npm ci --no-audit --no-fund
-          npm run docs:build
 
   deploy:
     name: Deploy
@@ -71,7 +73,7 @@ jobs:
     environment:
       name: production
       url: https://${{ vars.DEPLOY_DOMAIN }}
-    # un deploy alla volta, senza interrompere quello in corso
+    # one deploy at a time, never interrupting the running one
     concurrency:
       group: deploy-production
       cancel-in-progress: false
@@ -88,7 +90,7 @@ jobs:
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          # host key fissata: niente StrictHostKeyChecking=no
+          # pinned host key: no StrictHostKeyChecking=no
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
 
       - name: Backup of the running version
@@ -96,9 +98,9 @@ jobs:
 
       - name: Upload code
         run: |
-          # i dati di runtime (.env, profilo Chromium, database, chiavi VAPID) restano sul server
+          # runtime data (.env, Chromium profiles, databases, VAPID keys) stays on the server
           rsync -az --delete \
-            --exclude .git/ --exclude .github/ --exclude .env \
+            --exclude .git/ --exclude .github/ --exclude .env --exclude node_modules/ --exclude .next/ \
             --exclude /config/ --exclude /data/ --exclude /vapid/ --exclude .deployed-sha --exclude .caddyfile-sum \
             ./ "$TARGET:$TR_DIR/"
 
@@ -111,4 +113,4 @@ jobs:
             if curl -fsS --max-time 10 "https://${{ vars.DEPLOY_DOMAIN }}/healthz"; then echo; exit 0; fi
             sleep 6
           done
-          echo "https://${{ vars.DEPLOY_DOMAIN }}/healthz non risponde" >&2; exit 1
+          echo "https://${{ vars.DEPLOY_DOMAIN }}/healthz does not answer" >&2; exit 1
