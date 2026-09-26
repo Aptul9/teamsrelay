@@ -9,12 +9,14 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $pm2 = Join-Path $root 'node_modules\.bin\pm2.cmd'
 if (-not (Test-Path -LiteralPath $pm2)) { throw "pm2 not found at ${pm2}: run npm ci first" }
-$command = "& '$pm2' resurrect"
+# inside single quotes an apostrophe of the path (a user folder such as O'Brien) is doubled
+$command = "& '$($pm2.Replace("'", "''"))' resurrect"
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -Command `"$command`"" -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
 # a short delay lets the desktop and the network come up first
 $trigger.Delay = 'PT30S'
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+# priority 5 is normal; a task gets 7, below normal, unless told
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -Priority 5
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 if ($DryRun) {
   $errors = $null
