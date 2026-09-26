@@ -907,12 +907,12 @@ MCP_TOKEN=
 
 - [ ] **Step 3: Image**
 
-Run: `docker build -t teamsrelay:mcp app`
-Expected: build ends with the agent check `node agent.cjs --check` passing and the image tagged.
+Run: `docker build --target web -t teamsrelay:mcp app`
+Expected: the web app image tagged. The MCP code runs in the web app only; `node agent.cjs --check` belongs to the `browsers` target.
 
 - [ ] **Step 4: Live check on the local stack, without touching the running web app**
 
-A second web app container from `teamsrelay:mcp` on `127.0.0.1:18090`, same network, data volume and `.env` values as `teams-webapp`, `MCP_TOKEN` from the shell, `DOCKER_API` empty (no slot start or stop). Then:
+A second web app container from `teamsrelay:mcp` on `127.0.0.1:18090`, same network, data volume and `.env` values as `teams-webapp`, `MCP_TOKEN` from the shell, without the volume of the control socket (no account start or stop). Then:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:18090/mcp

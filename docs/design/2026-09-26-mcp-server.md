@@ -19,7 +19,7 @@ An AI client (Claude Code, opencode, any MCP client that takes a header) reads t
 ## Endpoint
 
 - `POST /mcp`, Streamable HTTP, SDK `@modelcontextprotocol/server` 2.1.0 (protocol revision `2026-07-28`, clients of the 2025 revisions served by the same handler). A new `McpServer` per request: nothing is kept between requests.
-- Addresses: `http://localhost:8090/mcp` on the local stack, `https://<DOMAIN>/mcp` on a server. Caddy already sends every path but `/desktop/N/` to the web app.
+- Addresses: `http://localhost:8090/mcp` on the local stack, `https://<DOMAIN>/mcp` on a server. Caddy already sends every path but `/desktop/` to the web app.
 - `MCP_TOKEN` empty or missing: `/mcp` answers 404. Set: at least 32 characters, otherwise the web app does not start. It needs `ADMIN_EMAIL`: without it the web app does not start either.
 - Each request carries `Authorization: Bearer <MCP_TOKEN>`, compared in constant time; a missing or wrong token answers 401 with `WWW-Authenticate: Bearer`. The request then acts as the administrator of `.env` and reaches the accounts that user owns at that moment.
 - Cookies are not read on `/mcp`, and a request with an `Origin` header answers 403: a web page open in a browser signed in to TeamsRelay cannot use the endpoint.
