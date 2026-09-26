@@ -7,5 +7,7 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
     testTimeout: 30000,
+    // launching Chrome for the page script tests can take over 10 s on a cold CI runner
+    hookTimeout: 30000,
   },
 });
