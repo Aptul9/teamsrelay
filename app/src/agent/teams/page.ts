@@ -9,6 +9,10 @@ import { SEL, TEXTS } from "./selectors";
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// What became of a message the agent sent: sent (Teams shows it sent), failed (it never left the compose box), or
+// unconfirmed (Enter went, Teams did not show it sent in time: it may be out, sending it again may make two)
+export type SendResult = "sent" | "failed" | "unconfirmed";
+
 // A message by id, for Node-side locators
 export const messageSelector = (mid: string) => `${SEL.message}[data-mid="${mid.replace(/["\\]/g, "\\$&")}"]`;
 

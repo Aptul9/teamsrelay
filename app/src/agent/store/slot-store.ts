@@ -153,9 +153,17 @@ export class SlotStore {
       .run(mid, chat, readBy.label, JSON.stringify(readBy.names), nowSeconds());
   }
 
-  enqueue(type: CommandType, arg1 = "", arg2 = ""): number {
-    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?,?,?,?)").run(nowSeconds(), type, arg1, arg2);
+  // A command with a key already queued is not queued again: the id of the first one comes back
+  enqueue(type: CommandType, arg1 = "", arg2 = "", key: string | null = null): number {
+    const known = key ? this.commandIdByKey(key) : null;
+    if (known) return known;
+    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2, key) VALUES(?,?,?,?,?)").run(nowSeconds(), type, arg1, arg2, key);
     return Number(r.lastInsertRowid);
+  }
+
+  commandIdByKey(key: string): number | null {
+    const r = this.db.prepare("SELECT id FROM commands WHERE key=?").get(key) as { id: number } | undefined;
+    return r?.id ?? null;
   }
 
   commandStatus(id: number): CommandStatus | null {

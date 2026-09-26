@@ -16,19 +16,19 @@ import { membersKey, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
 vi.mock("@/agent/teams/actions", () => ({
-  sendText: vi.fn(async () => true),
-  replyWithQuote: vi.fn(async () => true),
+  sendText: vi.fn(async () => "sent" as const),
+  replyWithQuote: vi.fn(async () => "sent" as const),
   react: vi.fn(async () => true),
   togglePill: vi.fn(async () => true),
   editMessage: vi.fn(async () => true),
   deleteMessage: vi.fn(async () => true),
   undoDelete: vi.fn(async () => true),
   readReceipts: vi.fn(async () => null),
-  sendImage: vi.fn(async () => true),
+  sendImage: vi.fn(async () => "sent" as const),
 }));
 vi.mock("@/agent/teams/mentions", () => ({
   readMembers: vi.fn(async () => ["ROSSI Anna", "BIANCHI Luca"]),
-  sendWithMentions: vi.fn(async () => true),
+  sendWithMentions: vi.fn(async () => "sent" as const),
 }));
 
 const message = (mid: string, text: string): PageMessage => ({
@@ -126,15 +126,26 @@ describe("command handlers", () => {
   it("send: done once Teams shows the message, failed when it does not, the conversation saved either way", async () => {
     expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello"))).toBe("done");
     expect(actions.sendText).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "hello");
-    vi.mocked(actions.sendText).mockResolvedValueOnce(false);
+    vi.mocked(actions.sendText).mockResolvedValueOnce("failed");
     evaluated = [];
     expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello again"))).toBe("failed");
     expect(evaluated).toContain("readMessages");
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
   });
 
+  it("send and reply: unconfirmed when the message went out but Teams did not show it sent in time", async () => {
+    vi.mocked(actions.sendText).mockResolvedValueOnce("unconfirmed");
+    expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello"))).toBe("unconfirmed");
+    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce("unconfirmed");
+    expect(await runCommand(agent(), cmd("reply", "Anna Rossi", '{"mid":"m1","text":"On it"}'))).toBe("unconfirmed");
+    vi.mocked(mentionActions.sendWithMentions).mockResolvedValueOnce("unconfirmed");
+    const parts = [{ text: "Hi " }, { mention: "ROSSI Anna" }];
+    expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("unconfirmed");
+    expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
+  });
+
   it("reply, edit, delete, undo: failed when Teams did not change, after saving the conversation", async () => {
-    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce(false);
+    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce("failed");
     expect(await runCommand(agent(), cmd("reply", "Anna Rossi", '{"mid":"m1","text":"On it"}'))).toBe("failed");
     expect(actions.replyWithQuote).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "m1", "On it");
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
@@ -172,7 +183,7 @@ describe("command handlers", () => {
   });
 
   it("sendimage: failed when Teams did not show the image, the upload deleted all the same", async () => {
-    vi.mocked(actions.sendImage).mockResolvedValueOnce(false);
+    vi.mocked(actions.sendImage).mockResolvedValueOnce("failed");
     fs.writeFileSync(path.join(uploads, "0123456789abcdef.jpg"), Buffer.from("ffd8ffe0", "hex"));
     expect(await runCommand(agent(), cmd("sendimage", "Anna Rossi", '{"file":"0123456789abcdef.jpg"}'))).toBe("failed");
     expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.jpg", type: "image/jpeg", data: expect.any(Buffer) }, "");
@@ -207,7 +218,7 @@ describe("command handlers", () => {
     expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("done");
     expect(mentionActions.sendWithMentions).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", parts);
     expect(evaluated).toContain("readMessages");
-    vi.mocked(mentionActions.sendWithMentions).mockResolvedValueOnce(false);
+    vi.mocked(mentionActions.sendWithMentions).mockResolvedValueOnce("failed");
     expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("failed");
   });
 
@@ -232,7 +243,7 @@ describe("command handlers", () => {
     const now = Math.floor(Date.now() / 1000);
     insert.run(now, "open", "Anna Rossi", "");
     insert.run(now, "reply", "Anna Rossi", '{"mid":"m1","text":"x"}');
-    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce(false);
+    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce("failed");
     await runPendingCommands(agent());
     expect(db().prepare("SELECT type, status FROM commands ORDER BY id").all()).toEqual([
       { type: "open", status: "done" },

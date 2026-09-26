@@ -36,13 +36,20 @@ let compose = null;
 const media = new Map();
 
 class Unauthorized extends Error {}
+// no answer at all: what was sent may or may not have reached the relay
+class Offline extends Error {}
 
 async function api(path, { method = "GET", body } = {}) {
-  const r = await fetch(path, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let r;
+  try {
+    r = await fetch(path, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Offline("The relay does not answer: check the connection");
+  }
   if (r.status === 401) throw new Unauthorized("Wrong token");
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.detail || `The relay answered ${r.status}`);
@@ -250,14 +257,38 @@ function imageItem(image) {
 
 // ---- actions
 
-// Queues the command and waits for Teams: done, failed, or pending (or running) when it takes too long
+// Keys of the commands whose outcome is not known yet, by command. A command sent again after its answer got lost
+// (the app tries again by itself, or the same text is sent again) carries the same key: the relay queues it once.
+// Once the outcome is known the key goes: the same text sent again later is a new message.
+const keys = new Map();
+const newKey = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+
+// Queues the command and waits for Teams: done, failed, unconfirmed (it may have reached Teams), or pending or
+// running when it takes too long
 async function command(body) {
-  let { id, status } = await api("/api/cmd", { method: "POST", body });
+  const what = JSON.stringify(body);
+  if (!keys.has(what)) keys.set(what, newKey());
+  const key = keys.get(what);
+  let r = null;
+  for (let attempt = 1; !r; attempt++) {
+    try {
+      r = await api("/api/cmd", { method: "POST", body: { ...body, key } });
+    } catch (e) {
+      if (!(e instanceof Offline) || attempt === 3) throw e;
+      await sleep(1500);
+    }
+  }
+  let { id, status } = r;
   const end = Date.now() + 90_000;
   while ((status === "pending" || status === "running") && Date.now() < end) {
     await sleep(1500);
-    ({ status } = await api(`/api/cmd/${id}`));
+    try {
+      ({ status } = await api(`/api/cmd/${id}`));
+    } catch (e) {
+      if (!(e instanceof Offline)) throw e;
+    }
   }
+  if (status === "done" || status === "failed" || status === "unconfirmed") keys.delete(what);
   return status;
 }
 
@@ -266,7 +297,15 @@ async function act(label, body) {
   toast(`${label}...`);
   try {
     const status = await command(body);
-    toast(status === "done" ? `${label}: done` : status === "failed" ? `${label}: not applied on Teams` : `${label}: still waiting for Teams`);
+    toast(
+      status === "done"
+        ? `${label}: done`
+        : status === "failed"
+          ? `${label}: not applied on Teams`
+          : status === "unconfirmed"
+            ? `${label}: Teams did not confirm it, check the chat before trying again`
+            : `${label}: still waiting for Teams`,
+    );
   } catch (e) {
     failed(e);
   }
@@ -358,11 +397,15 @@ $("composer").addEventListener("submit", async (e) => {
   $("send").disabled = true;
   try {
     const status = await command(body);
-    if (status === "done") {
+    // unconfirmed: it may be in the chat already, the text goes so that it is not sent twice by mistake
+    if (status === "done" || status === "unconfirmed") {
       $("text").value = "";
       setCompose(null);
       autosize();
-    } else toast(status === "failed" ? "Not applied on Teams: the text is still here" : "Still waiting for Teams");
+    }
+    if (status === "unconfirmed") toast("Teams did not confirm the message: check the chat before sending it again");
+    else if (status === "failed") toast("Not sent on Teams: the text is still here");
+    else if (status !== "done") toast("Still waiting for Teams: sending it again does not send it twice");
   } catch (err) {
     failed(err);
   } finally {

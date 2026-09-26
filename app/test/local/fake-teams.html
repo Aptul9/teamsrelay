@@ -1,7 +1,8 @@
 <!doctype html>
 <!-- Stands in for Teams web in the relay test: the selectors of src/agent/teams/selectors.ts, and the behaviour the
      agent relies on (a row click opens the chat, Enter sends, a new message of yours shows Sending... then Sent,
-     the sign-out banner). window.fakeTeams lets the test play the other side. -->
+     the sign-out banner). window.fakeTeams lets the test play the other side, and stall(true) keeps a new message
+     of yours at Sending..., as when Teams never confirms it. -->
 <html>
 <head>
   <meta charset="utf-8">
@@ -34,6 +35,7 @@
     };
     const save = () => localStorage.setItem("fake-teams", JSON.stringify({ next, chats }));
     let open = "";
+    let stalled = false;
     const rows = document.getElementById("rows");
     const conversation = document.getElementById("conversation");
     const box = document.querySelector('[data-tid="ckeditor"]');
@@ -116,12 +118,13 @@
       box.innerHTML = "<p><br></p>";
       renderConversation();
       renderList();
-      setTimeout(() => {
-        m.mid = String(next++);
-        m.status = "Sent";
-        save();
-        renderConversation();
-      }, 600);
+      if (!stalled)
+        setTimeout(() => {
+          m.mid = String(next++);
+          m.status = "Sent";
+          save();
+          renderConversation();
+        }, 600);
     });
 
     window.fakeTeams = {
@@ -139,6 +142,9 @@
       },
       signIn() {
         document.getElementById("lost")?.remove();
+      },
+      stall(on) {
+        stalled = on;
       },
     };
     renderList();

@@ -28,13 +28,27 @@ const PYTHON_LAYOUT = {
   activity: ["id TEXT PK", "pos INTEGER", "kind TEXT", "actor TEXT", "title TEXT", "emoji TEXT", "preview TEXT", "tm TEXT", "chat TEXT", "unread INTEGER", "ts INTEGER", "channel INTEGER", "av TEXT"],
 };
 
+// Added by the TypeScript agent: the key an app gives a command, queued once per key
+const LAYOUT = { ...PYTHON_LAYOUT, commands: [...PYTHON_LAYOUT.commands, "key TEXT"] };
+
 const fresh = () => new Database(path.join(tempDir(), "messages.db"));
 
 describe("slot database schema", () => {
-  it("creates the layout of the Python agent", () => {
+  it("creates the layout of the Python agent, plus the columns added since", () => {
     const db = fresh();
     ensureSlotSchema(db);
-    expect(layout(db)).toEqual(PYTHON_LAYOUT);
+    expect(layout(db)).toEqual(LAYOUT);
+  });
+
+  it("keeps one command per key, and any number without one", () => {
+    const db = fresh();
+    ensureSlotSchema(db);
+    const insert = db.prepare("INSERT INTO commands(ts, type, arg1, arg2, key) VALUES(0, 'send', 'Anna Rossi', 'hi', ?)");
+    insert.run("k0123456789abcdef");
+    expect(() => insert.run("k0123456789abcdef")).toThrow(/UNIQUE/);
+    insert.run(null);
+    insert.run(null);
+    expect(db.prepare("SELECT COUNT(*) FROM commands").pluck().get()).toBe(3);
   });
 
   it("runs again without touching the rows", () => {
@@ -42,7 +56,7 @@ describe("slot database schema", () => {
     ensureSlotSchema(db);
     db.prepare("INSERT INTO chats(name, preview, pos, ts, tm, unread, mention) VALUES('Anna Rossi', 'hi', 0, 0, '', 1, 0)").run();
     ensureSlotSchema(db);
-    expect(layout(db)).toEqual(PYTHON_LAYOUT);
+    expect(layout(db)).toEqual(LAYOUT);
     expect(db.prepare("SELECT name, unread, muted FROM chats").all()).toEqual([{ name: "Anna Rossi", unread: 1, muted: 0 }]);
   });
 
@@ -55,7 +69,7 @@ describe("slot database schema", () => {
       INSERT INTO chats VALUES('Luca Bianchi', 'ciao', 0, 0, '10:30', 0, 0);
     `);
     ensureSlotSchema(db);
-    expect(layout(db)).toEqual(PYTHON_LAYOUT);
+    expect(layout(db)).toEqual(LAYOUT);
     expect(db.prepare("SELECT name, muted, av FROM chats").get()).toEqual({ name: "Luca Bianchi", muted: 0, av: null });
   });
 
@@ -63,7 +77,7 @@ describe("slot database schema", () => {
     const dir = tempDir();
     execFileSync(process.execPath, [path.resolve(__dirname, "../scripts/seed-slot.mjs"), dir, "3"], { stdio: "pipe" });
     const db = new Database(path.join(dir, "3", "messages.db"), { readonly: true });
-    expect(layout(db)).toEqual(PYTHON_LAYOUT);
+    expect(layout(db)).toEqual(LAYOUT);
     db.close();
   });
 });

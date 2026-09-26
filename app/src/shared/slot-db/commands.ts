@@ -27,6 +27,10 @@ export type CommandType = (typeof COMMAND_TYPES)[number];
 export const COMMAND_STATUSES = ["pending", "done", "failed", "running", "unconfirmed"] as const;
 export type CommandStatus = (typeof COMMAND_STATUSES)[number];
 
+// Key an app may give a command (commands.key): the same key queues it once, so an app that sends a command again
+// because the answer got lost on the way does not queue it twice
+export const COMMAND_KEY = /^[A-Za-z0-9_-]{8,64}$/;
+
 export const REACTIONS = ["like", "heart", "laugh", "surprised", "cry", "angry"] as const;
 export type ReactionName = (typeof REACTIONS)[number];
 

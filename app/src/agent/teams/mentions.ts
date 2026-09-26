@@ -1,6 +1,6 @@
 import type { MentionPart } from "@/shared/slot-db/commands";
 import { errorText, log } from "../log";
-import { sleep, type TeamsPage } from "./page";
+import { sleep, type SendResult, type TeamsPage } from "./page";
 import { composerLeft, messageIds } from "./scripts/compose";
 import { rosterNames, topicNames } from "./scripts/members";
 import { composerMentionNames, mentionMessageSent, mentionOptionPoint } from "./scripts/mentions";
@@ -74,28 +74,31 @@ export async function composeWithMentions(tp: TeamsPage, parts: readonly Mention
 }
 
 // The message with people tagged, as a person writes it: refused when Teams shows another chat or the compose box
-// holds a draft; whatever goes wrong before the send leaves the box empty. True once Teams shows the message sent,
-// with everyone tagged.
-export async function sendWithMentions(tp: TeamsPage, chat: string, parts: readonly MentionPart[]): Promise<boolean> {
-  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return false;
+// holds a draft; whatever goes wrong before the send leaves the box empty. Sent once Teams shows the message sent,
+// with everyone tagged; unconfirmed when Enter went and Teams does not show it.
+export async function sendWithMentions(tp: TeamsPage, chat: string, parts: readonly MentionPart[]): Promise<SendResult> {
+  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return "failed";
   const page = tp.page;
   // a draft already there is someone's: left as it is, nothing sent
   if (await page.evaluate(composerLeft, SEL)) {
     log.warn("mention", "compose box not empty", { chat });
-    return false;
+    return "failed";
   }
   const names = parts.flatMap((p) => ("mention" in p ? [p.mention] : []));
   const before = await page.evaluate(messageIds, SEL);
+  let pressed = false;
   try {
     if (!(await composeWithMentions(tp, parts))) throw new Error("message not composed");
     await sleep(300);
+    pressed = true;
     await page.keyboard.press("Enter");
   } catch (e) {
     log.warn("mention", errorText(e), { chat });
+    if (pressed) return "unconfirmed";
     await tp.emptyComposeBox();
-    return false;
+    return "failed";
   }
-  if (await until(() => page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names }), 40, 300)) return true;
-  log.warn("mention", "message did not appear on Teams", { chat });
-  return false;
+  if (await until(() => page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names }), 40, 300)) return "sent";
+  log.warn("mention", "message not shown sent on Teams: unconfirmed", { chat });
+  return "unconfirmed";
 }

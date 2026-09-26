@@ -84,6 +84,15 @@ describe("agent store", () => {
     expect([store.commandStatus(id), store.commandStatus(999)]).toEqual(["done", null]);
   });
 
+  it("queues a command with a key once: the same key gives back the first command", () => {
+    const first = store.enqueue("send", "Anna Rossi", "hello", "k0123456789abcdef");
+    expect(store.enqueue("send", "Anna Rossi", "hello", "k0123456789abcdef")).toBe(first);
+    expect(store.enqueue("send", "Anna Rossi", "hello")).not.toBe(first);
+    expect(store.enqueue("send", "Anna Rossi", "hello")).not.toBe(first);
+    expect(store.enqueue("send", "Anna Rossi", "hello", "k-another-key-01")).not.toBe(first);
+    expect(store.pendingCommands()).toHaveLength(4);
+  });
+
   it("ends as failed the commands that waited too long, and only those", () => {
     const now = Math.floor(Date.now() / 1000);
     const old = store.enqueue("send", "Anna Rossi", "queued while signed out");

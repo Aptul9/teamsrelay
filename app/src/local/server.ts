@@ -10,7 +10,7 @@ import type { SlotStore } from "@/agent/store/slot-store";
 import { sleep } from "@/agent/teams/page";
 import { chatName, messageArgs, messageText, reactArgs, textArgs } from "@/shared/command-input";
 import { HttpError } from "@/shared/http-error";
-import { IMAGE_TYPES, type CommandStatus, type CommandType, type ImageExt } from "@/shared/slot-db/commands";
+import { COMMAND_KEY, IMAGE_TYPES, type CommandStatus, type CommandType, type ImageExt } from "@/shared/slot-db/commands";
 import { MEDIA_NAME, type Message } from "@/shared/slot-db/rows";
 import { AgentHealth, Identity, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import type { RelayDevices } from "./devices";
@@ -109,6 +109,13 @@ export function commandOf(b: Record<string, unknown>): { type: CommandType; arg1
     case "recheck":
       return { type, arg1: "", arg2: "" };
   }
+}
+
+// The key the app gives a command, or null: the same key queues it once (a retry after a lost answer)
+function keyOf(b: Record<string, unknown>): string | null {
+  if (b.key === undefined || b.key === null) return null;
+  if (typeof b.key !== "string" || !COMMAND_KEY.test(b.key)) throw new HttpError(400, "Invalid command key");
+  return b.key;
 }
 
 // The agent rewrites its health every ~5 s. Older than a minute, it no longer describes reality.
@@ -218,10 +225,15 @@ export function apiHandler(o: ApiOptions, failures = new Failures()): http.Reque
       return send(res, 200, { chat, open, messages: o.store.messages(chat).map(shownMessage) });
     }
     if (route === "POST /api/cmd") {
-      const cmd = commandOf(await readJson(req));
+      const b = await readJson(req);
+      const cmd = commandOf(b);
+      const key = keyOf(b);
+      // sent again after a lost answer: the command queued the first time, whatever the state of Teams now
+      const known = key ? o.store.commandIdByKey(key) : null;
+      if (known) return send(res, 200, { id: known, status: await waitFor(o.store, known, wait) });
       const refused = refusal(health());
       if (refused) throw refused;
-      const id = o.store.enqueue(cmd.type, cmd.arg1, cmd.arg2);
+      const id = o.store.enqueue(cmd.type, cmd.arg1, cmd.arg2, key);
       return send(res, 200, { id, status: await waitFor(o.store, id, wait) });
     }
     const cmdId = req.method === "GET" && /^\/api\/cmd\/(\d{1,12})$/.exec(url.pathname);

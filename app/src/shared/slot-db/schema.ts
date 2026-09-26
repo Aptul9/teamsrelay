@@ -22,6 +22,7 @@ const ADDED_COLUMNS = [
   ["chat_messages", "extra", "TEXT"],
   ["activity", "channel", "INTEGER"],
   ["activity", "av", "TEXT"],
+  ["commands", "key", "TEXT"],
 ] as const;
 
 export const SLOT_TABLES = ["messages", "chats", "chat_messages", "commands", "state", "readby", "activity"] as const;
@@ -34,4 +35,6 @@ export function ensureSlotSchema(db: Database.Database) {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
   }
+  // one command per key; commands without one, as the web app queues them, are not concerned
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS commands_key ON commands(key) WHERE key IS NOT NULL");
 }

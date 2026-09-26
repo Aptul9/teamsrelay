@@ -170,12 +170,18 @@ describe("state and messages", () => {
 describe("commands", () => {
   beforeEach(() => setHealth({ teams: "ok" }));
 
-  // stands in for the agent: finishes every pending command after `ms`
+  // stands in for the agent: finishes every pending command after `ms`. On the store of its own test, and stopped
+  // whole: a finish left for later would end a command of the next test, whose ids start at 1 again.
   function agentFinishing(status: "done" | "failed", ms = 200) {
+    const s = store;
+    const later = new Set<NodeJS.Timeout>();
     const timer = setInterval(() => {
-      for (const c of store.pendingCommands()) setTimeout(() => store.finishCommand(c.id, status), ms);
+      for (const c of s.pendingCommands()) later.add(setTimeout(() => s.finishCommand(c.id, status), ms));
     }, 50);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      for (const t of later) clearTimeout(t);
+    };
   }
 
   it("queues each command as the agent reads it and answers its outcome", async () => {
@@ -204,10 +210,11 @@ describe("commands", () => {
   });
 
   it("waits while the agent runs the command, and answers its outcome", async () => {
+    const s = store;
     const timer = setInterval(() => {
-      for (const c of store.pendingCommands()) {
-        store.startCommand(c.id);
-        setTimeout(() => store.finishCommand(c.id, "done"), 300);
+      for (const c of s.pendingCommands()) {
+        s.startCommand(c.id);
+        setTimeout(() => s.finishCommand(c.id, "done"), 300);
       }
     }, 50);
     try {
@@ -229,6 +236,30 @@ describe("commands", () => {
     } finally {
       stop();
     }
+  });
+
+  it("queues a command once per key: sent again after a lost answer, it is the same command", async () => {
+    const stop = agentFinishing("done", 300);
+    try {
+      const body = { type: "send", chat: "Anna Rossi", text: "only once", key: "a1b2c3d4e5f6a7b8" };
+      const [first, again] = await Promise.all([call("/api/cmd", { method: "POST", body }), call("/api/cmd", { method: "POST", body })]);
+      expect(again.json).toEqual(first.json);
+      expect(first.json.status).toBe("done");
+      const later = await call("/api/cmd", { method: "POST", body });
+      expect(later.json).toEqual(first.json);
+      const db = (store as unknown as { db: import("better-sqlite3").Database }).db;
+      expect(db.prepare("SELECT COUNT(*) FROM commands WHERE arg2='only once'").pluck().get()).toBe(1);
+    } finally {
+      stop();
+    }
+  });
+
+  it("refuses a key that is not one, without queueing anything", async () => {
+    for (const key of ["short", "has spaces in it", "x".repeat(65), 12345678, "semi;colon;semi;colon"]) {
+      const r = await call("/api/cmd", { method: "POST", body: { type: "send", chat: "Anna Rossi", text: "hi", key } });
+      expect(r.status, String(key)).toBe(400);
+    }
+    expect(store.hasPendingCommands()).toBe(false);
   });
 
   it("refuses what is not a command, without queueing it", async () => {
