@@ -1,0 +1,14 @@
+# ---- Runtime data and secrets: never in git ----
+.env
+# Browser profile (the signed-in Microsoft session: whoever has it is in the account), database, images,
+# Web Push private key, API token
+state/
+
+node_modules/
+# Relay bundle (npm run build)
+dist/
+*.tsbuildinfo
+
+*.bak
+.DS_Store
+Thumbs.db

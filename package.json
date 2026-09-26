@@ -1,0 +1,32 @@
+{
+  "name": "teamsrelay-local",
+  "private": true,
+  "description": "Personal Microsoft Teams relay for one account: a local browser signed in to Teams web, push notifications out, one small API in",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "build": "esbuild src/relay/main.ts --bundle --platform=node --target=node24 --format=cjs --external:playwright-core --external:better-sqlite3 --outfile=dist/relay.cjs --log-level=warning && node dist/relay.cjs --check",
+    "login": "node dist/relay.cjs login",
+    "start": "node dist/relay.cjs",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "playwright-core": "1.63.0",
+    "pm2": "7.0.4",
+    "web-push": "3.6.7",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "26.6.2",
+    "@types/web-push": "3.6.4",
+    "esbuild": "0.28.2",
+    "eslint": "10.11.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "5.0.2"
+  }
+}
