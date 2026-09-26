@@ -15,6 +15,8 @@ const RELAY = "https://relay.test";
 let server;
 let origin;
 let browser;
+// Playwright turns the back/forward cache off; this one keeps it, as the Android WebView does
+let cachingBrowser;
 
 before(async () => {
   server = http.createServer((req, res) => {
@@ -26,15 +28,17 @@ before(async () => {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch({ channel: "chrome", headless: true });
+  cachingBrowser = await chromium.launch({ channel: "chrome", headless: true, ignoreDefaultArgs: ["--disable-back-forward-cache"] });
 });
 
 after(async () => {
   await browser?.close();
+  await cachingBrowser?.close();
   server?.close();
 });
 
-async function newPage() {
-  const context = await browser.newContext();
+async function newPage(from = browser) {
+  const context = await from.newContext();
   await context.route(`${RELAY}/**`, (route) => route.fulfill({ contentType: "text/html", body: "<title>relay</title><p>TeamsRelay server page</p>" }));
   const page = await context.newPage();
   const errors = [];
@@ -78,7 +82,7 @@ test("goes straight to the saved server", async () => {
 });
 
 test("shows the address with #change instead of opening the server", async () => {
-  const { page } = await newPage();
+  const { page, errors } = await newPage();
   await page.goto(origin + "/");
   await page.fill("#relay", "https://relay.test");
   await Promise.all([page.waitForURL(`${RELAY}/`), page.click("button[type=submit]")]);
@@ -87,4 +91,22 @@ test("shows the address with #change instead of opening the server", async () =>
   await page.waitForSelector("#relay-form", { state: "visible" });
   assert.equal(await page.inputValue("#relay"), RELAY);
   assert.equal(page.url(), origin + "/#change");
+  assert.deepEqual(errors, []);
+});
+
+test("shows the address again when Back restores the page from the back/forward cache", async () => {
+  const { page, errors } = await newPage(cachingBrowser);
+  // set on the start page when Chrome brings it back from the cache instead of loading it again
+  await page.addInitScript(() => addEventListener("pageshow", (e) => e.persisted && (window.restored = true)));
+  await page.goto(origin + "/");
+  await page.fill("#relay", "https://relay.test/some/path");
+  await Promise.all([page.waitForURL(`${RELAY}/`), page.click("button[type=submit]")]);
+
+  // a page restored from the cache fires no load event
+  await page.goBack({ waitUntil: "commit" });
+  await page.waitForURL(origin + "/", { waitUntil: "commit" });
+  await page.waitForSelector("#relay-form", { state: "visible" });
+  assert.equal(await page.evaluate(() => window.restored), true);
+  assert.equal(await page.inputValue("#relay"), RELAY);
+  assert.deepEqual(errors, []);
 });
