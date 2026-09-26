@@ -3,6 +3,7 @@ import { sameChat } from "../logic/chats";
 import { log } from "../log";
 import type { SlotStore } from "../store/slot-store";
 import { openChatTitle, clickChatRow } from "./scripts/chat-list";
+import { composerLeft } from "./scripts/compose";
 import { barButtonPoint, centerElement, openOverlays } from "./scripts/message-actions";
 import { SEL, TEXTS } from "./selectors";
 
@@ -56,6 +57,26 @@ export class TeamsPage {
       await this.page.keyboard.press("Escape");
       await sleep(400);
     }
+    return false;
+  }
+
+  // Empties the compose box after a send that went wrong: what is left there would go out with the next message.
+  // True once the box is checked empty.
+  async emptyComposeBox(): Promise<boolean> {
+    await this.page.keyboard.press("Escape").catch(() => undefined);
+    for (let i = 0; i < 3; i++) {
+      try {
+        // focus, not a click: the click could land on an image or a person tagged, which open their menus
+        await this.page.locator(SEL.editor).last().focus({ timeout: 2000 });
+        await this.page.keyboard.press("Control+A");
+        await this.page.keyboard.press("Delete");
+        await sleep(300);
+        if (!(await this.page.evaluate(composerLeft, SEL))) return true;
+      } catch {
+        // tried again
+      }
+    }
+    log.warn("compose", "compose box not emptied: the next message would carry what is left");
     return false;
   }
 

@@ -78,7 +78,7 @@ describe("POST /api/sendimage", () => {
 
   it("refuses what is not a PNG, JPEG, GIF or WebP image: 415", async () => {
     const r = await post({ name: "Anna Rossi", file: { data: SVG, type: "image/svg+xml", name: "a.svg" } });
-    expect([r.status, (await r.json()).detail]).toEqual([415, "Only PNG, JPEG, GIF or WebP images"]);
+    expect([r.status, (await r.json()).detail]).toEqual([415, "Only PNG, JPEG, GIF or WebP images can be sent from here: send other files from Teams"]);
     expect(fs.existsSync(uploads()) ? fs.readdirSync(uploads()) : []).toEqual([]);
   });
 

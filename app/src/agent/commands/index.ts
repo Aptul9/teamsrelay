@@ -7,12 +7,14 @@ import { activity } from "./activity";
 import { deleteCommand } from "./delete";
 import { download } from "./download";
 import { edit } from "./edit";
+import { members } from "./members";
 import { open } from "./open";
 import { react } from "./react";
 import { recheck } from "./recheck";
 import { reply } from "./reply";
 import { resync } from "./resync";
 import { send } from "./send";
+import { sendMentions } from "./send-mentions";
 import { sendImageCommand } from "./send-image";
 import { undoDelete } from "./undo-delete";
 
@@ -33,6 +35,8 @@ export const HANDLERS: Record<CommandType, Handler> = {
   resync,
   recheck,
   sendimage: sendImageCommand,
+  members,
+  sendmentions: sendMentions,
 };
 
 // open, send, resync and recheck end as done whatever happened on Teams, like in the Python agent; an

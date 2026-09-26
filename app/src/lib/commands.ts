@@ -26,4 +26,13 @@ export function messageText(v: unknown): string {
   return v;
 }
 
+// People tagged with @ in a message: up to 20 names as the members list shows them
+export function mentionNames(v: unknown): string[] {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.length > 20 || !v.every((n) => typeof n === "string" && n.trim() && n.length <= 100 && !/[\n@]/.test(n))) {
+    throw new HttpError(400, "Invalid mentions");
+  }
+  return v as string[];
+}
+
 export const REACTIONS = new Set<string>(REACTION_NAMES);

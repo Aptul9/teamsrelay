@@ -10,9 +10,10 @@ import type { Notifier } from "@/agent/push/notifier";
 import type { AppStore } from "@/agent/store/app-store";
 import { SlotStore } from "@/agent/store/slot-store";
 import * as actions from "@/agent/teams/actions";
+import * as mentionActions from "@/agent/teams/mentions";
 import type { TeamsPage } from "@/agent/teams/page";
 import type { PageMessage } from "@/agent/teams/scripts/conversation";
-import { STATE } from "@/shared/slot-db/state";
+import { membersKey, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
 vi.mock("@/agent/teams/actions", () => ({
@@ -25,6 +26,10 @@ vi.mock("@/agent/teams/actions", () => ({
   undoDelete: vi.fn(async () => true),
   readReceipts: vi.fn(async () => null),
   sendImage: vi.fn(async () => true),
+}));
+vi.mock("@/agent/teams/mentions", () => ({
+  readMembers: vi.fn(async () => ["ROSSI Anna", "BIANCHI Luca"]),
+  sendWithMentions: vi.fn(async () => true),
 }));
 
 const message = (mid: string, text: string): PageMessage => ({
@@ -172,6 +177,34 @@ describe("command handlers", () => {
     }
     expect(actions.sendImage).not.toHaveBeenCalled();
     expect(fs.readdirSync(uploads)).toEqual(["secret.png"]);
+  });
+
+  it("members: saves the people Teams lists for the chat, with the time", async () => {
+    expect(await runCommand(agent(), cmd("members", "Cloud team"))).toBe("done");
+    expect(mentionActions.readMembers).toHaveBeenCalledWith(expect.anything(), "Cloud team");
+    const saved = JSON.parse(store.getState(membersKey("Cloud team")));
+    expect(saved).toEqual({ ts: expect.any(Number), names: ["ROSSI Anna", "BIANCHI Luca"] });
+    expect(Math.abs(saved.ts - Date.now() / 1000)).toBeLessThan(5);
+  });
+
+  it("members: failed and nothing saved when the list could not be read", async () => {
+    vi.mocked(mentionActions.readMembers).mockResolvedValueOnce(null);
+    expect(await runCommand(agent(), cmd("members", "Cloud team"))).toBe("failed");
+    expect(store.getState(membersKey("Cloud team"))).toBe("");
+  });
+
+  it("sendmentions: hands the parts to Teams, saves the conversation, done only when sent", async () => {
+    const parts = [{ text: "Hi " }, { mention: "ROSSI Anna" }, { text: ", can you check?" }];
+    expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("done");
+    expect(mentionActions.sendWithMentions).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", parts);
+    expect(evaluated).toContain("readMessages");
+    vi.mocked(mentionActions.sendWithMentions).mockResolvedValueOnce(false);
+    expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("failed");
+  });
+
+  it("sendmentions: nothing to send, nothing typed", async () => {
+    expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", "{"))).toBe("failed");
+    expect(mentionActions.sendWithMentions).not.toHaveBeenCalled();
   });
 
   it("an unknown type is done, a handler that throws is failed", async () => {

@@ -15,6 +15,7 @@
 | Group chats named "Name, +2" | Teams lists an unnamed group chat as its first members plus a count, and titles it with the full names once open: the agent does not recognize the title and the chat does not open from the app. |
 | Offline phones | The push service keeps a notification for one hour; a device offline longer misses it (the chat list still shows the message). |
 | Bots without preview | New message detection relies on the preview: bots that show none can be missed. |
-| Sending attachments | Images only: one PNG, JPEG, GIF or WebP of up to 10 MB per message, pasted or attached in the app, with the text as caption; not in a reply or an edit. Other files cannot be sent. Receiving images and downloading files works. |
+| Files | The app sends images only: one PNG, JPEG, GIF or WebP of up to 10 MB per message, pasted, dropped or attached, with the text as caption; not in a reply or an edit. Any other file (Excel, PDF...) is refused with a message. Attachments received show with their name; the download works only for SharePoint files the browser session reaches: behind Defender for Cloud Apps the link answers with a web page and the app says to open the file in Teams. Sending and saving other files is a manual step in Teams. |
+| Tagging people | `@` in the app tags the people Teams lists for that chat (in a group chat its members, you excluded; in the self chat nobody), in a new message only: not in a reply, an edit or the caption of an image. The list of members is read from Teams on the first `@` of a chat and again after an hour. |
 | iPhone | Push notifications reach only the app installed on the Home Screen. |
 | Slots | Fixed by `docker-compose.yml` (4). More slots need more services and networks there. |

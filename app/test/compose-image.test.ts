@@ -10,8 +10,8 @@ describe("image picked in the app", () => {
   });
 
   it("is refused with the reason otherwise", () => {
-    expect(imageProblem(file("image/svg+xml", 1000))).toBe("Only PNG, JPEG, GIF or WebP images");
-    expect(imageProblem(file("application/pdf", 1000))).toBe("Only PNG, JPEG, GIF or WebP images");
+    expect(imageProblem(file("image/svg+xml", 1000))).toBe("Only PNG, JPEG, GIF or WebP images can be sent from here: send other files from Teams");
+    expect(imageProblem(file("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 1000))).toBe("Only PNG, JPEG, GIF or WebP images can be sent from here: send other files from Teams");
     expect(imageProblem(file("image/png", 10e6 + 1))).toBe("Image larger than 10 MB");
     expect(imageProblem(file("image/png", 0))).toBe("Empty image");
   });

@@ -69,6 +69,17 @@ export const SEL = {
   menuItem: '[role="menuitem"]',
   overlays: '[role="menu"],[role="dialog"],[role="alertdialog"]',
   sendButton: '[data-tid="sendMessageCommands-send"]',
+  // members of a group chat: the participant count in the header opens a list of them. Every row also holds a
+  // remove button: nothing inside the list is ever clicked.
+  participantCount: '[data-tid="chat-header-participant-count"]',
+  rosterName: '[id^="chat-roster-item-name-"]',
+  // members named in the header of 1:1 chats and of group chats without a name
+  topicParticipant: '[data-tid="chat-topic-menu"] [id^="chat-topic-person-"]',
+  // @ typed in the compose box opens this list of people; data-tid of an entry is the prefix and the person's
+  // name. The person picked becomes a mention element in the box.
+  mentionPopup: '[data-tid="AutocompletePopup-Mentions"]',
+  mentionOptionPrefix: "autocomplete-picker-item-",
+  composerMention: '[itemtype*="Mention"]',
   editDone: '[data-tid="newMessageCommands-send"]',
   editDiscard: '[data-tid="newMessageCommands-discard-draft"]',
   discardConfirm: '[data-tid="messagedraft-discard-confirm"]',

@@ -28,7 +28,7 @@ export async function saveUpload(slot: number, file: FormDataEntryValue | null):
   if (file.size > MAX_UPLOAD) throw new HttpError(413, "Image larger than 10 MB");
   const data = Buffer.from(await file.arrayBuffer());
   const ext = imageExt(data);
-  if (!ext) throw new HttpError(415, "Only PNG, JPEG, GIF or WebP images");
+  if (!ext) throw new HttpError(415, "Only PNG, JPEG, GIF or WebP images can be sent from here: send other files from Teams");
   const dir = uploadsDir(slot);
   fs.mkdirSync(dir, { recursive: true });
   const now = Date.now();
