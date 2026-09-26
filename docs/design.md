@@ -80,7 +80,7 @@ When the Node process dies, Chrome loses its pipe and exits within a second (che
 
 ## Notifications
 
-Web Push with the VAPID keys of `state/vapid` (reused generator). The relay sends; the push service of the phone's browser (Google, Apple, Mozilla, Microsoft) delivers. Nothing connects to the relay for it. TTL one hour.
+Web Push with the VAPID keys of `state/vapid` (reused generator). The relay sends; the push service of the phone's browser (Google, Apple, Mozilla, Microsoft) delivers. Nothing connects to the relay for it. TTL one hour. Urgency `high` for messages and alerts: web-push sends `normal` unless told, and a phone on low battery asks its push service for `high` only (RFC 8030 section 5.3); the passed twice-daily check stays `normal`. Checked against Google's push service: a subscription made by the app in Chrome received the relay's push in 3 s.
 
 A device subscribes from the app: the service worker needs a secure context, so the phone loads the app over HTTPS (or from `localhost` on the machine itself). ntfy stays available as a second channel.
 

@@ -164,6 +164,7 @@ async function openChat(name) {
   if (fresh) {
     setCompose(null);
     $("messages").replaceChildren();
+    $("chat-state").textContent = "";
   }
   const shown = await loadMessages();
   if (shown?.open) return;
