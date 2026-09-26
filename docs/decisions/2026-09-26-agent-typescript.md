@@ -37,4 +37,4 @@ Chrome DevTools listens on `127.0.0.1:9222` inside each `chromium-N` container, 
 - Every image change recreates the agent containers at the next deploy; the web app starts them again within seconds. The agent code is no longer mounted from the repository.
 - The deploy check waits for each running agent to keep its restart count and to write a health row younger than a minute.
 - Push and self-check texts are in English, like the web app.
-- The agent needs 75-136 MB of memory (anonymous, garbage collector cycles included) where the Python agent and its Node driver needed 120-161 MB, measured on the local stack on both accounts.
+- The agent needs 75-136 MB of memory (anonymous, garbage collector cycles included; 77-112 MB idle) where the Python agent and its Node driver needed 120-161 MB, measured on the local stack on both accounts.
