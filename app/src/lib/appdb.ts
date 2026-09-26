@@ -5,7 +5,7 @@ import { config } from "./config";
 import { HttpError } from "./http";
 
 // data/app.db: better-auth tables, slot ownership and push subscriptions.
-// The agents read teams_accounts and push_subscriptions (agent/agent.py): keep the column names.
+// The agents read teams_accounts and push_subscriptions (src/agent/store/app-store.ts): keep the column names.
 const SCHEMA_VERSION = 2;
 
 export type Slot = { slot: number; owner_id: string; added: number };

@@ -27,5 +27,5 @@ COPY --from=build /agent ./
 # fails the build if the agent cannot load its packages or its page scripts in this image
 RUN node agent.cjs --check
 EXPOSE 8090
-# web app; the agents of docker-compose.yml run: node --enable-source-maps agent.cjs
+# web app; the agents of docker-compose.yml run: node agent.cjs
 CMD ["node", "server.js"]

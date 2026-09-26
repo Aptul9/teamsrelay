@@ -16,17 +16,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.14"
-
-      - name: Agent
-        working-directory: agent
-        run: |
-          python -m py_compile agent.py test_agent.py ../tools/gen_vapid.py ../tools/genicons.py
-          pip install -q -r requirements.txt
-          python -m unittest -v test_agent
-
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -62,10 +51,8 @@ jobs:
         run: docker run --rm -e DOMAIN=example.com -v "$PWD/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile
 
       # the image runs node agent.cjs --check while it builds
-      - name: Build images
-        run: |
-          docker build -q -t teamsrelay-agent ./agent
-          docker build -q -t teamsrelay ./app
+      - name: Build image
+        run: docker build -q -t teamsrelay ./app
 
   deploy:
     name: Deploy
