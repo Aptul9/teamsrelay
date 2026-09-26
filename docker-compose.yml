@@ -41,6 +41,13 @@ services:
       - seccomp:unconfined
     shm_size: "1gb"
     stop_grace_period: 30s
+    healthcheck:
+      # the supervisor answers on its socket
+      test: ["CMD", "node", "/app/supervisor.cjs", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks: [desktop]
     restart: unless-stopped
 
@@ -75,6 +82,10 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    # the web app starts the accounts as soon as it starts: the supervisor must answer by then
+    depends_on:
+      browsers:
+        condition: service_healthy
     networks: [default]
     restart: unless-stopped
 
