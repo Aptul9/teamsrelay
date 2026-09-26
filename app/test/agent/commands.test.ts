@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runCommand, runPendingCommands } from "@/agent/commands";
@@ -23,6 +24,7 @@ vi.mock("@/agent/teams/actions", () => ({
   deleteMessage: vi.fn(async () => true),
   undoDelete: vi.fn(async () => true),
   readReceipts: vi.fn(async () => null),
+  sendImage: vi.fn(async () => true),
 }));
 
 const message = (mid: string, text: string): PageMessage => ({
@@ -48,6 +50,7 @@ let opened: string[];
 let evaluated: string[];
 let opens: boolean;
 let downloaded: string | null;
+let uploads: string;
 
 function agent(): Agent {
   const page = {
@@ -68,7 +71,7 @@ function agent(): Agent {
     isOpen: async () => opens,
   } as unknown as TeamsPage;
   return {
-    config: { slot: 1 } as Agent["config"],
+    config: { slot: 1, uploadsDir: uploads } as Agent["config"],
     store,
     app: { pushTargets: () => [] } as unknown as AppStore,
     notifier: { push: async () => 0, message: async () => undefined } as unknown as Notifier,
@@ -88,6 +91,7 @@ beforeEach(() => {
   evaluated = [];
   opens = true;
   downloaded = null;
+  uploads = tempDir();
   vi.clearAllMocks();
 });
 
@@ -140,6 +144,34 @@ describe("command handlers", () => {
     downloaded = null;
     expect(await runCommand(agent(), { ...cmd("download", "https://contoso.sharepoint.com/b.pdf"), id: 8 })).toBe("failed");
     expect(store.getState("cmd_result:8")).toBe("");
+  });
+
+  it("sendimage: hands the upload to Teams with the caption, saves the conversation, deletes the upload", async () => {
+    const png = Buffer.from("89504e470d0a1a0a0102", "hex");
+    fs.writeFileSync(path.join(uploads, "0123456789abcdef.png"), png);
+    expect(await runCommand(agent(), cmd("sendimage", "Anna Rossi", '{"file":"0123456789abcdef.png","text":"For you"}'))).toBe("done");
+    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.png", type: "image/png", data: png }, "For you");
+    expect(fs.readdirSync(uploads)).toEqual([]);
+    expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
+    expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("Anna Rossi");
+    expect(evaluated).toContain("readMessages");
+  });
+
+  it("sendimage: failed when Teams did not show the image, the upload deleted all the same", async () => {
+    vi.mocked(actions.sendImage).mockResolvedValueOnce(false);
+    fs.writeFileSync(path.join(uploads, "0123456789abcdef.jpg"), Buffer.from("ffd8ffe0", "hex"));
+    expect(await runCommand(agent(), cmd("sendimage", "Anna Rossi", '{"file":"0123456789abcdef.jpg"}'))).toBe("failed");
+    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.jpg", type: "image/jpeg", data: expect.any(Buffer) }, "");
+    expect(fs.readdirSync(uploads)).toEqual([]);
+  });
+
+  it("sendimage: refuses a name outside the uploads and a missing file, without touching Teams", async () => {
+    fs.writeFileSync(path.join(uploads, "secret.png"), "x");
+    for (const file of ["../1/messages.db", "secret.png", "0123456789abcdef.png"]) {
+      expect(await runCommand(agent(), cmd("sendimage", "Anna Rossi", JSON.stringify({ file })))).toBe("failed");
+    }
+    expect(actions.sendImage).not.toHaveBeenCalled();
+    expect(fs.readdirSync(uploads)).toEqual(["secret.png"]);
   });
 
   it("an unknown type is done, a handler that throws is failed", async () => {

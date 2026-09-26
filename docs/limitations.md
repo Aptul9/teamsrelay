@@ -15,6 +15,6 @@
 | Group chats named "Name, +2" | Teams lists an unnamed group chat as its first members plus a count, and titles it with the full names once open: the agent does not recognize the title and the chat does not open from the app. |
 | Offline phones | The push service keeps a notification for one hour; a device offline longer misses it (the chat list still shows the message). |
 | Bots without preview | New message detection relies on the preview: bots that show none can be missed. |
-| Sending attachments | Not supported: text only. Receiving images and downloading files works. |
+| Sending attachments | Images only: one PNG, JPEG, GIF or WebP of up to 10 MB per message, pasted or attached in the app, with the text as caption; not in a reply or an edit. Other files cannot be sent. Receiving images and downloading files works. |
 | iPhone | Push notifications reach only the app installed on the Home Screen. |
 | Slots | Fixed by `docker-compose.yml` (4). More slots need more services and networks there. |

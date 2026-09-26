@@ -13,6 +13,7 @@ import { recheck } from "./recheck";
 import { reply } from "./reply";
 import { resync } from "./resync";
 import { send } from "./send";
+import { sendImageCommand } from "./send-image";
 import { undoDelete } from "./undo-delete";
 
 export type Outcome = Exclude<CommandStatus, "pending">;
@@ -31,6 +32,7 @@ export const HANDLERS: Record<CommandType, Handler> = {
   activity,
   resync,
   recheck,
+  sendimage: sendImageCommand,
 };
 
 // open, send, resync and recheck end as done whatever happened on Teams, like in the Python agent; an

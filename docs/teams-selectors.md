@@ -49,6 +49,7 @@ Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-
 | Delete | `message-actions-delete` in the menu |
 | Read by | `message-actions-read-receipt` in the menu, names in the submenu |
 | Editor and send | `[data-tid="ckeditor"]`; send `sendMessageCommands-send` or `newMessageCommands-send` depending on the layout |
+| Image in the compose box | a `paste` event with the image file in `clipboardData`; the box then holds `<inlineimage>` and `img[data-tid="image-with-loader"]`; your new message shows `Sending...` until Teams has it |
 
 ## Activity
 
