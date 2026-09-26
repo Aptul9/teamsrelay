@@ -36,7 +36,7 @@ Set per account by the supervisor of the browsers container, not in `.env`. The 
 
 The supervisor sets the paths under `/root`: `DB_PATH` `/root/data/N/messages.db`, `APP_DB` `/root/data/app.db`, the VAPID keys in `/root/vapid`.
 
-Push notifications are kept by the push service for up to one hour when a device is offline, then dropped.
+Push notifications are kept by the push service for up to 24 hours when a device is offline, then dropped.
 
 ## Supervisor environment
 

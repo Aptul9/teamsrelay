@@ -27,7 +27,7 @@ Chrome DevTools listens on `127.0.0.1:9222` inside each `chromium-N` container, 
 - The agent is rewritten in TypeScript inside the web app package, renamed `app/`. esbuild bundles it into `agent.cjs`; `playwright-core` and `better-sqlite3` stay external and are copied into the image explicitly, because the standalone output of Next.js traces only the web app.
 - One image, `teamsrelay`. The web app runs `node server.js`; `agent-N` runs `node agent.cjs` in the network namespace of `chromium-N`.
 - The SQLite contract of `data/N/messages.db` does not change: tables, columns, command types and statuses, state keys. It is described once in `app/src/shared/slot-db` and used by both sides. A slot can run either agent during the migration.
-- Push TTL: 1 hour for every push.
+- Push TTL: 1 hour for every push. Superseded by [2026-09-26-push-delivery.md](2026-09-26-push-delivery.md): 24 hours.
 - The VAPID keys stay: the agent derives the public key from `vapid/private_key.pem` and stops at start when it differs from `vapid/appkey.txt`.
 - Page scripts are TypeScript functions passed to `page.evaluate`; selectors, hosts and the English texts read on the page live in `app/src/agent/teams/selectors.ts` and reach the scripts as argument.
 
