@@ -457,7 +457,7 @@ export function Conversation({
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">{f.name}</span>
                           <span className={cn("block text-xs opacity-75", st === "failed" && "text-destructive opacity-100")}>
-                            {st === "busy" ? "Downloading…" : st === "failed" ? "Download failed, click to retry" : "Download"}
+                            {st === "busy" ? "Downloading…" : st === "failed" ? "Cannot be downloaded here: open it in Teams" : "Download"}
                           </span>
                         </span>
                         {st === "busy" ? <Spinner className="shrink-0" /> : <DownloadIcon className="size-4 shrink-0 opacity-80" />}
@@ -584,7 +584,21 @@ export function Conversation({
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col bg-background">
+    // a file dropped on the chat: an image goes above the box, anything else gets the reason it cannot go (without
+    // this the browser would open the file in place of the app)
+    <div
+      className="flex h-full min-h-0 flex-1 flex-col bg-background"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        const f = e.dataTransfer.files[0];
+        if (!f) return;
+        e.preventDefault();
+        if (stopped) toast.error("Account stopped: start it to send");
+        else pickImage(f);
+      }}
+    >
       <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-2 backdrop-blur md:px-4 max-md:h-[calc(3.5rem+env(safe-area-inset-top))] max-md:pt-[env(safe-area-inset-top)]">
         <Button variant="ghost" size="icon" className="size-10 md:hidden" onClick={onBack} aria-label="Back to the list">
           <ArrowLeftIcon className="size-5" />
@@ -755,7 +769,8 @@ export function Conversation({
                 if (e.key === "Escape" && (reply || editMid)) cancelCompose();
               }}
               onPaste={(e) => {
-                const f = [...e.clipboardData.files].find((x) => x.type.startsWith("image/"));
+                // a pasted file: an image goes above the box, anything else gets the reason it cannot go
+                const f = e.clipboardData.files[0];
                 if (!f) return;
                 e.preventDefault();
                 pickImage(f);

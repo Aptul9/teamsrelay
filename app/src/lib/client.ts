@@ -84,7 +84,7 @@ export async function runCmd(path: string, body: unknown, acc: number): Promise<
 export const IMAGE_ACCEPT = "image/png,image/jpeg,image/gif,image/webp";
 
 export function imageProblem(f: File): string | null {
-  if (!IMAGE_ACCEPT.split(",").includes(f.type)) return "Only PNG, JPEG, GIF or WebP images";
+  if (!IMAGE_ACCEPT.split(",").includes(f.type)) return "Only PNG, JPEG, GIF or WebP images can be sent from here: send other files from Teams";
   if (!f.size) return "Empty image";
   if (f.size > 10e6) return "Image larger than 10 MB";
   return null;
