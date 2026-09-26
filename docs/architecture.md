@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `chromium-1` ... `chromium-4` | `lscr.io/linuxserver/chromium`, pinned by digest | Teams web of slot N, profile in `config/N/`, CDP on `127.0.0.1:9222`, desktop stream on port 3000 | `slotN` |
 | `agent-1` ... `agent-4` | `./agent` (Python, Playwright) | Reads and drives Teams of slot N, sends the push notifications | network namespace of `chromium-N` |
-| `webapp` | `./webapp` (Next.js, Node 24) | PWA, API, users and sessions, event stream, slot start and stop | `default`, `control` |
+| `webapp` | `./webapp` (Next.js, Node 24; UI on Tailwind CSS and shadcn/ui) | PWA, API, users and sessions, event stream, slot start and stop | `default`, `control` |
 | `dockerproxy` | `wollomatic/socket-proxy` | Docker socket filter: only `POST /containers/teams-(chromium\|agent)-N/(start\|stop)` | `control` (internal) |
 | `caddy` | `caddy:2.11.4-alpine` | HTTPS, reverse proxy, desktop routes gated by `/api/authcheck` | `default`, `slot1` ... `slot4` |
 

@@ -1,16 +1,32 @@
 "use client";
 
-import Link from "next/link";
+import { BellIcon, BellRingIcon, ExternalLinkIcon, MessageSquareIcon, MessagesSquareIcon, MonitorIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { toast } from "sonner";
+import { cn } from "cn";
+import { AccountMenu, accName, needsLogin } from "./AccountMenu";
 import { Activity } from "./Activity";
-import { Avatar, Logo } from "./Avatar";
 import { ChatList } from "./ChatList";
 import { Conversation } from "./Conversation";
+import { StatusPanel } from "./StatusPanel";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth-client";
 import {
-  ago,
   ApiError,
-  avColor,
   call,
   isSelf,
   markActivitySeen,
@@ -27,62 +43,40 @@ import {
   type Health,
   type Message,
 } from "@/lib/client";
+import { enablePush, pushState } from "@/lib/push";
 
-type Tab = "activity" | "chats" | "desktop";
+type ListTab = "chats" | "activity";
 type User = { name: string; email: string; role: string };
 
-const COLOR: Record<string, string> = { green: "var(--green)", yellow: "var(--yellow)", red: "var(--red)" };
-const pillColor = (st?: string) =>
-  st === "ok" ? "var(--green)" : st === "login" || st === "err" || st === "no" || st === "stale" ? "var(--red)" : "var(--yellow)";
-
-const accName = (a: Account) => a.name || a.email || `Account ${a.slot}`;
-const needsLogin = (a: Account) => a.teams === "login" || (a.teams !== "starting" && a.teams !== "ok" && !a.name);
-function accSub(a: Account): [string, string] {
-  if (a.teams === "starting") return ["Starting the browser…", ""];
-  if (a.teams === "login") return ["Microsoft sign-in needed", "warn"];
-  if (!a.name) return ["Waiting for sign-in…", ""];
-  if (a.teams === "unknown") return ["Browser unreachable", "warn"];
-  return [[a.email, a.tenant].filter(Boolean).join(" · "), ""];
-}
-
-// On a PC (mouse, no touch) the Desktop tab is not needed: the remote desktop opens in a browser tab
+// On a PC (mouse, no touch) the remote desktop opens in a browser tab; elsewhere it has a view of its own
 const noSubscribe = () => () => {};
 const isPcNow = () => window.matchMedia("(hover:hover) and (pointer:fine)").matches && !("ontouchstart" in window);
 
-function urlB64ToUint8(s: string) {
-  const pad = "=".repeat((4 - (s.length % 4)) % 4);
-  const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
-  const a = new Uint8Array(b.length);
-  for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
-  return a;
+function CountBadge({ n }: { n: number }) {
+  if (!n) return null;
+  return <span className="ml-1 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-primary px-1 text-[0.6875rem] font-semibold text-primary-foreground tabular-nums">{n > 99 ? "99+" : n}</span>;
 }
 
 export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [acc, setAcc] = useState(0);
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [limits, setLimits] = useState({ max: 4, free: 0 });
-  const [tab, setTab] = useState<Tab>("chats");
+  const [listTab, setListTab] = useState<ListTab>("chats");
+  const [pane, setPane] = useState<"main" | "desktop">("main");
   const [openChat, setOpenChat] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[] | null>(null);
   const [messages, setMessages] = useState<{ chat: string; rows: Message[] } | null>(null);
   const [activity, setActivity] = useState<{ ts: number; items: ActivityItem[] } | null>(null);
   const [seenAct, setSeenAct] = useState<string[] | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
-  const [panel, setPanel] = useState<"none" | "status" | "accounts">("none");
-  const [toastText, setToastText] = useState("");
   const [pushOff, setPushOff] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [deskOpened, setDeskOpened] = useState(false);
-  const isPc = useSyncExternalStore(noSubscribe, isPcNow, () => false);
   const [adding, setAdding] = useState(false);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [removing, setRemoving] = useState<Account | null>(null);
+  const isPc = useSyncExternalStore(noSubscribe, isPcNow, () => false);
 
   const deskUrl = useCallback((n: number) => desktopUrl.replace("{n}", String(n)), [desktopUrl]);
-  const toast = useCallback((t: string) => {
-    setToastText(t);
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToastText(""), 3500);
-  }, []);
 
   // switching account drops everything that belonged to the previous one
   const accRef = useRef(0);
@@ -97,14 +91,15 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setSeenAct(null);
     setHealth(null);
     setDeskOpened(false);
+    setPane("main");
   }, []);
 
-  // activity ids already seen in the Notifications tab, per account and device: the first feed of an account
-  // counts as seen, later ones only while the tab is on screen
-  const tabRef = useRef<Tab>("chats");
+  // activity ids already seen in the Notifications list, per account and device: the first feed of an account
+  // counts as seen, later ones only while the list is on screen
+  const listRef = useRef<ListTab>("chats");
   useEffect(() => {
-    tabRef.current = tab;
-  }, [tab]);
+    listRef.current = listTab;
+  }, [listTab]);
   const noteActivity = useCallback((n: number, d: { ts: number; items: ActivityItem[] }, looking: boolean) => {
     setActivity(d);
     if (!n || !d.ts) return; // the agent has not read the Teams feed yet
@@ -160,11 +155,16 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     if (acc && openChat) qs.set("chat", openChat);
     const es = new EventSource(`/api/events?${qs}`);
     const on = <T,>(name: string, fn: (d: T) => void) => es.addEventListener(name, (e) => fn(JSON.parse((e as MessageEvent).data)));
+    // a stream opened for another account (first load, or a switch in progress) still delivers a few events:
+    // they must not land on the account now selected
+    const own = <T,>(fn: (d: T) => void) => (d: T) => {
+      if (accRef.current === acc) fn(d);
+    };
     on("accounts", applyAccounts);
-    on<Health>("health", setHealth);
-    on<Chat[]>("chats", setChats);
-    on<{ ts: number; items: ActivityItem[] }>("activity", (d) => noteActivity(acc, d, tabRef.current === "activity"));
-    on<{ chat: string; rows: Message[] }>("messages", setMessages);
+    on<Health>("health", own(setHealth));
+    on<Chat[]>("chats", own(setChats));
+    on<{ ts: number; items: ActivityItem[] }>("activity", own((d) => noteActivity(acc, d, listRef.current === "activity")));
+    on<{ chat: string; rows: Message[] }>("messages", own(setMessages));
     es.onerror = () => {
       // a stream refused with 401 means the session is over
       void fetch("/api/accounts", { credentials: "same-origin" }).then((r) => {
@@ -186,44 +186,16 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   }, [selectAccount]);
 
   useEffect(() => {
-    (async () => {
-      if (!("serviceWorker" in navigator)) return setPushOff(true);
-      try {
-        const reg = await navigator.serviceWorker.register("/sw.js");
-        setPushOff(!(await reg.pushManager.getSubscription()));
-      } catch {
-        setPushOff(true);
-      }
-    })();
+    void pushState().then((s) => setPushOff(s === "off"));
   }, []);
 
-  async function enablePush() {
+  async function turnOnPush() {
     try {
-      const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone;
-      if (!("serviceWorker" in navigator) || !("PushManager" in window) || (!standalone && /iPhone|iPad/i.test(navigator.userAgent))) {
-        alert('On iPhone notifications work only in the installed app: Share, "Add to Home Screen", open TeamsRelay from there and try again.');
-        return;
-      }
-      const reg = await navigator.serviceWorker.register("/sw.js");
-      await navigator.serviceWorker.ready;
-      if ((await Notification.requestPermission()) !== "granted") return alert("Notification permission denied.");
-      const { key } = await call<{ key: string }>("/api/vapidkey", undefined, 0);
-      if (!key) return alert("Push keys are not configured on the server.");
-      const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(key) }));
-      await post("/api/push/subscribe", sub.toJSON(), 0);
+      await enablePush();
       setPushOff(false);
-      toast("Notifications enabled");
+      toast.success("Notifications enabled on this device");
     } catch (e) {
-      alert(`Notification error: ${e}`);
-    }
-  }
-
-  function show(t: Tab) {
-    setTab(t);
-    if (t === "desktop") setDeskOpened(true);
-    if (t === "activity") {
-      if (activity) noteActivity(acc, activity, true);
-      void refreshActivity();
+      toast.error(e instanceof Error ? e.message : "Notifications not enabled");
     }
   }
 
@@ -232,18 +204,26 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setRefreshing(true);
     const r = await runCmd("/api/activity/refresh", undefined, acc);
     setRefreshing(false);
-    if (r.status !== "done") toast("Teams activity not updated");
+    if (r.status !== "done") toast.error("Teams activity not updated");
   }
 
-  // Microsoft login (and MFA) in the remote browser of the account: new tab on a PC, Desktop tab on a phone
+  function showList(t: ListTab) {
+    setPane("main");
+    setListTab(t);
+    if (t === "activity") {
+      if (activity) noteActivity(acc, activity, true);
+      void refreshActivity();
+    }
+  }
+
+  // Microsoft login (and MFA) in the remote browser of the account: new tab on a PC, a view of its own elsewhere
   function openDesktop(n: number) {
-    setPanel("none");
     if (isPc) {
-      window.open(deskUrl(n), "_blank");
+      window.open(deskUrl(n), "_blank", "noopener");
       return;
     }
     selectAccount(n);
-    setTab("desktop");
+    setPane("desktop");
     setDeskOpened(true);
   }
 
@@ -253,221 +233,256 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       const r = await post<{ slot: number }>("/api/accounts", undefined, 0);
       await loadAccounts();
       selectAccount(r.slot);
-      setPanel("accounts");
-      toast('Browser starting: tap "Sign in to Microsoft" in a moment');
+      toast.success("Browser starting", { description: "Sign in to Microsoft as soon as the account shows the button, within two minutes." });
     } catch (e) {
-      toast(e instanceof ApiError ? e.message : "Account not added");
+      toast.error(e instanceof ApiError ? e.message : "Account not added");
     } finally {
       setAdding(false);
     }
   }
 
   async function removeAccount(a: Account) {
-    if (!confirm(`Remove ${accName(a)}?\n\nThe Teams session and the data of this account on TeamsRelay are deleted. The Microsoft account itself is not touched.`)) return;
-    toast(`Removing ${accName(a)}…`);
+    const id = toast.loading(`Removing ${accName(a)}…`);
     try {
       await call(`/api/accounts/${a.slot}`, { method: "DELETE" }, 0);
       await loadAccounts();
-      toast("Account removed");
+      toast.success("Account removed", { id });
     } catch (e) {
-      toast(e instanceof ApiError ? e.message : "Account not removed");
+      toast.error(e instanceof ApiError ? e.message : "Account not removed", { id });
     }
   }
 
-  function openFromActivity(chat: string) {
-    if (!chat) return toast("This one opens only in the remote Teams");
+  // the chat of the list an activity item belongs to: same name, or the only one that shares its beginning
+  function resolveActivity(a: ActivityItem): string | null {
+    if (!a.chat || a.kind === "meeting") return null;
     const list = chats ?? [];
-    const prefix = list.filter((x) => x.name.startsWith(chat) || chat.startsWith(x.name));
-    const c = list.find((x) => x.name === chat) ?? (prefix.length === 1 ? prefix[0] : undefined);
-    if (!c) return toast("Chat not found in the list");
-    setTab("chats");
-    setOpenChat(c.name);
+    const exact = list.find((c) => c.name === a.chat);
+    if (exact) return exact.name;
+    const prefix = list.filter((c) => c.name.startsWith(a.chat) || a.chat.startsWith(c.name));
+    return prefix.length === 1 ? prefix[0].name : null;
   }
 
   const current = accounts?.find((a) => a.slot === acc);
   const unreadChats = (chats ?? []).filter((c) => c.unread && !c.muted && !isSelf(c.name)).length;
   const unreadActivity = unseenActivity(activity?.items ?? [], seenAct);
-  const otherUnread = (accounts ?? []).some((a) => a.slot !== acc && a.unread > 0);
-  const overall = health?.overall || "yellow";
   const canAdd = !!accounts && accounts.length < limits.max && limits.free > 0;
+  const addLabel = canAdd ? "Add a Teams account" : accounts && accounts.length >= limits.max ? `At most ${limits.max} accounts` : "No free slot on this server";
+  const noAccounts = !!accounts && !accounts.length;
+  // on a phone the list and the chat (or the remote desktop) take the whole screen in turn
+  const phoneShowsMain = pane === "desktop" || !!openChat;
+
+  const tabs: { id: ListTab | "desktop"; label: string; icon: React.ComponentType<{ className?: string }>; count: number }[] = [
+    { id: "chats", label: "Chats", icon: MessageSquareIcon, count: unreadChats },
+    { id: "activity", label: "Notifications", icon: BellIcon, count: unreadActivity },
+    ...(!isPc ? [{ id: "desktop" as const, label: "Desktop", icon: MonitorIcon, count: 0 }] : []),
+  ];
+  const activeTab = pane === "desktop" ? "desktop" : listTab;
+  const selectTab = (t: string) => (t === "desktop" ? acc && openDesktop(acc) : showList(t as ListTab));
+
+  const phoneNav = (
+    <nav className="grid shrink-0 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          onClick={() => {
+            setOpenChat(null);
+            selectTab(t.id);
+          }}
+          aria-current={activeTab === t.id ? "page" : undefined}
+          className={cn(
+            "relative flex h-14 flex-col items-center justify-center gap-0.5 text-[0.6875rem] font-medium text-muted-foreground transition-colors outline-none focus-visible:bg-accent",
+            activeTab === t.id && "text-primary",
+          )}
+        >
+          <span className="relative">
+            <t.icon className="size-5" />
+            {t.count > 0 && (
+              <span className="absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-primary px-1 text-center text-[0.625rem] leading-4 font-semibold text-primary-foreground tabular-nums">
+                {t.count > 99 ? "99+" : t.count}
+              </span>
+            )}
+          </span>
+          {t.label}
+        </button>
+      ))}
+    </nav>
+  );
 
   return (
-    <div className="shell">
-      <header>
-        <div className="brand">
-          {accounts?.length ? (
-            <button className="accbtn" onClick={() => setPanel(panel === "accounts" ? "none" : "accounts")} aria-label="Accounts">
-              {current ? (
-                <Avatar name={accName(current)} av={current.av} acc={current.slot} />
-              ) : (
-                <div className="av" style={{ background: avColor(user.name) }} />
-              )}
-              {otherUnread && <span className="accdot" />}
-            </button>
-          ) : (
-            <div className="logo">
-              <Logo />
-            </div>
-          )}
-          <h1>{current ? current.tenant || accName(current) : "TeamsRelay"}</h1>
-          <button className="status" onClick={() => setPanel(panel === "status" ? "none" : "status")}>
-            <span className="sdot" style={{ background: COLOR[overall] }} />
-            <span>{overall === "green" ? "Active" : overall === "red" ? "Problem" : "…"}</span>
-          </button>
+    <div className="flex h-dvh overflow-hidden bg-background">
+      <aside className={cn("flex w-full shrink-0 flex-col border-r bg-sidebar md:w-[22rem] xl:w-[25rem]", phoneShowsMain && "max-md:hidden")}>
+        <div className="flex items-center gap-1 px-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 md:pt-2">
+          <AccountMenu
+            user={user}
+            accounts={accounts}
+            current={current}
+            canAdd={canAdd}
+            addLabel={addLabel}
+            adding={adding}
+            onSelect={selectAccount}
+            onAdd={() => void addAccount()}
+            onOpenDesktop={openDesktop}
+            onRemove={setRemoving}
+            onSignOut={() => void authClient.signOut().then(toLogin)}
+          />
+          <StatusPanel
+            acc={acc}
+            accountName={current ? accName(current) : ""}
+            health={health}
+            pushOff={pushOff}
+            onEnablePush={() => void turnOnPush()}
+            onOpenDesktop={() => acc && openDesktop(acc)}
+          />
         </div>
-        <div className="switch">
-          <button className={tab === "activity" ? "on" : ""} onClick={() => show("activity")}>
-            Notifications
-            {unreadActivity > 0 && <span className="tabbadge">{unreadActivity}</span>}
-          </button>
-          <button className={tab === "chats" ? "on" : ""} onClick={() => show("chats")}>
-            Chats
-            {unreadChats > 0 && <span className="tabbadge">{unreadChats}</span>}
-          </button>
-          {!isPc && (
-            <button className={tab === "desktop" ? "on" : ""} onClick={() => show("desktop")}>
-              Desktop
-            </button>
-          )}
-        </div>
-        {current && needsLogin(current) && (
-          <button className="loginbn" onClick={() => openDesktop(current.slot)}>
-            Sign in to Microsoft to use this account
-          </button>
-        )}
-        {pushOff && (
-          <button className="pushbn" onClick={() => void enablePush()}>
-            Enable notifications
-          </button>
-        )}
-      </header>
 
-      {panel === "status" && (
-        <div className="spanel">
-          <h3>System status</h3>
-          {health ? (
-            [
-              ["Teams", health.teams === "ok" ? "Connected" : health.teams === "login" ? "Session expired" : health.teams === "unknown" ? "Unreachable" : health.teams === "starting" ? "Starting" : "Loading", pillColor(health.teams)],
-              ["New message detection", health.watcher === "ok" ? "Running" : "Stopped", pillColor(health.watcher === "ok" ? "ok" : "warn")],
-              ["Browser engine", health.agent === "ok" ? "Running" : "Not responding", pillColor(health.agent === "ok" ? "ok" : "err")],
-              ["Last message", ago(health.last_msg_ts), pillColor(health.last_msg_ts ? "ok" : "warn")],
-              ["Push notifications", `${health.push_subs ?? 0} device${health.push_subs === 1 ? "" : "s"}`, pillColor((health.push_subs ?? 0) > 0 ? "ok" : "warn")],
-            ].map(([k, v, c]) => (
-              <div key={k} className="hrow">
-                <span className="pill" style={{ background: c }} />
-                <div className="k">{k}</div>
-                <div className="v">{v}</div>
-              </div>
-            ))
-          ) : (
-            <div className="hint">No account selected.</div>
-          )}
-          {acc > 0 && (
-            <>
-              <div className="sbtns">
-                <button onClick={() => void post("/api/resync", undefined, acc).catch(() => toast("Resync failed"))}>Resync</button>
-                <button onClick={() => void post("/api/recheck", undefined, acc).then(() => toast("Check started: the result arrives as a notification"), () => toast("Check failed"))}>
-                  Recheck
-                </button>
-              </div>
-              <div className="sbtns">
-                <button onClick={() => openDesktop(acc)}>Open remote Teams (login, MFA)</button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {panel === "accounts" && (
-        <div className="apanel">
-          <h3>Accounts</h3>
-          {(accounts ?? []).map((a) => {
-            const [sub, cls] = accSub(a);
-            return (
-              <div key={a.slot}>
-                <div
-                  className={`arow${a.slot === acc ? " cur" : ""}`}
-                  onClick={() => {
-                    setPanel("none");
-                    selectAccount(a.slot);
-                  }}
-                >
-                  <Avatar name={accName(a)} av={a.av} acc={a.slot} />
-                  <div className="rc">
-                    <div className="an">{accName(a)}</div>
-                    <div className={`as ${cls}`}>{sub}</div>
-                  </div>
-                  {a.unread > 0 && <span className="aun">{a.unread}</span>}
-                  {a.slot === acc && <span className="check">✓</span>}
-                </div>
-                <div className="aact">
-                  {a.teams !== "starting" && (
-                    <button className={needsLogin(a) ? "go" : ""} onClick={() => openDesktop(a.slot)}>
-                      {needsLogin(a) ? "Sign in to Microsoft" : "Remote Teams"}
-                    </button>
-                  )}
-                  <button className="rm" onClick={() => void removeAccount(a)}>
-                    Remove
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          <button className="addacc" disabled={!canAdd || adding} onClick={() => void addAccount()}>
-            {adding ? "Starting the browser…" : canAdd ? "+ Add account" : accounts && accounts.length >= limits.max ? `At most ${limits.max} accounts` : "No free slot on this server"}
-          </button>
-          <div className="alinks">
-            <Link href="/settings">Settings</Link>
-            {user.role === "admin" && <Link href="/admin">Users</Link>}
-            <button onClick={() => void authClient.signOut().then(toLogin)}>Sign out</button>
-          </div>
-        </div>
-      )}
-
-      <main onClick={() => panel !== "none" && setPanel("none")}>
-        {accounts && !accounts.length && (
-          <div className="noacc">
-            <b>No Teams account</b>
-            <div>Add an account, then sign in to Microsoft in its remote desktop.</div>
-            <button disabled={!canAdd || adding} onClick={() => void addAccount()}>
-              {adding ? "Starting the browser…" : canAdd ? "+ Add account" : "No free slot on this server"}
-            </button>
-          </div>
+        {!noAccounts && (
+          <Tabs value={activeTab} onValueChange={selectTab} className="px-3 pb-2 max-md:hidden">
+            <TabsList className="h-9 w-full">
+              {tabs.map((t) => (
+                <TabsTrigger key={t.id} value={t.id} className="gap-1.5">
+                  <t.icon />
+                  {t.label}
+                  <CountBadge n={t.count} />
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         )}
-        {tab === "activity" && (
-          <div className="view">
-            <Activity acc={acc} feed={activity} refreshing={refreshing} onOpenChat={openFromActivity} />
-          </div>
-        )}
-        {tab === "chats" && (
-          <div className="view">
-            <ChatList acc={acc} chats={acc ? chats : []} onOpen={setOpenChat} />
-            {openChat && acc > 0 && (
-              <Conversation
-                key={`${acc}:${openChat}`}
-                acc={acc}
-                chat={openChat}
-                entry={(chats ?? []).find((c) => c.name === openChat)}
-                rows={messages?.chat === openChat ? messages.rows : null}
-                onBack={() => setOpenChat(null)}
-                toast={toast}
-              />
+
+        {current && (needsLogin(current) || current.teams === "starting") && (
+          <div className="px-3 pb-2">
+            {current.teams === "starting" ? (
+              <Alert>
+                <Spinner />
+                <AlertTitle>Starting the browser</AlertTitle>
+                <AlertDescription>It takes up to two minutes, then sign in to Microsoft.</AlertDescription>
+              </Alert>
+            ) : (
+              <Alert className="border-warning/40 bg-warning/10">
+                <TriangleAlertIcon className="text-warning" />
+                <AlertTitle>Microsoft sign-in needed</AlertTitle>
+                <AlertDescription>
+                  <p>Sign in with password and MFA in the remote browser of this account.</p>
+                  <Button size="sm" className="mt-2 h-9 md:h-8" onClick={() => openDesktop(current.slot)}>
+                    <ExternalLinkIcon />
+                    Sign in to Microsoft
+                  </Button>
+                </AlertDescription>
+              </Alert>
             )}
           </div>
         )}
-        {deskOpened && acc > 0 && (
-          <div className="view desk" style={{ display: tab === "desktop" ? "flex" : "none" }}>
-            <div className="bar">
-              <span>Teams desktop (remote control)</span>
-              <a href={deskUrl(acc)} target="_blank" rel="noopener">
-                Full screen
-              </a>
+        {pushOff && !noAccounts && (
+          <div className="px-3 pb-2">
+            <div className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2 text-sm">
+              <BellRingIcon className="size-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1 text-muted-foreground">Notifications are off on this device</span>
+              <Button size="sm" variant="secondary" className="h-9 md:h-7" onClick={() => void turnOnPush()}>
+                Enable
+              </Button>
             </div>
-            <iframe src={deskUrl(acc)} title="Teams desktop" />
           </div>
         )}
+
+        {noAccounts ? (
+          <Empty className="flex-1">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <MessagesSquareIcon />
+              </EmptyMedia>
+              <EmptyTitle>No Teams account yet</EmptyTitle>
+              <EmptyDescription>Add an account, then sign in to Microsoft in its remote browser. Chats show up within a minute.</EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button className="h-10 md:h-9" disabled={!canAdd || adding} onClick={() => void addAccount()}>
+                {adding ? <Spinner /> : <PlusIcon />}
+                {adding ? "Starting the browser…" : addLabel}
+              </Button>
+            </EmptyContent>
+          </Empty>
+        ) : listTab === "activity" ? (
+          <Activity
+            acc={acc}
+            feed={acc ? activity : { ts: 0, items: [] }}
+            refreshing={refreshing}
+            onRefresh={() => void refreshActivity()}
+            resolve={resolveActivity}
+            onOpenChat={(c) => {
+              setPane("main");
+              setOpenChat(c);
+            }}
+          />
+        ) : (
+          <ChatList acc={acc} chats={acc ? chats : []} selected={openChat} onOpen={(c) => {
+            setPane("main");
+            setOpenChat(c);
+          }} />
+        )}
+        {phoneNav}
+      </aside>
+
+      <main className={cn("min-w-0 flex-1 flex-col", phoneShowsMain ? "flex" : "hidden md:flex")}>
+        {deskOpened && acc > 0 && (
+          <div className={cn("min-h-0 flex-1 flex-col bg-background", pane === "desktop" ? "flex" : "hidden")}>
+            <div className="flex h-12 shrink-0 items-center gap-2 border-b px-3 max-md:h-[calc(3rem+env(safe-area-inset-top))] max-md:pt-[env(safe-area-inset-top)]">
+              <MonitorIcon className="size-4 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">Remote Teams · {current ? accName(current) : ""}</span>
+              <Button asChild variant="ghost" size="sm" className="h-9 md:h-8">
+                <a href={deskUrl(acc)} target="_blank" rel="noopener">
+                  <ExternalLinkIcon />
+                  Full screen
+                </a>
+              </Button>
+            </div>
+            <iframe src={deskUrl(acc)} title="Remote Teams desktop" className="min-h-0 w-full flex-1 border-0" />
+          </div>
+        )}
+        {pane === "main" &&
+          (openChat && acc > 0 ? (
+            <Conversation
+              key={`${acc}:${openChat}`}
+              acc={acc}
+              chat={openChat}
+              entry={(chats ?? []).find((c) => c.name === openChat)}
+              rows={messages?.chat === openChat ? messages.rows : null}
+              onBack={() => setOpenChat(null)}
+              onOpenDesktop={() => openDesktop(acc)}
+            />
+          ) : (
+            <Empty className="flex-1">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <MessagesSquareIcon />
+                </EmptyMedia>
+                <EmptyTitle>{noAccounts ? "Welcome to TeamsRelay" : "Select a conversation"}</EmptyTitle>
+                <EmptyDescription>
+                  {noAccounts
+                    ? "Add your first Teams account from the panel on the left."
+                    : `The chats of ${current ? accName(current) : "this account"} are on the left. Messages you send here go out from Teams.`}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ))}
+        {pane === "desktop" && phoneNav}
       </main>
-      {toastText && <div className="toast">{toastText}</div>}
+
+      <AlertDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {removing ? accName(removing) : ""}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The Teams session and the data of this account on TeamsRelay are deleted. The Microsoft account itself is not touched, and it can be added again later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => removing && void removeAccount(removing)}>
+              Remove account
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

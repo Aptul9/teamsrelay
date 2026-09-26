@@ -1,12 +1,21 @@
 "use client";
 
+import { EyeIcon, EyeOffIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
-import { Logo } from "./Avatar";
+import { LogoTile } from "./Avatar";
+import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Spinner } from "@/components/ui/spinner";
 import { authClient } from "@/lib/auth-client";
 
 export function LoginForm({ next }: { next: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -25,19 +34,65 @@ export function LoginForm({ next }: { next: string }) {
   }
 
   return (
-    <div className="page center">
-      <form className="card narrow" onSubmit={submit}>
-        <div className="biglogo">
-          <Logo size={30} />
-        </div>
-        <h1>TeamsRelay</h1>
-        <input className="field" type="email" placeholder="Email" autoCapitalize="none" autoCorrect="off" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input className="field" type="password" placeholder="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <button className="btn" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-        <div className="err">{error}</div>
-      </form>
+    <div className="relative grid min-h-dvh place-items-center overflow-hidden bg-background px-4 py-10">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-96 bg-[radial-gradient(ellipse_at_top,var(--color-accent),transparent_70%)]" />
+      <Card className="relative w-full max-w-sm shadow-lg">
+        <CardHeader className="justify-items-center gap-2 text-center">
+          <LogoTile className="mb-2 size-12 rounded-2xl" />
+          <CardTitle className="text-xl">Sign in to TeamsRelay</CardTitle>
+          <CardDescription>Use the account an administrator created for you.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit}>
+            <FieldGroup>
+              {error && (
+                <Alert variant="destructive">
+                  <TriangleAlertIcon />
+                  <AlertTitle>{error}</AlertTitle>
+                </Alert>
+              )}
+              <Field>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <Input
+                  id="email"
+                  type="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  autoComplete="username"
+                  className="h-10"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  aria-invalid={!!error || undefined}
+                  required
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <InputGroup className="h-10">
+                  <InputGroupInput
+                    id="password"
+                    type={show ? "text" : "password"}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    aria-invalid={!!error || undefined}
+                    required
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton size="icon-sm" onClick={() => setShow(!show)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show}>
+                      {show ? <EyeOffIcon /> : <EyeIcon />}
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                </InputGroup>
+              </Field>
+              <Button type="submit" className="h-10 w-full" disabled={busy}>
+                {busy && <Spinner />}
+                {busy ? "Signing in…" : "Sign in"}
+              </Button>
+            </FieldGroup>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

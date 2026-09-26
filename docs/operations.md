@@ -66,7 +66,7 @@ docker compose --profile accounts restart agent-1
 
 ## Troubleshooting
 
-**Status red, "Session expired".** The most frequent case: conditional access invalidated the session, Teams shows *Chats are temporarily unavailable* or *We need you to sign in again* and stops syncing. Open the remote desktop (status panel → *Open remote Teams*), sign in again with MFA; the status turns green within a minute. TeamsRelay sends a push when it happens.
+**Status red, "Session expired".** The most frequent case: conditional access invalidated the session, Teams shows *Chats are temporarily unavailable* or *We need you to sign in again* and stops syncing. Open the remote desktop (status panel → *Open the remote Teams*), sign in again with MFA; the status turns green within a minute. TeamsRelay sends a push when it happens.
 
 **No notifications.** In the status panel:
 
