@@ -1,7 +1,7 @@
 import type { ReactionName } from "@/shared/slot-db/commands";
 import type { ReadBy } from "@/shared/slot-db/rows";
 import { errorText, log } from "../log";
-import { messageSelector, sleep, type SendResult, type TeamsPage } from "./page";
+import { afterPress, messageSelector, sleep, type AfterPress, type SendResult, type TeamsPage } from "./page";
 import { composerImages, composerLeft, imageMessageSent, messageIds, ownMessageSent, pasteImage } from "./scripts/compose";
 import {
   composerText,
@@ -28,10 +28,29 @@ async function until(check: () => Promise<boolean>, tries: number, ms: number): 
   return false;
 }
 
+// A click or a key that threw may have sent the message or not: the page says which. The text still in the compose
+// box and no new message: it never left (a panel over the Send button caught the click), the box is emptied and the
+// send failed. Anything else, or a page that cannot be read: it may be out.
+async function afterFailedPress(tp: TeamsPage, text: string, before: string[]): Promise<SendResult> {
+  try {
+    await sleep(1000);
+    const left = (await tp.page.evaluate(composerText, SEL)).includes(text.slice(0, 20));
+    const fresh = (await tp.page.evaluate(messageIds, SEL)).some((mid) => !before.includes(mid));
+    if (left && !fresh) {
+      await tp.emptyComposeBox();
+      return "failed";
+    }
+  } catch {
+    // the page cannot say
+  }
+  return "unconfirmed";
+}
+
 // The text typed in the compose box and sent, as a person does. Refused when Teams shows another chat or the
 // compose box holds a draft, which would go out with it; whatever goes wrong before the send leaves the box empty.
 // Sent once Teams shows the new message as sent (15 s at most), unconfirmed when it went and Teams does not show it.
-export async function sendText(tp: TeamsPage, chat: string, raw: string): Promise<SendResult> {
+// `sent` runs as soon as the message went.
+export async function sendText(tp: TeamsPage, chat: string, raw: string, sent?: AfterPress): Promise<SendResult> {
   const text = raw.trim();
   if (!text || !(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return "failed";
   const page = tp.page;
@@ -56,11 +75,11 @@ export async function sendText(tp: TeamsPage, chat: string, raw: string): Promis
     else await page.keyboard.press("Enter");
   } catch (e) {
     log.warn("send", errorText(e), { chat });
-    // a click or a key that failed halfway may have sent it: nothing is cleaned, the outcome is unknown
-    if (pressed) return "unconfirmed";
+    if (pressed) return afterFailedPress(tp, text, before);
     await tp.emptyComposeBox();
     return "failed";
   }
+  await afterPress(sent);
   if (await until(() => page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before }), 50, 300)) return "sent";
   log.warn("send", "message not shown sent on Teams: unconfirmed", { chat });
   return "unconfirmed";
@@ -70,8 +89,9 @@ export type ImageFile = { name: string; type: string; data: Buffer };
 
 // The image goes in as a paste, then the caption, and Enter sends both, as a person does. Refused when Teams
 // shows another chat or the compose box holds a draft, which would go out with the image. Sent once Teams shows
-// the new message with the image as sent (upload included, 30 s at most), unconfirmed when it does not.
-export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, caption: string): Promise<SendResult> {
+// the new message with the image as sent (upload included, 30 s at most), unconfirmed when it does not. `sent` runs as
+// soon as the message went.
+export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, caption: string, sent?: AfterPress): Promise<SendResult> {
   if (!(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return "failed";
   const page = tp.page;
   if ((await page.evaluate(composerText, SEL)).trim() || (await page.evaluate(composerImages, SEL))) {
@@ -96,14 +116,15 @@ export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, c
     await tp.emptyComposeBox();
     return "failed";
   }
+  await afterPress(sent);
   if (await until(() => page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before }), 100, 300)) return "sent";
   log.warn("image", "message not shown sent on Teams: unconfirmed", { chat });
   return "unconfirmed";
 }
 
 // Reply with quote: on the bar for other people's messages, in More options for yours. Sent once Teams shows the
-// reply, unconfirmed when Enter went and Teams does not show it.
-export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, raw: string): Promise<SendResult> {
+// reply, unconfirmed when Enter went and Teams does not show it. `sent` runs as soon as the reply went.
+export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, raw: string, sent?: AfterPress): Promise<SendResult> {
   const text = raw.trim();
   if (!text || !(await tp.clearOverlays()) || !(await tp.openChat(chat))) return "failed";
   const page = tp.page;
@@ -136,6 +157,7 @@ export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, r
   } finally {
     await tp.mouseAway();
   }
+  await afterPress(sent);
   if (await until(() => page.evaluate(lastMessageQuotes, { s: SEL, before, text: text.slice(0, 40) }), 20, 300)) return "sent";
   log.warn("reply", "reply not shown on Teams: unconfirmed", { mid });
   return "unconfirmed";

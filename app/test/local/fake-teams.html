@@ -1,8 +1,9 @@
 <!doctype html>
 <!-- Stands in for Teams web in the relay test: the selectors of src/agent/teams/selectors.ts, and the behaviour the
      agent relies on (a row click opens the chat, Enter sends, a new message of yours shows Sending... then Sent,
-     the sign-out banner). window.fakeTeams lets the test play the other side, and stall(true) keeps a new message
-     of yours at Sending..., as when Teams never confirms it. -->
+     the sign-out banner). window.fakeTeams lets the test play the other side; stall(true) keeps a new message of
+     yours at Sending..., as when Teams never confirms it; sendButton(true) shows the Send button, coverSend(true)
+     puts a panel over it, which catches the click. -->
 <html>
 <head>
   <meta charset="utf-8">
@@ -108,6 +109,10 @@
     box.addEventListener("keydown", (e) => {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault();
+      sendBox();
+    });
+
+    function sendBox() {
       const text = box.innerText.trim();
       const c = chats[open];
       if (!text || !c) return;
@@ -125,7 +130,7 @@
           save();
           renderConversation();
         }, 600);
-    });
+    }
 
     window.fakeTeams = {
       incoming(name, text) {
@@ -145,6 +150,22 @@
       },
       stall(on) {
         stalled = on;
+      },
+      sendButton(on) {
+        document.getElementById("send")?.remove();
+        if (!on) return;
+        const send = Object.assign(document.createElement("button"), { id: "send", textContent: "Send" });
+        send.setAttribute("data-tid", "sendMessageCommands-send");
+        send.addEventListener("click", sendBox);
+        document.getElementById("pane").append(send);
+      },
+      coverSend(on) {
+        document.getElementById("cover")?.remove();
+        if (!on) return;
+        const r = document.getElementById("send").getBoundingClientRect();
+        const cover = Object.assign(document.createElement("div"), { id: "cover", textContent: "Tip" });
+        cover.style.cssText = `position:fixed;left:${r.left - 5}px;top:${r.top - 5}px;width:${r.width + 10}px;height:${r.height + 10}px;background:#ffd;z-index:10`;
+        document.body.append(cover);
       },
     };
     renderList();

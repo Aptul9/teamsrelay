@@ -125,7 +125,7 @@ describe("command handlers", () => {
 
   it("send: done once Teams shows the message, failed when it does not, the conversation saved either way", async () => {
     expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello"))).toBe("done");
-    expect(actions.sendText).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "hello");
+    expect(actions.sendText).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "hello", expect.any(Function));
     vi.mocked(actions.sendText).mockResolvedValueOnce("failed");
     evaluated = [];
     expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello again"))).toBe("failed");
@@ -147,7 +147,7 @@ describe("command handlers", () => {
   it("reply, edit, delete, undo: failed when Teams did not change, after saving the conversation", async () => {
     vi.mocked(actions.replyWithQuote).mockResolvedValueOnce("failed");
     expect(await runCommand(agent(), cmd("reply", "Anna Rossi", '{"mid":"m1","text":"On it"}'))).toBe("failed");
-    expect(actions.replyWithQuote).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "m1", "On it");
+    expect(actions.replyWithQuote).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "m1", "On it", expect.any(Function));
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
     expect(await runCommand(agent(), cmd("edit", "Anna Rossi", '{"mid":"m1","text":"fixed"}'))).toBe("done");
     expect(await runCommand(agent(), cmd("delete", "Anna Rossi", '{"mid":"m1"}'))).toBe("done");
@@ -175,7 +175,7 @@ describe("command handlers", () => {
     const png = Buffer.from("89504e470d0a1a0a0102", "hex");
     fs.writeFileSync(path.join(uploads, "0123456789abcdef.png"), png);
     expect(await runCommand(agent(), cmd("sendimage", "Anna Rossi", '{"file":"0123456789abcdef.png","text":"For you"}'))).toBe("done");
-    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.png", type: "image/png", data: png }, "For you");
+    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.png", type: "image/png", data: png }, "For you", expect.any(Function));
     expect(fs.readdirSync(uploads)).toEqual([]);
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
     expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("Anna Rossi");
@@ -186,7 +186,7 @@ describe("command handlers", () => {
     vi.mocked(actions.sendImage).mockResolvedValueOnce("failed");
     fs.writeFileSync(path.join(uploads, "0123456789abcdef.jpg"), Buffer.from("ffd8ffe0", "hex"));
     expect(await runCommand(agent(), cmd("sendimage", "Anna Rossi", '{"file":"0123456789abcdef.jpg"}'))).toBe("failed");
-    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.jpg", type: "image/jpeg", data: expect.any(Buffer) }, "");
+    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.jpg", type: "image/jpeg", data: expect.any(Buffer) }, "", expect.any(Function));
     expect(fs.readdirSync(uploads)).toEqual([]);
   });
 
@@ -216,7 +216,7 @@ describe("command handlers", () => {
   it("sendmentions: hands the parts to Teams, saves the conversation, done only when sent", async () => {
     const parts = [{ text: "Hi " }, { mention: "ROSSI Anna" }, { text: ", can you check?" }];
     expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("done");
-    expect(mentionActions.sendWithMentions).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", parts);
+    expect(mentionActions.sendWithMentions).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", parts, expect.any(Function));
     expect(evaluated).toContain("readMessages");
     vi.mocked(mentionActions.sendWithMentions).mockResolvedValueOnce("failed");
     expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("failed");

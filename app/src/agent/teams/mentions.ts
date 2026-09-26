@@ -1,6 +1,6 @@
 import type { MentionPart } from "@/shared/slot-db/commands";
 import { errorText, log } from "../log";
-import { sleep, type SendResult, type TeamsPage } from "./page";
+import { afterPress, sleep, type AfterPress, type SendResult, type TeamsPage } from "./page";
 import { composerLeft, messageIds } from "./scripts/compose";
 import { rosterNames, topicNames } from "./scripts/members";
 import { composerMentionNames, mentionMessageSent, mentionOptionPoint } from "./scripts/mentions";
@@ -75,8 +75,8 @@ export async function composeWithMentions(tp: TeamsPage, parts: readonly Mention
 
 // The message with people tagged, as a person writes it: refused when Teams shows another chat or the compose box
 // holds a draft; whatever goes wrong before the send leaves the box empty. Sent once Teams shows the message sent,
-// with everyone tagged; unconfirmed when Enter went and Teams does not show it.
-export async function sendWithMentions(tp: TeamsPage, chat: string, parts: readonly MentionPart[]): Promise<SendResult> {
+// with everyone tagged; unconfirmed when Enter went and Teams does not show it. `sent` runs as soon as the message went.
+export async function sendWithMentions(tp: TeamsPage, chat: string, parts: readonly MentionPart[], sent?: AfterPress): Promise<SendResult> {
   if (!(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return "failed";
   const page = tp.page;
   // a draft already there is someone's: left as it is, nothing sent
@@ -98,6 +98,7 @@ export async function sendWithMentions(tp: TeamsPage, chat: string, parts: reado
     await tp.emptyComposeBox();
     return "failed";
   }
+  await afterPress(sent);
   if (await until(() => page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names }), 40, 300)) return "sent";
   log.warn("mention", "message not shown sent on Teams: unconfirmed", { chat });
   return "unconfirmed";
