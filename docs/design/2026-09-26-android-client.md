@@ -79,7 +79,7 @@ The service account key and `google-services.json` stay out of git. The service 
 | `mobile/plugin/` | Kotlin plugin (`@TauriPlugin`): `FirebaseMessagingService`, channels, notification builder, reply receiver and WorkManager job, cookie reader, key storage, `setRelay` command |
 | `mobile/start/` | The bundled start page |
 
-Build machine: Android Studio with SDK Platform, Platform-Tools, Build-Tools, Command-line Tools and NDK; `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`; `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`. None of it was installed on the development laptop on 2026-09-26. The APK is built locally; CI is out of scope for the first version.
+Build machine: Android Studio with SDK Platform, Platform-Tools, Build-Tools, Command-line Tools and NDK; `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`; `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`. None of it was installed on the development laptop on 2026-09-26. The debug APK of the shell is built by `.github/workflows/android.yml` on the GitHub runner, which carries SDK and NDK; release builds and signing stay local.
 
 ## Tests
 
@@ -94,7 +94,7 @@ Build machine: Android Studio with SDK Platform, Platform-Tools, Build-Tools, Co
 ## Open questions
 
 - Relay: this web app, or `teamsrelay-local`, whose page keeps a bearer token instead of a session cookie (the start page would hand the token to the plugin).
-- Package name, and who keeps the signing key.
+- Who keeps the signing key. The package name of the shell is `io.github.aptul9.teamsrelay`: changing it after a first install means a new app on the phone.
 
 ## Out of scope
 

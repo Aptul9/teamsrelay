@@ -4,11 +4,12 @@ A Tauri 2 app that shows the TeamsRelay web app of a server in an app window. St
 
 ## What it does
 
-- First start: a page bundled with the app asks for the address of the TeamsRelay server, keeps it (`localStorage` of the bundled page) and opens it. `https://` only; `http://` is accepted for `localhost` and `127.0.0.1`, to reach a local stack through `adb reverse tcp:8090 tcp:8090`.
+- First start: a page bundled with the app asks for the address of the TeamsRelay server, keeps it (`localStorage` of the bundled page) and opens it. `https://` only; `http://` is accepted for `localhost` and `127.0.0.1`, to reach a local stack through `adb reverse tcp:8090 tcp:8090`, and works only in debug builds (the Tauri Android template allows clear text for the debug build type only).
 - Next starts: the saved server opens directly.
-- Changing the server: Android Settings, Apps, TeamsRelay, Storage, **Clear storage** (it also signs out). Back from the first server page right after typing the address also shows the form again in Chrome (tested); in the app that depends on the Tauri back button handling, not tried on a device yet.
-- The server page runs as in a browser, with its own session cookie. No Tauri capability names a remote URL, so the server page cannot call Tauri.
-- Android WebView has no Push API and no service worker notifications (MDN compatibility data): the web app button to enable notifications does nothing inside the app.
+- Changing the server: Android Settings, Apps, TeamsRelay, Storage, **Clear storage** (it also signs out). Back from the first server page right after typing the address shows the form again: tested in Chrome; in the app the Back button calls `webView.goBack()` while the WebView has history (Tauri 2.12 `AppPlugin.kt`), not tried on a device yet.
+- The server page runs in the app WebView with its own session cookie. No Tauri capability names a remote URL, so the server page cannot call Tauri.
+- No notifications inside the app: Android WebView has no Push API and no service worker notifications (MDN compatibility data), and the Settings page of the web app says the browser does not support push notifications.
+- No downloads inside the app: Tauri 2.12 sets no download listener on the Android WebView, so attachment downloads of the web app do nothing. Open files in Teams or in the PWA.
 
 ## Layout
 
@@ -26,11 +27,12 @@ Requirements, as in the [Tauri prerequisites](https://v2.tauri.app/start/prerequ
 ```bash
 npm ci
 npx tauri android init
+npx tauri icon ../app/public/static/icon-512.png
 npx tauri android build --debug --apk --target aarch64
 adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
 ```
 
-On Windows, Rust has to use the MSVC host toolchain with the Microsoft C++ Build Tools: the GNU toolchain stops on the Windows dependencies of the build scripts (`dlltool` cannot create import libraries without binutils). A release build needs a signing key, configured in `src-tauri/gen/android` as in the [Tauri signing guide](https://v2.tauri.app/distribute/sign/android/); the key and `keystore.properties` stay out of git.
+`tauri icon` runs after `android init`: it writes the launcher icons into the Android project only when the project exists, otherwise the APK carries the Tauri default icon. On Windows, Rust has to use the MSVC host toolchain with the Microsoft C++ Build Tools: the GNU toolchain stops on the Windows dependencies of the build scripts (`dlltool` cannot create import libraries without binutils). A release build needs a signing key, configured in `src-tauri/gen/android` as in the [Tauri signing guide](https://v2.tauri.app/distribute/sign/android/); the key and `keystore.properties` stay out of git.
 
 ## CI
 
