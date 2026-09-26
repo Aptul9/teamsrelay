@@ -132,6 +132,8 @@ describe("agent process", () => {
     const row = await until(() => query<{ title: string; body: string }>("SELECT title, body FROM messages ORDER BY id DESC LIMIT 1"), 20_000, "a notified message");
     expect(row.body).toBe("are you there for the incoming check?");
     expect(name.startsWith(row.title)).toBe(true);
+    // the line reaches this process a moment after the row reaches the database
+    await until(() => logged(/^NEWMSG: /) > 0, 5000, "the NEWMSG line");
     expect(logged(/^NEWMSG: /)).toBe(1);
   }, 60_000);
 
@@ -142,6 +144,7 @@ describe("agent process", () => {
     const ids = [Number(insert.run("resync").lastInsertRowid), Number(insert.run("teleport").lastInsertRowid)];
     db.close();
     for (const id of ids) await until(() => query<{ status: string }>("SELECT status FROM commands WHERE id=?", id)?.status === "done", 15_000, `command ${id}`);
+    await until(() => logged(/^CMD: resync/) > 0, 5000, "the CMD line");
     expect(logged(/^CMD: resync/)).toBe(1);
   }, 60_000);
 
