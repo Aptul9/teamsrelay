@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { format } from "../agent/log";
 import { Supervised, type Command } from "./process";
 
 export type AccountsConfig = {
@@ -123,7 +124,7 @@ export class Accounts {
     private readonly cfg: AccountsConfig,
     private readonly deps: Deps,
   ) {
-    this.makeProcess = deps.process ?? ((name, command, output) => new Supervised(name, command, { log: deps.log, output }));
+    this.makeProcess = deps.process ?? ((name, command, output) => new Supervised(name, command, { log: (m) => this.say(m), output }));
     this.focus = deps.focus ?? ((n) => focusWindow(n, cfg));
   }
 
@@ -133,7 +134,7 @@ export class Accounts {
       if (!a.browser.active) this.prepareProfile(n);
       a.browser.start();
       a.agent.start();
-      this.deps.log(`account ${n} started`);
+      this.say(`account ${n} started`);
     });
   }
 
@@ -144,7 +145,7 @@ export class Accounts {
       if (!a) return;
       await a.agent.stop();
       await a.browser.stop();
-      this.deps.log(`account ${n} stopped`);
+      this.say(`account ${n} stopped`);
     });
   }
 
@@ -165,7 +166,7 @@ export class Accounts {
       }
       const left = fs.readdirSync(dir);
       if (left.length) throw new AccountError(500, `account ${n}: not wiped, left: ${left.join(" ")}`);
-      this.deps.log(`account ${n} wiped`);
+      this.say(`account ${n} wiped`);
     });
   }
 
@@ -183,6 +184,11 @@ export class Accounts {
 
   async stopAll() {
     await Promise.all([...this.accounts.keys()].map((n) => this.stop(n)));
+  }
+
+  // the agents' own lines go out as "[N] <line>", the supervisor's under its prefix
+  private say(message: string) {
+    this.deps.log(format("supervisor", message));
   }
 
   private check(n: number) {

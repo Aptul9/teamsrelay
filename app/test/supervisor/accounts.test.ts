@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { AccountError, Accounts, agentCommand, browserCommand, type AccountsConfig, type ProcessLike } from "@/supervisor/accounts";
+import { AccountError, Accounts, agentCommand, browserCommand, type AccountsConfig } from "@/supervisor/accounts";
 import { tempDir } from "../helpers";
+import { fakeProcess } from "./fakes";
 
 let cfg: AccountsConfig;
 let calls: string[];
@@ -29,38 +30,10 @@ beforeEach(() => {
   calls = [];
 });
 
-// Stand-in for a supervised process: records the calls, "stop" can take its time
-function fakeProcess(name: string, stopMs = 0): ProcessLike {
-  let wanted = false;
-  return {
-    name,
-    restarts: 0,
-    lastExit: null,
-    get running() {
-      return wanted;
-    },
-    get active() {
-      return wanted;
-    },
-    get pid() {
-      return wanted ? 4242 : null;
-    },
-    start() {
-      calls.push(`start ${name}`);
-      wanted = true;
-    },
-    async stop() {
-      calls.push(`stop ${name}`);
-      await new Promise((r) => setTimeout(r, stopMs));
-      wanted = false;
-    },
-  };
-}
-
 function accounts(opts: { stopMs?: number; focused?: number[] } = {}) {
   return new Accounts(cfg, {
     log: () => undefined,
-    process: (name) => fakeProcess(name, opts.stopMs),
+    process: (name) => fakeProcess(name, calls, opts.stopMs),
     focus: async (n) => {
       opts.focused?.push(n);
       return true;
@@ -147,7 +120,7 @@ describe("Accounts", () => {
   it("stops the agent before the browser", async () => {
     const a = accounts();
     await a.start(1);
-    calls = [];
+    calls.length = 0;
 
     await a.stop(1);
 
@@ -157,7 +130,7 @@ describe("Accounts", () => {
   it("runs the requests of one account one at a time", async () => {
     const a = accounts({ stopMs: 100 });
     await a.start(1);
-    calls = [];
+    calls.length = 0;
 
     await Promise.all([a.stop(1), a.start(1)]);
 
@@ -233,7 +206,7 @@ describe("Accounts", () => {
     const a = accounts();
     await a.start(1);
     await a.start(2);
-    calls = [];
+    calls.length = 0;
 
     await a.stopAll();
 
