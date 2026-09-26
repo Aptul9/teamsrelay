@@ -86,9 +86,9 @@ docker compose --env-file compose.local.env -f docker-compose.yml -f compose.loc
 - Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` of `compose.local.env`, local test values.
 - Caddy serves plain HTTP: `localhost` is a secure context, so the service worker and Web Push work without a certificate.
 - Named volumes (`tr_data`, `tr_config`...) replace `data/` and `config/`: on the Windows filesystem SQLite locking and the symlinks of the Chromium profile are unreliable.
-- Sample chats without a signed-in Teams: `docker compose cp webapp/scripts/seed-slot.mjs webapp:/app/seed-slot.mjs`, then `docker compose exec webapp node /app/seed-slot.mjs /data 1` (slot 1 must belong to your user).
+- Sample chats without a signed-in Teams: `docker compose cp app/scripts/seed-slot.mjs webapp:/app/seed-slot.mjs`, then `docker compose exec webapp node /app/seed-slot.mjs /data 1` (slot 1 must belong to your user).
 
-Web app code: `webapp/` (Next.js). Checks, from `webapp/`:
+Web app code: `app/` (Next.js). Checks, from `app/`:
 
 ```bash
 npm ci

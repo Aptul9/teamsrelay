@@ -1,6 +1,6 @@
 # Teams selectors
 
-Everything the agent knows about Teams web is in `agent/agent.py`. When Microsoft changes the interface, the change goes there. Checked on Teams web in English (`teams.cloud.microsoft`) in September 2026. `webapp/test/agent-chats.test.ts` runs the chat list scripts against a static copy of the list.
+Everything the agent knows about Teams web is in `agent/agent.py`. When Microsoft changes the interface, the change goes there. Checked on Teams web in English (`teams.cloud.microsoft`) in September 2026. `app/test/agent-chats.test.ts` runs the chat list scripts against a static copy of the list.
 
 ## Page and chat list
 

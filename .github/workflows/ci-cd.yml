@@ -31,11 +31,11 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: webapp/package-lock.json
+          cache-dependency-path: app/package-lock.json
 
       # the agent fixture tests (test/agent-chats.test.ts) run in the Google Chrome of the runner
       - name: Web app
-        working-directory: webapp
+        working-directory: app
         env:
           NEXT_TELEMETRY_DISABLED: "1"
         run: |
@@ -63,7 +63,7 @@ jobs:
       - name: Build images
         run: |
           docker build -q -t teamsrelay-agent ./agent
-          docker build -q -t teamsrelay-webapp ./webapp
+          docker build -q -t teamsrelay-webapp ./app
 
   deploy:
     name: Deploy

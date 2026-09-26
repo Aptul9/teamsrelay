@@ -125,7 +125,7 @@ services:
 
   webapp:
     # Installable web app (PWA), API and user management; starts and stops the slots of its users
-    build: ./webapp
+    build: ./app
     image: teamsrelay-webapp
     container_name: teams-webapp
     environment:
