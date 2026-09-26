@@ -110,6 +110,10 @@ describe.runIf(posix)("supervisor process", () => {
     await until(() => lines.includes("[1] agent: start"), 10_000, "the agent log line");
   });
 
+  it("leaves the profiles directory it created open to the browser user, who is not root", () => {
+    expect(fs.statSync(path.join(dir, "profiles")).mode & 0o005).toBe(0o005);
+  });
+
   it("reports the accounts through the status subcommand", async () => {
     const out = await new Promise<string>((resolve, reject) =>
       execFile(process.execPath, [bundle, "status"], { env: env as NodeJS.ProcessEnv }, (err: Error | null, stdout: string) => (err ? reject(err) : resolve(stdout))),

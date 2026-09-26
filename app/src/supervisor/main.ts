@@ -48,8 +48,6 @@ async function main() {
   const cfg = loadConfig();
   if (process.argv.includes("--check")) return say(`check ok accounts=${cfg.accounts.slotCount}`);
   if (process.argv[2] === "status") process.exit(await status(cfg.socket));
-  // the socket and the files made here stay root's
-  process.umask(0o077);
   const accounts = new Accounts(cfg.accounts, { log: (line) => console.log(line) });
   const { XDG_RUNTIME_DIR, WAYLAND_DISPLAY } = cfg.accounts.session;
   const server = controlServer(accounts, { desktop: waitForFile(path.join(XDG_RUNTIME_DIR, WAYLAND_DISPLAY)), log: say });
