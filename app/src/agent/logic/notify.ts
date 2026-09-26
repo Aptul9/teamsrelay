@@ -22,11 +22,11 @@ export function pushRetryDelay(status: number | undefined, retryAfter: string | 
   return null;
 }
 
-// Retry-After is seconds or an HTTP date (RFC 9110)
+// Retry-After is seconds or an HTTP date (RFC 9110). Date.parse alone would also read "1.5" or "-5" as dates.
 function retryAfterSeconds(value: string | undefined, now: number): number | null {
   const v = value?.trim();
   if (!v) return null;
-  const s = /^\d+$/.test(v) ? Number(v) : (Date.parse(v) - now) / 1000;
+  const s = /^\d+$/.test(v) ? Number(v) : /[a-z]{3}/i.test(v) ? (Date.parse(v) - now) / 1000 : NaN;
   if (!Number.isFinite(s)) return null;
   return Math.min(Math.max(Math.ceil(s), 1), PUSH_RETRY_AFTER_MAX);
 }

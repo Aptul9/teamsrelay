@@ -77,17 +77,28 @@ export class Notifier {
       if (attempt) log.info("push", "sent on retry", { attempt });
       return true;
     } catch (e) {
-      const { statusCode: status, headers } = e as { statusCode?: number; headers?: Record<string, string | string[] | undefined> };
+      const { statusCode: status, headers, code } = e as { statusCode?: number; headers?: Record<string, string | string[] | undefined>; code?: unknown };
       if (status === 404 || status === 410) {
         this.o.app.deleteSubscription(t.endpoint);
         return false;
       }
+      // without a status, only a push service that did not answer (network error, timeout) is tried again: a
+      // subscription web-push refuses before sending fails the same way every time
+      const reached = status !== undefined || typeof code === "string" || errorText(e) === "Socket timeout";
       const retryAfter = headers?.["retry-after"];
-      const wait = pushRetryDelay(status, Array.isArray(retryAfter) ? retryAfter[0] : retryAfter, attempt, (this.o.clock ?? Date.now)());
+      const wait = reached ? pushRetryDelay(status, Array.isArray(retryAfter) ? retryAfter[0] : retryAfter, attempt, (this.o.clock ?? Date.now)()) : null;
       log.warn("push", errorText(e), { status, attempt, retry: wait ?? "none" });
-      if (wait !== null) (this.o.later ?? later)(wait * 1000, () => void this.sendTo(t, payload, options, attempt + 1));
+      if (wait !== null) (this.o.later ?? later)(wait * 1000, () => this.retry(t.endpoint, payload, options, attempt + 1));
       return false;
     }
+  }
+
+  // A retry goes to the device only while it is still one of the owner's: a subscription can pass to another user
+  // of the same browser, or be removed, while the retry waits
+  private retry(endpoint: string, payload: string, options: webpush.RequestOptions, attempt: number) {
+    const t = this.o.app.pushTargets().find((x) => x.endpoint === endpoint);
+    if (!t) return log.info("push", "device gone before the retry", { attempt });
+    void this.sendTo(t, payload, options, attempt);
   }
 
   private async ntfy(title: string, body: string) {

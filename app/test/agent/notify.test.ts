@@ -60,6 +60,8 @@ describe("push retry", () => {
     expect(pushRetryDelay(429, "86400", 0, now)).toBe(900);
     expect(pushRetryDelay(429, "Sat, 26 Sep 2026 20:01:00 GMT", 0, now)).toBe(60);
     expect(pushRetryDelay(429, "soon", 1, now)).toBe(30);
+    expect(pushRetryDelay(429, "1.5", 0, now)).toBe(5);
+    expect(pushRetryDelay(429, "-5", 0, now)).toBe(5);
     expect(pushRetryDelay(429, undefined, 2, now)).toBe(120);
     expect(pushRetryDelay(429, "42", 3, now)).toBeNull();
   });

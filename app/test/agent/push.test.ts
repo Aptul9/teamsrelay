@@ -64,7 +64,7 @@ function seedAppDb(devices: [string, string, string][]) {
 
 describe("notifier", () => {
   type Sent = { endpoint: string; payload: unknown; ttl: unknown; urgency: unknown };
-  type Failure = { statusCode?: number; headers?: Record<string, string> };
+  type Failure = { statusCode?: number; headers?: Record<string, string>; code?: string; message?: string };
   let sent: Sent[];
   // what the push service answers to the next sends to the phone, in order; then it takes them
   let failures: Failure[];
@@ -150,13 +150,34 @@ describe("notifier", () => {
   });
 
   it("tries a push again when the push service fails or does not answer", async () => {
-    failures.push({ statusCode: 503 }, {});
+    failures.push({ statusCode: 503 }, { code: "ECONNRESET", message: "read ECONNRESET" }, { message: "Socket timeout" });
     expect(await notifier().push("Anna Rossi", "ciao")).toBe(0);
     expect(retries.map((r) => r.ms)).toEqual([5000]);
     await retryNow();
     expect(retries.map((r) => r.ms)).toEqual([30_000]);
     await retryNow();
+    expect(retries.map((r) => r.ms)).toEqual([120_000]);
+    await retryNow();
     expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "ciao", acc: 1 }, ttl: PUSH_TTL, urgency: "high" }]);
+    expect(retries).toEqual([]);
+  });
+
+  it("does not try again a push web-push refused before sending", async () => {
+    failures.push({ message: "You must pass in a subscription with at least an endpoint." });
+    expect(await notifier().push("Anna Rossi", "ciao")).toBe(0);
+    expect(retries).toEqual([]);
+  });
+
+  it("drops a retry when the device is no longer the owner's", async () => {
+    failures.push({ statusCode: 503 }, { statusCode: 503 });
+    await notifier().push("Anna Rossi", "ciao");
+    const db = new Database(appDbFile);
+    db.prepare("UPDATE push_subscriptions SET user_id='u2' WHERE endpoint='https://push/u1-phone'").run();
+    db.close();
+    await retryNow();
+    // the second answer is still waiting: nothing reached the push service
+    expect(failures).toHaveLength(1);
+    expect(sent).toEqual([]);
     expect(retries).toEqual([]);
   });
 
