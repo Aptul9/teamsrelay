@@ -250,11 +250,11 @@ function imageItem(image) {
 
 // ---- actions
 
-// Queues the command and waits for Teams: done, failed, or pending when it takes too long
+// Queues the command and waits for Teams: done, failed, or pending (or running) when it takes too long
 async function command(body) {
   let { id, status } = await api("/api/cmd", { method: "POST", body });
   const end = Date.now() + 90_000;
-  while (status === "pending" && Date.now() < end) {
+  while ((status === "pending" || status === "running") && Date.now() < end) {
     await sleep(1500);
     ({ status } = await api(`/api/cmd/${id}`));
   }

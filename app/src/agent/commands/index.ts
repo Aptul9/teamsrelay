@@ -18,7 +18,7 @@ import { sendMentions } from "./send-mentions";
 import { sendImageCommand } from "./send-image";
 import { undoDelete } from "./undo-delete";
 
-export type Outcome = Exclude<CommandStatus, "pending">;
+export type Outcome = Exclude<CommandStatus, "pending" | "running">;
 export type Handler = (a: Agent, cmd: PendingCommand) => Promise<Outcome>;
 
 // Seconds a command may wait for the agent: older ones end as failed without touching Teams
@@ -55,13 +55,17 @@ export async function runCommand(a: Agent, cmd: PendingCommand): Promise<Outcome
   }
 }
 
-// Every pending command, oldest first. The outcome is written after the new state is saved: the app reads again
-// as soon as it sees done. Commands can take seconds: the chat list is read after each one.
+// Every pending command, oldest first, marked running while it runs. The outcome is written after the new state is
+// saved: the app reads again as soon as it sees done. Commands can take seconds: the chat list is read after each
+// one. Nothing runs between two calls, so a command still running here was left by an agent that stopped.
 export async function runPendingCommands(a: Agent) {
+  const interrupted = a.store.interruptedCommands();
+  if (interrupted) log.warn("cmd", "stopped while running, not run again: unconfirmed", { commands: interrupted });
   const expired = a.store.expirePendingCommands(COMMAND_MAX_AGE);
   if (expired) log.warn("cmd", "waited too long, not run", { commands: expired });
   for (const cmd of a.store.pendingCommands()) {
     log.info("CMD", cmd.type, { id: cmd.id, arg: cmd.type === "download" ? undefined : cmd.arg1 });
+    a.store.startCommand(cmd.id);
     a.store.finishCommand(cmd.id, await runCommand(a, cmd));
     await scanChats(a);
   }

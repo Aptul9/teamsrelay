@@ -203,6 +203,21 @@ describe("commands", () => {
     }
   });
 
+  it("waits while the agent runs the command, and answers its outcome", async () => {
+    const timer = setInterval(() => {
+      for (const c of store.pendingCommands()) {
+        store.startCommand(c.id);
+        setTimeout(() => store.finishCommand(c.id, "done"), 300);
+      }
+    }, 50);
+    try {
+      const r = await call("/api/cmd", { method: "POST", body: { type: "send", chat: "Anna Rossi", text: "hi" } });
+      expect(r.json).toEqual({ id: expect.any(Number), status: "done" });
+    } finally {
+      clearInterval(timer);
+    }
+  });
+
   it("answers pending when Teams takes longer, and the outcome later", async () => {
     const stop = agentFinishing("failed", 2500);
     try {

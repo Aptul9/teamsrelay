@@ -63,6 +63,22 @@ describe("SlotReader", () => {
     r.close();
   });
 
+  it("reports the command statuses of the agent with the words of its API: pending, done, failed", () => {
+    const r = SlotReader.open(file);
+    const id = r.enqueue("members", "Cloud team");
+    const status = (s: string) => {
+      raw.prepare("UPDATE commands SET status=? WHERE id=?").run(s, id);
+      return r.commandStatus(id)?.status;
+    };
+    // on Teams now: still waiting as far as the app knows, and not queued twice
+    expect(status("running")).toBe("pending");
+    expect(r.pendingCommand("members", "Cloud team")).toBe(id);
+    // the agent stopped while it ran, or Teams did not confirm in time: the app shows it as not done
+    expect(status("unconfirmed")).toBe("failed");
+    expect(r.pendingCommand("members", "Cloud team")).toBe(0);
+    r.close();
+  });
+
   it("reports an agent silent for more than a minute as stale", () => {
     const now = Math.floor(Date.now() / 1000);
     raw.prepare("INSERT INTO state(k,v) VALUES('health', ?)").run(JSON.stringify({ ts: now - 120, teams: "ok", overall: "green" }));

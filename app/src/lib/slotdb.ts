@@ -107,9 +107,11 @@ export class SlotReader {
     return Members.parse(this.state<unknown>(membersKey(chat), {}) ?? {});
   }
 
-  // Command of this type and first argument still waiting for the agent: its id, 0 when there is none
+  // Command of this type and first argument still waiting for the agent, or running: its id, 0 when there is none
   pendingCommand(type: CommandType, arg1: string): number {
-    return this.all<{ id: number }>("SELECT id FROM commands WHERE type=? AND arg1=? AND status='pending' ORDER BY id DESC LIMIT 1", type, arg1)[0]?.id ?? 0;
+    return (
+      this.all<{ id: number }>("SELECT id FROM commands WHERE type=? AND arg1=? AND status IN ('pending','running') ORDER BY id DESC LIMIT 1", type, arg1)[0]?.id ?? 0
+    );
   }
 
   unreadCount(): number {
@@ -123,10 +125,13 @@ export class SlotReader {
     return healthOf(this.state(STATE.health, {}), added);
   }
 
+  // pending, done or failed, as the API always answered: running is still pending for the app, unconfirmed (the agent
+  // stopped while it ran) is not done
   commandStatus(id: number): CommandStatus | null {
     const r = this.all<{ status: string }>("SELECT status FROM commands WHERE id=?", id)[0];
     if (!r) return null;
-    return { status: r.status, result: this.state<unknown>(cmdResultKey(id), null) };
+    const status = r.status === "running" ? "pending" : r.status === "unconfirmed" ? "failed" : r.status;
+    return { status, result: this.state<unknown>(cmdResultKey(id), null) };
   }
 
   enqueue(type: CommandType, arg1 = "", arg2 = ""): number {

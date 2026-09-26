@@ -173,8 +173,19 @@ export class SlotStore {
     return !!this.db.prepare("SELECT 1 FROM commands WHERE status='pending' LIMIT 1").get();
   }
 
-  finishCommand(id: number, status: Exclude<CommandStatus, "pending">) {
+  // The agent takes the command: from here on a stop of the agent leaves it running, never pending again
+  startCommand(id: number) {
+    this.db.prepare("UPDATE commands SET status='running' WHERE id=? AND status='pending'").run(id);
+  }
+
+  finishCommand(id: number, status: Exclude<CommandStatus, "pending" | "running">) {
     this.db.prepare("UPDATE commands SET status=? WHERE id=?").run(status, id);
+  }
+
+  // Commands left running by an agent that stopped (restart, crash) may have reached Teams: a send may be out, a
+  // reaction set. They end as unconfirmed, never run again. Number of commands.
+  interruptedCommands(): number {
+    return this.db.prepare("UPDATE commands SET status='unconfirmed' WHERE status='running'").run().changes;
   }
 
   // Commands still waiting after `maxAge` seconds end as failed: a message queued while Teams was signed out or the

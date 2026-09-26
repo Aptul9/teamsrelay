@@ -241,6 +241,22 @@ describe("command handlers", () => {
     expect(evaluated.filter((n) => n === "readChatList")).toHaveLength(2);
   });
 
+  it("never runs again a command the agent was running when it stopped: it ends unconfirmed", async () => {
+    const id = store.enqueue("send", "Anna Rossi", "hello");
+    // the agent is stopped (pm2 restart, crash) while Teams has not confirmed the message yet
+    vi.mocked(actions.sendText).mockImplementationOnce(() => new Promise(() => undefined));
+    void runPendingCommands(agent());
+    await vi.waitFor(() => expect(actions.sendText).toHaveBeenCalledTimes(1));
+    // the agent started again on the same database, well within two minutes
+    await runPendingCommands(agent());
+    expect(actions.sendText).toHaveBeenCalledTimes(1);
+    expect(store.commandStatus(id)).toBe("unconfirmed");
+    // a command queued after the restart runs as usual
+    const next = store.enqueue("send", "Anna Rossi", "hello again");
+    await runPendingCommands(agent());
+    expect(store.commandStatus(next)).toBe("done");
+  });
+
   it("never runs a command that waited too long: a send queued while Teams was down stays unsent", async () => {
     const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
     insert.run(Math.floor(Date.now() / 1000) - COMMAND_MAX_AGE - 5, "send", "Anna Rossi", "from an hour ago");

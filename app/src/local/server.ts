@@ -181,11 +181,12 @@ function send(res: http.ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+// The outcome of the command, or where it is (pending, running) when it takes longer than `ms`
 async function waitFor(store: SlotStore, id: number, ms: number): Promise<CommandStatus> {
   const end = Date.now() + ms;
   for (;;) {
     const status = store.commandStatus(id) ?? "failed";
-    if (status !== "pending" || Date.now() >= end) return status;
+    if ((status !== "pending" && status !== "running") || Date.now() >= end) return status;
     await sleep(200);
   }
 }
