@@ -222,9 +222,12 @@ export class Accounts {
 
   private prepareProfile(n: number) {
     const dir = profileDir(n, this.cfg);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-      if (process.getuid?.() === 0) fs.chownSync(dir, this.cfg.uid, this.cfg.gid);
+    fs.mkdirSync(dir, { recursive: true });
+    // A directory made by Docker (a bind mount or a volume no browser ever used) belongs to root: the browser
+    // writes its profile there. What is inside stays as it is.
+    if (process.getuid?.() === 0) {
+      const { uid, gid } = fs.statSync(dir);
+      if (uid !== this.cfg.uid || gid !== this.cfg.gid) fs.chownSync(dir, this.cfg.uid, this.cfg.gid);
     }
     for (const lock of LOCKS) fs.rmSync(path.join(dir, ".config", "chromium", lock), { force: true });
   }

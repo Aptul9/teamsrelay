@@ -109,6 +109,17 @@ describe("Accounts", () => {
     expect(fs.existsSync(path.join(cfg.profilesDir, "1"))).toBe(true);
   });
 
+  it.runIf(process.getuid?.() === 0)("gives a profile directory made by root to the browser user", async () => {
+    const dir = profile(4, "keep.txt");
+    cfg.uid = 4321;
+    cfg.gid = 4322;
+
+    await accounts().start(4);
+
+    expect(fs.statSync(dir)).toMatchObject({ uid: 4321, gid: 4322 });
+    expect(fs.statSync(path.join(dir, "keep.txt")).uid).toBe(0);
+  });
+
   it("removes the lock files a browser of another host left in the profile, and nothing else", async () => {
     const dir = profile(2, ".config/chromium/SingletonLock", ".config/chromium/SingletonSocket", ".config/chromium/SingletonCookie", ".config/chromium/Default/Cookies");
 
