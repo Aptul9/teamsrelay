@@ -1,0 +1,9 @@
+# Cargo and Tauri build output
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# Firebase configuration and signing keys stay out of git (docs/design/2026-09-26-android-client.md)
+google-services.json
+keystore.properties
+*.jks
+*.keystore

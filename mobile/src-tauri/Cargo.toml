@@ -1,0 +1,24 @@
+[package]
+name = "teamsrelay-mobile"
+version = "0.1.0"
+description = "TeamsRelay for Android: the web app of a TeamsRelay server in an app window"
+edition = "2021"
+publish = false
+
+[lib]
+# a library name of its own: the same name as the binary breaks the build on Windows (rust-lang/cargo#8519)
+name = "teamsrelay_mobile_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.0", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
