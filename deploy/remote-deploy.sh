@@ -7,7 +7,8 @@ set -euo pipefail
 TR_DIR="${TR_DIR:-/opt/teamsrelay}"
 BACKUP=/var/tmp/teamsrelay-prev.tgz
 cd "$TR_DIR"
-# the account slots (chromium-N, agent-N) are in the "accounts" profile: always include them here
+# Releases before the browsers container had one container per account in the "accounts" profile: with the
+# profile active, a rollback to one of them creates those containers again. No service of this release uses it.
 export COMPOSE_PROFILES=accounts
 
 code_files() {
@@ -27,7 +28,7 @@ healthy() {
   # the web app answers inside its container, then every running agent works
   for _ in $(seq 1 30); do
     if docker compose exec -T webapp node -e "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" >/dev/null 2>&1; then
-      # the web app starts the slots of the accounts a few seconds after its start
+      # the web app starts the accounts a few seconds after its start
       sleep 25
       agents_ok
       return
@@ -37,25 +38,30 @@ healthy() {
   return 1
 }
 
+# "<account> <restarts>" for every running agent, from the supervisor of the browsers container
+running_agents() {
+  docker compose exec -T browsers sh -c 'node /app/supervisor.cjs status | node -e "let s=\"\";process.stdin.on(\"data\",(d)=>s+=d).on(\"end\",()=>{for(const a of JSON.parse(s))if(a.agent.running)console.log(a.account,a.agent.restarts)})"'
+}
+
 # An agent works when it keeps running and writes its health row (state 'health' of data/N/messages.db,
 # rewritten every few seconds). One that stops at start (wrong environment, VAPID key not matching appkey.txt)
-# restarts in a loop, which a single look at the container status can miss: its restart count moves.
+# restarts in a loop, which a single look at its state can miss: its restart count moves.
 agents_ok() {
-  local names n stale before
-  names="$(docker ps --filter name=teams-agent- --format '{{.Names}}' | sort)"
-  [ -n "$names" ] || return 0
-  # shellcheck disable=SC2086
-  before="$(docker inspect -f '{{.RestartCount}}' $names | tr '\n' ' ')"
+  local before now n stale
+  # a rollback to a release without the browsers container: its agents are not checked here
+  docker compose ps --services --status running | grep -qx browsers || { echo "no browsers container: agents not checked" >&2; return 0; }
+  before="$(running_agents)" || { echo "the supervisor of the browsers container does not answer" >&2; return 1; }
+  [ -n "$before" ] || return 0
   for _ in $(seq 1 18); do
     sleep 5
-    # shellcheck disable=SC2086
-    if [ "$(docker inspect -f '{{.RestartCount}}' $names | tr '\n' ' ')" != "$before" ]; then
-      echo "agent restarting: $(tr '\n' ' ' <<<"$names")" >&2
+    now="$(running_agents)" || { echo "the supervisor of the browsers container does not answer" >&2; return 1; }
+    if [ "$now" != "$before" ]; then
+      echo "agent restarting: $(tr '\n' ' ' <<<"$now")" >&2
       return 1
     fi
     stale=""
-    for n in $names; do
-      docker compose exec -T webapp node -e "const D=require('better-sqlite3');const r=new D('/data/'+process.argv[1]+'/messages.db',{readonly:true,fileMustExist:true}).prepare(\"SELECT v FROM state WHERE k='health'\").get();process.exit(r&&Date.now()/1000-(JSON.parse(r.v).ts||0)<60?0:1)" "${n##*-}" >/dev/null 2>&1 || stale="$stale $n"
+    for n in $(cut -d' ' -f1 <<<"$before"); do
+      docker compose exec -T webapp node -e "const D=require('better-sqlite3');const r=new D('/data/'+process.argv[1]+'/messages.db',{readonly:true,fileMustExist:true}).prepare(\"SELECT v FROM state WHERE k='health'\").get();process.exit(r&&Date.now()/1000-(JSON.parse(r.v).ts||0)<60?0:1)" "$n" >/dev/null 2>&1 || stale="$stale $n"
     done
     [ -z "$stale" ] && return 0
   done
@@ -65,11 +71,11 @@ agents_ok() {
 
 start() {
   docker compose build
-  # Every slot exists, stopped: the web app starts those of the accounts (through dockerproxy it can only
-  # start and stop existing containers). A container whose configuration changed is recreated stopped
-  # and the web app starts it again.
   docker compose create
-  docker compose up -d --remove-orphans webapp dockerproxy caddy
+  # The services outside any profile. The containers of the old "accounts" profile (a rollback) stay created
+  # and stopped: the web app of those releases starts the ones of its accounts.
+  # shellcheck disable=SC2046
+  docker compose up -d --remove-orphans $(COMPOSE_PROFILES='' docker compose config --services)
   # Caddy has no image to rebuild and reads the mounted Caddyfile: rsync replaces it with a new file and
   # the container would keep seeing the old one. If it changed, restart (certificates stay in the volume).
   caddy_sum="$(sha256sum caddy/Caddyfile | cut -d' ' -f1)"

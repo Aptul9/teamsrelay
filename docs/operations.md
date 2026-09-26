@@ -15,17 +15,19 @@ flowchart LR
   H -->|no| RB[previous code restored<br/>job failed]
 ```
 
-**Check**, on every push and pull request: lint, type check, tests and build of `app/` (web app and agent; the page scripts run in Chrome on pages captured from Teams, the agent bundle runs as a process against a local Chrome); `node dist/agent.cjs --check`; deploy script syntax; both Compose files; Caddyfile; the image, whose build fails when the agent does not load in it.
+**Check**, on every push and pull request: lint, type check, tests and build of `app/` (web app and agent; the page scripts run in Chrome on pages captured from Teams, the agent bundle runs as a process against a local Chrome); `node dist/agent.cjs --check`; deploy script syntax; both Compose files; Caddyfile; both images, the browsers one failing its build when the agent or the supervisor does not load in it.
 
 **Deploy**, on every push to `main` or by hand (*Actions → CI/CD → Run workflow*):
 
 1. `deploy/remote-deploy.sh backup` saves the running code.
 2. `rsync --delete` uploads the code.
-3. `remote-deploy.sh up` checks `.env` (session key), builds, creates every container including the stopped slots, starts web app, socket proxy and Caddy, and restarts Caddy when the Caddyfile changed.
-4. The web app must answer, and every running agent must keep its restart count and write a health row younger than a minute (an agent with a wrong environment or VAPID key stops at start and restarts in a loop); otherwise the previous code comes back and the job fails.
+3. `remote-deploy.sh up` checks `.env` (session key), builds both images, starts browsers, web app and Caddy, removes the containers of services no longer in `docker-compose.yml`, and restarts Caddy when the Caddyfile changed.
+4. The web app must answer, and every agent the supervisor runs must keep its restart count and write a health row younger than a minute (an agent with a wrong environment or VAPID key stops at start and restarts in a loop); otherwise the previous code comes back and the job fails.
 5. `https://<DOMAIN>/healthz` is checked from the Internet.
 
-One deploy at a time: close pushes queue up. The deploy never touches `.env`, `config/`, `data/` or `vapid/`. The agents run from the same image as the web app: a deploy that changes the image recreates them stopped, and the web app starts them again within seconds. The browsers (`chromium-N`) are recreated only when their configuration changes, so the Teams sessions survive deploys.
+One deploy at a time: close pushes queue up. The deploy never touches `.env`, `config/`, `data/` or `vapid/`. The browsers container is recreated when its image or its configuration changes (a Chromium update, a release of the agent or of the supervisor): every account restarts and the web app starts them again within a minute. The Teams sessions stay in `config/` and survive deploys.
+
+The first deploy of the browsers container removes the containers of the releases before it (`chromium-N`, `agent-N`, `wipe-N`, `dockerproxy`) and starts `browsers` on the same `config/N`: the accounts stay signed in. The volume `wipe` of those releases is then unused: `docker volume rm teamsrelay_wipe`.
 
 Secrets and variables of the repository (*Settings → Secrets and variables → Actions*):
 
@@ -47,14 +49,16 @@ Run the workflow on an earlier commit (*Run workflow* after a `git revert` on `m
 cd /opt/teamsrelay
 cat .deployed-sha                        # running version
 tar -xzf /var/tmp/teamsrelay-prev.tgz    # code before the last deploy
-COMPOSE_PROFILES=accounts docker compose build && COMPOSE_PROFILES=accounts docker compose create && docker compose up -d
+export COMPOSE_PROFILES=accounts         # the per-account containers of releases before the browsers container
+docker compose build && docker compose create
+docker compose up -d --remove-orphans $(COMPOSE_PROFILES='' docker compose config --services)
 ```
 
 A rollback to a release with the Python agent works on the same data: the tables and state keys of `data/N/messages.db` did not change with the TypeScript agent.
 
 ## Updates
 
-Dependabot opens weekly pull requests for GitHub Actions, the images in `docker-compose.yml` (Chromium is pinned by digest), the Dockerfile and npm. Merging one deploys it. Keep the Chromium image current: it renders untrusted web content.
+Dependabot opens weekly pull requests for GitHub Actions, the images in `docker-compose.yml` and in `app/Dockerfile` (Chromium is pinned by digest there) and npm. Merging one deploys it. Keep the Chromium image current: it renders untrusted web content.
 
 ## Useful commands
 
@@ -62,13 +66,15 @@ Dependabot opens weekly pull requests for GitHub Actions, the images in `docker-
 cd /opt/teamsrelay
 docker compose ps
 docker compose logs -f webapp
-docker compose --profile accounts logs -f agent-1     # NEWMSG, CMD and errors of slot 1
-docker compose --profile accounts restart agent-1
+docker compose logs -f --no-log-prefix browsers | grep '^\[1\]'   # NEWMSG, CMD and errors of account 1
+docker compose exec browsers node /app/supervisor.cjs status         # browsers and agents, restarts
 ```
+
+An account is restarted from the account menu of the app (stop, then start); `docker compose restart browsers` restarts every account.
 
 ### Agent log
 
-One line per event, `<prefix>: <message> key=value`:
+One line per event, `<prefix>: <message> key=value`. In the log of the browsers container the lines of the agent of account N start with `[N] `, and the supervisor writes `supervisor:` lines: account started, stopped or wiped, a browser or an agent that exited and when it starts again.
 
 | Prefix | Event |
 |---|---|
@@ -92,8 +98,8 @@ One line per event, `<prefix>: <message> key=value`:
 **No notifications.** In the status panel:
 
 - *Teams: Session expired*: sign in again.
-- *Browser engine: Not responding*: `docker compose --profile accounts logs --tail 50 agent-N`, then restart `chromium-N` and `agent-N`.
-- *New message detection: Stopped*: restart `agent-N`.
+- *Browser engine: Not responding*: `docker compose logs --no-log-prefix --tail 300 browsers | grep '^\[N\]'`, then stop and start the account from the account menu.
+- *New message detection: Stopped*: stop and start the account from the account menu.
 - *Push notifications: 0 devices*: enable notifications from the installed app.
 
 Muted chats never notify, like in Teams. On iPhone the app must be opened from the Home Screen icon; check *Settings → Notifications → TeamsRelay* and the Focus modes. New VAPID keys require enabling notifications again on every device. **Recheck** in the status panel sends a test push.
@@ -106,7 +112,7 @@ Muted chats never notify, like in Teams. On iPhone the app must be opened from t
 
 **Web app does not start.** The log says why: `BETTER_AUTH_SECRET must be set` or `No users yet: set ADMIN_EMAIL and ADMIN_PASSWORD`.
 
-**Adding or removing an account fails with "Wipe of slot N failed".** `docker logs teams-wipe-N` lists what could not be deleted. The container runs as `1000:1000`, the owner of the profile: a non-empty directory created as root inside `config/N/` (for example through `docker exec` as root) blocks it; give it back to `1000:1000` and try again.
+**Adding or removing an account fails with "Wipe of account N failed".** The message says why: the account still running (a stop that failed), or the entries of `config/N/` that could not be deleted.
 
 ## Backup
 
@@ -118,6 +124,6 @@ Muted chats never notify, like in Teams. On iPhone the app must be opened from t
 ## Uninstall
 
 ```bash
-cd /opt/teamsrelay && docker compose --profile accounts down -v
+cd /opt/teamsrelay && docker compose down -v
 sudo rm -rf /opt/teamsrelay
 ```

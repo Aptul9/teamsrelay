@@ -13,12 +13,9 @@ export const config = {
   get dataDir() {
     return path.dirname(config.appDb);
   },
-  // Wipe requests for the teams-wipe-N containers (see wipeSlot)
-  get wipeDir() {
-    return process.env.WIPE_DIR || "/wipe";
-  },
-  get dockerApi() {
-    return process.env.DOCKER_API || "";
+  // Supervisor of the browsers container (see lib/control)
+  get controlSocket() {
+    return process.env.CONTROL_SOCKET || "/run/teamsrelay/control.sock";
   },
   get slotCount() {
     return positiveInt("SLOT_COUNT", 4);
@@ -26,9 +23,10 @@ export const config = {
   get accountsPerUser() {
     return positiveInt("ACCOUNTS_PER_USER", config.slotCount);
   },
-  // Remote desktop of a slot, {n} is the slot number
+  // Remote desktop of a slot, {n} is the slot number. The default brings the window of the slot to the front
+  // of the one desktop, then opens it.
   get desktopUrl() {
-    return process.env.DESKTOP_URL || "/desktop/{n}/";
+    return process.env.DESKTOP_URL || "/api/desktop/{n}";
   },
   get vapidAppKeyFile() {
     return process.env.VAPID_APPKEY || "/vapid/appkey.txt";

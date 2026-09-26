@@ -12,12 +12,6 @@ export function pickSlot(owned: number[], param: string | null): number {
   return n;
 }
 
-// /desktop/N/... as forwarded by Caddy in X-Forwarded-Uri
-export function desktopSlot(uri: string): number | null {
-  const m = /^\/desktop\/(\d+)\//.exec(uri);
-  return m ? Number(m[1]) : null;
-}
-
 export function safeNext(next: string | null): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 }

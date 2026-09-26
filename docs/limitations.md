@@ -19,4 +19,5 @@
 | Tagging people | `@` in the app tags the people Teams lists for that chat (in a group chat its members, you excluded; in the self chat nobody), in a new message only: not in a reply, an edit or the caption of an image. The list of members is read from Teams on the first `@` of a chat and again after an hour. |
 | AI clients (MCP) | Read only, one token acting as the administrator of `.env`, no OAuth: clients that connect only through OAuth (claude.ai connectors) cannot use it. `read_chat` gives the messages saved the last time the chat was open; `refresh_chat` opens it in Teams, which marks it read. Details: [mcp.md](mcp.md). |
 | iPhone | Push notifications reach only the app installed on the Home Screen. |
-| Slots | Fixed by `docker-compose.yml` (4). More slots need more services and networks there. |
+| One owner | Every Teams account of a server belongs to one person: all of them show their browser window on the one remote desktop. `SLOT_COUNT` caps their number (default 4). |
+| One container | The browsers of every account run in one container: a new browsers image (Chromium update, agent release) restarts every account. |

@@ -2,41 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { claimSlot, listSlots, releaseSlot, setSlotStopped, slotOwner } from "./appdb";
-import type { DockerClient } from "./docker";
+import type { ControlClient } from "./control";
 import { HttpError } from "./http";
 
-export type SlotPaths = { dataDir: string; wipeDir: string };
+export type SlotPaths = { dataDir: string };
 export type SlotOptions = SlotPaths & { db: Database.Database; slotCount: number; perUser: number };
 
-const containers = (n: number) => ({ chromium: `teams-chromium-${n}`, agent: `teams-agent-${n}`, wipe: `teams-wipe-${n}` });
+// Browser and agent of the slot, in the browsers container: the supervisor starts the browser before the agent
+// and stops them the other way round.
+export const slotUp = (ctl: ControlClient, n: number) => ctl.start(n);
+export const slotDown = (ctl: ControlClient, n: number) => ctl.stop(n);
 
-// The agent uses the network of its Chromium: browser first on the way up, agent first on the way down.
-export async function slotUp(docker: DockerClient, n: number) {
-  await docker.start(containers(n).chromium);
-  await docker.start(containers(n).agent);
-}
-
-export async function slotDown(docker: DockerClient, n: number) {
-  await docker.stop(containers(n).agent);
-  await docker.stop(containers(n).chromium);
-}
-
-// Browser profile (the Microsoft session) and agent data of the slot, with the slot stopped. The web app
-// has no access to the profiles: config/N is mounted only by chromium-N and by teams-wipe-N, which
-// empties it. The container deletes only when it finds the request file in the wipe volume, so a
-// "docker compose up" of the whole profile starts it for nothing.
-export async function wipeSlot(docker: DockerClient, n: number, paths: SlotPaths) {
-  const wipe = containers(n).wipe;
-  const request = path.join(paths.wipeDir, String(n));
-  fs.mkdirSync(paths.wipeDir, { recursive: true });
-  fs.writeFileSync(request, "");
-  try {
-    await docker.start(wipe);
-    const code = await docker.wait(wipe);
-    if (code !== 0) throw new HttpError(502, `Wipe of slot ${n} failed (exit code ${code}): see docker logs ${wipe}`);
-  } finally {
-    fs.rmSync(request, { force: true });
-  }
+// Browser profile (the Microsoft session) and agent data of the slot, with the slot stopped. The web app has
+// no access to the profiles: the supervisor empties config/N, then the web app deletes data/N.
+export async function wipeSlot(ctl: ControlClient, n: number, paths: SlotPaths) {
+  await ctl.wipe(n);
   fs.rmSync(path.join(paths.dataDir, String(n)), { recursive: true, force: true });
 }
 
@@ -48,13 +28,13 @@ export function exclusive<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-export function addAccount(userId: string, docker: DockerClient, o: SlotOptions): Promise<number> {
+export function addAccount(userId: string, ctl: ControlClient, o: SlotOptions): Promise<number> {
   return exclusive(async () => {
     const n = claimSlot(o.db, userId, { slotCount: o.slotCount, perUser: o.perUser });
     try {
-      await slotDown(docker, n).catch(() => undefined);
-      await wipeSlot(docker, n, o);
-      await slotUp(docker, n);
+      await slotDown(ctl, n).catch(() => undefined);
+      await wipeSlot(ctl, n, o);
+      await slotUp(ctl, n);
     } catch (e) {
       releaseSlot(o.db, n);
       throw e;
@@ -63,34 +43,34 @@ export function addAccount(userId: string, docker: DockerClient, o: SlotOptions)
   });
 }
 
-export function removeAccount(n: number, docker: DockerClient, o: Omit<SlotOptions, "slotCount" | "perUser">): Promise<void> {
+export function removeAccount(n: number, ctl: ControlClient, o: Omit<SlotOptions, "slotCount" | "perUser">): Promise<void> {
   return exclusive(async () => {
-    await slotDown(docker, n);
-    await wipeSlot(docker, n, o);
+    await slotDown(ctl, n);
+    await wipeSlot(ctl, n, o);
     releaseSlot(o.db, n);
   });
 }
 
 // Switches an account off or on without signing it out: stopped, it keeps its Microsoft session and data,
 // and the keep-alive loop leaves it alone until its owner starts it again.
-export function setAccountRunning(n: number, running: boolean, docker: DockerClient, db: Database.Database): Promise<void> {
+export function setAccountRunning(n: number, running: boolean, ctl: ControlClient, db: Database.Database): Promise<void> {
   return exclusive(async () => {
     // removed while this request waited in the queue
     if (!slotOwner(db, n)) throw new HttpError(404, "Account not found");
-    if (running) await slotUp(docker, n);
-    else await slotDown(docker, n);
+    if (running) await slotUp(ctl, n);
+    else await slotDown(ctl, n);
     setSlotStopped(db, n, !running);
   });
 }
 
 // Owned slots must be running, unless their owner stopped them: after a deploy recreated a container, a
 // reboot, or a stop outside the app.
-export function keepSlotsUp(docker: DockerClient, db: Database.Database, everyMs = 60_000) {
+export function keepSlotsUp(ctl: ControlClient, db: Database.Database, everyMs = 60_000) {
   const tick = () =>
     exclusive(async () => {
       for (const { slot, stopped } of listSlots(db)) {
         if (stopped) continue;
-        await slotUp(docker, slot).catch((e: Error) => console.error(`slot ${slot}: ${e.message}`));
+        await slotUp(ctl, slot).catch((e: Error) => console.error(`slot ${slot}: ${e.message}`));
       }
     });
   void tick();

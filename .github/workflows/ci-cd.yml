@@ -22,7 +22,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
 
-      # web app and agent; the page script tests (test/agent/page-*.test.ts) run in the Google Chrome of the runner
+      # web app, agent and supervisor; the page script tests (test/agent/page-*.test.ts) run in the Google Chrome
+      # of the runner
       - name: App
         working-directory: app
         env:
@@ -35,6 +36,7 @@ jobs:
           npm run build
           node --check public/sw.js
           node dist/agent.cjs --check
+          node dist/supervisor.cjs --check
 
       - name: Shell syntax
         run: bash -n deploy/remote-deploy.sh
@@ -42,7 +44,6 @@ jobs:
       - name: Compose files
         env:
           DOMAIN: example.com
-          COMPOSE_PROFILES: accounts
         run: |
           docker compose config -q
           docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml config -q
@@ -50,9 +51,11 @@ jobs:
       - name: Caddyfile
         run: docker run --rm -e DOMAIN=example.com -v "$PWD/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.4-alpine caddy validate --config /etc/caddy/Caddyfile
 
-      # the image runs node agent.cjs --check while it builds
-      - name: Build image
-        run: docker build -q -t teamsrelay ./app
+      # the browsers image runs node agent.cjs --check and node supervisor.cjs --check while it builds
+      - name: Build images
+        run: |
+          docker build -q --target web -t teamsrelay ./app
+          docker build -q --target browsers -t teamsrelay-browsers ./app
 
   deploy:
     name: Deploy

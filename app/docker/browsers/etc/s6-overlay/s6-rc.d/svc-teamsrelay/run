@@ -1,0 +1,3 @@
+#!/usr/bin/with-contenv bash
+# Supervisor of the Teams accounts: the browser and the agent of each account (app/src/supervisor)
+exec node /app/supervisor.cjs

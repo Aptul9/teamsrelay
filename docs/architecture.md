@@ -4,18 +4,19 @@
 
 | Service | Image | Role | Networks |
 |---|---|---|---|
-| `chromium-1` ... `chromium-4` | `lscr.io/linuxserver/chromium`, pinned by digest | Teams web of slot N, profile in `config/N/`, CDP on `127.0.0.1:9222`, desktop stream on port 3000 | `slotN` |
-| `agent-1` ... `agent-4` | `teamsrelay`, built from `./app`, runs `node agent.cjs` | Reads and drives Teams of slot N over the Chrome DevTools Protocol (Playwright), sends the push notifications | network namespace of `chromium-N` |
-| `webapp` | `teamsrelay`, built from `./app` (Next.js, Node 24; UI on Tailwind CSS and shadcn/ui), runs `node server.js` | PWA, API, users and sessions, event stream, slot start and stop, MCP endpoint for AI clients (`/mcp`, [mcp.md](mcp.md)) | `default`, `control` |
-| `dockerproxy` | `wollomatic/socket-proxy` | Docker socket filter: only `POST /containers/teams-(chromium\|agent)-N/(start\|stop)` and `POST /containers/teams-wipe-N/(start\|wait)` | `control` (internal) |
-| `caddy` | `caddy:2.11.4-alpine` | HTTPS, reverse proxy, desktop routes gated by `/api/authcheck` | `default`, `slot1` ... `slot4` |
-| `wipe-1` ... `wipe-4` | `busybox`, pinned by digest | One-shot: empties `config/N/` when the web app adds or removes the account of slot N | none |
+| `browsers` | `teamsrelay-browsers`, built from `./app` on `lscr.io/linuxserver/chromium` (pinned by digest) | Every Teams account: a Chromium with its own profile (`config/N`) and DevTools port, and its agent (`node agent.cjs`), started by the supervisor (`node supervisor.cjs`, an s6 service). One remote desktop (Selkies, port 3000) shows the window of every browser | `desktop` |
+| `webapp` | `teamsrelay`, built from `./app` (Next.js, Node 24; UI on Tailwind CSS and shadcn/ui), runs `node server.js` | PWA, API, users and sessions, event stream; starts, stops and wipes the accounts through the supervisor; MCP endpoint for AI clients (`/mcp`, [mcp.md](mcp.md)) | `default` |
+| `caddy` | `caddy:2.11.4-alpine` | HTTPS, reverse proxy, desktop gated by `/api/authcheck` | `default`, `desktop` |
 
-- `chromium-N`, `agent-N` and `wipe-N` belong to the `accounts` profile: `docker compose up -d` does not start them. The deploy creates them stopped; the web app starts the slots that have an owner and keeps them running (check every 60 s), except those their owner stopped from the account menu (`stopped` in `teams_accounts`), which keep their session and data until started again.
-- The web app does not mount `config/`. To wipe slot N it stops the slot, writes the request file `N` in the `wipe` volume, starts `wipe-N` and waits for exit code 0, then removes the request. Without the request `wipe-N` deletes nothing, so starting it by hand or with the whole profile is harmless.
-- A slot network holds one browser and Caddy. A page open in the browser of slot 1 cannot reach the browser of slot 2, the web app or the socket proxy.
-- The agent connects to `http://127.0.0.1:9222`: Chromium binds CDP on IPv4 only, and `localhost` in the container resolves to `::1` first. CDP has no authentication, so the agent stays one process per slot inside the network namespace of its browser; the web app never reaches CDP.
-- One image serves the web app and the agents. It holds the Next.js standalone output, `agent.cjs` (esbuild bundle of `app/src/agent`) and the two packages the agent loads at runtime, `playwright-core` and `better-sqlite3`. The build runs `node agent.cjs --check`, which fails when a package or a page script does not load in the image.
+Every Teams account of a server belongs to one person ([decision](decisions/2026-09-26-single-container.md)): the accounts share one container, one desktop and one loopback.
+
+- The supervisor runs as root and listens on a unix socket in the volume `control`, which only the web app mounts besides it: `POST /accounts/N/start`, `stop`, `wipe`, `show` and `GET /accounts`. No container reaches Docker.
+- Start of account N: its Chromium as `abc` (the `PUID` of the image), with `HOME` set to its profile directory (`/profiles/N`, `config/N` on the host) and DevTools on `127.0.0.1:(9221+N)`, then its agent as root with `CDP` pointing there. Stop: the agent first, then the browser with its process group. A process that exits is started again after 1 s, then after twice the previous delay up to 60 s while it keeps failing within 5 minutes of its start.
+- The web app keeps the accounts running: every account with an owner is started, except those their owner stopped from the account menu (`stopped` in `teams_accounts`), which keep their session and data until started again. The check runs at the web app start and every 60 s: after a restart of the browsers container the accounts are back within a minute.
+- Wipe, when an account is added or removed: the supervisor refuses it while the account runs, deletes every entry of `config/N` and checks that nothing is left; the web app then deletes `data/N`.
+- The windows of every browser open in the labwc session of the image. `/api/desktop/N` brings the window of account N to the front (`wlrctl`, Wayland app id `teamsrelay-N`), then redirects to `/desktop/`. A covered window keeps running at full speed (`--disable-backgrounding-occluded-windows`, `--disable-renderer-backgrounding`, `--disable-background-timer-throttling`).
+- The agent connects to `http://127.0.0.1:(9221+N)`: Chromium binds DevTools on IPv4 only. DevTools have no authentication: every process of the container reaches every browser. They refuse connections that carry a web origin, so a page cannot open them.
+- `app/Dockerfile` builds both images: target `web` holds the Next.js standalone output; target `browsers` holds Node 24, `agent.cjs` (esbuild bundle of `app/src/agent`), `supervisor.cjs` (bundle of `app/src/supervisor`) and the two packages the agent loads at runtime, `playwright-core` and `better-sqlite3`. Its build runs `node agent.cjs --check`, which fails when a package or a page script does not load in the image, and `node supervisor.cjs --check`.
 
 ## Web app and agent
 
@@ -26,8 +27,8 @@ sequenceDiagram
   participant P as Phone
   participant W as webapp
   participant D as data/N/messages.db
-  participant A as agent-N
-  participant C as Teams in chromium-N
+  participant A as agent N
+  participant C as Teams in the browser of N
   P->>W: POST /api/react?a=N {name, mid, emoji}
   W->>W: session user owns slot N?
   W->>D: INSERT commands (pending)
@@ -79,7 +80,7 @@ A message is new when the preview or the time of a chat changes with an incoming
 ### Resilience
 
 - **Virtualized lists**: Teams renders only the rows that fit the window, and the window depends on who looks at the remote desktop. Partial reads update the top of the list and keep the rest; the full read scrolls the list and rewrites it in one transaction.
-- **Teams reloads**: the agent finds the Teams tab again at the next round and reopens the chat in use; if it cannot see the Teams tab for 60 s it exits and Docker restarts it. A lost CDP connection (browser restarted) is opened again every 3 s, without touching the browser.
+- **Teams reloads**: the agent finds the Teams tab again at the next round and reopens the chat in use; if it cannot see the Teams tab for 60 s it exits and the supervisor starts it again. A lost CDP connection (browser restarted) is opened again every 3 s, without touching the browser.
 - **Errors**: a failing step is logged under its name and the round goes on; a command that throws ends as failed and is not run again.
 - **Right chat**: rows are matched by the exact name the app shows, a prefix only when a single row matches. Before saving a conversation the agent checks the title of the open chat (`[data-tid="chat-title"]`); a title that is another chat of the list never matches. Sending refuses to type when the open chat is not the requested one.
 
@@ -130,13 +131,15 @@ A message is new when the preview or the time of a chat changes with an incoming
 
 ```
 teamsrelay/
-├── docker-compose.yml     production stack
+├── docker-compose.yml     production stack: browsers, webapp, caddy
 ├── compose.local.yml      local overlay (Docker Desktop, 127.0.0.1, named volumes)
 ├── compose.local.env      local test values
 ├── .env.example
-├── app/                   one package, one image: web app and agent
+├── app/                   one package, two images: web app; browsers with agents and supervisor
 │   ├── src/app, src/components, src/lib, src/server   Next.js web app
 │   ├── src/agent          agent: loop, jobs, commands, Teams page scripts and selectors, push
+│   ├── src/supervisor     supervisor of the browsers container: processes, accounts, control API
+│   ├── docker/browsers    s6 service of the supervisor, desktop autostart without browser
 │   ├── src/shared/slot-db contract of data/N/messages.db, used by both
 │   ├── scripts/           gen-vapid.mjs (push keys), seed-slot.mjs, capture-fixture.ts
 │   └── test/              Vitest: web app, agent, page scripts in Chrome on captured fixtures

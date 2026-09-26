@@ -2,7 +2,7 @@ import { getMigrations } from "better-auth/db/migration";
 import { appDb, migrateAppSchema } from "@/lib/appdb";
 import { authOptions } from "@/lib/auth";
 import { config } from "@/lib/config";
-import { dockerClient } from "@/lib/docker";
+import { controlClient } from "@/lib/control";
 import { mcpConfigError } from "@/lib/mcp/access";
 import { keepSlotsUp } from "@/lib/slots";
 import { syncEnvAdmin } from "./env-admin";
@@ -26,6 +26,5 @@ export async function boot() {
     fatal(e instanceof Error ? e.message : String(e));
   }
   if (config.mcpToken) console.log("MCP endpoint on: /mcp");
-  if (config.dockerApi) keepSlotsUp(dockerClient(), appDb());
-  else console.warn("DOCKER_API not set: accounts cannot be switched on or off");
+  keepSlotsUp(controlClient(), appDb());
 }

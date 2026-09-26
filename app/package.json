@@ -3,12 +3,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 8090",
-    "build": "next build && npm run build:agent",
+    "build": "next build && npm run build:agent && npm run build:supervisor",
     "start": "next start -p 8090",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build:agent": "esbuild src/agent/main.ts --bundle --platform=node --target=node24 --format=cjs --sourcemap --external:playwright-core --external:better-sqlite3 --outfile=dist/agent.cjs --log-level=warning",
+    "build:supervisor": "esbuild src/supervisor/main.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/supervisor.cjs --log-level=warning",
     "agent": "node --enable-source-maps dist/agent.cjs"
   },
   "dependencies": {

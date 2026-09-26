@@ -13,7 +13,7 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 ## Ownership
 
 - Every Teams account (slot) has one owner. Every per-account endpoint (`?a=N`), `/media`, `/files`, `/api/cmd` and the event stream answer only for slots of the session user; another user's slot answers 404, like a slot that does not exist.
-- Administrators manage users and can free a slot. They do not read other users' chats and do not reach their desktops.
+- Administrators manage users and can free a slot. They do not read other users' chats; the remote desktop opens only for users with a Teams account.
 - A device receives the notifications of its user only: the agent of slot N pushes to the subscriptions of the owner of N.
 
 ## MCP endpoint
@@ -22,21 +22,24 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 - The token is compared in constant time. No session cookie counts on `/mcp`, and a request carrying an `Origin` header (a web page) answers 403, so a page open in a browser signed in to TeamsRelay cannot use the endpoint.
 - No tool writes to Teams. Message texts reach the model as data written by other people; a client that also has tools reaching the network or the shell can still be steered by them.
 
-## Remote desktops
+## Remote desktop
 
-- `/desktop/N/` is the browser of slot N, the live Teams session of its owner. Caddy asks `/api/authcheck` before every request: no session means a redirect to the login, a session of another user means 403.
-- Port 3000 of `chromium-N` has no password of its own (`DESKTOP_PASS` empty) and is reachable only on network `slotN`, shared with Caddy alone.
-- CDP (`9222`) listens on `127.0.0.1` inside the network namespace shared by `chromium-N` and `agent-N`, without authentication. The agents stay one process per slot for this reason: a single process for every slot would need CDP on the slot networks.
+- `/desktop/` is the desktop of the browsers container: the browser window, and the live Teams session, of every account. Caddy asks `/api/authcheck` before every request: no session means a redirect to the login, a user without a Teams account gets 403.
+- Every Teams account of the server belongs to one person ([decision](decisions/2026-09-26-single-container.md)). A second user with an account would see the windows of the others on the desktop.
+- Port 3000 of `browsers` has no password of its own (`DESKTOP_PASS` empty) and is reachable only on network `desktop`, shared with Caddy alone.
 
-## Docker
+## Browsers container
 
-- The web app reaches Docker only through `dockerproxy`, which allows `POST` on `/containers/teams-(chromium|agent)-N/(start|stop)` and `/containers/teams-wipe-N/(start|wait)`, and refuses every other method, path and container (checked: 403 on another container, on `stop` of a wipe container and on create, 405 on list).
-- The proxy runs read-only, without capabilities, on the internal network `control`, reachable only from the web app.
+- The web app has no access to Docker, and no container mounts the Docker socket. The web app asks the supervisor of the browsers container, on a unix socket in the volume `control` (mode 600, owned by root), to start, stop, wipe or show an account.
+- Chromium runs as `abc` with its sandbox: renderers in a seccomp filter and in their own user and PID namespaces. `abc` is not in the `sudo` group of the image.
+- `data/`, `vapid/` and the control socket are mounted under `/root` (mode 700): the agents and the supervisor, running as root, reach them; the browsers do not.
+- DevTools of each browser listen on `127.0.0.1:(9221+N)` without authentication, so every process of the container reaches every browser. They refuse connections that carry a web origin: a web page cannot open them.
+- A browser that escapes its sandbox reaches every profile under `/profiles` and every DevTools port: every account has the same owner.
 
 ## Data at rest
 
-- `config/N/` is the Microsoft session of slot N, stored unencrypted by Chromium. Protect the server and encrypt the backups.
-- Only `chromium-N` and `wipe-N` mount `config/N/`; the web app, the component exposed to the Internet, mounts no profile. `wipe-N` runs without network, on a read-only filesystem, without capabilities, as the owner of the profile, and deletes only on a request of the web app.
+- `config/N/` is the Microsoft session of account N, stored unencrypted by Chromium. Protect the server and encrypt the backups.
+- Only the browsers container mounts `config/`; the web app, the component exposed to the Internet, mounts no profile. The supervisor empties `config/N/` only on a request of the web app and only while account N is stopped.
 - Never publish `.env`, `config/`, `data/`, `vapid/`: they are in `.gitignore` and the deploy neither copies nor touches them.
 
 ## Content

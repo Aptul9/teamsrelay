@@ -1,48 +1,21 @@
 # Local test overlay (Docker Desktop). Not for production.
-#   docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml --profile accounts create --build
-#   docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml up -d
+#   docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml up -d --build
 # App on http://localhost:8090, sign in with ADMIN_EMAIL / ADMIN_PASSWORD of compose.local.env.
 # Caddy serves plain HTTP on 127.0.0.1 only: localhost is already a secure context, so the service
 # worker and Web Push work without a certificate.
 # SQLite and the Chromium profiles live in named volumes instead of bind mounts on the Windows
-# filesystem, where file locking and symlinks are unreliable.
+# filesystem, where file locking and symlinks are unreliable. The profiles are the volumes of the
+# chromium-N containers of earlier releases: tr_config for account 1, tr_config_N for account N.
 services:
-  chromium-1:
-    volumes:
-      - tr_config:/config
-  chromium-2:
-    volumes:
-      - tr_config_2:/config
-  chromium-3:
-    volumes:
-      - tr_config_3:/config
-  chromium-4:
-    volumes:
-      - tr_config_4:/config
-  agent-1:
-    volumes:
-      - tr_data:/data
-  agent-2:
-    volumes:
-      - tr_data:/data
-  agent-3:
-    volumes:
-      - tr_data:/data
-  agent-4:
-    volumes:
-      - tr_data:/data
-  wipe-1:
-    volumes:
-      - tr_config:/config
-  wipe-2:
-    volumes:
-      - tr_config_2:/config
-  wipe-3:
-    volumes:
-      - tr_config_3:/config
-  wipe-4:
-    volumes:
-      - tr_config_4:/config
+  browsers:
+    volumes: !override
+      - tr_config:/profiles/1
+      - tr_config_2:/profiles/2
+      - tr_config_3:/profiles/3
+      - tr_config_4:/profiles/4
+      - tr_data:/root/data
+      - ./vapid:/root/vapid:ro
+      - control:/root/run
   webapp:
     volumes:
       - tr_data:/data
