@@ -38,12 +38,14 @@ jobs:
           npm ci --no-audit --no-fund
           npm test
 
-      # the runner image carries the Android SDK and NDK; Tauri reads the NDK from NDK_HOME
+      # the runner image carries the Android SDK and NDK; Tauri reads the NDK from NDK_HOME. The launcher icons go
+      # into the Android project only once it exists, so they are made again after init.
       - name: Android project
         run: |
           echo "NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
           rustup target add aarch64-linux-android
           NDK_HOME="$ANDROID_NDK_HOME" npx tauri android init --ci --skip-targets-install
+          npx tauri icon ../app/public/static/icon-512.png
 
       - name: Build
         run: npx tauri android build --debug --apk --target aarch64
