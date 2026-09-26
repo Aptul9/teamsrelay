@@ -23,6 +23,31 @@ x-chromium-env: &chromium-env
   # ("decoder produced no output"): JPEG frames work in every browser and are enough for the login
   SELKIES_ENCODER: jpeg
 
+x-wipe: &wipe
+  # Empties config/N, the browser profile of slot N, when the web app adds or removes the account of the
+  # slot: the web app has no access to the profiles. It deletes only when the web app has left a request
+  # in the "wipe" volume, so a start by hand or with the whole "accounts" profile deletes nothing.
+  image: busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
+  # owner of the profile (PUID/PGID of chromium-N): root without capabilities cannot delete its files
+  user: "1000:1000"
+  network_mode: none
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  # find exits 0 even when it could not delete: the check that follows sets the exit code
+  command:
+    - sh
+    - -c
+    - |
+      [ -e "/wipe/$$SLOT" ] || { echo "slot $$SLOT: no request from the web app, nothing deleted" >&2; exit 3; }
+      find /config -mindepth 1 -delete
+      left="$$(ls -A /config)"
+      [ -z "$$left" ] || { echo "slot $$SLOT: not wiped, left: $$left" >&2; exit 1; }
+      echo "slot $$SLOT: profile wiped"
+  profiles: ["accounts"]
+  restart: "no"
+
 x-agent: &agent
   # Reads and drives Teams through the Chrome DevTools Protocol, sends the push notifications
   build: ./agent
@@ -140,14 +165,14 @@ services:
       ACCOUNTS_PER_USER: ${ACCOUNTS_PER_USER:-}
       DESKTOP_URL: ${DESKTOP_URL:-}
       APP_DB: /data/app.db
-      CONFIG_DIR: /config
+      WIPE_DIR: /wipe
       DOCKER_API: http://dockerproxy:2375
       VAPID_APPKEY: /vapid/appkey.txt
     volumes:
       - ./vapid:/vapid:ro
       - ./data:/data
-      # to wipe the browser session of an account when it is removed
-      - ./config:/config
+      # requests for the wipe-N containers; the browser profiles are not mounted here
+      - wipe:/wipe
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 30s
@@ -158,14 +183,16 @@ services:
 
   dockerproxy:
     # The web app's only access to Docker: start and stop of the slot containers (teams-chromium-N,
-    # teams-agent-N). Every other method and path, other containers included, is refused.
+    # teams-agent-N), start and wait of the wipe containers (teams-wipe-N). Every other method and path,
+    # other containers included, is refused. The proxy wraps the regex in ^...$ as it is: alternatives
+    # stay inside a group, a top-level "a|b" would anchor only the start of a and the end of b.
     image: wollomatic/socket-proxy:1.13.1
     container_name: teams-dockerproxy
     command:
       - -loglevel=info
       - -listenip=0.0.0.0
       - -allowfrom=webapp
-      - '-allowPOST=(/v1\.[0-9]+)?/containers/teams-(chromium|agent)-[0-9]+/(start|stop)'
+      - '-allowPOST=(/v1\.[0-9]+)?/containers/teams-((chromium|agent)-[0-9]+/(start|stop)|wipe-[0-9]+/(start|wait))'
       - -allowhealthcheck
       - -shutdowngracetime=5
     # root inside the container only to open the socket (owned by root); no capabilities, read-only
@@ -202,6 +229,39 @@ services:
     networks: [default, slot1, slot2, slot3, slot4]
     restart: unless-stopped
 
+  wipe-1:
+    <<: *wipe
+    container_name: teams-wipe-1
+    environment:
+      SLOT: "1"
+    volumes:
+      - ./config/1:/config
+      - wipe:/wipe:ro
+  wipe-2:
+    <<: *wipe
+    container_name: teams-wipe-2
+    environment:
+      SLOT: "2"
+    volumes:
+      - ./config/2:/config
+      - wipe:/wipe:ro
+  wipe-3:
+    <<: *wipe
+    container_name: teams-wipe-3
+    environment:
+      SLOT: "3"
+    volumes:
+      - ./config/3:/config
+      - wipe:/wipe:ro
+  wipe-4:
+    <<: *wipe
+    container_name: teams-wipe-4
+    environment:
+      SLOT: "4"
+    volumes:
+      - ./config/4:/config
+      - wipe:/wipe:ro
+
 networks:
   # web app and socket proxy only: the browsers, which open web pages, never reach Docker
   control:
@@ -215,3 +275,5 @@ networks:
 volumes:
   caddy_data:
   caddy_config:
+  # wipe requests of the web app, empty files named after the slot
+  wipe:

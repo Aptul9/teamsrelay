@@ -78,6 +78,7 @@ export function Conversation({
   chat,
   entry,
   rows,
+  stopped,
   onBack,
   onOpenDesktop,
 }: {
@@ -85,6 +86,8 @@ export function Conversation({
   chat: string;
   entry?: Chat;
   rows: Message[] | null;
+  // the account is switched off: the messages are the last ones read, nothing can be sent
+  stopped: boolean;
   onBack: () => void;
   onOpenDesktop: () => void;
 }) {
@@ -113,8 +116,8 @@ export function Conversation({
 
   // Opens the chat in the remote Teams: the agent keeps the messages of the open chat up to date
   useEffect(() => {
-    void post("/api/open", { name: chat }, acc).catch(() => undefined);
-  }, [chat, acc]);
+    if (!stopped) void post("/api/open", { name: chat }, acc).catch(() => undefined);
+  }, [chat, acc, stopped]);
 
   // the spinner gives the agent a few seconds to open the chat before "No messages" is shown
   useEffect(() => {
@@ -542,7 +545,7 @@ export function Conversation({
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-10 md:size-9" onClick={() => void refresh()} aria-label="Refresh from Teams">
+            <Button variant="ghost" size="icon" className="size-10 md:size-9" onClick={() => void refresh()} disabled={stopped} aria-label="Refresh from Teams">
               <RefreshCwIcon className={cn(refreshing && "animate-spin")} />
             </Button>
           </TooltipTrigger>
@@ -636,7 +639,8 @@ export function Conversation({
             <textarea
               ref={taRef}
               rows={1}
-              placeholder={`Message ${chat}`}
+              placeholder={stopped ? "Account stopped: start it to send" : `Message ${chat}`}
+              disabled={stopped}
               aria-label="Message"
               enterKeyHint="send"
               value={text}
@@ -654,7 +658,7 @@ export function Conversation({
               }}
               className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-base leading-6 outline-none placeholder:text-muted-foreground md:text-sm"
             />
-            <Button size="icon" className="size-9 shrink-0 rounded-xl" onClick={() => void send()} disabled={!text.trim()} aria-label={editMid ? "Save edit" : "Send"}>
+            <Button size="icon" className="size-9 shrink-0 rounded-xl" onClick={() => void send()} disabled={stopped || !text.trim()} aria-label={editMid ? "Save edit" : "Send"}>
               {editMid ? <CheckIcon /> : <SendHorizontalIcon />}
             </Button>
           </div>

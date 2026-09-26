@@ -18,7 +18,7 @@ export const POST = route(async (req) => {
   const slot = await addAccount(user.id, dockerClient(), {
     db: appDb(),
     dataDir: config.dataDir,
-    configDir: config.configDir,
+    wipeDir: config.wipeDir,
     slotCount: config.slotCount,
     perUser: config.accountsPerUser,
   });

@@ -6,11 +6,13 @@ import {
   claimSlot,
   countPushSubscriptions,
   deletePushSubscriptionsOf,
+  isSlotStopped,
   listSlots,
   migrateAppSchema,
   openAppDb,
   releaseSlot,
   savePushSubscription,
+  setSlotStopped,
   slotOwner,
   slotsOf,
 } from "@/lib/appdb";
@@ -29,6 +31,34 @@ describe("schema", () => {
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").pluck().all();
     expect(tables).toEqual(expect.arrayContaining(["push_subscriptions", "teams_accounts"]));
   });
+
+  it("adds stopped and started to the accounts of the first multi-user release, running", () => {
+    const old = openAppDb(path.join(tempDir(), "app.db"));
+    old.exec("CREATE TABLE teams_accounts(slot INTEGER PRIMARY KEY, owner_id TEXT NOT NULL, added INTEGER NOT NULL)");
+    old.prepare("INSERT INTO teams_accounts VALUES(2, 'u1', 100)").run();
+
+    migrateAppSchema(old);
+
+    expect(listSlots(old)).toEqual([{ slot: 2, owner_id: "u1", added: 100, stopped: 0, started: 0 }]);
+  });
+});
+
+describe("stopped accounts", () => {
+  it("keep their owner; a start records its time", () => {
+    const n = claimSlot(db, "u1", { slotCount: 4, perUser: 4 });
+    setSlotStopped(db, n, true);
+    expect(isSlotStopped(db, n)).toBe(true);
+    expect(slotOwner(db, n)).toBe("u1");
+
+    const before = Math.floor(Date.now() / 1000);
+    setSlotStopped(db, n, false);
+    expect(isSlotStopped(db, n)).toBe(false);
+    expect(slotsOf(db, "u1")[0].started).toBeGreaterThanOrEqual(before);
+  });
+
+  it("an unknown slot is not stopped", () => {
+    expect(isSlotStopped(db, 4)).toBe(false);
+  });
 });
 
 describe("legacy data", () => {
@@ -40,8 +70,8 @@ describe("legacy data", () => {
 
     expect(adoptLegacyData(db, "admin-1")).toEqual({ slots: 2, devices: 1 });
     expect(listSlots(db)).toEqual([
-      { slot: 1, owner_id: "admin-1", added: 100 },
-      { slot: 3, owner_id: "admin-1", added: 300 },
+      { slot: 1, owner_id: "admin-1", added: 100, stopped: 0, started: 0 },
+      { slot: 3, owner_id: "admin-1", added: 300, stopped: 0, started: 0 },
     ]);
     expect(countPushSubscriptions(db, "admin-1")).toBe(1);
 
