@@ -23,6 +23,9 @@ export type MessageExtra = {
 
 export type Message = { mid: string; author: string; text: string; mine: number; reacts: string } & MessageExtra;
 
+// Names of the files in the media folder, the only ones the apps serve from it
+export const MEDIA_NAME = /^[0-9a-f]{16}\.(png|jpg|gif|webp)$/;
+
 export const ACTIVITY_KINDS = ["reaction", "mention", "reply", "task", "team", "call", "meeting", "message"] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 

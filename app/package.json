@@ -3,14 +3,18 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 8090",
-    "build": "next build && npm run build:agent && npm run build:supervisor",
+    "build": "next build && npm run build:agent && npm run build:supervisor && npm run build:relay",
     "start": "next start -p 8090",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build:agent": "esbuild src/agent/main.ts --bundle --platform=node --target=node24 --format=cjs --sourcemap --external:playwright-core --external:better-sqlite3 --outfile=dist/agent.cjs --log-level=warning",
     "build:supervisor": "esbuild src/supervisor/main.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/supervisor.cjs --log-level=warning",
-    "agent": "node --enable-source-maps dist/agent.cjs"
+    "build:relay": "esbuild src/local/main.ts --bundle --platform=node --target=node24 --format=cjs --external:playwright-core --external:better-sqlite3 --outfile=dist/relay.cjs --log-level=warning",
+    "agent": "node --enable-source-maps dist/agent.cjs",
+    "relay": "node dist/relay.cjs",
+    "relay:login": "node dist/relay.cjs login",
+    "relay:setup": "node scripts/relay-setup.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.1.0",
@@ -24,6 +28,7 @@
     "next": "16.3.6",
     "next-themes": "0.4.6",
     "playwright-core": "1.63.0",
+    "pm2": "7.0.4",
     "radix-ui": "1.6.7",
     "react": "19.3.0",
     "react-dom": "19.3.0",
