@@ -5,13 +5,14 @@
 }
 
 {$DOMAIN} {
-	# Remote desktop of slot N (the Chromium with the Teams session of that account) on /desktop/N/.
-	# Caddy asks the web app whether the session cookie belongs to the owner of slot N before letting a
-	# request through. A slot that is switched off has no container on the network: 502.
-	@desktopBare path_regexp deskbare ^/desktop/([0-9]+)$
-	redir @desktopBare /desktop/{re.deskbare.1}/
-	@desktop path_regexp desk ^/desktop/([0-9]+)/
-	handle @desktop {
+	# Remote desktop of the browsers container on /desktop/: the browser window of every Teams account.
+	# Caddy asks the web app whether the session cookie belongs to a user with an account before letting a
+	# request through.
+	redir /desktop /desktop/ 302
+	# desktop of one account, the address of the releases with one desktop per account
+	@deskslot path_regexp deskslot ^/desktop/([0-9]+)/?$
+	redir @deskslot /api/desktop/{re.deskslot.1} 302
+	handle /desktop/* {
 		forward_auth webapp:8090 {
 			uri /api/authcheck
 			# the check is a plain HTTP request even when the original one is a websocket (the desktop
@@ -19,11 +20,8 @@
 			header_up -Upgrade
 			header_up -Connection
 		}
-		reverse_proxy chromium-{re.desk.1}:3000
+		reverse_proxy browsers:3000
 	}
-	# old desktop address, from before the accounts: back to the app
-	redir /desktop / 302
-	redir /desktop/ / 302
 	handle {
 		reverse_proxy webapp:8090
 	}

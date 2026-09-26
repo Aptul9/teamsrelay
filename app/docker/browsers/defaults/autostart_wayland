@@ -1,0 +1,2 @@
+#!/bin/bash
+# The browsers of the Teams accounts are started by the supervisor (svc-teamsrelay), not by the desktop
