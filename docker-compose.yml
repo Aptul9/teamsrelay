@@ -66,6 +66,8 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # bearer token of /mcp (AI clients, read only); empty turns the endpoint off
+      MCP_TOKEN: ${MCP_TOKEN:-}
       SLOT_COUNT: ${SLOT_COUNT:-4}
       ACCOUNTS_PER_USER: ${ACCOUNTS_PER_USER:-}
       DESKTOP_URL: ${DESKTOP_URL:-}

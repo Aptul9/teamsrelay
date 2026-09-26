@@ -78,6 +78,7 @@ Administrators only.
 | GET | `/healthz` | *public*. Liveness of the web app |
 | GET | `/api/authcheck` | used by Caddy for `/desktop/`: 200 for a user with a Teams account, 302 to the login without a session, 403 for a user without one |
 | GET | `/api/desktop/{n}` | brings the browser window of account N to the front of the remote desktop, then 302 to `/desktop/`. Owner only, 404 otherwise; without a session, 302 to the login |
+| POST | `/mcp` | MCP endpoint for AI clients, read only: `Authorization: Bearer <MCP_TOKEN>` instead of a session, 404 while `MCP_TOKEN` is empty. Tools: [mcp.md](mcp.md) |
 
 ## Health (`/api/health`, `health` event)
 
