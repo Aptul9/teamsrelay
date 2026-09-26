@@ -1,14 +1,9 @@
-// Runs ACTIVITY_JS of agent/agent.py against a static copy of the Teams Activity feed (structure taken from
-// Teams web in September 2026, names and texts invented). Needs Google Chrome, like agent-chats.test.ts.
-import fs from "node:fs";
-import path from "node:path";
-import { chromium, type Browser, type Page } from "playwright-core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-
-const agentSource = fs.readFileSync(path.resolve(__dirname, "../../agent/agent.py"), "utf8");
-const m = agentSource.match(/^ACTIVITY_JS\s*=\s*r"""([\s\S]*?)"""/m);
-if (!m) throw new Error("ACTIVITY_JS not found in agent.py");
-const ACTIVITY_JS = m[1];
+// Activity feed page scripts against a static copy of the Teams Activity feed (structure taken from Teams web
+// in September 2026, names and texts invented).
+import { beforeAll, describe, expect, it } from "vitest";
+import { SEL, TEXTS } from "@/agent/teams/selectors";
+import { readActivityFeed, scrollActivityFeed, type FeedItem } from "@/agent/teams/scripts/activity";
+import { withChrome } from "./chrome";
 
 type Part = { title: string; bold?: boolean; unreadDot?: boolean; icon?: string; preview?: string; tm: string; location?: string; extra?: string };
 
@@ -44,25 +39,16 @@ const FEED = [
   item("107", { title: "Marco Blu posted in Support", preview: "New ticket", tm: "9/13", location: "Support", extra: "" }),
 ].join("");
 
-type Activity = { id: string; kind: string; actor: string; emoji: string; preview: string; tm: string; chat: string; channel: boolean; unread: boolean };
-
-let browser: Browser;
-let page: Page;
-let feed: Record<string, Activity>;
+const chrome = withChrome();
+let feed: Record<string, FeedItem>;
 
 beforeAll(async () => {
-  browser = await chromium.launch({ channel: "chrome", headless: true });
-  page = await browser.newPage();
-  await page.setContent(`<div role="listbox">${FEED}</div>`);
-  const items = (await page.evaluate(`(${ACTIVITY_JS})()`)) as Activity[];
+  await chrome.page.setContent(`<div role="listbox">${FEED}</div>`);
+  const items = await chrome.page.evaluate(readActivityFeed, { s: SEL, t: TEXTS });
   feed = Object.fromEntries(items.map((a) => [a.id, a]));
 });
 
-afterAll(async () => {
-  await browser?.close();
-});
-
-describe("ACTIVITY_JS", () => {
+describe("Activity feed page script", () => {
   it("reads a reaction in a 1:1 chat", () => {
     expect(feed["101"]).toMatchObject({ kind: "reaction", actor: "Anna Rossi", emoji: "👍", preview: "see you later", tm: "9/24", chat: "Anna Rossi", channel: false, unread: false });
   });
@@ -87,5 +73,11 @@ describe("ACTIVITY_JS", () => {
   it("tells meetings, team invitations and unread items apart", () => {
     expect(feed["104"]).toMatchObject({ kind: "meeting", chat: "Sep 19, 9:30 AM - 10:00 AM" });
     expect(feed["103"]).toMatchObject({ kind: "team", chat: "", unread: true });
+  });
+
+  it("scrolls the virtualized feed", async () => {
+    await chrome.page.setContent(`<div id="f" style="height:120px; overflow-y:auto">${FEED}${FEED}</div>`);
+    expect(await chrome.page.evaluate(scrollActivityFeed, SEL)).toBe(true);
+    expect(await chrome.page.evaluate(() => document.getElementById("f")?.scrollTop)).toBe(96);
   });
 });

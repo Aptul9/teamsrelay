@@ -7,5 +7,15 @@ export default defineConfig([
   ...nextTs,
   // eslint-plugin-react detects the React version through an API removed in ESLint 10
   { settings: { react: { version: "19.3" } } },
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", "public/sw.js"]),
+  // Page scripts are serialized into the Teams page (page.evaluate): nothing imported exists there
+  {
+    files: ["src/agent/teams/scripts/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        { selector: "ImportDeclaration[importKind!='type']", message: "Page scripts run inside the Teams page: type imports only." },
+      ],
+    },
+  },
+  globalIgnores([".next/**", "out/**", "build/**", "dist/**", "next-env.d.ts", "public/sw.js"]),
 ]);
