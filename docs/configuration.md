@@ -6,8 +6,8 @@ Every setting is in `.env`, next to `docker-compose.yml`. Template: [.env.exampl
 |---|---|---|
 | `DOMAIN` | yes | Public name of the server. Caddy gets the certificate for it; the web app builds its URL from it (`https://DOMAIN`). |
 | `BETTER_AUTH_SECRET` | yes | Signs the sessions of the web app, at least 32 characters (`openssl rand -hex 32`). Changing it signs every user out. `SESSION_SECRET` of the previous release is accepted instead. |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | first start | First administrator, created while the server has no users. Password of at least 10 characters. Ignored once users exist. |
-| `ADMIN_NAME` | no | Display name of the first administrator. Default `Administrator`. |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | first start | Administrator defined in `.env`. Created at the first start, when it also takes over the accounts of the single-user release; at every start it is made administrator again and `ADMIN_PASSWORD` becomes its password, which signs it out of every device when the value changed. Its password cannot be changed in the app. At least 10 characters. Once users exist they may be removed: no administrator is then kept in line with `.env`. |
+| `ADMIN_NAME` | no | Display name of the administrator of `.env`, used when it is created. Default `Administrator`. |
 | `APP_URL` | no | Public URL of the web app when it differs from `https://DOMAIN`. |
 | `SLOT_COUNT` | no | Teams account slots of the server. Default 4, the number defined in `docker-compose.yml`. More slots need more `chromium-N` and `agent-N` services and `slotN` networks. |
 | `ACCOUNTS_PER_USER` | no | Teams accounts one user may add. Empty: up to `SLOT_COUNT`. |

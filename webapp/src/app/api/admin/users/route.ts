@@ -1,6 +1,7 @@
 import { appDb, listSlots } from "@/lib/appdb";
 import { auth } from "@/lib/auth";
 import { config } from "@/lib/config";
+import { isEnvAdmin } from "@/lib/env-admin";
 import { body, HttpError, route, text } from "@/lib/http";
 import { requireAdmin } from "@/lib/session";
 
@@ -16,6 +17,8 @@ export const GET = route(async (req) => {
       email: u.email,
       role: u.role ?? "user",
       banned: !!u.banned,
+      // password set by ADMIN_PASSWORD in .env
+      managed: isEnvAdmin(u.email),
       createdAt: u.createdAt,
       slots: slots.filter((s) => s.owner_id === u.id).map((s) => s.slot),
     })),

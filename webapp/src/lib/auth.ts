@@ -1,7 +1,20 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { admin } from "better-auth/plugins";
 import { appDb } from "./appdb";
 import { config } from "./config";
+import { ENV_PASSWORD_MESSAGE, isEnvAdmin } from "./env-admin";
+
+// The administrator of .env changes its password in .env only, not from Settings nor from Users
+const envPasswordGuard = createAuthMiddleware(async (ctx) => {
+  let email: string | undefined;
+  if (ctx.path === "/change-password") email = (await getSessionFromCtx(ctx))?.user.email;
+  else if (ctx.path === "/admin/set-user-password") {
+    const userId = (ctx.body as { userId?: unknown } | undefined)?.userId;
+    if (typeof userId === "string") email = (await ctx.context.internalAdapter.findUserById(userId))?.email;
+  } else return;
+  if (isEnvAdmin(email)) throw new APIError("FORBIDDEN", { message: ENV_PASSWORD_MESSAGE });
+});
 
 export function authOptions() {
   return {
@@ -22,6 +35,7 @@ export function authOptions() {
       updateAge: 60 * 60 * 24,
     },
     plugins: [admin()],
+    hooks: { before: envPasswordGuard },
   } satisfies BetterAuthOptions;
 }
 

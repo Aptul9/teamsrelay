@@ -36,13 +36,13 @@ docker compose up -d                                # web app, socket proxy, Cad
 docker compose logs -f webapp
 ```
 
-The slot containers must exist: the web app can only start and stop them. On the first start the web app creates the administrator from `ADMIN_EMAIL` and `ADMIN_PASSWORD`; without them it exits with that message.
+The slot containers must exist: the web app can only start and stop them. On the first start the web app creates the administrator from `ADMIN_EMAIL` and `ADMIN_PASSWORD`; without them it exits with that message. At every later start it keeps that administrator in line with `.env`.
 
 ## 4. Users
 
 1. Open `https://<DOMAIN>` and sign in as the administrator.
 2. Account panel (picture top left) → **Users**: create a user for every person, with a password of at least 10 characters. There is no public sign-up.
-3. Each user changes their password in **Settings**.
+3. Each user changes their password in **Settings**. The administrator of `.env` changes `ADMIN_PASSWORD` in `.env` and restarts the web app (`docker compose up -d`).
 
 An administrator manages users and can free a slot. The chats and the desktop of a slot are visible only to its owner.
 

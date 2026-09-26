@@ -8,7 +8,7 @@ Actions on Teams are asynchronous: the answer carries the `id` of a command, and
 
 ## Authentication
 
-better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/sign-in/email` `{email, password}`, `POST /api/auth/sign-out`, `POST /api/auth/change-password`, `POST /api/auth/revoke-other-sessions`. Sign-up is disabled.
+better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/sign-in/email` `{email, password}`, `POST /api/auth/sign-out`, `POST /api/auth/change-password`, `POST /api/auth/revoke-other-sessions`. Sign-up is disabled. `change-password` answers 403 for the administrator of `.env`, whose password is `ADMIN_PASSWORD`.
 
 ## Accounts
 
@@ -61,10 +61,10 @@ Administrators only.
 
 | Method | Path | Body or answer |
 |---|---|---|
-| GET | `/api/admin/users` | `{users: [{id, name, email, role, banned, createdAt, slots}], slotCount, free}` |
+| GET | `/api/admin/users` | `{users: [{id, name, email, role, banned, managed, createdAt, slots}], slotCount, free}`; `managed` is true for the administrator of `.env` |
 | POST | `/api/admin/users` | `{name, email, password, role}`, `role` is `user` or `admin` |
 | DELETE | `/api/admin/users/{id}` | removes the user after stopping and wiping their slots |
-| POST | `/api/admin/users/{id}/password` | `{password}`; every session of the user is revoked |
+| POST | `/api/admin/users/{id}/password` | `{password}`; every session of the user is revoked. 403 for the administrator of `.env` |
 | DELETE | `/api/admin/users/{id}/sessions` | signs the user out of every device |
 
 ## Other
