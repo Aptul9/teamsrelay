@@ -1,4 +1,4 @@
-FROM node:24-slim AS build
+FROM node:26-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 # better-sqlite3 ships prebuilt binaries and esbuild its binary in an optional package: no install scripts,
@@ -35,7 +35,7 @@ RUN chmod +x /etc/s6-overlay/s6-rc.d/svc-teamsrelay/run \
  && node /app/supervisor.cjs --check
 
 # Web app: PWA, API, users and sessions
-FROM node:24-slim AS web
+FROM node:26-slim AS web
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=8090 HOSTNAME=0.0.0.0
 COPY --from=build /app/.next/standalone ./
