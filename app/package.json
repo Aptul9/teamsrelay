@@ -12,6 +12,7 @@
     "agent": "node --enable-source-maps dist/agent.cjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "2.1.0",
     "better-auth": "1.7.6",
     "better-sqlite3": "13.0.3",
     "class-variance-authority": "0.7.1",
@@ -30,6 +31,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.1.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/better-sqlite3": "9.6.0",
     "@types/node": "24.19.0",

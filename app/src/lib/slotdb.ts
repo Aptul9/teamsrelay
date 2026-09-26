@@ -67,6 +67,11 @@ export class SlotReader {
     return parse(r?.v, fallback);
   }
 
+  // Chat the agent last opened for the app, plain text: Teams shows it while it is in use (viewing)
+  activeChat(): string {
+    return this.all<{ v: string }>("SELECT v FROM state WHERE k=?", STATE.activeChat)[0]?.v ?? "";
+  }
+
   chats(): Chat[] {
     return this.all<Chat>("SELECT name, preview, tm, unread, mention, muted, av FROM chats ORDER BY pos").map((c) => ({
       ...c,

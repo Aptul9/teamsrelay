@@ -30,6 +30,7 @@ flowchart LR
 - The Microsoft sign-in (password, MFA) happens in the remote browser of the slot, at `/desktop/N/`, reachable only by the owner of the slot.
 - Actions in the web app become commands in the database of the slot. The agent performs them on the Teams page and confirms once Teams shows the change.
 - Web app and agent are one TypeScript package (`app/`) and one image: the web app runs `node server.js`, each agent `node agent.cjs`.
+- AI clients (Claude Code, opencode) can read the chats through the MCP endpoint `/mcp`, read only, when `MCP_TOKEN` is set: [docs/mcp.md](docs/mcp.md).
 
 ## Quick start
 
@@ -55,6 +56,7 @@ Open `https://<DOMAIN>`, sign in as the administrator, add a Teams account and s
 | Deploy pipeline, updates, backup, troubleshooting | [docs/operations.md](docs/operations.md) |
 | Security model | [docs/security.md](docs/security.md) |
 | HTTP API | [docs/api.md](docs/api.md) |
+| AI clients over MCP: setup, tools, limits | [docs/mcp.md](docs/mcp.md) |
 | Teams selectors used by the agent | [docs/teams-selectors.md](docs/teams-selectors.md) |
 | Known limitations | [docs/limitations.md](docs/limitations.md) |
 | Decisions and plans | [docs/decisions/](docs/decisions/), [docs/design/](docs/design/) |

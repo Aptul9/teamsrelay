@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `chromium-1` ... `chromium-4` | `lscr.io/linuxserver/chromium`, pinned by digest | Teams web of slot N, profile in `config/N/`, CDP on `127.0.0.1:9222`, desktop stream on port 3000 | `slotN` |
 | `agent-1` ... `agent-4` | `teamsrelay`, built from `./app`, runs `node agent.cjs` | Reads and drives Teams of slot N over the Chrome DevTools Protocol (Playwright), sends the push notifications | network namespace of `chromium-N` |
-| `webapp` | `teamsrelay`, built from `./app` (Next.js, Node 24; UI on Tailwind CSS and shadcn/ui), runs `node server.js` | PWA, API, users and sessions, event stream, slot start and stop | `default`, `control` |
+| `webapp` | `teamsrelay`, built from `./app` (Next.js, Node 24; UI on Tailwind CSS and shadcn/ui), runs `node server.js` | PWA, API, users and sessions, event stream, slot start and stop, MCP endpoint for AI clients (`/mcp`, [mcp.md](mcp.md)) | `default`, `control` |
 | `dockerproxy` | `wollomatic/socket-proxy` | Docker socket filter: only `POST /containers/teams-(chromium\|agent)-N/(start\|stop)` and `POST /containers/teams-wipe-N/(start\|wait)` | `control` (internal) |
 | `caddy` | `caddy:2.11.4-alpine` | HTTPS, reverse proxy, desktop routes gated by `/api/authcheck` | `default`, `slot1` ... `slot4` |
 | `wipe-1` ... `wipe-4` | `busybox`, pinned by digest | One-shot: empties `config/N/` when the web app adds or removes the account of slot N | none |
