@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { DownloadArgs, MessageArgs, parseArgs, ReactArgs, TextArgs } from "@/shared/slot-db/commands";
+import { COMMAND_TYPES, DownloadArgs, IMAGE_TYPES, ImageArgs, MessageArgs, parseArgs, ReactArgs, TextArgs, UPLOAD_NAME } from "@/shared/slot-db/commands";
 import { AgentHealth, cmdResultKey, Identity, oneToOneKey, parseState, selfCheckKey, Viewing } from "@/shared/slot-db/state";
+
+describe("command types", () => {
+  it("keeps the names of earlier releases and adds sendimage", () => {
+    expect(COMMAND_TYPES).toEqual(["open", "send", "reply", "react", "edit", "delete", "undodelete", "download", "activity", "resync", "recheck", "sendimage"]);
+  });
+});
+
+describe("image commands", () => {
+  it("read the upload and the caption", () => {
+    expect(parseArgs(ImageArgs, '{"file":"0123456789abcdef.png","text":"For you"}')).toEqual({ file: "0123456789abcdef.png", text: "For you" });
+    expect(parseArgs(ImageArgs, '{"file":"0123456789abcdef.jpg"}')).toEqual({ file: "0123456789abcdef.jpg", text: "" });
+  });
+
+  it("name uploads with 16 hex characters and the extension of an accepted type", () => {
+    for (const ext of Object.keys(IMAGE_TYPES)) expect(UPLOAD_NAME.test(`0123456789abcdef.${ext}`), ext).toBe(true);
+    for (const bad of ["../1/app.db", "0123456789abcdef.svg", "0123456789ABCDEF.png", "0123456789abcdef.png/x", ""]) expect(UPLOAD_NAME.test(bad), bad).toBe(false);
+  });
+});
 
 describe("command arguments", () => {
   it("reads the JSON the web app queues", () => {

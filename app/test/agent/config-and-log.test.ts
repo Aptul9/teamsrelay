@@ -15,6 +15,7 @@ describe("agent configuration", () => {
     const c = loadConfig({ CDP: "http://127.0.0.1:9222", ACCOUNT: "2", DB_PATH: "/data/2/messages.db", APP_DB: "/data/app.db", TZ: "Europe/Rome" });
     expect(c).toMatchObject({ cdp: "http://127.0.0.1:9222", slot: 2, dbPath: "/data/2/messages.db" });
     expect(c.filesDir).toBe(path.join("/data/2", "files"));
+    expect(c.uploadsDir).toBe(path.join("/data/2", "uploads"));
   });
 
   it("enables ntfy only with a topic", () => {

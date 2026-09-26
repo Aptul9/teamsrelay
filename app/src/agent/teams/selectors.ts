@@ -129,6 +129,8 @@ export const TEXTS = {
   authorLabel: /^([^,]+),/,
   edited: /^(Edited|Modificato)$/i,
   mentionedYou: "Mentioned you",
+  // status of your message until Teams has it, then "Sent"
+  sending: /^Sending/i,
 
   // session expired or Teams syncing in reduced mode
   sessionLost:

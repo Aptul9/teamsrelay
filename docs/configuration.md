@@ -26,7 +26,7 @@ Set per slot by `docker-compose.yml`, not in `.env`. The agent checks these at s
 |---|---|---|
 | `CDP` | `http://localhost:9222` | DevTools of the slot browser; Compose sets `http://127.0.0.1:9222` |
 | `ACCOUNT` | `1` | Slot number |
-| `DB_PATH` | `/data/1/messages.db` | Database of the slot; images go to `media/` and attachments to `files/` next to it |
+| `DB_PATH` | `/data/1/messages.db` | Database of the slot; images go to `media/`, attachments to `files/` and images to send to `uploads/` next to it |
 | `APP_DB` | `/data/app.db` | Shared database of the web app, read for the slot owner and their devices |
 | `VAPID_PRIVATE`, `VAPID_APPKEY` | `/vapid/private_key.pem`, `/vapid/appkey.txt` | Push keys. Without the private key push is off; a private key that does not match the public key stops the agent |
 | `VAPID_SUBJECT` | `mailto:admin@example.com` | From `.env`, `mailto:` or `https://` |

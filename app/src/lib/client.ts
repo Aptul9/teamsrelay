@@ -16,7 +16,8 @@ export type Account = {
 };
 export type { ActivityItem, Chat, Message, Reaction } from "@/shared/slot-db/rows";
 export type { SlotHealth as Health } from "@/shared/slot-db/state";
-export type CommandResult = { status: string; result: { f?: string } | null };
+// detail: why the web app refused the command, when it did
+export type CommandResult = { status: string; result: { f?: string } | null; detail?: string };
 
 export class ApiError extends Error {
   constructor(
@@ -56,9 +57,9 @@ export function post<T>(path: string, body: unknown, acc: number): Promise<T> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Waits until the agent confirms the change on Teams (done) or gives up (failed)
-export async function followCmd(id: number, acc: number): Promise<CommandResult> {
-  for (let i = 0; i < 45; i++) {
+// Waits until the agent confirms the change on Teams (done) or gives up (failed), polling `tries` times
+export async function followCmd(id: number, acc: number, tries = 45): Promise<CommandResult> {
+  for (let i = 0; i < tries; i++) {
     await sleep(700);
     try {
       const r = await call<CommandResult>(`/api/cmd/${id}`, undefined, acc);
@@ -76,6 +77,30 @@ export async function runCmd(path: string, body: unknown, acc: number): Promise<
     return await followCmd(id, acc);
   } catch {
     return { status: "failed", result: null };
+  }
+}
+
+// Images the app sends, as /api/sendimage takes them (it checks the content again)
+export const IMAGE_ACCEPT = "image/png,image/jpeg,image/gif,image/webp";
+
+export function imageProblem(f: File): string | null {
+  if (!IMAGE_ACCEPT.split(",").includes(f.type)) return "Only PNG, JPEG, GIF or WebP images";
+  if (!f.size) return "Empty image";
+  if (f.size > 10e6) return "Image larger than 10 MB";
+  return null;
+}
+
+// Image with its caption to a chat: the agent pastes it in Teams, waits for the upload and confirms it (up to ~50 s)
+export async function sendImage(chat: string, image: File, text: string, acc: number): Promise<CommandResult> {
+  const form = new FormData();
+  form.set("name", chat);
+  form.set("text", text);
+  form.set("file", image);
+  try {
+    const { id } = await call<{ id: number }>("/api/sendimage", { method: "POST", body: form }, acc);
+    return await followCmd(id, acc, 70);
+  } catch (e) {
+    return { status: "failed", result: null, detail: e instanceof ApiError ? e.message : undefined };
   }
 }
 
