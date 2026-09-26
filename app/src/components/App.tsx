@@ -26,6 +26,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth-client";
 import {
+  accountUnread,
   ApiError,
   call,
   isSelf,
@@ -42,6 +43,7 @@ import {
   type Chat,
   type Health,
   type Message,
+  type Unread,
 } from "@/lib/client";
 import { enablePush, pushState } from "@/lib/push";
 
@@ -60,6 +62,9 @@ const onVisibility = (cb: () => void) => {
 };
 const visibleNow = () => document.visibilityState === "visible";
 
+// notification ids already seen on this device, per account
+const seenKey = (n: number) => `actseen:${n}`;
+
 function CountBadge({ n }: { n: number }) {
   if (!n) return null;
   return <span className="ml-1 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-primary px-1 text-[0.6875rem] font-semibold text-primary-foreground tabular-nums">{n > 99 ? "99+" : n}</span>;
@@ -75,7 +80,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [chats, setChats] = useState<Chat[] | null>(null);
   const [messages, setMessages] = useState<{ chat: string; rows: Message[] } | null>(null);
   const [activity, setActivity] = useState<{ ts: number; items: ActivityItem[] } | null>(null);
-  const [seenAct, setSeenAct] = useState<string[] | null>(null);
+  const [seenAct, setSeenAct] = useState<Record<number, string[]>>({});
   const [health, setHealth] = useState<Health | null>(null);
   const [pushOff, setPushOff] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -98,7 +103,6 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setChats(null);
     setMessages(null);
     setActivity(null);
-    setSeenAct(null);
     setHealth(null);
     setDeskOpened(false);
     setPane("main");
@@ -113,11 +117,11 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const noteActivity = useCallback((n: number, d: { ts: number; items: ActivityItem[] }, looking: boolean) => {
     setActivity(d);
     if (!n || !d.ts) return; // the agent has not read the Teams feed yet
-    const key = `actseen:${n}`;
+    const key = seenKey(n);
     const stored = parseSeen(readStorage(key));
     const seen = stored && !looking ? stored : markActivitySeen(stored, d.items);
     if (seen !== stored) writeStorage(key, JSON.stringify(seen));
-    setSeenAct(seen);
+    setSeenAct((all) => ({ ...all, [n]: seen }));
   }, []);
 
   const selectAccount = useCallback(
@@ -132,6 +136,18 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     (d: { accounts: Account[]; max: number; free: number }) => {
       setAccounts(d.accounts);
       setLimits({ max: d.max, free: d.free });
+      // the account menu counts the notifications of every account. One met here for the first time takes the unread
+      // ones it has now as seen, like the first feed of the selected account: only what comes later counts
+      const seen: Record<number, string[]> = {};
+      for (const a of d.accounts) {
+        const stored = parseSeen(readStorage(seenKey(a.slot)));
+        if (stored) seen[a.slot] = stored;
+        else if (a.unreadActivity) {
+          seen[a.slot] = a.unreadActivity;
+          writeStorage(seenKey(a.slot), JSON.stringify(a.unreadActivity));
+        }
+      }
+      setSeenAct(seen);
       if (d.accounts.some((a) => a.slot === accRef.current)) return;
       const saved = Number(readStorage("acc")) || 0;
       const pick = d.accounts.find((a) => a.slot === saved) ?? d.accounts[0];
@@ -293,7 +309,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   const current = accounts?.find((a) => a.slot === acc);
   const unreadChats = (chats ?? []).filter((c) => c.unread && !c.muted && !isSelf(c.name)).length;
-  const unreadActivity = unseenActivity(activity?.items ?? [], seenAct);
+  const unreadActivity = unseenActivity(activity?.items ?? [], seenAct[acc] ?? null);
+  // what waits in each account, for the account menu: the selected one counts what its tabs show
+  const unreadOf = (a: Account): Unread =>
+    a.slot === acc && !a.stopped ? { chats: unreadChats, notifications: unreadActivity } : accountUnread(a, seenAct[a.slot] ?? null);
   const canAdd = !!accounts && accounts.length < limits.max && limits.free > 0;
   const addLabel = canAdd ? "Add a Teams account" : accounts && accounts.length >= limits.max ? `At most ${limits.max} accounts` : "No free slot on this server";
   const noAccounts = !!accounts && !accounts.length;
@@ -346,6 +365,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             user={user}
             accounts={accounts}
             current={current}
+            unreadOf={unreadOf}
             canAdd={canAdd}
             addLabel={addLabel}
             adding={adding}

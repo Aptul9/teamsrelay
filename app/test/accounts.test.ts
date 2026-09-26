@@ -41,3 +41,18 @@ describe("a stopped account", () => {
     expect(summary("u2", n)).toMatchObject({ teams: "starting", overall: "yellow", stopped: false });
   });
 });
+
+describe("the unread counts of an account", () => {
+  it("carry the unread chats and, once the agent read the feed, the ids of the unread notifications", () => {
+    const n = claimSlot(appDb(), "u3", { slotCount: 4, perUser: 4 });
+    expect(summary("u3", n)).toMatchObject({ unread: 0, unreadActivity: null });
+
+    const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
+    slotDb.prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av) VALUES('Anna Rossi','hi',0,0,'',1,0,0,'')").run();
+    slotDb.prepare("INSERT INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,unread,ts,channel,av) VALUES('x1',0,'mention','','','','','','',1,0,0,'')").run();
+    expect(summary("u3", n)).toMatchObject({ unread: 1, unreadActivity: null });
+
+    slotDb.prepare("INSERT INTO state(k, v) VALUES('activity_ts', ?)").run(String(Math.floor(Date.now() / 1000)));
+    expect(summary("u3", n)).toMatchObject({ unread: 1, unreadActivity: ["x1"] });
+  });
+});

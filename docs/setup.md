@@ -53,6 +53,8 @@ An administrator manages users and can free a slot. The chats and the desktop of
 
 A slot is free again when its owner removes the account. `SLOT_COUNT` and `ACCOUNTS_PER_USER` set the limits.
 
+With more than one account, the account menu shows next to each account its unread chats plus the notifications not yet seen on this device, and the menu button shows the total of the other accounts. A stopped account counts nothing: it reads nothing new until it is started.
+
 ## 6. Phone
 
 TeamsRelay is a PWA: installed from the browser, it opens like an app, with icon and notifications.

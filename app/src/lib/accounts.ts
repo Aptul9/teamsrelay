@@ -13,6 +13,9 @@ export type AccountSummary = {
   overall: string;
   stopped: boolean;
   unread: number;
+  // ids of the unread items of the Teams Activity feed, null until the agent reads it: the app counts the ones its
+  // device has not shown yet
+  unreadActivity: string[] | null;
   desktop: string;
 };
 
@@ -28,8 +31,14 @@ export function accountSummary(s: Slot): AccountSummary {
   let me: { name?: string; email?: string; tenant?: string; av?: string } = {};
   let health: Health;
   let unread = 0;
+  let unreadActivity: string[] | null = null;
   try {
-    ({ me, health, unread } = withSlot(s.slot, (r) => ({ me: r.identity(), health: r.health(upSince(s)), unread: r.unreadCount() })));
+    ({ me, health, unread, unreadActivity } = withSlot(s.slot, (r) => ({
+      me: r.identity(),
+      health: r.health(upSince(s)),
+      unread: r.unreadCount(),
+      unreadActivity: r.unreadActivity(),
+    })));
   } catch (e) {
     if (!(e instanceof SlotNotReady)) throw e;
     health = healthOf({}, upSince(s));
@@ -45,6 +54,7 @@ export function accountSummary(s: Slot): AccountSummary {
     overall: String(health.overall ?? ""),
     stopped: !!s.stopped,
     unread,
+    unreadActivity,
     desktop: desktopUrlOf(s.slot),
   };
 }

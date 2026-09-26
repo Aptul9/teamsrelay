@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { markActivitySeen, parseSeen, unseenActivity, type ActivityItem } from "@/lib/client";
+import { accountUnread, markActivitySeen, parseSeen, unseenActivity, unseenIds, type Account, type ActivityItem } from "@/lib/client";
 
 const item = (id: string, unread = 1): ActivityItem => ({
   id,
@@ -41,6 +41,44 @@ describe("markActivitySeen", () => {
     expect(seen).toEqual(["a", "x", "y"]);
     const many = Array.from({ length: 250 }, (_, i) => `old${i}`);
     expect(markActivitySeen(many, [item("a")])).toHaveLength(200);
+  });
+});
+
+describe("unseenIds", () => {
+  it("counts the unread ids not seen yet, nothing before the first look", () => {
+    expect(unseenIds(["a", "b"], null)).toBe(0);
+    expect(unseenIds(["c", "a"], ["a", "b"])).toBe(1);
+    expect(unseenIds([], ["a"])).toBe(0);
+  });
+});
+
+describe("accountUnread", () => {
+  const account = (extra: Partial<Account> = {}): Account => ({
+    slot: 2,
+    name: "Anna Rossi",
+    email: "anna.rossi@contoso.example",
+    tenant: "Contoso",
+    av: "",
+    teams: "ok",
+    overall: "green",
+    stopped: false,
+    unread: 2,
+    unreadActivity: ["n2", "n1"],
+    desktop: "",
+    ...extra,
+  });
+
+  it("counts unread chats and the notifications this device has not shown", () => {
+    expect(accountUnread(account(), ["n1"])).toEqual({ chats: 2, notifications: 1 });
+  });
+
+  it("counts no notification before the feed was read or first seen here", () => {
+    expect(accountUnread(account({ unreadActivity: null }), ["n1"])).toEqual({ chats: 2, notifications: 0 });
+    expect(accountUnread(account(), null)).toEqual({ chats: 2, notifications: 0 });
+  });
+
+  it("counts nothing for a stopped account, whose numbers would stay until it starts", () => {
+    expect(accountUnread(account({ stopped: true }), [])).toEqual({ chats: 0, notifications: 0 });
   });
 });
 
