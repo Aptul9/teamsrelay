@@ -7,8 +7,8 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
     testTimeout: 30000,
-    // launching Chrome for the page script tests can take over 10 s on a loaded machine
-    hookTimeout: 30000,
+    // launching and closing Chrome for the page script tests took over 30 s once on a loaded laptop
+    hookTimeout: 60000,
     // every Chrome suite starts its own browser: more at once than this and launches time out
     maxWorkers: 4,
   },

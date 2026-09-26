@@ -29,7 +29,7 @@ export type ReactArgs = z.infer<typeof ReactArgs>;
 
 // arg2 that is not JSON, or not an object, gives the empty arguments
 export function parseArgs<T>(schema: z.ZodType<T>, arg2: string | null | undefined): T {
-  let value: unknown = {};
+  let value: unknown;
   try {
     value = JSON.parse(arg2 || "{}");
   } catch {
