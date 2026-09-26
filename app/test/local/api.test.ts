@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
+import net, { type AddressInfo } from "node:net";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SlotStore } from "@/agent/store/slot-store";
@@ -78,6 +78,27 @@ describe("app files", () => {
   it("answers the liveness and the public push key without a token", async () => {
     expect((await call("/healthz", { token: null })).json).toEqual({ ok: true });
     expect((await call("/api/vapid", { token: null })).json).toEqual({ key: "BPublicKey" });
+  });
+});
+
+// A request as it comes off the wire, whatever its target: fetch() refuses to send what is not a URL
+function raw(target: string): Promise<string> {
+  const { port } = server.address() as AddressInfo;
+  return new Promise((resolve, reject) => {
+    const s = net.connect(port, "127.0.0.1", () => s.write(`GET ${target} HTTP/1.1\r\nHost: relay\r\nConnection: close\r\n\r\n`));
+    let data = "";
+    s.on("data", (d) => (data += String(d)));
+    s.on("end", () => resolve(data));
+    s.on("error", reject);
+    s.setTimeout(5000, () => s.destroy(new Error(`no answer to GET ${target}`)));
+  });
+}
+
+describe("request target", () => {
+  it("answers 400 to a target that is not a URL, before the token, and goes on serving", async () => {
+    for (const target of ["//[", "//x:y:z", "/%"]) expect(await raw(target), target).toMatch(/^HTTP\/1\.1 (400|404)/);
+    expect(await raw("//[")).toMatch(/^HTTP\/1\.1 400/);
+    expect((await call("/healthz", { token: null })).json).toEqual({ ok: true });
   });
 });
 

@@ -258,9 +258,17 @@ export function apiHandler(o: ApiOptions, failures = new Failures()): http.Reque
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
-    const url = new URL(req.url ?? "/", "http://relay");
     const ip = req.socket.remoteAddress ?? "";
+    let where = "";
+    // everything inside: whatever a request carries ends as an answer, never as an error that stops the relay
     (async () => {
+      let url: URL;
+      try {
+        url = new URL(req.url ?? "/", "http://relay");
+      } catch {
+        throw new HttpError(400, "Invalid request target");
+      }
+      where = url.pathname;
       const page = req.method === "GET" ? STATIC[url.pathname] : undefined;
       if (page) {
         res.writeHead(200, { "Content-Type": page.type, "Cache-Control": "no-cache", ...(page.file === "index.html" ? { "Content-Security-Policy": CSP } : {}) });
@@ -282,7 +290,7 @@ export function apiHandler(o: ApiOptions, failures = new Failures()): http.Reque
     })().catch((e: unknown) => {
       if (res.headersSent) return res.destroy();
       if (e instanceof HttpError) return send(res, e.status, { detail: e.message });
-      log.warn("api", errorText(e), { path: url.pathname });
+      log.warn("api", errorText(e), { path: where });
       send(res, 500, { detail: "Internal error" });
     });
   };
