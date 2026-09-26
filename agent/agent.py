@@ -226,10 +226,8 @@ def adbc():
     c = sqlite3.connect(APP_DB, timeout=8); c.execute("PRAGMA journal_mode=WAL"); return c
 
 def db_init():
+    # app.db belongs to the web app (users, teams_accounts, push_subscriptions): the agent only reads it
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    try:
-        with adbc() as c: c.execute("CREATE TABLE IF NOT EXISTS push_subs(endpoint TEXT PRIMARY KEY, sub TEXT)")
-    except Exception as e: print("db_init app:", e, flush=True)
     try:
         with dbc() as c:
             c.execute("CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, source TEXT, title TEXT, body TEXT)")
@@ -315,19 +313,26 @@ def send_ntfy(title, body):
 
 def acc_label():
     """Con più account la notifica dice di quale è: organizzazione, altrimenti email."""
+    # accounts of the same owner: other users' accounts do not count
     try:
-        with adbc() as c: many = c.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] > 1
+        with adbc() as c: many = c.execute("SELECT COUNT(*) FROM teams_accounts WHERE owner_id=(SELECT owner_id FROM teams_accounts WHERE slot=?)", (int(ACCOUNT),)).fetchone()[0] > 1
     except Exception: many = False
     if not many: return ""
     try: me = json.loads(get_state("me") or "{}")
     except Exception: me = {}
     return me.get("tenant") or me.get("email") or f"account {ACCOUNT}"
 
+def push_targets():
+    """Devices of the user who owns this slot."""
+    try:
+        with adbc() as c:
+            return c.execute("SELECT p.endpoint, p.sub FROM push_subscriptions p JOIN teams_accounts a ON a.owner_id=p.user_id WHERE a.slot=?", (int(ACCOUNT),)).fetchall()
+    except Exception: return []
+
 def push_all(title, body):
     if webpush is None or not os.path.exists(VAPID_PRIVATE): return 0
-    try:
-        with adbc() as c: rows=c.execute("SELECT endpoint,sub FROM push_subs").fetchall()
-    except Exception: return 0
+    rows=push_targets()
+    if not rows: return 0
     lb=acc_label(); title=(title or "TeamsRelay")+(f" · {lb}" if lb else "")
     n=0
     for ep,sub in rows:
@@ -339,7 +344,7 @@ def push_all(title, body):
             code=getattr(getattr(e,"response",None),"status_code",0)
             if code in (404,410):
                 try:
-                    with adbc() as c: c.execute("DELETE FROM push_subs WHERE endpoint=?",(ep,))
+                    with adbc() as c: c.execute("DELETE FROM push_subscriptions WHERE endpoint=?",(ep,))
                 except Exception: pass
         except Exception as e: print("push:", e, flush=True)
     return n
@@ -401,9 +406,7 @@ def scan_new_messages(chats):
     return out
 
 def push_count():
-    try:
-        with adbc() as c: return c.execute("SELECT COUNT(*) FROM push_subs").fetchone()[0]
-    except Exception: return 0
+    return len(push_targets())
 
 def last_msg_ts():
     try:
