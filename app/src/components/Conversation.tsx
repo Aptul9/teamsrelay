@@ -761,6 +761,7 @@ export function Conversation({
                     key={n}
                     type="button"
                     role="option"
+                    aria-label={n}
                     aria-selected={i === pickIndex}
                     // mouse down, not click: the box keeps the focus and the cursor
                     onMouseDown={(e) => {
