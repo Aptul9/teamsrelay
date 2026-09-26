@@ -5,7 +5,15 @@ import path from "node:path";
 // the browser already running on it and Playwright would only see it exit. The lock file names the holder; a lock
 // whose process is gone (crash, pm2 restart) is taken over.
 
-export class LockError extends Error {}
+export class LockError extends Error {
+  // what holds the lock: "relay" or "login"; empty when it could not be taken for another reason
+  constructor(
+    message: string,
+    readonly heldBy = "",
+  ) {
+    super(message);
+  }
+}
 
 type Holder = { pid: number; mode: string; since: string };
 
@@ -38,8 +46,9 @@ export function acquireLock(file: string, mode: "relay" | "login"): () => void {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
       const h = holder(file);
+      // our own pid in it: a lock left by an earlier process that had the same pid (after a reboot)
       if (h && h.pid !== process.pid && alive(h.pid)) {
-        throw new LockError(`the ${h.mode} is running on this profile (pid ${h.pid}, since ${h.since})`);
+        throw new LockError(`the ${h.mode} is running on this profile (pid ${h.pid}, since ${h.since})`, h.mode);
       }
       fs.rmSync(file, { force: true });
     }

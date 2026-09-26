@@ -73,8 +73,24 @@ function onStop(stop: () => Promise<void>) {
   process.on("message", (m) => m === "shutdown" && handler());
 }
 
+// The profile for the relay. While the sign-in holds it the relay waits (pm2 would otherwise restart it until it gave
+// up, and the relay would stay down after the sign-in); another relay on it stops this one.
+async function relayLock(file: string): Promise<() => void> {
+  let waiting = false;
+  for (;;) {
+    try {
+      return acquireLock(file, "relay");
+    } catch (e) {
+      if (!(e instanceof LockError) || e.heldBy !== "login") throw e;
+      if (!waiting) log.info("relay", "waiting for the sign-in to finish");
+      waiting = true;
+      await sleep(5000);
+    }
+  }
+}
+
 async function run(config: Config) {
-  const release = acquireLock(config.lockFile, "relay");
+  const release = await relayLock(config.lockFile);
   process.on("exit", release);
   const token = readToken(config.tokenFile);
   const store = SlotStore.open(config.dbPath);

@@ -25,6 +25,13 @@ describe("profile lock", () => {
     fs.writeFileSync(file, JSON.stringify({ pid: process.ppid, mode: "login", since: "2026-09-26T19:00:00.000Z" }));
     expect(() => acquireLock(file, "relay")).toThrow(LockError);
     expect(() => acquireLock(file, "relay")).toThrow(/the login is running on this profile/);
+    let refused: unknown;
+    try {
+      acquireLock(file, "relay");
+    } catch (e) {
+      refused = e;
+    }
+    expect((refused as LockError).heldBy).toBe("login");
   });
 
   it("takes over the lock of a process that is gone, or a broken one", () => {
