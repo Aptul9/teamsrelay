@@ -14,7 +14,7 @@ export const slotUp = (ctl: ControlClient, n: number) => ctl.start(n);
 export const slotDown = (ctl: ControlClient, n: number) => ctl.stop(n);
 
 // Browser profile (the Microsoft session) and agent data of the slot, with the slot stopped. The web app has
-// no access to the profiles: the supervisor empties config/N, then the web app deletes data/N.
+// no access to the profiles: the supervisor deletes config/N, then the web app deletes data/N.
 export async function wipeSlot(ctl: ControlClient, n: number, paths: SlotPaths) {
   await ctl.wipe(n);
   fs.rmSync(path.join(paths.dataDir, String(n)), { recursive: true, force: true });

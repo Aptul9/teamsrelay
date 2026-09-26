@@ -7,7 +7,7 @@ import { HttpError } from "./http";
 export interface ControlClient {
   start(n: number): Promise<void>;
   stop(n: number): Promise<void>;
-  // empties the browser profile (the Microsoft session) of a stopped account
+  // deletes the browser profile (the Microsoft session) of a stopped account
   wipe(n: number): Promise<void>;
   // brings the window of the account to the front of the remote desktop
   show(n: number): Promise<boolean>;
