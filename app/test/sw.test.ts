@@ -59,6 +59,19 @@ describe("service worker notifications", () => {
     expect((await sw.push({ title: "Anna Rossi", body: "a2", acc: 1, tag: "chat-1-Anna Rossi" })).body).toBe("a1\na2");
   });
 
+  it("keeps every line of pushes that arrive together", async () => {
+    const sw = serviceWorker();
+    await Promise.all(["one", "two", "three"].map((body) => sw.push({ title: "Anna Rossi", body, acc: 1, tag: "chat-1-Anna Rossi" })));
+    expect(sw.shown[sw.shown.length - 1].body).toBe("one\ntwo\nthree");
+  });
+
+  it("shows a line sent again without adding it or alerting", async () => {
+    const sw = serviceWorker();
+    await sw.push({ title: "Anna Rossi", body: "one", acc: 1, tag: "chat-1-Anna Rossi" });
+    const n = await sw.push({ title: "Anna Rossi", body: "one", acc: 1, tag: "chat-1-Anna Rossi" });
+    expect(n).toMatchObject({ body: "one", renotify: false });
+  });
+
   it("starts over when the notification of the chat was dismissed", async () => {
     const sw = serviceWorker();
     await sw.push({ title: "Anna Rossi", body: "old", acc: 1, tag: "chat-1-Anna Rossi" });
