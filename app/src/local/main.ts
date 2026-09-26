@@ -30,7 +30,7 @@ import { SEL, TEXTS } from "@/agent/teams/selectors";
 import { BrowserKeeper, launchBrowser, openTeams } from "./browser";
 import { loadConfig, readToken, type Config } from "./config";
 import { RelayDevices } from "./devices";
-import { acquireLock, LockError } from "./lock";
+import { acquireLock, LOGIN_TIMEOUT_MS, LockError } from "./lock";
 import { appFiles, startServer } from "./server";
 import { onStop } from "./stop";
 
@@ -39,8 +39,6 @@ import { onStop } from "./stop";
 const APP_DIR = path.resolve(__dirname, "..");
 const WEB_DIR = path.join(APP_DIR, "src", "local", "web");
 const PUBLIC_DIR = path.join(APP_DIR, "public");
-// the sign-in waits this long for someone at the window
-const LOGIN_TIMEOUT_MS = 15 * 60_000;
 
 // The build runs this: a runtime package missing, a native binary of another platform, a page script the bundler
 // changed (they reach the page as source text) or a file of the app missing fail the build
