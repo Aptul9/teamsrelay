@@ -61,9 +61,11 @@ export async function runCommand(a: Agent, cmd: PendingCommand): Promise<Outcome
 export async function runPendingCommands(a: Agent) {
   const interrupted = a.store.interruptedCommands();
   if (interrupted) log.warn("cmd", "stopped while running, not run again: unconfirmed", { commands: interrupted });
-  const expired = a.store.expirePendingCommands(COMMAND_MAX_AGE);
-  if (expired) log.warn("cmd", "waited too long, not run", { commands: expired });
   for (const cmd of a.store.pendingCommands()) {
+    // the commands before this one may have taken minutes: its age counts when its turn comes
+    const expired = a.store.expirePendingCommands(COMMAND_MAX_AGE);
+    if (expired) log.warn("cmd", "waited too long, not run", { commands: expired });
+    if (a.store.commandStatus(cmd.id) !== "pending") continue;
     log.info("CMD", cmd.type, { id: cmd.id, arg: cmd.type === "download" ? undefined : cmd.arg1 });
     a.store.startCommand(cmd.id);
     a.store.finishCommand(cmd.id, await runCommand(a, cmd));

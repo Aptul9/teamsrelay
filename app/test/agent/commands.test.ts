@@ -268,6 +268,29 @@ describe("command handlers", () => {
     expect(store.commandStatus(next)).toBe("done");
   });
 
+  it("checks the age of each command when its turn comes: one queued behind slow ones does not run late", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
+      const now = Math.floor(Date.now() / 1000);
+      insert.run(now, "send", "Anna Rossi", "first");
+      // young enough when the round starts, too old once the first send took its time
+      insert.run(now - 100, "send", "Anna Rossi", "second");
+      vi.mocked(actions.sendText).mockImplementationOnce(async () => {
+        vi.setSystemTime(Date.now() + 30_000);
+        return "sent";
+      });
+      await runPendingCommands(agent());
+      expect(actions.sendText).toHaveBeenCalledTimes(1);
+      expect(db().prepare("SELECT arg2, status FROM commands ORDER BY id").all()).toEqual([
+        { arg2: "first", status: "done" },
+        { arg2: "second", status: "failed" },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("never runs a command that waited too long: a send queued while Teams was down stays unsent", async () => {
     const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
     insert.run(Math.floor(Date.now() / 1000) - COMMAND_MAX_AGE - 5, "send", "Anna Rossi", "from an hour ago");
