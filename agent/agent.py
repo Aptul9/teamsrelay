@@ -502,24 +502,45 @@ def save_identity(page):
     if me != old: print("account:", me.get("email"), me.get("tenant"), flush=True)
     set_state("me", json.dumps(me, ensure_ascii=False))
 
+def known_chat(name):
+    try:
+        with dbc() as c: return c.execute("SELECT 1 FROM chats WHERE name=?", (name,)).fetchone() is not None
+    except Exception: return False
+
 def same_chat(cur, name):
-    return bool(cur) and (cur.startswith(name) or name.startswith(cur))
+    # The open title can differ from the list name (names are cut at 60 characters, suffixes such as
+    # "(External)"), so a prefix still matches, unless the title is another chat of the list:
+    # "Luca Bianchini" is not "Luca Bianchi".
+    if not cur or not name: return False
+    if cur == name: return True
+    if not (cur.startswith(name) or name.startswith(cur)): return False
+    return not known_chat(cur)
+
+# Clicks the row of chat `name`. Row names are parsed as in CHATS_JS; the exact name wins, a prefix
+# is used only when a single row matches it. No match or an ambiguous prefix: nothing is clicked.
+OPEN_CHAT_ROW_JS = r"""(name) => {
+  const SECT=/^(Chats|Chat|Favorites|Preferiti)\b/i;
+  const STAT=/\b(Unread|Offline|Away|Available|Busy|Do not disturb|Be right back|Presence unknown|Out of office)\b/gi;
+  const hd=s=>s.querySelector(':scope > :not([role="group"])')||s;
+  const head=s=>(hd(s).innerText||'').replace(/\s+/g,' ').trim();
+  // solo le chat (livello 2): l'header della sezione "Chats" contiene il testo della prima chat e cliccarlo la chiude
+  const tis=[...document.querySelectorAll('[role="treeitem"][aria-level="2"][id^="menu"]')].filter(e=>{
+    const s=e.parentElement && e.parentElement.closest('[role="treeitem"][aria-level="1"]'); return s && SECT.test(head(s)); });
+  const rowName=e=>{
+    const clean=(e.innerText||'').replace(/\s+/g,' ').trim().replace(/^(Favorites|Chats|Quick views|Recent|Drafts)\s+/i,'').replace(STAT,'').replace(/\s+/g,' ').trim();
+    const n=clean.split(/\s+\d{1,2}:\d{2}|\s+\d{1,2}\/\d{1,2}|\s+You:/)[0].trim();
+    return (n||clean.slice(0,40)).slice(0,60);
+  };
+  const names=tis.map(rowName);
+  let i=names.indexOf(name);
+  if(i<0){ const p=names.map((n,k)=>n.startsWith(name)?k:-1).filter(k=>k>=0); if(p.length===1) i=p[0]; }
+  if(i<0) return false;
+  // click sulla riga: l'unico pulsante dentro la riga è "More chat options" (menu con Hide, Remove chat history...)
+  tis[i].click(); return true;
+}"""
 
 def open_chat(page, name):
-    ok = page.evaluate(r"""(name) => {
-      const SECT=/^(Chats|Chat|Favorites|Preferiti)\b/i;
-      const hd=s=>s.querySelector(':scope > :not([role="group"])')||s;
-      const head=s=>(hd(s).innerText||'').replace(/\s+/g,' ').trim();
-      const clean=s=>(s||'').replace(/\s+/g,' ').trim();
-      // solo le chat (livello 2): l'header della sezione "Chats" contiene il testo della prima chat e cliccarlo la chiude
-      const tis=[...document.querySelectorAll('[role="treeitem"][aria-level="2"][id^="menu"]')].filter(e=>{
-        const s=e.parentElement && e.parentElement.closest('[role="treeitem"][aria-level="1"]'); return s && SECT.test(head(s)); });
-      let t=tis.find(e => clean(e.innerText).startsWith(name));
-      if(!t) t=tis.find(e => clean(e.innerText).indexOf(name)>-1);
-      // click sulla riga: l'unico pulsante dentro la riga è "More chat options" (menu con Hide, Remove chat history...)
-      if(t){ t.click(); return true; }
-      return false;
-    }""", name)
+    ok = page.evaluate(OPEN_CHAT_ROW_JS, name)
     if not ok: return False
     # attende che Teams mostri davvero la chat richiesta (i messaggi della chat precedente sono ancora nel DOM)
     for _ in range(24):
