@@ -18,4 +18,5 @@
 | Files | The app sends images only: one PNG, JPEG, GIF or WebP of up to 10 MB per message, pasted, dropped or attached, with the text as caption; not in a reply or an edit. Any other file (Excel, PDF...) is refused with a message. Attachments received show with their name; the download works only for SharePoint files the browser session reaches: behind Defender for Cloud Apps the link answers with a web page and the app says to open the file in Teams. Sending and saving other files is a manual step in Teams. |
 | Tagging people | `@` in the app tags the people Teams lists for that chat (in a group chat its members, you excluded; in the self chat nobody), in a new message only: not in a reply, an edit or the caption of an image. The list of members is read from Teams on the first `@` of a chat and again after an hour. |
 | iPhone | Push notifications reach only the app installed on the Home Screen. |
-| Slots | Fixed by `docker-compose.yml` (4). More slots need more services and networks there. |
+| One owner | Every Teams account of a server belongs to one person: all of them show their browser window on the one remote desktop. `SLOT_COUNT` caps their number (default 4). |
+| One container | The browsers of every account run in one container: a new browsers image (Chromium update, agent release) restarts every account. |

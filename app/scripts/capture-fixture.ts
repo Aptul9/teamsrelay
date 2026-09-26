@@ -3,7 +3,8 @@
 // blank pictures of the same size. It all happens inside the page: real text never leaves the browser.
 // Development tool, not part of the image. From app/, with the local stack up:
 //   npx esbuild scripts/capture-fixture.ts --bundle --platform=node --format=cjs --external:playwright-core --outfile=<dir>/capture.cjs
-//   docker run --rm --network container:teams-chromium-2 -v "$PWD:/w" -v "<dir>:/t" -w /w node:24-slim node /t/capture.cjs <part>
+//   docker run --rm --network container:teams-browsers -e CDP=http://127.0.0.1:9223 -v "$PWD:/w" -v "<dir>:/t" -w /w node:24-slim node /t/capture.cjs <part>
+// (CDP: DevTools of the browser of account N, port 9221+N; 9223 is account 2)
 // <part>: chat-list, conversation, toolbar-mine, toolbar-other, activity, roster (members list of the open group
 // chat: opened by its participant count, closed with Escape, nothing inside clicked), mention-popup and
 // mention-picked (an @ typed in the empty compose box of the open chat, then the first person picked: never sent,

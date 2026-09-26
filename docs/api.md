@@ -15,7 +15,7 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 | Method | Path | Answer |
 |---|---|---|
 | GET | `/api/accounts` | `{accounts: [{slot, name, email, tenant, av, teams, overall, stopped, unread, desktop}], max, free}`: accounts of the user, per-user cap, free slots on the server. A stopped account has `teams` `stopped` and `overall` `grey` |
-| POST | `/api/accounts` | `{ok, slot, desktop}`. Takes the first free slot for the user and starts its browser and agent (409 when no slot is free or the cap is reached, 502/503 when Docker does not answer) |
+| POST | `/api/accounts` | `{ok, slot, desktop}`. Takes the first free slot for the user and starts its browser and agent (409 when no slot is free or the cap is reached, 502/503 when the browsers container does not answer) |
 | PATCH | `/api/accounts/{n}` | `{running: false}` stops browser and agent of slot N and keeps its Teams session and data, `{running: true}` starts them again; answers `{ok, running}`. While stopped: no sync, no notifications, commands answer 409. Owner, or an administrator |
 | DELETE | `/api/accounts/{n}` | `{ok}`. Stops slot N and deletes its Teams session and data. Owner, or an administrator |
 
@@ -76,7 +76,8 @@ Administrators only.
 |---|---|---|
 | GET | `/` | the PWA, or a redirect to `/login` |
 | GET | `/healthz` | *public*. Liveness of the web app |
-| GET | `/api/authcheck` | used by Caddy for `/desktop/N/`: 200 for the owner of slot N, 302 to the login without a session, 403 for another user |
+| GET | `/api/authcheck` | used by Caddy for `/desktop/`: 200 for a user with a Teams account, 302 to the login without a session, 403 for a user without one |
+| GET | `/api/desktop/{n}` | brings the browser window of account N to the front of the remote desktop, then 302 to `/desktop/`. Owner only, 404 otherwise; without a session, 302 to the login |
 
 ## Health (`/api/health`, `health` event)
 

@@ -11,25 +11,29 @@ flowchart LR
   PH["Phone or PC<br/>TeamsRelay web app"] -- HTTPS --> CA["caddy"]
   subgraph Server["Linux server, Docker Compose"]
     CA --> WA["webapp<br/>Next.js: users, API, events"]
-    CA -- "/desktop/N/, owner only" --> CH
-    subgraph Slot["slot N, one per Teams account"]
-      CH["chromium-N<br/>Teams web signed in"]
-      AG["agent-N<br/>Node, Playwright over CDP"]
-      DB[("data/N/messages.db")]
+    CA -- "/desktop/, users with an account" --> DK
+    subgraph BR["browsers: every Teams account"]
+      SV["supervisor"]
+      DK["remote desktop<br/>one window per account"]
+      CH["Chromium of account N<br/>Teams web signed in"]
+      AG["agent of account N<br/>Node, Playwright over CDP"]
+      SV -- "starts, stops" --> CH
+      SV -- "starts, stops" --> AG
+      AG -- CDP --> CH
     end
+    DB[("data/N/messages.db")]
     WA -- "commands, reads" --> DB
     AG -- "chats, messages, state" --> DB
-    AG -- CDP --> CH
-    WA -- "start, stop" --> DP["dockerproxy"]
-    WA --> APP[("data/app.db<br/>users, slots, devices")]
+    WA -- "start, stop, wipe<br/>unix socket" --> SV
+    WA --> APP[("data/app.db<br/>users, accounts, devices")]
   end
   AG -- "Web Push" --> PH
 ```
 
-- Every person signs in to the web app with their own user and adds their Teams accounts. Each Teams account runs in its own slot: browser, agent, database and network.
-- The Microsoft sign-in (password, MFA) happens in the remote browser of the slot, at `/desktop/N/`, reachable only by the owner of the slot.
-- Actions in the web app become commands in the database of the slot. The agent performs them on the Teams page and confirms once Teams shows the change.
-- Web app and agent are one TypeScript package (`app/`) and one image: the web app runs `node server.js`, each agent `node agent.cjs`.
+- The Teams accounts of a server belong to one person. Each account has its own browser profile (`config/N`), agent and database; all of them run in one container, `browsers`, whose supervisor starts and stops them on request of the web app.
+- The Microsoft sign-in (password, MFA) happens in the remote desktop, at `/desktop/`, where every account has its browser window. Opening the desktop of an account brings its window to the front.
+- Actions in the web app become commands in the database of the account. The agent performs them on the Teams page and confirms once Teams shows the change.
+- Web app, agent and supervisor are one TypeScript package (`app/`) with two images: `teamsrelay` runs the web app, `teamsrelay-browsers` Chromium, the agents and the supervisor.
 
 ## Quick start
 
@@ -39,8 +43,7 @@ A Linux server with Docker Compose, a DNS name pointing to it, ports 80 and 443 
 git clone <repository> /opt/teamsrelay && cd /opt/teamsrelay
 cp .env.example .env          # DOMAIN, BETTER_AUTH_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
 docker run --rm -v "$PWD:/w" -w /w node:24-slim node app/scripts/gen-vapid.mjs vapid
-docker compose --profile accounts create --build
-docker compose up -d
+docker compose up -d --build
 ```
 
 Open `https://<DOMAIN>`, sign in as the administrator, add a Teams account and sign in to Microsoft in its remote desktop. Step by step: [docs/setup.md](docs/setup.md).
