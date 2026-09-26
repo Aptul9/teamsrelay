@@ -34,6 +34,18 @@ export function composerImages(s: Selectors): number {
   return box ? box.querySelectorAll("img").length : 0;
 }
 
+// A message of yours, not among `before`, that Teams no longer shows as sending (it then also has its final id)
+export function ownMessageSent({ s, t, before }: { s: Selectors; t: Texts; before: string[] }): boolean {
+  const known = new Set(before);
+  return [...document.querySelectorAll(s.message)].some((m) => {
+    const mid = m.getAttribute("data-mid") || "";
+    const mine = m.closest(s.mine) || m.querySelector(s.mine);
+    if (!mid || known.has(mid) || !mine) return false;
+    const icon = mine.querySelector(s.statusIcon);
+    return !t.sending.test((icon && icon.getAttribute("aria-label")) || "");
+  });
+}
+
 // A message of yours with an image, not among `before`, that Teams no longer shows as sending (it then also has
 // its final id)
 export function imageMessageSent({ s, t, before }: { s: Selectors; t: Texts; before: string[] }): boolean {

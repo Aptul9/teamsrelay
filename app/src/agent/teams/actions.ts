@@ -2,7 +2,7 @@ import type { ReactionName } from "@/shared/slot-db/commands";
 import type { ReadBy } from "@/shared/slot-db/rows";
 import { errorText, log } from "../log";
 import { messageSelector, sleep, type TeamsPage } from "./page";
-import { composerImages, imageMessageSent, messageIds, pasteImage } from "./scripts/compose";
+import { composerImages, composerLeft, imageMessageSent, messageIds, ownMessageSent, pasteImage } from "./scripts/compose";
 import {
   composerText,
   deletedState,
@@ -28,24 +28,38 @@ async function until(check: () => Promise<boolean>, tries: number, ms: number): 
   return false;
 }
 
-export async function sendText(tp: TeamsPage, chat: string, text: string): Promise<boolean> {
-  if (!(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return false;
-  try {
-    const box = (await tp.page.$(SEL.editor)) ?? (await tp.page.$(SEL.textbox));
-    if (!box) return false;
-    await box.click();
-    await sleep(200);
-    await tp.page.keyboard.insertText(text);
-    await sleep(200);
-    const send = await tp.page.$(SEL.sendButton);
-    if (send) await send.click();
-    else await tp.page.keyboard.press("Enter");
-    await sleep(1000);
-    return true;
-  } catch (e) {
-    log.warn("send", errorText(e), { chat });
+// The text typed in the compose box and sent, as a person does. Refused when Teams shows another chat or the
+// compose box holds a draft, which would go out with it; whatever goes wrong before the send leaves the box empty.
+// True once Teams shows the new message as sent (15 s at most).
+export async function sendText(tp: TeamsPage, chat: string, raw: string): Promise<boolean> {
+  const text = raw.trim();
+  if (!text || !(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return false;
+  const page = tp.page;
+  // a draft already there is someone's: left as it is, nothing sent
+  if (await page.evaluate(composerLeft, SEL)) {
+    log.warn("send", "compose box not empty", { chat });
     return false;
   }
+  const before = await page.evaluate(messageIds, SEL);
+  try {
+    const box = (await page.$(SEL.editor)) ?? (await page.$(SEL.textbox));
+    if (!box) throw new Error("no compose box");
+    await box.click();
+    await sleep(200);
+    await page.keyboard.insertText(text);
+    await sleep(300);
+    if (!(await page.evaluate(composerText, SEL)).includes(text.slice(0, 20))) throw new Error("text not in the compose box");
+    const send = await page.$(SEL.sendButton);
+    if (send) await send.click();
+    else await page.keyboard.press("Enter");
+  } catch (e) {
+    log.warn("send", errorText(e), { chat });
+    await tp.emptyComposeBox();
+    return false;
+  }
+  if (await until(() => page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before }), 50, 300)) return true;
+  log.warn("send", "message did not appear on Teams", { chat });
+  return false;
 }
 
 export type ImageFile = { name: string; type: string; data: Buffer };

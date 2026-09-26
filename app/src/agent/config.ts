@@ -55,5 +55,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // the web app shows both
     activity: true,
     readBy: true,
+    alerts: {
+      signInAfter: 60,
+      browserAfter: 300,
+      signIn: "Open the remote desktop of the account and sign in again",
+      browserDown: `The browser of account ${e.ACCOUNT} does not start`,
+    },
   };
 }

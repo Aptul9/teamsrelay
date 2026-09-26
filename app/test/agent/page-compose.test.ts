@@ -1,9 +1,10 @@
-// Page scripts of the compose box: the paste of an image, and the check that the image went out. The conversation
-// is the fixture captured from Teams (scripts/capture-fixture.ts); the compose box is CKEditor there, stood in
-// for here by a box that takes the paste like it does.
+// Page scripts of the compose box: the paste of an image, what is left in the box before a send, and the checks
+// that a message or an image went out. The conversation is the fixture captured from Teams
+// (scripts/capture-fixture.ts); the compose box is CKEditor there, stood in for here by a box that takes the paste
+// like it does.
 import { describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
-import { composerImages, composerLeft, imageMessageSent, messageIds, pasteImage } from "@/agent/teams/scripts/compose";
+import { composerImages, composerLeft, imageMessageSent, messageIds, ownMessageSent, pasteImage } from "@/agent/teams/scripts/compose";
 import { fixture, picture, withChrome } from "./chrome";
 
 const chrome = withChrome();
@@ -110,5 +111,43 @@ describe("image sent, on the conversation captured from Teams", () => {
     expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before: mids })).toBe(false);
     const withoutText = mids.filter((m) => m !== "1790000000006");
     expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before: withoutText })).toBe(false);
+  });
+});
+
+describe("message sent, on the conversation captured from Teams (self chat: every message is yours)", () => {
+  // the last message, with the status icon Teams draws under the last of your messages ("Sent" in the fixture)
+  const LAST = "1790000000006";
+
+  async function conversation(status?: string) {
+    await chrome.page.setContent(fixture("conversation-image.html"));
+    return chrome.page.evaluate(
+      ({ mid, status }) => {
+        if (status !== undefined) document.querySelector(`#read-status-icon-${mid}`)!.setAttribute("aria-label", status);
+        return [...document.querySelectorAll('[data-tid="chat-pane-message"]')].map((m) => m.getAttribute("data-mid") || "");
+      },
+      { mid: LAST, status },
+    );
+  }
+
+  it("sees a new message of yours", async () => {
+    const mids = await conversation();
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before: mids.filter((m) => m !== LAST) })).toBe(true);
+  });
+
+  it("waits while Teams still shows it as sending", async () => {
+    const before = (await conversation("Sending...")).filter((m) => m !== LAST);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
+    await conversation("Sent");
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before })).toBe(true);
+  });
+
+  it("does not take a message that was already there, or a new one of someone else", async () => {
+    const mids = await conversation();
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before: mids })).toBe(false);
+    await chrome.page.evaluate((mid) => {
+      const item = document.querySelector(`[data-mid="${mid}"]`)!.closest('[data-tid="chat-pane-item"]')!;
+      for (const e of item.querySelectorAll(".fui-ChatMyMessage")) e.classList.remove("fui-ChatMyMessage");
+    }, LAST);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before: mids.filter((m) => m !== LAST) })).toBe(false);
   });
 });

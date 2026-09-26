@@ -39,26 +39,33 @@ export class Notifier {
     this.recent = new RecentPushes(o.clock);
   }
 
-  // A new Teams message: the same text within 150 s is notified once
-  async message(title: string, body: string) {
+  // A new Teams message: the same text within 150 s is notified once. The notification opens the app on the chat.
+  async message(chat: string, body: string) {
     if (!this.recent.allow(body)) return;
-    this.o.store.addNotification(title, body);
+    this.o.store.addNotification(chat, body);
+    await this.ntfy(chat, body);
+    await this.push(chat, body, chat);
+  }
+
+  // About the relay itself (Teams signed out, outcome of a check): push and ntfy, no history
+  async alert(title: string, body: string, urgency: webpush.Urgency = "high"): Promise<number> {
     await this.ntfy(title, body);
-    await this.push(title, body);
+    return this.push(title, body, "", urgency);
   }
 
   deviceCount(): number {
     return this.o.devices.targets().length;
   }
 
-  // Push to every device; subscriptions the push service reports as gone are removed
-  async push(title: string, body: string): Promise<number> {
+  // Push to every device; subscriptions the push service reports as gone are removed. Urgency high: a phone on low
+  // battery asks its push service for high only (RFC 8030 section 5.3), and web-push sends normal unless told.
+  async push(title: string, body: string, chat = "", urgency: webpush.Urgency = "high"): Promise<number> {
     const { vapid, devices, store } = this.o;
     if (!vapid) return 0;
     const targets = devices.targets();
     if (!targets.length) return 0;
     const account = devices.account?.(parseState(Identity, store.getState(STATE.me), Identity.parse({})));
-    const payload = JSON.stringify({ title: pushTitle(title, account?.label ?? ""), body: body || "", ...(account ? { acc: account.acc } : {}) });
+    const payload = JSON.stringify({ title: pushTitle(title, account?.label ?? ""), body: body || "", chat, ...(account ? { acc: account.acc } : {}) });
     const send: Send = this.o.send ?? webpush.sendNotification;
     let sent = 0;
     for (const t of targets) {
@@ -66,12 +73,16 @@ export class Notifier {
         await send(JSON.parse(t.sub) as webpush.PushSubscription, payload, {
           vapidDetails: { subject: this.o.subject, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
           TTL: PUSH_TTL,
+          urgency,
+          timeout: 15_000,
         });
         sent++;
       } catch (e) {
         const status = (e as { statusCode?: number }).statusCode;
-        if (status === 404 || status === 410) devices.remove(t.endpoint);
-        else log.warn("push", errorText(e), { status });
+        if (status === 404 || status === 410) {
+          devices.remove(t.endpoint);
+          log.info("push", "device gone, removed", { status });
+        } else log.warn("push", errorText(e), { status });
       }
     }
     return sent;

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runCommand, runPendingCommands } from "@/agent/commands";
+import { COMMAND_MAX_AGE, runCommand, runPendingCommands } from "@/agent/commands";
 import type { Agent } from "@/agent/context";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { agentJobs } from "@/agent/loop";
@@ -55,6 +55,7 @@ let evaluated: string[];
 let opens: boolean;
 let downloaded: string | null;
 let uploads: string;
+let alerts: string[];
 
 function agent(): Agent {
   const page = {
@@ -63,6 +64,7 @@ function agent(): Agent {
       evaluated.push(fn.name);
       if (fn.name === "readMessages") return [message("m1", "ciao")];
       if (fn.name === "readChatList") return [];
+      if (fn.name === "probePage") return { reduced: false, domReady: true, hookInstalled: true, presence: "available" };
       return null;
     },
   };
@@ -75,9 +77,14 @@ function agent(): Agent {
     isOpen: async () => opens,
   } as unknown as TeamsPage;
   return {
-    config: { uploadsDir: uploads, activity: true, readBy: true },
+    config: { uploadsDir: uploads, activity: true, readBy: true, alerts: { signInAfter: 60, browserAfter: 300, signIn: "Sign in again", browserDown: "The browser does not start" } },
     store,
-    notifier: { push: async () => 0, message: async () => undefined } as unknown as Notifier,
+    notifier: {
+      push: async () => 0,
+      alert: async (title: string, body: string) => alerts.push(`${title}: ${body}`),
+      message: async () => undefined,
+      deviceCount: () => 0,
+    } as unknown as Notifier,
     media: { download: async () => downloaded, avatar: async () => "", avatars: async (_: unknown, rows: unknown[]) => rows, image: async () => null } as unknown as Media,
     detector: new NewMessageDetector(),
     tp,
@@ -86,6 +93,7 @@ function agent(): Agent {
 }
 
 const cmd = (type: string, arg1 = "Anna Rossi", arg2 = "") => ({ id: 7, type, arg1, arg2 });
+const db = () => (store as unknown as { db: import("better-sqlite3").Database }).db;
 
 beforeEach(() => {
   store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
@@ -95,6 +103,7 @@ beforeEach(() => {
   opens = true;
   downloaded = null;
   uploads = tempDir();
+  alerts = [];
   vi.clearAllMocks();
 });
 
@@ -105,8 +114,7 @@ describe("command handlers", () => {
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
     expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("Anna Rossi");
     expect(evaluated).toContain("readMessages");
-    const db = (store as unknown as { db: import("better-sqlite3").Database }).db;
-    expect(db.prepare("SELECT mid, text FROM chat_messages WHERE chat=?").all("Anna Rossi")).toEqual([{ mid: "m1", text: "ciao" }]);
+    expect(db().prepare("SELECT mid, text FROM chat_messages WHERE chat=?").all("Anna Rossi")).toEqual([{ mid: "m1", text: "ciao" }]);
   });
 
   it("open: done even when the chat did not open, like the Python agent", async () => {
@@ -115,10 +123,13 @@ describe("command handlers", () => {
     expect(store.getState(STATE.activeChat)).toBe("");
   });
 
-  it("send: done whatever happened, with the conversation saved", async () => {
-    vi.mocked(actions.sendText).mockResolvedValueOnce(false);
+  it("send: done once Teams shows the message, failed when it does not, the conversation saved either way", async () => {
     expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello"))).toBe("done");
     expect(actions.sendText).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "hello");
+    vi.mocked(actions.sendText).mockResolvedValueOnce(false);
+    evaluated = [];
+    expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello again"))).toBe("failed");
+    expect(evaluated).toContain("readMessages");
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
   });
 
@@ -205,6 +216,11 @@ describe("command handlers", () => {
     expect(mentionActions.sendWithMentions).not.toHaveBeenCalled();
   });
 
+  it("recheck: pushes the outcome of the check", async () => {
+    expect(await runCommand(agent(), cmd("recheck", ""))).toBe("done");
+    expect(alerts).toEqual(["Teams: Problem: Chat list not readable"]);
+  });
+
   it("an unknown type is done, a handler that throws is failed", async () => {
     expect(await runCommand(agent(), cmd("teleport"))).toBe("done");
     vi.mocked(actions.editMessage).mockRejectedValueOnce(new Error("Target page, context or browser has been closed"));
@@ -212,18 +228,25 @@ describe("command handlers", () => {
   });
 
   it("runs the pending commands in order, records each outcome and reads the chat list after each", async () => {
-    const a = agent();
-    const db = (store as unknown as { db: import("better-sqlite3").Database }).db;
-    const insert = db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(0, ?, ?, ?)");
-    insert.run("open", "Anna Rossi", "");
-    insert.run("reply", "Anna Rossi", '{"mid":"m1","text":"x"}');
+    const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
+    const now = Math.floor(Date.now() / 1000);
+    insert.run(now, "open", "Anna Rossi", "");
+    insert.run(now, "reply", "Anna Rossi", '{"mid":"m1","text":"x"}');
     vi.mocked(actions.replyWithQuote).mockResolvedValueOnce(false);
-    await runPendingCommands(a);
-    expect(db.prepare("SELECT type, status FROM commands ORDER BY id").all()).toEqual([
+    await runPendingCommands(agent());
+    expect(db().prepare("SELECT type, status FROM commands ORDER BY id").all()).toEqual([
       { type: "open", status: "done" },
       { type: "reply", status: "failed" },
     ]);
     expect(evaluated.filter((n) => n === "readChatList")).toHaveLength(2);
+  });
+
+  it("never runs a command that waited too long: a send queued while Teams was down stays unsent", async () => {
+    const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
+    insert.run(Math.floor(Date.now() / 1000) - COMMAND_MAX_AGE - 5, "send", "Anna Rossi", "from an hour ago");
+    await runPendingCommands(agent());
+    expect(actions.sendText).not.toHaveBeenCalled();
+    expect(db().prepare("SELECT status FROM commands").pluck().all()).toEqual(["failed"]);
   });
 });
 
@@ -245,5 +268,11 @@ describe("agent loop", () => {
       ["read-by", "2+0", false],
       ["self-check", "1+0", false],
     ]);
+  });
+
+  it("leaves out the Activity feed and Read by for an app that does not show them", () => {
+    const a = agent();
+    a.config = { ...a.config, activity: false, readBy: false };
+    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "input", "parking", "hook", "commands", "chats-full", "chats", "identity", "health", "conversation", "self-check"]);
   });
 });

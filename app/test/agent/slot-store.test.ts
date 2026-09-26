@@ -76,6 +76,40 @@ describe("agent store", () => {
     expect(store.hasPendingCommands()).toBe(false);
   });
 
+  it("queues commands itself and reads back their outcome, like the web app does (local relay API)", () => {
+    const id = store.enqueue("send", "Anna Rossi", "hello");
+    expect(store.commandStatus(id)).toBe("pending");
+    expect(reader((r) => r.commandStatus(id)?.status)).toBe("pending");
+    store.finishCommand(id, "done");
+    expect([store.commandStatus(id), store.commandStatus(999)]).toEqual(["done", null]);
+  });
+
+  it("ends as failed the commands that waited too long, and only those", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const old = store.enqueue("send", "Anna Rossi", "queued while signed out");
+    const recent = store.enqueue("send", "Anna Rossi", "just now");
+    expect(store.expirePendingCommands(120, now + 60)).toBe(0);
+    expect(store.expirePendingCommands(120, now + 130)).toBe(2);
+    expect([store.commandStatus(old), store.commandStatus(recent)]).toEqual(["failed", "failed"]);
+    const fresh = store.enqueue("send", "Anna Rossi", "fresh");
+    store.finishCommand(fresh, "done");
+    expect(store.expirePendingCommands(0, now + 999)).toBe(0);
+    expect(store.commandStatus(fresh)).toBe("done");
+  });
+
+  it("reads back the messages of a chat as the web app does", () => {
+    store.saveChatMessages("A", [
+      { mid: "a2", author: "Anna", text: "hi", mine: false, reacts: "👍", extra: { html: "<b>hi</b>", reactions: [{ e: "👍", n: 1, mine: true }] } },
+      { mid: "a3", author: "", text: "ok", mine: true, reacts: "", extra: null },
+    ]);
+    expect(store.messages("A")).toEqual(reader((r) => r.messages("A")));
+    expect(store.messages("A")).toEqual([
+      { mid: "a2", author: "Anna", text: "hi", mine: 0, reacts: "👍", html: "<b>hi</b>", reactions: [{ e: "👍", n: 1, mine: true }] },
+      { mid: "a3", author: "", text: "ok", mine: 1, reacts: "" },
+    ]);
+    expect(store.messages("nobody")).toEqual([]);
+  });
+
   it("rewrites the activity feed", () => {
     const item = { kind: "reaction", actor: "Anna Rossi", title: "Anna Rossi reacted", emoji: "👍", preview: "ok", tm: "9/24", chat: "Anna Rossi", channel: false, unread: true, av: "" };
     store.saveActivity([{ id: "101", ...item }, { id: "", ...item, channel: true }]);

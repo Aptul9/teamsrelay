@@ -137,7 +137,8 @@ describe("agent process", () => {
 
   it("runs queued commands and marks unknown ones done", async () => {
     const db = new Database(path.join(dir, "2", "messages.db"));
-    const insert = db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(0, ?, '', '')");
+    // queued now: a command older than two minutes is never run
+    const insert = db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(unixepoch(), ?, '', '')");
     const ids = [Number(insert.run("resync").lastInsertRowid), Number(insert.run("teleport").lastInsertRowid)];
     db.close();
     for (const id of ids) await until(() => query<{ status: string }>("SELECT status FROM commands WHERE id=?", id)?.status === "done", 15_000, `command ${id}`);

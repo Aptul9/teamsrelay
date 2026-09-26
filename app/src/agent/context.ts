@@ -13,6 +13,14 @@ export type AgentSettings = {
   // Activity feed and "Read by": read only where an app shows them
   activity: boolean;
   readBy: boolean;
+  alerts: {
+    // seconds a problem lasts before its push: Teams signed out, browser not starting
+    signInAfter: number;
+    browserAfter: number;
+    // how to sign in again, and which browser does not start: the first sentence of those pushes
+    signIn: string;
+    browserDown: string;
+  };
 };
 
 // What the jobs and the command handlers work with. tp is the Teams page of the current round.

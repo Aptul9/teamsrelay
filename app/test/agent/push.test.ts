@@ -49,7 +49,7 @@ describe("VAPID keys", () => {
 });
 
 describe("notifier", () => {
-  type Sent = { endpoint: string; payload: unknown; ttl: unknown };
+  type Sent = { endpoint: string; payload: unknown; ttl: unknown; urgency: unknown };
   let sent: Sent[];
   let store: SlotStore;
   let appDbFile: string;
@@ -84,13 +84,13 @@ describe("notifier", () => {
       clock,
       send: async (s, payload, options) => {
         if (s.endpoint.endsWith("gone")) throw Object.assign(new Error("Gone"), { statusCode: 410 });
-        sent.push({ endpoint: s.endpoint, payload: JSON.parse(payload), ttl: options.TTL });
+        sent.push({ endpoint: s.endpoint, payload: JSON.parse(payload), ttl: options.TTL, urgency: options.urgency });
       },
     });
 
   it("pushes to the devices of the owner with a TTL of one hour and forgets the gone ones", async () => {
     expect(await notifier().push("Anna Rossi", "ciao")).toBe(1);
-    expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "ciao", acc: 1 }, ttl: PUSH_TTL }]);
+    expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "ciao", chat: "", acc: 1 }, ttl: PUSH_TTL, urgency: "high" }]);
     expect(PUSH_TTL).toBe(3600);
     const db = new Database(appDbFile, { readonly: true });
     expect(db.prepare("SELECT endpoint FROM push_subscriptions ORDER BY endpoint").pluck().all()).toEqual(["https://push/u1-phone", "https://push/u2-phone"]);
@@ -103,17 +103,33 @@ describe("notifier", () => {
     db.close();
     store.setState(STATE.me, JSON.stringify({ name: "Anna", email: "anna@contoso.example", tenant: "Contoso", av: "" }));
     await notifier().push("Anna Rossi", "ciao");
-    expect(sent[0].payload).toEqual({ title: "Anna Rossi · Contoso", body: "ciao", acc: 1 });
+    expect(sent[0].payload).toEqual({ title: "Anna Rossi · Contoso", body: "ciao", chat: "", acc: 1 });
   });
 
-  it("records a new message once within 150 s", async () => {
+  it("names the chat of a new message and records it once within 150 s", async () => {
     let now = 1_000_000;
     const n = notifier(() => now);
     await n.message("Anna Rossi", "are you there?");
     now += 60_000;
     await n.message("Anna Rossi", "Are you there?");
-    expect(sent).toHaveLength(1);
+    expect(sent.map((s) => s.payload)).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1 }]);
     expect(store.lastNotificationTs()).toBeGreaterThan(0);
+  });
+
+  it("sends messages and alerts at high urgency, a check that passed at normal", async () => {
+    const n = notifier();
+    await n.message("Anna Rossi", "urgent?");
+    await n.alert("Teams signed out", "Sign in again");
+    await n.alert("Teams OK", "Automatic check: the whole chain works.", "normal");
+    expect(sent.map((s) => [(s.payload as { title: string }).title, s.urgency])).toEqual([
+      ["Anna Rossi", "high"],
+      ["Teams signed out", "high"],
+      ["Teams OK", "normal"],
+    ]);
+    // alerts are about the relay, not messages: not in the history
+    expect(store.lastNotificationTs()).toBeGreaterThan(0);
+    const db = (store as unknown as { db: import("better-sqlite3").Database }).db;
+    expect(db.prepare("SELECT title FROM messages").pluck().all()).toEqual(["Anna Rossi"]);
   });
 
   it("sends nothing without keys", async () => {

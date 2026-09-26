@@ -5,12 +5,12 @@ import type { Agent } from "./context";
 import { readActivity } from "./jobs/activity";
 import { scanChats, scanChatsFull } from "./jobs/chat-list";
 import { saveOpenChat } from "./jobs/conversation";
-import { noTabHealth, updateHealth } from "./jobs/health";
+import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
 import { drainHook, keepActive, park, preparePage, wanted } from "./jobs/page-setup";
 import { prefetchReadBy } from "./jobs/read-by";
 import { scheduledSelfCheck, selfCheckDue } from "./jobs/self-check";
-import { isTeamsUrl, pickTeamsPage } from "./logic/hosts";
+import { hostOf, isTeamsUrl, pickTeamsPage } from "./logic/hosts";
 import { errorText, log } from "./log";
 import { Scheduler, type Job } from "./scheduler";
 import { sleep, TeamsPage } from "./teams/page";
@@ -73,21 +73,32 @@ export async function runAgent(a: Omit<Agent, "tp" | "health">, browser: Browser
   const agent = { ...a, health: null } as Agent;
   const scheduler = new Scheduler<Round>(agentJobs(agent), (job, e) => log.warn("job", errorText(e), { job }));
   const pages = new WeakMap<Page, TeamsPage>();
-  let awaySince: number | null = null;
+  let away: { since: number; url: string } | null = null;
   while (!signal?.aborted) {
     try {
-      const context = await browser.context();
+      let context: BrowserContext;
+      try {
+        context = await browser.context();
+      } catch (e) {
+        log.warn("browser", `not started: ${errorText(e)}`);
+        await browserDownHealth(agent);
+        await sleep(2000);
+        continue;
+      }
       const page = pickTeamsPage(context.pages());
       if (!page) {
-        noTabHealth(agent);
-        awaySince ??= Date.now();
-        // the page that is not blank, if any: the source may treat a sign-in page apart
+        // the page that is not blank, if any: a sign-in on another host (federated sign-in page, MFA) looks like this
         const url = context.pages().map((p) => p.url()).find((u) => !BLANK.test(u)) ?? "";
-        if (await browser.noTeamsTab(context, { ms: Date.now() - awaySince, url })) awaySince = null;
+        await noTabHealth(agent, url);
+        if (!away || !!away.url !== !!url) {
+          away = { since: Date.now(), url };
+          log.info("agent", url ? "not on Teams" : "blank tab", { host: url ? hostOf(url) : undefined });
+        }
+        if (await browser.noTeamsTab(context, { ms: Date.now() - away.since, url })) away = null;
         await sleep(3000);
         continue;
       }
-      awaySince = null;
+      away = null;
       let tp = pages.get(page);
       if (!tp) {
         tp = new TeamsPage(page, agent.store);
