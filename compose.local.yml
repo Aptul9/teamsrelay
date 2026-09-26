@@ -4,18 +4,14 @@
 # Caddy serves plain HTTP on 127.0.0.1 only: localhost is already a secure context, so the service
 # worker and Web Push work without a certificate.
 # SQLite and the Chromium profiles live in named volumes instead of bind mounts on the Windows
-# filesystem, where file locking and symlinks are unreliable. The profiles are the volumes of the
-# chromium-N containers of earlier releases: tr_config for account 1, tr_config_N for account N.
+# filesystem, where file locking and symlinks are unreliable. tr_profiles holds one directory per
+# account, as config/ does on a server. Stacks of earlier releases kept one volume per account
+# (tr_config, tr_config_N): docs/setup.md moves them.
 services:
   browsers:
-    volumes: !override
-      - tr_config:/profiles/1
-      - tr_config_2:/profiles/2
-      - tr_config_3:/profiles/3
-      - tr_config_4:/profiles/4
+    volumes:
+      - tr_profiles:/profiles
       - tr_data:/root/data
-      - ./vapid:/root/vapid:ro
-      - control:/root/run
   webapp:
     volumes:
       - tr_data:/data
@@ -24,8 +20,5 @@ services:
       - "127.0.0.1:8090:8090"
 
 volumes:
-  tr_config:
-  tr_config_2:
-  tr_config_3:
-  tr_config_4:
+  tr_profiles:
   tr_data:
