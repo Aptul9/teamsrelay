@@ -55,8 +55,9 @@ export const RELAY_COMMANDS = ["open", "send", "reply", "react", "edit", "delete
 const CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 
-// Wrong tokens from one address: after `limit` within the window, 429 until the window ends. The token has 192
-// bits: this only keeps a scanner from filling the log.
+// Wrong tokens from one address: after `limit` within the window, the wrong ones get 429 until the window ends, and
+// are no longer logged. The token has 192 bits: this only keeps a scanner from filling the log. The right token is
+// never limited: behind a proxy on the same machine (tailscale serve) every phone has the address of the proxy.
 export class Failures {
   private readonly seen = new Map<string, { n: number; first: number }>();
 
@@ -292,9 +293,9 @@ export function apiHandler(o: ApiOptions, failures = new Failures()): http.Reque
       // the public key is public: the app needs it to subscribe
       if (req.method === "GET" && url.pathname === "/api/vapid") return send(res, 200, { key: o.vapidKey });
       if (!url.pathname.startsWith("/api/") && !url.pathname.startsWith("/media/")) throw new HttpError(404, "Not found");
-      if (failures.blocked(ip)) throw new HttpError(429, "Too many wrong tokens: try again later");
       const given = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "")?.[1] ?? "";
       if (!timingSafeEqual(digest(given), expected)) {
+        if (failures.blocked(ip)) throw new HttpError(429, "Too many wrong tokens: try again later");
         failures.add(ip);
         log.warn("api", "wrong token", { ip, path: url.pathname });
         throw new HttpError(401, "Wrong token");

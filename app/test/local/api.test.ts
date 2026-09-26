@@ -110,10 +110,13 @@ describe("token", () => {
     }
   });
 
-  it("stops answering an address after too many wrong ones, even with the right one", async () => {
+  // behind tailscale serve every phone comes from 127.0.0.1: a few typos must not lock out the owner
+  it("limits wrong tokens only: after too many, wrong ones get 429 and the right one still gets in", async () => {
     await serve(new Failures(3));
     for (let i = 0; i < 3; i++) expect((await call("/api/state", { token: "wrong" })).status).toBe(401);
-    expect((await call("/api/state")).status).toBe(429);
+    expect((await call("/api/state", { token: "wrong again" })).status).toBe(429);
+    expect((await call("/api/state")).status).toBe(200);
+    expect((await call("/api/state", { token: null })).status).toBe(429);
   });
 });
 
