@@ -1,28 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { CommandStatus } from "@/shared/slot-db/commands";
-import type { MessageExtra, ReadBy } from "@/shared/slot-db/rows";
+import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
+import type { Message, MessageExtra } from "@/shared/slot-db/rows";
 import { ensureSlotSchema } from "@/shared/slot-db/schema";
 import { mergeChats, type ChatEntry } from "../logic/chats";
 
-// The agent side of data/N/messages.db (src/shared/slot-db): one connection for the life of the agent.
+// state/relay.db (src/shared/slot-db): one connection for the life of the relay, shared by the agent and the API.
 
 export type PendingCommand = { id: number; type: string; arg1: string; arg2: string };
 export type SavedMessage = { mid: string; author: string; text: string; mine: boolean; reacts: string; extra: MessageExtra | null };
-export type ActivityEntry = {
-  id: string;
-  kind: string;
-  actor: string;
-  title: string;
-  emoji: string;
-  preview: string;
-  tm: string;
-  chat: string;
-  channel: boolean;
-  unread: boolean;
-  av: string;
-};
+export type PushTarget = { endpoint: string; sub: string };
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const bit = (v: boolean) => (v ? 1 : 0);
@@ -34,7 +22,6 @@ export class SlotStore {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const db = new Database(file);
     db.pragma("journal_mode = WAL");
-    // the web app reads and queues commands at the same time: wait for its locks like the Python agent (8 s)
     db.pragma("busy_timeout = 8000");
     ensureSlotSchema(db);
     return new SlotStore(db);
@@ -53,7 +40,7 @@ export class SlotStore {
     this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(key, value);
   }
 
-  // History of the notifications sent, shown by the web app (/api/feed)
+  // History of the notifications sent
   addNotification(title: string, body: string) {
     this.db.prepare("INSERT INTO messages(ts, source, title, body) VALUES(?, 'teams', ?, ?)").run(nowSeconds(), title, body);
   }
@@ -84,7 +71,7 @@ export class SlotStore {
     }));
   }
 
-  // One transaction: the web app never sees the list empty
+  // One transaction: the app never sees the list empty
   saveChats(visible: readonly ChatEntry[], replace = false) {
     if (!visible.length) return;
     this.db.transaction(() => {
@@ -118,30 +105,22 @@ export class SlotStore {
     })();
   }
 
-  ownRecentMessageIds(chat: string, limit: number): string[] {
-    return this.db
-      .prepare("SELECT mid FROM chat_messages WHERE chat=? AND mine=1 AND mid<>'' ORDER BY idx DESC LIMIT ?")
-      .pluck()
-      .all(chat, limit) as string[];
+  // Messages of a chat as saved the last time it was open in Teams
+  messages(chat: string): Message[] {
+    const rows = this.db.prepare("SELECT mid, author, text, mine, reacts, extra FROM chat_messages WHERE chat=? ORDER BY idx").all(chat) as (Message & {
+      extra: string | null;
+    })[];
+    return rows.map(({ extra, ...m }) => ({ ...m, ...parseExtra(extra) }));
   }
 
-  readByOf(chat: string): Map<string, { label: string; ts: number }> {
-    const rows = this.db.prepare("SELECT mid, label, ts FROM readby WHERE chat=?").all(chat) as { mid: string; label: string; ts: number }[];
-    return new Map(rows.map((r) => [r.mid, { label: r.label ?? "", ts: r.ts ?? 0 }]));
+  enqueue(type: CommandType, arg1 = "", arg2 = ""): number {
+    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?,?,?,?)").run(nowSeconds(), type, arg1, arg2);
+    return Number(r.lastInsertRowid);
   }
 
-  readByCache(mids: readonly string[]): Map<string, ReadBy> {
-    if (!mids.length) return new Map();
-    const rows = this.db
-      .prepare(`SELECT mid, label, names FROM readby WHERE mid IN (${mids.map(() => "?").join(",")})`)
-      .all(...mids) as { mid: string; label: string; names: string | null }[];
-    return new Map(rows.map((r) => [r.mid, { label: r.label ?? "", names: parseNames(r.names) }]));
-  }
-
-  saveReadBy(mid: string, chat: string, readBy: ReadBy) {
-    this.db
-      .prepare("INSERT OR REPLACE INTO readby(mid, chat, label, names, ts) VALUES(?,?,?,?,?)")
-      .run(mid, chat, readBy.label, JSON.stringify(readBy.names), nowSeconds());
+  commandStatus(id: number): CommandStatus | null {
+    const r = this.db.prepare("SELECT status FROM commands WHERE id=?").get(id) as { status: CommandStatus } | undefined;
+    return r?.status ?? null;
   }
 
   pendingCommands(): PendingCommand[] {
@@ -158,25 +137,36 @@ export class SlotStore {
     this.db.prepare("UPDATE commands SET status=? WHERE id=?").run(status, id);
   }
 
-  saveActivity(items: readonly ActivityEntry[]) {
-    this.db.transaction(() => {
-      const ts = nowSeconds();
-      this.db.prepare("DELETE FROM activity").run();
-      const insert = this.db.prepare(
-        "INSERT OR REPLACE INTO activity(id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-      );
-      items.forEach((a, i) =>
-        insert.run(a.id || `x${i}`, i, a.kind, a.actor, a.title, a.emoji, a.preview, a.tm, a.chat, bit(a.channel), bit(a.unread), ts, a.av),
-      );
-    })();
+  // Commands still waiting after `maxAge` seconds end as failed: a message queued while Teams was signed out or the
+  // browser was down must not go out hours later, when nobody expects it any more. Number of commands expired.
+  expirePendingCommands(maxAge: number, now = nowSeconds()): number {
+    return this.db.prepare("UPDATE commands SET status='failed' WHERE status='pending' AND ts < ?").run(now - maxAge).changes;
+  }
+
+  pushSubscriptions(): PushTarget[] {
+    return this.db.prepare("SELECT endpoint, sub FROM push_subscriptions ORDER BY ts").all() as PushTarget[];
+  }
+
+  pushSubscriptionCount(): number {
+    return this.db.prepare("SELECT COUNT(*) FROM push_subscriptions").pluck().get() as number;
+  }
+
+  // A device subscribing again replaces its subscription
+  savePushSubscription(endpoint: string, sub: string, ua: string) {
+    this.db.prepare("INSERT OR REPLACE INTO push_subscriptions(endpoint, sub, ua, ts) VALUES(?,?,?,?)").run(endpoint, sub, ua, nowSeconds());
+  }
+
+  deletePushSubscription(endpoint: string): boolean {
+    return this.db.prepare("DELETE FROM push_subscriptions WHERE endpoint=?").run(endpoint).changes > 0;
   }
 }
 
-function parseNames(v: string | null): string[] {
+function parseExtra(v: string | null): MessageExtra {
+  if (!v) return {};
   try {
-    const names: unknown = JSON.parse(v || "[]");
-    return Array.isArray(names) ? names.map(String) : [];
+    const extra: unknown = JSON.parse(v);
+    return extra && typeof extra === "object" ? (extra as MessageExtra) : {};
   } catch {
-    return [];
+    return {};
   }
 }

@@ -1,9 +1,8 @@
 import type { AgentHealth } from "@/shared/slot-db/state";
-import type { Config } from "./config";
+import type { Config } from "@/relay/config";
 import type { NewMessageDetector } from "./logic/new-messages";
 import type { Media } from "./media";
 import type { Notifier } from "./push/notifier";
-import type { AppStore } from "./store/app-store";
 import type { SlotStore } from "./store/slot-store";
 import type { TeamsPage } from "./teams/page";
 
@@ -11,7 +10,6 @@ import type { TeamsPage } from "./teams/page";
 export type Agent = {
   config: Config;
   store: SlotStore;
-  app: AppStore;
   notifier: Notifier;
   media: Media;
   detector: NewMessageDetector;

@@ -1,4 +1,4 @@
-// Page scripts used around the actions on a message (react, edit, reply, delete, read by). They run inside
+// Page scripts used around the actions on a message (react, edit, reply, delete). They run inside
 // the Teams page: self-contained, type imports only. A message is found by its data-mid.
 import type { Selectors } from "../selectors";
 
@@ -97,12 +97,6 @@ export function undoButtonPoint({ s, mid }: MessageArgs): Point | null {
   btn.scrollIntoView({ block: "center" });
   const r = btn.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-}
-
-// Names in the submenu of "Read by X of Y": the open menus other than the one holding the entry itself
-export function readReceiptNames({ s, entry }: { s: Selectors; entry: string }): string[] {
-  const menus = [...document.querySelectorAll(s.menu)].filter((m) => m.getClientRects().length && !m.querySelector(`[data-tid="${entry}"]`));
-  return menus.flatMap((m) => [...m.querySelectorAll<HTMLElement>(s.menuItem)].map((x) => (x.innerText || "").trim()).filter(Boolean));
 }
 
 // Current text of the body of a message, null when it is not in the page

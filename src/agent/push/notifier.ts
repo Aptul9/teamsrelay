@@ -1,24 +1,20 @@
 import webpush from "web-push";
-import { Identity, parseState, STATE } from "@/shared/slot-db/state";
-import { accountLabel, PUSH_TTL, pushTitle, RecentPushes } from "../logic/notify";
+import { PUSH_TTL, RecentPushes } from "../logic/notify";
 import { errorText, log } from "../log";
-import type { AppStore } from "../store/app-store";
 import type { SlotStore } from "../store/slot-store";
 import type { VapidKeys } from "./vapid";
 
 type Send = (subscription: webpush.PushSubscription, payload: string, options: webpush.RequestOptions) => Promise<unknown>;
 export type Ntfy = { url: string; topic: string } | null;
 
-// Notifications of the slot: Web Push to the devices of the slot owner, ntfy when enabled, and the history
-// of the messages notified (messages table).
+// Notifications of the relay: Web Push to every device subscribed from the app, ntfy when a topic is set, and the
+// history of the messages notified (messages table). Outbound only: the push service delivers to the phone.
 export class Notifier {
   private readonly recent: RecentPushes;
 
   constructor(
     private readonly o: {
-      slot: number;
       store: SlotStore;
-      app: AppStore;
       vapid: VapidKeys | null;
       subject: string;
       ntfy: Ntfy;
@@ -29,23 +25,27 @@ export class Notifier {
     this.recent = new RecentPushes(o.clock);
   }
 
-  // A new Teams message: the same text within 150 s is notified once
-  async message(title: string, body: string) {
+  // A new Teams message: the same text within 150 s is notified once. The notification opens the app on the chat.
+  async message(chat: string, body: string) {
     if (!this.recent.allow(body)) return;
-    this.o.store.addNotification(title, body);
-    await this.ntfy(title, body);
-    await this.push(title, body);
+    this.o.store.addNotification(chat, body);
+    await this.ntfy(chat, body);
+    await this.push(chat, body, chat);
   }
 
-  // Push to every device of the owner; subscriptions the push service reports as gone are removed
-  async push(title: string, body: string): Promise<number> {
-    const { vapid, app, store, slot } = this.o;
+  // About the relay itself (Teams signed out, check outcome): push and ntfy, no history
+  async alert(title: string, body: string): Promise<number> {
+    await this.ntfy(title, body);
+    return this.push(title, body);
+  }
+
+  // Push to every device; subscriptions the push service reports as gone are removed
+  async push(title: string, body: string, chat = ""): Promise<number> {
+    const { vapid, store } = this.o;
     if (!vapid) return 0;
-    const targets = app.pushTargets();
+    const targets = store.pushSubscriptions();
     if (!targets.length) return 0;
-    const me = parseState(Identity, store.getState(STATE.me), Identity.parse({}));
-    // acc: the notification opens the app on this account
-    const payload = JSON.stringify({ title: pushTitle(title, accountLabel(app.ownerHasManyAccounts(), me, slot)), body: body || "", acc: slot });
+    const payload = JSON.stringify({ title: title || "Teams", body: body || "", chat });
     const send: Send = this.o.send ?? webpush.sendNotification;
     let sent = 0;
     for (const t of targets) {
@@ -53,12 +53,15 @@ export class Notifier {
         await send(JSON.parse(t.sub) as webpush.PushSubscription, payload, {
           vapidDetails: { subject: this.o.subject, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
           TTL: PUSH_TTL,
+          timeout: 15_000,
         });
         sent++;
       } catch (e) {
         const status = (e as { statusCode?: number }).statusCode;
-        if (status === 404 || status === 410) app.deleteSubscription(t.endpoint);
-        else log.warn("push", errorText(e), { status });
+        if (status === 404 || status === 410) {
+          store.deletePushSubscription(t.endpoint);
+          log.info("push", "device gone, removed", { status });
+        } else log.warn("push", errorText(e), { status });
       }
     }
     return sent;

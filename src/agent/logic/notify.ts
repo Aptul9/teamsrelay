@@ -1,5 +1,3 @@
-import type { Identity } from "@/shared/slot-db/state";
-
 // How long the push service keeps a notification for a phone that is offline or asleep, in seconds
 export const PUSH_TTL = 3600;
 
@@ -20,14 +18,4 @@ export class RecentPushes {
     this.seen.set(key, now);
     return true;
   }
-}
-
-// When the owner has more Teams accounts, the notification says which one: organization, otherwise email
-export function accountLabel(ownerHasMany: boolean, me: Identity, slot: number): string {
-  if (!ownerHasMany) return "";
-  return me.tenant || me.email || `account ${slot}`;
-}
-
-export function pushTitle(title: string, label: string): string {
-  return (title || "TeamsRelay") + (label ? ` · ${label}` : "");
 }

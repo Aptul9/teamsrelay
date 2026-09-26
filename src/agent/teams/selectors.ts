@@ -26,9 +26,7 @@ export const SEL = {
   avatar: "img.fui-Avatar__image",
   chatTitle: '[data-tid="chat-title"]',
 
-  // side bar and header
-  activityView: 'button[aria-label^="Activity"]',
-  chatView: 'button[aria-label^="Chat"]',
+  // header
   presence: '[data-tid="me-control-avatar-presence"]',
   meAvatar: '[data-tid="me-control-avatar"] img',
   editor: '[data-tid="ckeditor"]',
@@ -66,29 +64,14 @@ export const SEL = {
   // action bar, drawn in a portal outside the message
   actionBar: '[data-tid="message-actions-container"]',
   menu: '[role="menu"]',
-  menuItem: '[role="menuitem"]',
   overlays: '[role="menu"],[role="dialog"],[role="alertdialog"]',
   sendButton: '[data-tid="sendMessageCommands-send"]',
-  // members of a group chat: the participant count in the header opens a list of them. Every row also holds a
-  // remove button: nothing inside the list is ever clicked.
-  participantCount: '[data-tid="chat-header-participant-count"]',
-  rosterName: '[id^="chat-roster-item-name-"]',
-  // members named in the header of 1:1 chats and of group chats without a name
-  topicParticipant: '[data-tid="chat-topic-menu"] [id^="chat-topic-person-"]',
-  // @ typed in the compose box opens this list of people; data-tid of an entry is the prefix and the person's
-  // name. The person picked becomes a mention element in the box.
-  mentionPopup: '[data-tid="AutocompletePopup-Mentions"]',
-  mentionOptionPrefix: "autocomplete-picker-item-",
+  // a person tagged with @ in the compose box
   composerMention: '[itemtype*="Mention"]',
   editDone: '[data-tid="newMessageCommands-send"]',
   editDiscard: '[data-tid="newMessageCommands-discard-draft"]',
   discardConfirm: '[data-tid="messagedraft-discard-confirm"]',
   closeQuote: '[data-tid="close-quoted-reply"]',
-
-  // Activity feed: the id of an item is in the id of its title, named by aria-labelledby
-  feedItem: '[data-tid="activity-feed-list-item"]',
-  feedTitle: '[data-tid="activity-feed-item-title"]',
-  feedItemId: /activity-feed-item-title-(\d+)/,
 
   // Teams keeps the signed-in profile in localStorage
   userKey: "tmp.auth.v1.GLOBAL.User.User",
@@ -102,11 +85,10 @@ export const ACTIONS = {
   edit: "message-actions-edit",
   quotedReply: "message-actions-quoted-reply",
   delete: "message-actions-delete",
-  readReceipt: "message-actions-read-receipt",
   picker: "expanded-reactions-picker-entry",
 };
 
-// Reactions of the web app: four on the bar, two in the picker
+// Reactions of the app: four on the bar, two in the picker
 export const BAR_REACTIONS: Partial<Record<ReactionName, string>> = {
   like: "message-actions-like",
   heart: "message-actions-heart",
@@ -120,8 +102,6 @@ export const TEXTS = {
   selfChat: "(You)",
   // preview of a chat whose last message is yours
   outbound: /^(you|tu):/i,
-  // "Read by X of Y" entry of the message menu, in group chats
-  readBy: /^Read by (\d+) of (\d+)/,
   // notifications Teams shows about itself, not about a message
   ownNotification: /^(Nice job|Notifications are now on)/i,
   // title the notification hook gets from the health probe of earlier releases
@@ -146,19 +126,5 @@ export const TEXTS = {
   // session expired or Teams syncing in reduced mode
   sessionLost:
     /REDUCED_CAPABILITIES|Chats are temporarily unavailable|Sync engine is running in Reduced|We need you to sign in again|Chat non (?:sono )?disponibili/i,
-
-  // Activity feed: the time line is recognized by its format; before it the preview, after it the place
-  feedTime: /^(\d{1,2}:\d{2}\s?(AM|PM)?|\d{1,2}\/\d{1,2}(\/\d{2,4})?|Yesterday|Ieri|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/i,
-  missedCall: /^Missed call from (.+)$/i,
-  // the person comes before the action ("Anna Rossi assigned you a task")
-  feedAction:
-    /\s+(reacted|mentioned|replied|liked|sent|posted|invited|scheduled|assigned|updated|added|removed|shared|commented|canceled|cancelled|accepted|declined|started|joined|changed|created|edited|forwarded)\b.*$/i,
-  feedReaction: /reacted/i,
-  feedMention: /mentioned/i,
-  feedReply: /repl/i,
-  feedTask: /assigned you a task/i,
-  feedTeam: /added you to/i,
-  inChatWithYou: /^In chat with you$/i,
-  meetingTime: /\d{1,2}:\d{2}\s?(AM|PM)?\s*-\s*\d{1,2}:\d{2}/i,
 };
 export type Texts = typeof TEXTS;

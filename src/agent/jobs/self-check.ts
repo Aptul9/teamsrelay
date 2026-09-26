@@ -33,6 +33,6 @@ export async function scheduledSelfCheck(a: Agent) {
   if (!key) return;
   const { ok, why } = await selfCheck(a);
   a.store.setState(key, "1");
-  await a.notifier.push(ok ? "Teams OK" : "Teams: problem", ok ? "Automatic check: the whole chain works." : why);
+  await a.notifier.alert(ok ? "Teams OK" : "Teams: problem", ok ? "Automatic check: the whole chain works." : why);
   log.info("SELFCHECK", ok ? "ok" : "problem", { why: why || undefined });
 }

@@ -36,6 +36,6 @@ describe("message extra", () => {
 
   it("is null when no field has a value", () => {
     expect(extraOf({ reactions: [], files: [], mentionsMe: false, av: "" })).toBeNull();
-    expect(extraOf({ readby: {} as never })).toBeNull();
+    expect(extraOf({ quote: {} as never })).toBeNull();
   });
 });

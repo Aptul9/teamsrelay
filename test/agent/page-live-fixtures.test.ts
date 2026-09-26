@@ -2,11 +2,9 @@
 // scripts/capture-fixture.ts: the structure is Teams', every name and text is invented.
 import { describe, expect, it } from "vitest";
 import { ACTIONS, BAR_REACTIONS, SEL, TEXTS } from "@/agent/teams/selectors";
-import { readActivityFeed } from "@/agent/teams/scripts/activity";
 import { clickChatRow, openChatTitle, readChatList } from "@/agent/teams/scripts/chat-list";
 import { readMessages } from "@/agent/teams/scripts/conversation";
 import { barButtonPoint } from "@/agent/teams/scripts/message-actions";
-import { ACTIVITY_KINDS } from "@/shared/slot-db/rows";
 import { fixture, withChrome } from "./chrome";
 
 const chrome = withChrome();
@@ -140,24 +138,5 @@ describe("action bar captured from Teams", () => {
     const point = await bar("toolbar-other.html");
     for (const tid of [...Object.values(BAR_REACTIONS), ACTIONS.picker, ACTIONS.quotedReply, ACTIONS.more]) expect(await point(tid as string), tid).not.toBeNull();
     expect(await point(ACTIONS.edit)).toBeNull();
-  });
-});
-
-describe("Activity feed captured from Teams", () => {
-  it("reads reactions, a channel task and a meeting", async () => {
-    await chrome.page.setContent(fixture("activity.html"));
-    const feed = await chrome.page.evaluate(readActivityFeed, { s: SEL, t: TEXTS });
-    expect(feed).toHaveLength(11);
-    expect(new Set(feed.map((a) => a.id)).size).toBe(11);
-    for (const a of feed) {
-      expect(ACTIVITY_KINDS).toContain(a.kind);
-      expect(a.actor).not.toBe("");
-      expect(a.tm).toMatch(TEXTS.feedTime);
-    }
-    expect(feed.map((a) => a.kind).sort()).toEqual([...Array(9).fill("reaction"), "meeting", "task"].sort());
-    const reactions = feed.filter((a) => a.kind === "reaction");
-    for (const a of reactions) expect([a.chat, a.channel, a.emoji !== ""]).toEqual([a.actor, false, true]);
-    expect(feed.find((a) => a.kind === "task")).toMatchObject({ channel: true, chat: expect.stringMatching(/ › General$/) });
-    expect(feed.find((a) => a.kind === "meeting")?.chat).toMatch(TEXTS.meetingTime);
   });
 });

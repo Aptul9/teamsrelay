@@ -1,6 +1,6 @@
 import type { MessageExtra } from "@/shared/slot-db/rows";
 
-const EXTRA_KEYS = ["quote", "images", "files", "reactions", "status", "edited", "readby", "html", "mentionsMe", "av", "deleted"] as const;
+const EXTRA_KEYS = ["quote", "images", "files", "reactions", "status", "edited", "html", "mentionsMe", "av", "deleted"] as const;
 
 // A value worth storing: empty strings, lists and objects, false, 0 and null are left out
 export function hasValue(v: unknown): boolean {

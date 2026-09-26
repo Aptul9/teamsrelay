@@ -23,7 +23,6 @@ export async function readOpenMessages(a: Agent, chat: string): Promise<SavedMes
     log.warn("messages", errorText(e), { chat });
     return null;
   }
-  const readBy = a.store.readByCache(rows.filter((m) => m.mine && m.mid).map((m) => m.mid));
   const budget = { left: 8 };
   const out: SavedMessage[] = [];
   for (const m of rows) {
@@ -42,7 +41,6 @@ export async function readOpenMessages(a: Agent, chat: string): Promise<SavedMes
       reactions: m.reactions,
       status: m.status,
       edited: m.edited,
-      readby: readBy.get(m.mid),
       html: m.html,
       mentionsMe: m.mentionsMe,
       av,

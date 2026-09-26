@@ -1,28 +1,30 @@
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
+import type { BrowserContext, Page } from "playwright-core";
 import { STATE } from "@/shared/slot-db/state";
 import { runPendingCommands } from "./commands";
 import type { Agent } from "./context";
-import { readActivity } from "./jobs/activity";
 import { scanChats, scanChatsFull } from "./jobs/chat-list";
 import { saveOpenChat } from "./jobs/conversation";
-import { noTabHealth, updateHealth } from "./jobs/health";
+import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
 import { drainHook, keepActive, park, preparePage, wanted } from "./jobs/page-setup";
-import { prefetchReadBy } from "./jobs/read-by";
 import { scheduledSelfCheck, selfCheckDue } from "./jobs/self-check";
-import { isTeamsUrl, pickTeamsPage } from "./logic/hosts";
+import { hostOf, isTeamsUrl, pickTeamsPage } from "./logic/hosts";
 import { errorText, log } from "./log";
 import { Scheduler, type Job } from "./scheduler";
 import { sleep, TeamsPage } from "./teams/page";
 
 // Seconds between two inputs on the Teams page
 export const ACTIVE_EVERY = 60;
-// Without a Teams tab for this long the agent exits and Docker starts it again (restart: unless-stopped)
-const NO_TAB_EXIT_MS = 60_000;
+// A blank tab gets Teams again after this long; a tab on any other page is left alone for longer: it may be a
+// sign-in in progress (federated sign-in page, MFA)
+const BLANK_TAB_MS = 5_000;
+const OTHER_PAGE_MS = 10 * 60_000;
+const BLANK = /^(about:|chrome:|edge:|chrome-error:)/;
 
 type Round = { onTeams: boolean; want: string };
 
-// The agent loop of agent.py, one job per step, in the same order and at the same rounds
+// The agent loop of teamsrelay, one job per step, in the same order and at the same rounds, less the Activity feed
+// and "Read by"
 export function agentJobs(a: Agent): Job<Round>[] {
   const teamsOk = () => a.health?.teams === "ok";
   const active = () => a.store.getState(STATE.activeChat);
@@ -35,7 +37,6 @@ export function agentJobs(a: Agent): Job<Round>[] {
     // until Teams is connected (sign-in to do, session expired) there is nothing to scroll or read
     { name: "chats-full", every: { rounds: 300, offset: 1 }, when: teamsOk, run: () => scanChatsFull(a) },
     { name: "chats", every: { rounds: 3 }, run: () => scanChats(a) },
-    { name: "activity", every: { rounds: 150, offset: 5 }, when: teamsOk, run: () => readActivity(a) },
     { name: "identity", every: { rounds: 300, offset: 7 }, force: () => !a.store.getState(STATE.me), when: teamsOk, run: () => saveIdentity(a) },
     { name: "health", every: { rounds: 5 }, anyPage: true, run: () => updateHealth(a) },
     {
@@ -46,60 +47,53 @@ export function agentJobs(a: Agent): Job<Round>[] {
         if (chat) await saveOpenChat(a, chat);
       },
     },
-    {
-      name: "read-by",
-      every: { rounds: 2 },
-      when: (r) => !!r.want && active() === r.want && teamsOk() && !a.store.hasPendingCommands(),
-      run: (r) => prefetchReadBy(a, r.want),
-    },
     { name: "self-check", every: { rounds: 1 }, when: () => !!selfCheckDue(a), run: () => scheduledSelfCheck(a) },
   ];
 }
 
-async function connect(cdp: string): Promise<{ browser: Browser; context: BrowserContext }> {
-  for (;;) {
-    try {
-      const browser = await chromium.connectOverCDP(cdp);
-      const context = browser.contexts()[0];
-      if (!context) {
-        await browser.close();
-        throw new Error("the browser has no context yet");
-      }
-      await context.grantPermissions(["notifications"]).catch(() => undefined);
-      log.info("cdp", "connected", { cdp });
-      return { browser, context };
-    } catch (e) {
-      log.warn("cdp", `waiting: ${errorText(e)}`);
-      await sleep(3000);
-    }
-  }
-}
+// The browser as the loop sees it: the context of the moment (launched again after it closed or failed) and the
+// way back to Teams in its tab
+export type BrowserSource = {
+  context(): Promise<BrowserContext>;
+  openTeams(context: BrowserContext): Promise<void>;
+};
 
-export async function runAgent(a: Omit<Agent, "tp" | "health">): Promise<never> {
+// About one round a second until `signal` aborts (never, in the relay). The relay owns the browser: a closed browser
+// is launched again, a tab away from Teams is sent back to it.
+export async function runAgent(a: Omit<Agent, "tp" | "health">, browser: BrowserSource, signal?: AbortSignal): Promise<void> {
   const agent = { ...a, health: null } as Agent;
   const scheduler = new Scheduler<Round>(agentJobs(agent), (job, e) => log.warn("job", errorText(e), { job }));
   const pages = new WeakMap<Page, TeamsPage>();
-  let { browser, context } = await connect(a.config.cdp);
-  let noTabSince: number | null = null;
-  for (;;) {
+  let away: { since: number; url: string } | null = null;
+  while (!signal?.aborted) {
     try {
-      // a closed connection (browser restarted, CDP dropped): a new one, the browser is not touched
-      if (!browser.isConnected()) {
-        log.warn("cdp", "connection lost");
-        ({ browser, context } = await connect(a.config.cdp));
+      let context: BrowserContext;
+      try {
+        context = await browser.context();
+      } catch (e) {
+        log.warn("browser", `not started: ${errorText(e)}`);
+        await browserDownHealth(agent);
+        await sleep(2000);
+        continue;
       }
       const page = pickTeamsPage(context.pages());
       if (!page) {
-        noTabHealth(agent);
-        noTabSince ??= Date.now();
-        if (Date.now() - noTabSince > NO_TAB_EXIT_MS) {
-          log.warn("agent", "no Teams tab for 60 s: exiting, Docker starts the agent again");
-          process.exit(1);
+        // the page that is not blank, if any: its host decides how long it is left alone
+        const url = context.pages().map((p) => p.url()).find((u) => !BLANK.test(u)) ?? "";
+        await noTabHealth(agent, url);
+        if (!away || !!away.url !== !!url) {
+          away = { since: Date.now(), url };
+          log.info("agent", url ? "not on Teams" : "blank tab", { host: url ? hostOf(url) : undefined });
+        }
+        if (Date.now() - away.since > (url ? OTHER_PAGE_MS : BLANK_TAB_MS)) {
+          log.warn("agent", url ? "not on Teams for 10 minutes: opening Teams" : "no Teams tab: opening Teams", { host: url ? hostOf(url) : undefined });
+          await browser.openTeams(context);
+          away = null;
         }
         await sleep(3000);
         continue;
       }
-      noTabSince = null;
+      away = null;
       let tp = pages.get(page);
       if (!tp) {
         tp = new TeamsPage(page, agent.store);

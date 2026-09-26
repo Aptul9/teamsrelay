@@ -1,8 +1,7 @@
 import type { ReactionName } from "@/shared/slot-db/commands";
-import type { ReadBy } from "@/shared/slot-db/rows";
 import { errorText, log } from "../log";
 import { messageSelector, sleep, type TeamsPage } from "./page";
-import { composerImages, imageMessageSent, messageIds, pasteImage } from "./scripts/compose";
+import { composerLeft, messageIds, ownMessageSent } from "./scripts/compose";
 import {
   composerText,
   deletedState,
@@ -13,7 +12,6 @@ import {
   ownReactions,
   quoteBoxReady,
   reactionPill,
-  readReceiptNames,
   undoButtonPoint,
 } from "./scripts/message-actions";
 import { ACTIONS, BAR_REACTIONS, PICKER_REACTIONS, SEL, TEXTS } from "./selectors";
@@ -28,55 +26,37 @@ async function until(check: () => Promise<boolean>, tries: number, ms: number): 
   return false;
 }
 
-export async function sendText(tp: TeamsPage, chat: string, text: string): Promise<boolean> {
-  if (!(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return false;
-  try {
-    const box = (await tp.page.$(SEL.editor)) ?? (await tp.page.$(SEL.textbox));
-    if (!box) return false;
-    await box.click();
-    await sleep(200);
-    await tp.page.keyboard.insertText(text);
-    await sleep(200);
-    const send = await tp.page.$(SEL.sendButton);
-    if (send) await send.click();
-    else await tp.page.keyboard.press("Enter");
-    await sleep(1000);
-    return true;
-  } catch (e) {
-    log.warn("send", errorText(e), { chat });
-    return false;
-  }
-}
-
-export type ImageFile = { name: string; type: string; data: Buffer };
-
-// The image goes in as a paste, then the caption, and Enter sends both, as a person does. Refused when Teams
-// shows another chat or the compose box holds a draft, which would go out with the image. True once Teams shows
-// the new message with the image as sent (upload included, 30 s at most).
-export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, caption: string): Promise<boolean> {
-  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return false;
+// The text typed in the compose box and sent, as a person does. Refused when Teams shows another chat or the
+// compose box holds a draft, which would go out with it; whatever goes wrong before the send leaves the box empty.
+// True once Teams shows the new message as sent (15 s at most).
+export async function sendText(tp: TeamsPage, chat: string, raw: string): Promise<boolean> {
+  const text = raw.trim();
+  if (!text || !(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return false;
   const page = tp.page;
-  if ((await page.evaluate(composerText, SEL)).trim() || (await page.evaluate(composerImages, SEL))) {
-    log.warn("image", "compose box not empty", { chat });
+  // a draft already there is someone's: left as it is, nothing sent
+  if (await page.evaluate(composerLeft, SEL)) {
+    log.warn("send", "compose box not empty", { chat });
     return false;
   }
   const before = await page.evaluate(messageIds, SEL);
   try {
-    if (!(await page.evaluate(pasteImage, { s: SEL, name: image.name, type: image.type, data: image.data.toString("base64") }))) {
-      throw new Error("the compose box did not take the image");
-    }
-    await page.waitForFunction(composerImages, SEL, { timeout: 5000 });
-    if (caption.trim()) await page.keyboard.insertText(caption);
+    const box = (await page.$(SEL.editor)) ?? (await page.$(SEL.textbox));
+    if (!box) throw new Error("no compose box");
+    await box.click();
+    await sleep(200);
+    await page.keyboard.insertText(text);
     await sleep(300);
-    await page.keyboard.press("Enter");
+    if (!(await page.evaluate(composerText, SEL)).includes(text.slice(0, 20))) throw new Error("text not in the compose box");
+    const send = await page.$(SEL.sendButton);
+    if (send) await send.click();
+    else await page.keyboard.press("Enter");
   } catch (e) {
-    log.warn("image", errorText(e), { chat });
-    // what was pasted must not go out with the next message
+    log.warn("send", errorText(e), { chat });
     await tp.emptyComposeBox();
     return false;
   }
-  if (await until(() => page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before }), 100, 300)) return true;
-  log.warn("image", "message did not appear on Teams", { chat });
+  if (await until(() => page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before }), 50, 300)) return true;
+  log.warn("send", "message did not appear on Teams", { chat });
   return false;
 }
 
@@ -235,47 +215,4 @@ export async function editMessage(tp: TeamsPage, chat: string, mid: string, raw:
   if (await until(async () => (await tp.page.evaluate(messageBodyText, mid))?.replace(/ /g, " ").trim() === text, 16, 250)) return true;
   log.warn("edit", "text not updated on Teams", { mid });
   return false;
-}
-
-// Who read one of your messages: "Read by X of Y" in More options and its submenu with the names. A menu
-// without that entry is a 1:1 chat (label ""); null when the menu could not be read.
-export async function readReceipts(tp: TeamsPage, chat: string, mid: string): Promise<ReadBy | null> {
-  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat))) return null;
-  const page = tp.page;
-  try {
-    const entry = page.locator(`[data-tid="${ACTIONS.readReceipt}"]:visible`).first();
-    let found = false;
-    let menuSeen = false;
-    for (let i = 0; i < 2 && !found; i++) {
-      if (!(await tp.clickBarButton(mid, ACTIONS.more))) {
-        if (menuSeen) break;
-        return null;
-      }
-      try {
-        await page.locator(`${SEL.menu}:visible`).first().waitFor({ timeout: 3000 });
-      } catch {
-        await tp.clearOverlays();
-        continue;
-      }
-      menuSeen = true;
-      try {
-        await entry.waitFor({ timeout: 1500 });
-        found = true;
-      } catch {
-        await tp.clearOverlays();
-        await sleep(500);
-      }
-    }
-    if (!found) return menuSeen ? { label: "", names: [] } : null;
-    const label = (await entry.innerText()).trim();
-    await entry.hover();
-    await sleep(1000);
-    return { label, names: await page.evaluate(readReceiptNames, { s: SEL, entry: ACTIONS.readReceipt }) };
-  } catch (e) {
-    log.warn("readby", errorText(e), { mid });
-    return null;
-  } finally {
-    await tp.clearOverlays().catch(() => false);
-    await tp.mouseAway();
-  }
 }

@@ -31,7 +31,7 @@ function page(results: ({ type: string; data: Buffer } | null)[]) {
 describe("images of messages", () => {
   it("does not keep the placeholder Teams shows while an image loads, and asks again", async () => {
     const dir = tempDir();
-    const media = new Media(dir, tempDir());
+    const media = new Media(dir);
     const p = page([{ type: "image/gif", data: PLACEHOLDER }, { type: "image/webp", data: WEBP }]);
     expect(await media.image(p.page, "a1", "blob:https://teams.cloud.microsoft/1")).toBeNull();
     expect(fs.readdirSync(dir)).toEqual([]);
@@ -42,7 +42,7 @@ describe("images of messages", () => {
   it("replaces a placeholder saved by an earlier release", async () => {
     const dir = tempDir();
     fs.writeFileSync(path.join(dir, "b2.gif"), PLACEHOLDER);
-    const media = new Media(dir, tempDir());
+    const media = new Media(dir);
     const p = page([{ type: "image/webp", data: WEBP }]);
     expect(await media.image(p.page, "b2", "blob:https://teams.cloud.microsoft/2")).toBe("b2.webp");
     expect(fs.readdirSync(dir)).toEqual(["b2.webp"]);
@@ -52,12 +52,12 @@ describe("images of messages", () => {
     const dir = tempDir();
     fs.writeFileSync(path.join(dir, "c3.png"), PNG);
     const p = page([]);
-    expect(await new Media(dir, tempDir()).image(p.page, "c3", "blob:https://teams.cloud.microsoft/3")).toBe("c3.png");
+    expect(await new Media(dir).image(p.page, "c3", "blob:https://teams.cloud.microsoft/3")).toBe("c3.png");
     expect(p.srcs).toEqual([]);
   });
 
   it("asks once per address: a failed one is not asked again, a new one is", async () => {
-    const media = new Media(tempDir(), tempDir());
+    const media = new Media(tempDir());
     const p = page([null, { type: "image/png", data: PNG }]);
     const original = "https://eu-prod.asyncgw.teams.microsoft.com/v1/objects/o1/views/imgo_webp";
     expect(await media.image(p.page, "d4", original)).toBeNull();
@@ -94,7 +94,6 @@ describe("images saved with the conversation", () => {
     } as unknown as TeamsPage;
     return {
       tp,
-      store: { readByCache: () => new Map() },
       media: { image: async () => file, avatar: async () => "" },
     } as unknown as Agent;
   }

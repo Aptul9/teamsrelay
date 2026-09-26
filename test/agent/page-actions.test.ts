@@ -14,7 +14,6 @@ import {
   ownReactions,
   quoteBoxReady,
   reactionPill,
-  readReceiptNames,
   undoButtonPoint,
 } from "@/agent/teams/scripts/message-actions";
 import { withChrome } from "./chrome";
@@ -98,12 +97,11 @@ describe("message action page scripts", () => {
     expect(await chrome.page.evaluate(lastMessageQuotes, { s: SEL, before: 4, text: "On it" })).toBe(false);
   });
 
-  it("counts open menus and reads the names of the read-by submenu", async () => {
+  it("counts the open menus and dialogs, not the hidden ones", async () => {
     await chrome.page.setContent(`
-      <div role="menu"><div role="menuitem" data-tid="message-actions-read-receipt">Read by 2 of 3</div></div>
+      <div role="menu"><div role="menuitem">Delete</div></div>
       <div role="menu"><div role="menuitem">Anna Rossi</div><div role="menuitem">Luca Bianchi</div></div>
       <div role="dialog" style="display:none"></div>`);
     expect(await chrome.page.evaluate(openOverlays, SEL)).toBe(2);
-    expect(await chrome.page.evaluate(readReceiptNames, { s: SEL, entry: ACTIONS.readReceipt })).toEqual(["Anna Rossi", "Luca Bianchi"]);
   });
 });
