@@ -28,7 +28,7 @@ x-agent: &agent
   # the web app (built by the webapp service), other entrypoint.
   image: teamsrelay
   pull_policy: never
-  command: ["node", "--enable-source-maps", "agent.cjs"]
+  command: ["node", "agent.cjs"]
   volumes:
     - ./data:/data
     - ./vapid:/vapid:ro
