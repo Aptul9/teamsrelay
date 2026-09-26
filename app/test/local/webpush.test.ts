@@ -33,7 +33,7 @@ const notifier = () => new Notifier({ store, devices, vapid, subject: "mailto:re
 
 describe("Web Push as the push service receives it", () => {
   it("is encrypted for the device, signed with the relay's key for that service, kept an hour, urgent", async () => {
-    await notifier().message("Anna Rossi", "are you there?");
+    await notifier().message("Anna Rossi", "are you there?", "Anna Rossi");
     expect(fake.received).toHaveLength(1);
     const [r] = fake.received;
     expect(r.payload).toEqual({ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi" });

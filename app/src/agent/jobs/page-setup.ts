@@ -43,11 +43,12 @@ export async function park(a: Agent, want: string) {
   await a.tp.openChat(want);
 }
 
-// Notifications captured by the hook, a second source of new messages
+// Notifications captured by the hook, a second source of new messages. Their title names the chat only when it is
+// a chat of the list: in a group chat it may be the person who wrote, and a tap would open another chat.
 export async function drainHook(a: Agent) {
   for (const n of await a.tp.page.evaluate(drainNotifications)) {
     if (n.title === TEXTS.healthTag || TEXTS.ownNotification.test(n.title)) continue;
     log.info("MSG", n.title, { body: n.body });
-    await a.notifier.message(n.title, n.body);
+    await a.notifier.message(n.title, n.body, a.store.isKnownChat(n.title) ? n.title : "");
   }
 }

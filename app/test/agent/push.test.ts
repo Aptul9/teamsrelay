@@ -109,16 +109,16 @@ describe("notifier", () => {
   it("names the chat of a new message and records it once within 150 s", async () => {
     let now = 1_000_000;
     const n = notifier(() => now);
-    await n.message("Anna Rossi", "are you there?");
+    await n.message("Anna Rossi", "are you there?", "Anna Rossi");
     now += 60_000;
-    await n.message("Anna Rossi", "Are you there?");
+    await n.message("Anna Rossi", "Are you there?", "Anna Rossi");
     expect(sent.map((s) => s.payload)).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1 }]);
     expect(store.lastNotificationTs()).toBeGreaterThan(0);
   });
 
   it("sends messages and alerts at high urgency, a check that passed at normal", async () => {
     const n = notifier();
-    await n.message("Anna Rossi", "urgent?");
+    await n.message("Anna Rossi", "urgent?", "Anna Rossi");
     await n.alert("Teams signed out", "Sign in again");
     await n.alert("Teams OK", "Automatic check: the whole chain works.", "normal");
     expect(sent.map((s) => [(s.payload as { title: string }).title, s.urgency])).toEqual([

@@ -39,12 +39,13 @@ export class Notifier {
     this.recent = new RecentPushes(o.clock);
   }
 
-  // A new Teams message: the same text within 150 s is notified once. The notification opens the app on the chat.
-  async message(chat: string, body: string) {
+  // A new Teams message: the same text within 150 s is notified once. The notification opens the app on `chat`, when
+  // known.
+  async message(title: string, body: string, chat = "") {
     if (!this.recent.allow(body)) return;
-    this.o.store.addNotification(chat, body);
-    await this.ntfy(chat, body);
-    await this.push(chat, body, chat);
+    this.o.store.addNotification(title, body);
+    await this.ntfy(title, body);
+    await this.push(title, body, chat);
   }
 
   // About the relay itself (Teams signed out, outcome of a check): push and ntfy, no history
