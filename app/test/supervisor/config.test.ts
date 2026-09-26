@@ -37,4 +37,9 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ SLOT_COUNT: "zero" })).toThrow(ConfigError);
     expect(() => loadConfig({ SLOT_COUNT: "0" })).toThrow(/SLOT_COUNT/);
   });
+
+  it("runs up to 100 accounts", () => {
+    expect(loadConfig({ SLOT_COUNT: "100" }).accounts.slotCount).toBe(100);
+    expect(() => loadConfig({ SLOT_COUNT: "101" })).toThrow(/SLOT_COUNT/);
+  });
 });

@@ -10,7 +10,7 @@ Every setting is in `.env`, next to `docker-compose.yml`. Template: [.env.exampl
 | `ADMIN_NAME` | no | Display name of the administrator of `.env`, used when it is created. Default `Administrator`. |
 | `APP_URL` | no | Public URL of the web app when it differs from `https://DOMAIN`. |
 | `MCP_TOKEN` | no | Bearer token of the MCP endpoint `/mcp` for AI clients, read only, acting as the administrator of `.env` ([mcp.md](mcp.md)). Empty: the endpoint is off. Otherwise at least 32 characters (`openssl rand -hex 32`) with `ADMIN_EMAIL` set, or the web app does not start. |
-| `SLOT_COUNT` | no | Teams accounts of the server, at most 64. Default 4. An account runs its browser and its agent in the browsers container only while it exists and is not stopped. |
+| `SLOT_COUNT` | no | Teams accounts of the server, at most 100. Default 4. An account runs its browser and its agent in the browsers container only while it exists and is not stopped. |
 | `ACCOUNTS_PER_USER` | no | Teams accounts one user may add. Empty: up to `SLOT_COUNT`. |
 | `DESKTOP_USER`, `DESKTOP_PASS` | no | Password of the remote desktop. Leave empty: the desktop is behind the web app login and opens only for users with a Teams account. |
 | `DESKTOP_URL` | no | Address of the remote desktop of account `{n}`. Default `/api/desktop/{n}`, which brings the window of the account to the front of `/desktop/`. |
