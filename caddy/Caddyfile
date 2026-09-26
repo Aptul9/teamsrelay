@@ -1,33 +1,27 @@
-# TeamsRelay — Caddy con HTTPS automatico.
-# DOMAIN e HTTPS_PORT arrivano da .env tramite docker-compose.yml.
+# TeamsRelay: Caddy with automatic HTTPS. DOMAIN and HTTPS_PORT come from .env through docker-compose.yml.
 {
 	http_port 80
 	https_port {$HTTPS_PORT:443}
 }
 
-# Desktop remoto dello slot N (il Chromium con Teams di quell'account) su /desktop/N/, protetto dal login
-# di TeamsRelay: Caddy chiede a /api/authcheck se il cookie di sessione è valido prima di far passare la richiesta.
-# Se lo slot è spento il container non esiste in rete e la risposta è 502.
-(desktop) {
-	redir /desktop/{args[0]} /desktop/{args[0]}/
-	handle /desktop/{args[0]}/* {
+{$DOMAIN} {
+	# Remote desktop of slot N (the Chromium with the Teams session of that account) on /desktop/N/.
+	# Caddy asks the web app whether the session cookie belongs to the owner of slot N before letting a
+	# request through. A slot that is switched off has no container on the network: 502.
+	@desktopBare path_regexp deskbare ^/desktop/([0-9]+)$
+	redir @desktopBare /desktop/{re.deskbare.1}/
+	@desktop path_regexp desk ^/desktop/([0-9]+)/
+	handle @desktop {
 		forward_auth webapp:8090 {
 			uri /api/authcheck
-			# la verifica è una richiesta HTTP normale anche quando quella originale è un websocket
-			# (lo stream del desktop): con Upgrade la web app risponderebbe 403
+			# the check is a plain HTTP request even when the original one is a websocket (the desktop
+			# stream): with Upgrade the web app would answer 403
 			header_up -Upgrade
 			header_up -Connection
 		}
-		reverse_proxy chromium-{args[0]}:3000
+		reverse_proxy chromium-{re.desk.1}:3000
 	}
-}
-
-{$DOMAIN} {
-	import desktop 1
-	import desktop 2
-	import desktop 3
-	import desktop 4
-	# vecchio indirizzo del desktop, prima degli account: si torna all'app
+	# old desktop address, from before the accounts: back to the app
 	redir /desktop / 302
 	redir /desktop/ / 302
 	handle {

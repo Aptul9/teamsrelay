@@ -1,12 +1,11 @@
-# TeamsRelay — stack Docker Compose.
-# Tutta la configurazione sta in .env (copia .env.example). Vedi README.md.
+# TeamsRelay: Docker Compose stack. Configuration in .env (copy .env.example), see docs/setup.md.
 #
-# Account Teams: fino a 4 slot, ognuno con il suo browser (chromium-N) e il suo agent (agent-N).
-# Gli slot sono nel profilo "accounts": un "docker compose up -d" non li avvia. Il deploy li crea spenti
-# e la web app accende solo quelli degli account aggiunti dall'app (tramite dockerproxy).
+# Teams account slots: 4, each with its own browser (chromium-N), agent (agent-N) and network (slotN).
+# Slots are in the "accounts" profile: "docker compose up -d" does not start them. The deploy creates
+# them stopped, and the web app starts the slots that belong to a user (through dockerproxy).
 x-chromium: &chromium
-  # Browser remoto con Microsoft Teams web loggato (la sessione resta in ./config/N)
-  image: lscr.io/linuxserver/chromium:latest
+  # Remote browser with Microsoft Teams web signed in (the session stays in ./config/N)
+  image: lscr.io/linuxserver/chromium:latest@sha256:cf6200ccdcb224feaf5d3bde4ce45b3783c926a7496c98059cae1e0db78e5b2f
   security_opt:
     - seccomp:unconfined
   shm_size: "1gb"
@@ -20,16 +19,42 @@ x-chromium-env: &chromium-env
   CUSTOM_USER: ${DESKTOP_USER:-}
   PASSWORD: ${DESKTOP_PASS:-}
   CHROME_CLI: --remote-debugging-port=9222 --remote-allow-origins=* https://teams.microsoft.com/
-  # Senza GPU (VM ARM) Selkies codifica H.264 in software e il decoder del browser non ne ricava frame
-  # ("decoder produced no output"): i frame JPEG si vedono in qualsiasi browser e bastano per il login
+  # Without a GPU (ARM VMs) Selkies encodes H.264 in software and the browser decoder gets no frame
+  # ("decoder produced no output"): JPEG frames work in every browser and are enough for the login
   SELKIES_ENCODER: jpeg
 
+x-wipe: &wipe
+  # Empties config/N, the browser profile of slot N, when the web app adds or removes the account of the
+  # slot: the web app has no access to the profiles. It deletes only when the web app has left a request
+  # in the "wipe" volume, so a start by hand or with the whole "accounts" profile deletes nothing.
+  image: busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
+  # owner of the profile (PUID/PGID of chromium-N): root without capabilities cannot delete its files
+  user: "1000:1000"
+  network_mode: none
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  # find exits 0 even when it could not delete: the check that follows sets the exit code
+  command:
+    - sh
+    - -c
+    - |
+      [ -e "/wipe/$$SLOT" ] || { echo "slot $$SLOT: no request from the web app, nothing deleted" >&2; exit 3; }
+      find /config -mindepth 1 -delete
+      left="$$(ls -A /config)"
+      [ -z "$$left" ] || { echo "slot $$SLOT: not wiped, left: $$left" >&2; exit 1; }
+      echo "slot $$SLOT: profile wiped"
+  profiles: ["accounts"]
+  restart: "no"
+
 x-agent: &agent
-  # Legge e pilota Teams via Chrome DevTools Protocol; manda le notifiche push
-  build: ./agent
-  image: teamsrelay-agent
+  # Reads and drives Teams through the Chrome DevTools Protocol, sends the push notifications. Same image as
+  # the web app (built by the webapp service), other entrypoint.
+  image: teamsrelay
+  pull_policy: never
+  command: ["node", "agent.cjs"]
   volumes:
-    - ./agent/agent.py:/app/agent.py:ro
     - ./data:/data
     - ./vapid:/vapid:ro
   profiles: ["accounts"]
@@ -40,7 +65,9 @@ x-agent-env: &agent-env
   # 127.0.0.1, not localhost: Chromium binds CDP on IPv4 only, localhost resolves to ::1 first
   CDP: http://127.0.0.1:9222
   APP_DB: /data/app.db
+  # the agent stops at start when the private key does not match the public key the devices subscribed with
   VAPID_PRIVATE: /vapid/private_key.pem
+  VAPID_APPKEY: /vapid/appkey.txt
   VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
   NTFY_ENABLED: ${NTFY_ENABLED:-0}
   NTFY_URL: ${NTFY_URL:-https://ntfy.sh}
@@ -52,10 +79,11 @@ services:
     container_name: teams-chromium-1
     environment:
       <<: *chromium-env
-      # pubblicato da Caddy su https://<DOMAIN>/desktop/1/, dietro il login della web app
+      # published by Caddy on https://<DOMAIN>/desktop/1/, only to the owner of the slot
       SUBFOLDER: /desktop/1/
     volumes:
       - ./config/1:/config
+    networks: [slot1]
   agent-1:
     <<: *agent
     container_name: teams-agent-1
@@ -74,6 +102,7 @@ services:
       SUBFOLDER: /desktop/2/
     volumes:
       - ./config/2:/config
+    networks: [slot2]
   agent-2:
     <<: *agent
     container_name: teams-agent-2
@@ -92,6 +121,7 @@ services:
       SUBFOLDER: /desktop/3/
     volumes:
       - ./config/3:/config
+    networks: [slot3]
   agent-3:
     <<: *agent
     container_name: teams-agent-3
@@ -110,6 +140,7 @@ services:
       SUBFOLDER: /desktop/4/
     volumes:
       - ./config/4:/config
+    networks: [slot4]
   agent-4:
     <<: *agent
     container_name: teams-agent-4
@@ -121,51 +152,75 @@ services:
       DB_PATH: /data/4/messages.db
 
   webapp:
-    # Web app installabile (PWA) + API; gestisce gli account e accende/spegne i loro slot
-    build: ./webapp
+    # Installable web app (PWA), API and user management; starts and stops the slots of its users
+    build: ./app
+    image: teamsrelay
     container_name: teams-webapp
     environment:
-      - APP_DB=/data/app.db
-      - UI_USER=${UI_USER:-}
-      - UI_PASS=${UI_PASS:-}
-      - SESSION_SECRET=${SESSION_SECRET:-}
-      - DESKTOP_URL=${DESKTOP_URL:-}
-      - DOCKER_API=http://dockerproxy:2375
-      - VAPID_APPKEY=/vapid/appkey.txt
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      APP_URL: ${APP_URL:-}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      # variable of the single-user release, still accepted as the session key
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SLOT_COUNT: ${SLOT_COUNT:-4}
+      ACCOUNTS_PER_USER: ${ACCOUNTS_PER_USER:-}
+      DESKTOP_URL: ${DESKTOP_URL:-}
+      APP_DB: /data/app.db
+      WIPE_DIR: /wipe
+      DOCKER_API: http://dockerproxy:2375
+      VAPID_APPKEY: /vapid/appkey.txt
     volumes:
-      # Montati per poter modificare i file senza ricostruire l'immagine.
-      # Dopo una modifica: docker compose restart webapp   (NON basta "up -d")
-      - ./webapp/app.py:/app/app.py:ro
-      - ./webapp/index.html:/app/index.html:ro
-      - ./webapp/login.html:/app/login.html:ro
-      - ./webapp/static:/app/static:ro
       - ./vapid:/vapid:ro
       - ./data:/data
-      # per cancellare la sessione del browser quando si toglie un account
-      - ./config:/config
+      # requests for the wipe-N containers; the browser profiles are not mounted here
+      - wipe:/wipe
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks: [default, control]
     restart: unless-stopped
 
   dockerproxy:
-    # Unico accesso della web app a Docker: solo avvio e arresto di container già creati.
-    # Creare container, eseguire comandi, leggere configurazioni: tutto negato.
-    image: tecnativa/docker-socket-proxy:v0.5.0
+    # The web app's only access to Docker: start and stop of the slot containers (teams-chromium-N,
+    # teams-agent-N), start and wait of the wipe containers (teams-wipe-N). Every other method and path,
+    # other containers included, is refused. The proxy wraps the regex in ^...$ as it is: alternatives
+    # stay inside a group, a top-level "a|b" would anchor only the start of a and the end of b.
+    image: wollomatic/socket-proxy:1.13.1
     container_name: teams-dockerproxy
-    environment:
-      - POST=1
-      - ALLOW_START=1
-      - ALLOW_STOP=1
+    command:
+      - -loglevel=info
+      - -listenip=0.0.0.0
+      - -allowfrom=webapp
+      - '-allowPOST=(/v1\.[0-9]+)?/containers/teams-((chromium|agent)-[0-9]+/(start|stop)|wipe-[0-9]+/(start|wait))'
+      - -allowhealthcheck
+      - -shutdowngracetime=5
+    # root inside the container only to open the socket (owned by root); no capabilities, read-only
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD", "./healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [control]
     restart: unless-stopped
 
   caddy:
-    # Reverse proxy con certificati HTTPS automatici (Let's Encrypt)
-    image: caddy:2
+    # Reverse proxy with automatic HTTPS certificates (Let's Encrypt)
+    image: caddy:2.11.4-alpine
     container_name: teams-caddy
     environment:
-      - DOMAIN=${DOMAIN:?imposta DOMAIN in .env}
+      - DOMAIN=${DOMAIN:?set DOMAIN in .env}
       - HTTPS_PORT=${HTTPS_PORT:-443}
     ports:
       - "80:80"
@@ -174,13 +229,54 @@ services:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks: [default, slot1, slot2, slot3, slot4]
     restart: unless-stopped
 
+  wipe-1:
+    <<: *wipe
+    container_name: teams-wipe-1
+    environment:
+      SLOT: "1"
+    volumes:
+      - ./config/1:/config
+      - wipe:/wipe:ro
+  wipe-2:
+    <<: *wipe
+    container_name: teams-wipe-2
+    environment:
+      SLOT: "2"
+    volumes:
+      - ./config/2:/config
+      - wipe:/wipe:ro
+  wipe-3:
+    <<: *wipe
+    container_name: teams-wipe-3
+    environment:
+      SLOT: "3"
+    volumes:
+      - ./config/3:/config
+      - wipe:/wipe:ro
+  wipe-4:
+    <<: *wipe
+    container_name: teams-wipe-4
+    environment:
+      SLOT: "4"
+    volumes:
+      - ./config/4:/config
+      - wipe:/wipe:ro
+
 networks:
-  # solo web app e dockerproxy: i browser (che aprono pagine web) non raggiungono Docker
+  # web app and socket proxy only: the browsers, which open web pages, never reach Docker
   control:
     internal: true
+  # one network per slot, shared with Caddy only: a browser cannot reach another slot or the web app
+  slot1:
+  slot2:
+  slot3:
+  slot4:
 
 volumes:
   caddy_data:
   caddy_config:
+  # wipe requests of the web app, empty files named after the slot
+  wipe:
