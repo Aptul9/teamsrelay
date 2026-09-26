@@ -9,8 +9,8 @@ import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitl
 import { Separator } from "@/components/ui/separator";
 import { ago, post, type Health } from "@/lib/client";
 
-type Tone = "ok" | "warn" | "bad";
-const DOT: Record<Tone, string> = { ok: "bg-success", warn: "bg-warning", bad: "bg-destructive" };
+type Tone = "ok" | "warn" | "bad" | "off";
+const DOT: Record<Tone, string> = { ok: "bg-success", warn: "bg-warning", bad: "bg-destructive", off: "bg-muted-foreground/40" };
 
 const teamsState = (t?: string): [string, Tone] =>
   t === "ok"
@@ -51,8 +51,10 @@ export function StatusPanel({
 }) {
   const [busy, setBusy] = useState<"" | "resync" | "recheck">("");
   const overall = health?.overall || "yellow";
-  const tone: Tone = overall === "green" ? "ok" : overall === "red" ? "bad" : "warn";
-  const label = !acc ? "No account" : overall === "green" ? "Connected" : overall === "red" ? "Problem" : "Connecting";
+  // grey: the owner stopped the account, which is not a problem
+  const stopped = overall === "grey";
+  const tone: Tone = stopped ? "off" : overall === "green" ? "ok" : overall === "red" ? "bad" : "warn";
+  const label = !acc ? "No account" : stopped ? "Stopped" : overall === "green" ? "Connected" : overall === "red" ? "Problem" : "Connecting";
 
   const rows: [string, string, Tone][] = health
     ? [
@@ -64,6 +66,7 @@ export function StatusPanel({
         ["Push notifications", `${health.push_subs ?? 0} device${health.push_subs === 1 ? "" : "s"}`, (health.push_subs ?? 0) > 0 ? "ok" : "warn"],
       ]
     : [];
+  const shown: [string, string, Tone][] = stopped ? [["Teams", "Stopped, still signed in", "off"]] : rows;
 
   async function run(kind: "resync" | "recheck") {
     setBusy(kind);
@@ -92,8 +95,8 @@ export function StatusPanel({
         {acc > 0 && (
           <>
             <dl className="mt-3 space-y-2.5">
-              {rows.length ? (
-                rows.map(([k, v, t]) => (
+              {shown.length ? (
+                shown.map(([k, v, t]) => (
                   <div key={k} className="flex items-center gap-2.5 text-sm">
                     <span className={cn("size-2 shrink-0 rounded-full", DOT[t])} aria-hidden />
                     <dt className="flex-1 text-muted-foreground">{k}</dt>
@@ -106,15 +109,15 @@ export function StatusPanel({
             </dl>
             <Separator className="my-3" />
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" className="h-10 md:h-9" onClick={() => void run("resync")} disabled={!!busy} title="Read the chat list and the open chat of Teams again">
+              <Button variant="outline" className="h-10 md:h-9" onClick={() => void run("resync")} disabled={!!busy || stopped} title="Read the chat list and the open chat of Teams again">
                 <RefreshCwIcon className={cn(busy === "resync" && "animate-spin")} />
                 Resync
               </Button>
-              <Button variant="outline" className="h-10 md:h-9" onClick={() => void run("recheck")} disabled={!!busy} title="Check the whole chain and send the result as a notification">
+              <Button variant="outline" className="h-10 md:h-9" onClick={() => void run("recheck")} disabled={!!busy || stopped} title="Check the whole chain and send the result as a notification">
                 <StethoscopeIcon />
                 Recheck
               </Button>
-              <Button variant="outline" className="col-span-2 h-10 md:h-9" onClick={onOpenDesktop}>
+              <Button variant="outline" className="col-span-2 h-10 md:h-9" onClick={onOpenDesktop} disabled={stopped}>
                 <MonitorIcon />
                 Open the remote Teams (sign-in, MFA)
               </Button>

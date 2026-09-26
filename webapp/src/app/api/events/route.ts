@@ -1,4 +1,4 @@
-import { accountsOf } from "@/lib/accounts";
+import { accountsOf, slotHealth, upSince } from "@/lib/accounts";
 import { appDb, countPushSubscriptions, slotsOf } from "@/lib/appdb";
 import { pickSlot } from "@/lib/authz";
 import { route } from "@/lib/http";
@@ -15,7 +15,6 @@ export const GET = route(async (req) => {
   const url = new URL(req.url);
   const owned = slotsOf(appDb(), user.id);
   const slot = owned.length ? pickSlot(owned.map((s) => s.slot), url.searchParams.get("a")) : 0;
-  const added = owned.find((s) => s.slot === slot)?.added ?? 0;
   const chat = url.searchParams.get("chat") || "";
 
   const enc = new TextEncoder();
@@ -52,13 +51,15 @@ export const GET = route(async (req) => {
         if (closed) return;
         ticks++;
         try {
+          // read every tick: the account can be stopped, started or removed while the stream is open
+          const own = slot ? slotsOf(appDb(), user.id).find((s) => s.slot === slot) : undefined;
           // a revoked session or a removed account ends the stream; the app reconnects or signs in again
           if (ticks % 60 === 0) {
             const still = await currentUser(req.headers);
-            if (!still || (slot && !slotsOf(appDb(), user.id).some((s) => s.slot === slot))) return close();
+            if (!still || (slot && !own)) return close();
           }
           if (ticks % 5 === 1) send("accounts", accountsOf(user.id));
-          if (!slot) return;
+          if (!own) return;
           if (!reader) {
             try {
               reader = SlotReader.forSlot(slot);
@@ -67,7 +68,7 @@ export const GET = route(async (req) => {
             }
           }
           const push_subs = countPushSubscriptions(appDb(), user.id);
-          send("health", { ...(reader ? reader.health(added) : healthOf({}, added)), push_subs });
+          send("health", { ...slotHealth(reader ? reader.health(upSince(own)) : healthOf({}, upSince(own)), own), push_subs });
           if (reader) {
             send("chats", reader.chats());
             send("activity", reader.activity());
