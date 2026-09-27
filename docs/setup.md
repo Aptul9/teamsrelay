@@ -53,7 +53,7 @@ An administrator manages users and can free a slot. The chats and the desktop of
 
 A slot is free again when its owner removes the account. `SLOT_COUNT` and `ACCOUNTS_PER_USER` set the limits.
 
-The account menu shows next to each account its unread chats plus the notifications not yet seen on this device; with more than one account, the menu button shows the total of the accounts not on screen. A stopped account counts nothing: it reads nothing new until it is started.
+The account menu shows next to each account its unread chats plus the notifications not yet seen on this device; with more than one account, the menu button shows the total of the accounts not on screen. On a phone, where the menu hides while a chat is open, the back arrow of the chat shows the same total. A stopped account counts nothing: it reads nothing new until it is started.
 
 ## 6. Phone
 

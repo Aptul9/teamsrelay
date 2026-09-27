@@ -45,6 +45,7 @@ export function AccountMenu({
   accounts,
   current,
   unreadOf,
+  others,
   canAdd,
   addLabel,
   adding,
@@ -60,6 +61,8 @@ export function AccountMenu({
   accounts: Account[] | null;
   current: Account | undefined;
   unreadOf: (a: Account) => Unread;
+  // unread in the accounts not on screen (unreadInOthers)
+  others: number;
   canAdd: boolean;
   addLabel: string;
   adding: boolean;
@@ -71,8 +74,6 @@ export function AccountMenu({
   onRemove: (a: Account) => void;
   onSignOut: () => void;
 }) {
-  // like Teams: the selected account has its numbers on its Chats and Notifications tabs already
-  const others = (accounts ?? []).reduce((n, a) => (a.slot === current?.slot ? n : n + total(unreadOf(a))), 0);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

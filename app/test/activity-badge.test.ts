@@ -5,6 +5,7 @@ import {
   markActivitySeen,
   parseSeen,
   seenKey,
+  unreadInOthers,
   unseenActivity,
   unseenIds,
   type Account,
@@ -90,6 +91,18 @@ describe("accountUnread", () => {
 
   it("counts nothing for a stopped account, whose numbers would stay until it starts", () => {
     expect(accountUnread(account({ stopped: true }), [])).toEqual({ chats: 0, notifications: 0 });
+  });
+});
+
+describe("unreadInOthers", () => {
+  it("adds what waits in every account but the one on screen, for the menu button and the back arrow of a chat", () => {
+    const seen = { 1: ["n2", "n1"], 2: ["n1"], 3: [] as string[] };
+    const accounts = [account({ slot: 1, unread: 1 }), account({ slot: 2, unread: 2 }), account({ slot: 3, unread: 4, stopped: true })];
+    const unreadOf = (a: Account) => accountUnread(a, seen[a.slot as 1 | 2 | 3]);
+    expect(unreadInOthers(accounts, 1, unreadOf)).toBe(3);
+    expect(unreadInOthers(accounts, 2, unreadOf)).toBe(1);
+    expect(unreadInOthers(accounts, 0, unreadOf)).toBe(4);
+    expect(unreadInOthers([], 1, unreadOf)).toBe(0);
   });
 });
 

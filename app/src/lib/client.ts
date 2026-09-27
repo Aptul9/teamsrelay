@@ -132,6 +132,16 @@ export function accountUnread(a: Account, seen: string[] | null): Unread {
   return { chats: a.unread, notifications: unseenIds(a.unreadActivity ?? [], seen) };
 }
 
+// What waits in the accounts not on screen: the account menu button shows it and, on a phone, the back arrow of an
+// open chat, where the menu is hidden. Like Teams, the account on screen has its numbers on its own tabs.
+export function unreadInOthers(accounts: Account[], shown: number, unreadOf: (a: Account) => Unread): number {
+  return accounts.reduce((n, a) => {
+    if (a.slot === shown) return n;
+    const u = unreadOf(a);
+    return n + u.chats + u.notifications;
+  }, 0);
+}
+
 export function markActivitySeen(seen: string[] | null, items: ActivityItem[]): string[] {
   const ids = items.map((a) => a.id);
   const now = new Set(ids);

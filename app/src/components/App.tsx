@@ -38,6 +38,7 @@ import {
   runCmd,
   seenKey,
   toLogin,
+  unreadInOthers,
   unseenActivity,
   writeStorage,
   type Account,
@@ -305,6 +306,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   // what waits in each account, for the account menu: the selected one counts what its tabs show
   const unreadOf = (a: Account): Unread =>
     a.slot === acc && !a.stopped ? { chats: unreadChats, notifications: unreadActivity } : accountUnread(a, seenAct[a.slot] ?? null);
+  const others = unreadInOthers(accounts ?? [], acc, unreadOf);
   const canAdd = !!accounts && accounts.length < limits.max && limits.free > 0;
   const addLabel = canAdd ? "Add a Teams account" : accounts && accounts.length >= limits.max ? `At most ${limits.max} accounts` : "No free slot on this server";
   const noAccounts = !!accounts && !accounts.length;
@@ -358,6 +360,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             accounts={accounts}
             current={current}
             unreadOf={unreadOf}
+            others={others}
             canAdd={canAdd}
             addLabel={addLabel}
             adding={adding}
@@ -505,6 +508,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               entry={(chats ?? []).find((c) => c.name === openChat)}
               rows={messages?.chat === openChat ? messages.rows : null}
               stopped={!!current?.stopped}
+              others={others}
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}
             />
