@@ -4,6 +4,7 @@ import { scanChats } from "../jobs/chat-list";
 import { errorText, log } from "../log";
 import type { PendingCommand } from "../store/slot-store";
 import { activity } from "./activity";
+import { check } from "./check";
 import { deleteCommand } from "./delete";
 import { download } from "./download";
 import { edit } from "./edit";
@@ -40,6 +41,7 @@ export const HANDLERS: Record<CommandType, Handler> = {
   sendimage: sendImageCommand,
   members,
   sendmentions: sendMentions,
+  check,
 };
 
 // open, resync and recheck end as done whatever happened on Teams, like in the Python agent; an unknown type ends

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import type { Account, Unread } from "@/lib/client";
+import { checkLine, hours, idleChecked, type Account, type Unread } from "@/lib/client";
 
 export const accName = (a: Account) => a.name || a.email || `Account ${a.slot}`;
 
@@ -27,10 +27,18 @@ const unreadText = (u: Unread) =>
   [u.chats > 0 && plural(u.chats, "unread chat", "unread chats"), u.notifications > 0 && plural(u.notifications, "new notification", "new notifications")]
     .filter(Boolean)
     .join(", ");
-export const needsLogin = (a: Account) => !a.stopped && (a.teams === "login" || (a.teams !== "starting" && a.teams !== "ok" && !a.name));
+// between two checks an account checked every N hours knows only what its last check found
+export const needsLogin = (a: Account) =>
+  !a.stopped &&
+  (idleChecked(a) ? a.checkResult === "login" || !a.name : a.teams === "login" || (a.teams !== "starting" && a.teams !== "ok" && !a.name));
 
 export function accSub(a: Account): { text: string; warn: boolean } {
   if (a.stopped) return { text: "Stopped · still signed in", warn: false };
+  if (idleChecked(a)) {
+    if (needsLogin(a)) return { text: "Microsoft sign-in needed", warn: true };
+    return { text: checkLine(a), warn: a.checkResult === "failed" };
+  }
+  if (a.checking && a.teams !== "login") return { text: "Checking now…", warn: false };
   if (a.teams === "starting") return { text: "Starting the browser…", warn: false };
   if (a.teams === "login") return { text: "Microsoft sign-in needed", warn: true };
   if (!a.name) return { text: "Waiting for sign-in", warn: true };
@@ -123,7 +131,13 @@ export function AccountMenu({
                   role="menuitemcheckbox"
                   aria-checked={!a.stopped}
                   aria-label={`${a.stopped ? "Start" : "Stop"} ${accName(a)}`}
-                  title={a.stopped ? "Stopped: click to start" : "Running: click to stop, the account stays signed in"}
+                  title={
+                    a.stopped
+                      ? "Stopped: click to start"
+                      : a.checkEvery
+                        ? `Checked every ${hours(a.checkEvery)}: click to stop the checks, the account stays signed in`
+                        : "Running: click to stop, the account stays signed in"
+                  }
                   disabled={busy}
                   onSelect={(e) => {
                     e.preventDefault();
@@ -149,7 +163,7 @@ export function AccountMenu({
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem disabled={current.stopped} onSelect={() => onOpenDesktop(current.slot)}>
+              <DropdownMenuItem disabled={current.stopped || idleChecked(current)} onSelect={() => onOpenDesktop(current.slot)}>
                 <MonitorIcon />
                 {needsLogin(current) ? "Sign in to Microsoft" : "Open the remote Teams"}
               </DropdownMenuItem>

@@ -39,6 +39,11 @@ const account = (extra: Partial<Account> = {}): Account => ({
   unreadActivity: ["n2", "n1"],
   added: 1790000000,
   desktop: "",
+  checkEvery: 0,
+  checked: 0,
+  checkResult: "",
+  nextCheck: 0,
+  checking: false,
   ...extra,
 });
 
@@ -87,6 +92,10 @@ describe("accountUnread", () => {
   it("counts no notification before the feed was read or first seen here", () => {
     expect(accountUnread(account({ unreadActivity: null }), ["n1"])).toEqual({ chats: 2, notifications: 0 });
     expect(accountUnread(account(), null)).toEqual({ chats: 2, notifications: 0 });
+  });
+
+  it("counts what the last check found for an account checked every N hours, whose browser runs only then", () => {
+    expect(accountUnread(account({ checkEvery: 3600, checked: 1790000000 }), ["n1"])).toEqual({ chats: 2, notifications: 1 });
   });
 
   it("counts nothing for a stopped account, whose numbers would stay until it starts", () => {

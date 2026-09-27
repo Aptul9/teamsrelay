@@ -1,7 +1,7 @@
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { accountSummary, healthFor } from "@/lib/accounts";
-import { appDb, claimSlot, migrateAppSchema, releaseSlot, setSlotStopped, slotsOf } from "@/lib/appdb";
+import { appDb, beginCheck, claimSlot, endCheck, migrateAppSchema, releaseSlot, setCheckEvery, setSlotStopped, slotsOf } from "@/lib/appdb";
 import { queue } from "@/lib/commands";
 import { createSlotDb, tempDir } from "./helpers";
 
@@ -63,5 +63,34 @@ describe("the unread counts of an account", () => {
     releaseSlot(appDb(), n);
     expect(claimSlot(appDb(), "u4", { slotCount: 4, perUser: 4 })).toBe(n);
     expect(summary("u4", n).added).toBeGreaterThan(1790000000);
+  });
+});
+
+describe("an account checked every N hours", () => {
+  it("between two checks: grey, its last and next check, the counts of that check, and no commands", () => {
+    const n = claimSlot(appDb(), "u5", { slotCount: 8, perUser: 4 });
+    const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
+    slotDb.prepare("INSERT INTO state(k, v) VALUES('health', ?)").run(JSON.stringify({ ts: Date.now() / 1000 - 3600, teams: "ok", overall: "green" }));
+    slotDb.prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av) VALUES('Anna Rossi','hi',0,0,'',1,0,0,'')").run();
+    setCheckEvery(appDb(), n, 3600, 1000);
+    endCheck(appDb(), n, { now: 2000, result: "ok" });
+
+    expect(summary("u5", n)).toMatchObject({ teams: "checked", overall: "grey", stopped: false, unread: 1, checkEvery: 3600, checked: 2000, checkResult: "ok", nextCheck: 5600, checking: false });
+    expect(healthFor("u5", n)).toMatchObject({ teams: "checked", agent: "stopped", overall: "grey" });
+    expect(() => queue(n, "resync")).toThrow(/only during its checks/);
+  });
+
+  it("during a check: the health its agent writes, starting from the start of the check, and commands again", () => {
+    const n = claimSlot(appDb(), "u6", { slotCount: 8, perUser: 4 });
+    const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
+    slotDb.prepare("INSERT INTO state(k, v) VALUES('health', ?)").run(JSON.stringify({ ts: Date.now() / 1000 - 3600, teams: "ok", overall: "green" }));
+    appDb().prepare("UPDATE teams_accounts SET added=? WHERE slot=?").run(1790000000, n);
+    setCheckEvery(appDb(), n, 3600, 1000);
+    beginCheck(appDb(), n, Math.floor(Date.now() / 1000));
+
+    expect(summary("u6", n)).toMatchObject({ teams: "starting", overall: "yellow", checking: true });
+    slotDb.prepare("UPDATE state SET v=? WHERE k='health'").run(JSON.stringify({ ts: Date.now() / 1000, teams: "ok", overall: "green" }));
+    expect(summary("u6", n)).toMatchObject({ teams: "ok", overall: "green", checking: true });
+    expect(queue(n, "resync")).toBeGreaterThan(0);
   });
 });

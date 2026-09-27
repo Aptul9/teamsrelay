@@ -119,6 +119,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function refreshChat(userId: string, { account, chat }: Account & { chat: string }, wait = { timeoutMs: 30_000, pollMs: 500 }) {
   const s = accountOf(userId, account);
   if (s.stopped) throw new ToolError("This Teams account is stopped: start it from the account menu of TeamsRelay");
+  if (s.check_every && !s.checking) throw new ToolError("This Teams account runs only during its checks: set it to always on in the Settings of TeamsRelay to open chats");
   withSlot(s.slot, (r) => {
     if (!r.chats().some((c) => c.name === chat)) throw new ToolError("No chat with this name: use a name as list_chats gives it");
     const h = r.health(upSince(s));

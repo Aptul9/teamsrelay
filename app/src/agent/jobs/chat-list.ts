@@ -34,8 +34,8 @@ export async function scanChats(a: Agent) {
 }
 
 // The whole list, scrolled from the top (it is virtualized), saved complete and in order in one transaction,
-// then back to the top
-export async function scanChatsFull(a: Agent) {
+// then back to the top. Number of chats read, null when the read failed.
+export async function scanChatsFull(a: Agent): Promise<number | null> {
   const page = a.tp.page;
   try {
     await page.evaluate(scrollChatList, { s: SEL, to: "top" as const });
@@ -47,10 +47,12 @@ export async function scanChatsFull(a: Agent) {
       await sleep(500);
     }
     await page.evaluate(scrollChatList, { s: SEL, to: "top" as const });
-    if (!seen.size) return;
+    if (!seen.size) return 0;
     a.store.saveChats([...seen.values()].slice(0, CHAT_LIMIT), true);
     a.store.setState(STATE.lastScanTs, String(nowSeconds()));
+    return seen.size;
   } catch (e) {
     log.warn("chats", `full list: ${errorText(e)}`);
+    return null;
   }
 }

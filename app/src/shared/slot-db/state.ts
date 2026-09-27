@@ -19,6 +19,8 @@ export const STATE = {
   // Unix seconds of the last Activity feed and chat list reads
   activityTs: "activity_ts",
   lastScanTs: "last_scan_ts",
+  // JSON {chats, activity}: what was unread at the end of the last check of an account checked every N hours
+  checkSeen: "check_seen",
 } as const;
 
 // JSON result of command <id>, e.g. DownloadResult

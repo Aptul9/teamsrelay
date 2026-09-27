@@ -15,8 +15,16 @@ export type Account = {
   unreadActivity: string[] | null;
   added: number;
   desktop: string;
+  // checked every N hours (0: always on): seconds between two checks, end (0 before the first) and outcome of the
+  // last one, when the next is due (0: asked from the app), a check running now
+  checkEvery: number;
+  checked: number;
+  checkResult: string;
+  nextCheck: number;
+  checking: boolean;
 };
 export type { ActivityItem, Chat, Message, Reaction } from "@/shared/slot-db/rows";
+export { CHECK_INTERVALS } from "@/shared/checks";
 export type { SlotHealth as Health } from "@/shared/slot-db/state";
 // detail: why the web app refused the command, when it did
 export type CommandResult = { status: string; result: { f?: string } | null; detail?: string };
@@ -199,6 +207,20 @@ export function ago(ts?: number): string {
 }
 
 export const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+// The interval of the checks of an account: "1 h", "2 h", "4 h"
+export const hours = (seconds: number) => `${Math.round(seconds / 3600)} h`;
+
+// An account checked every N hours, between two checks: no browser, no agent, the chats and numbers of its last check
+export const idleChecked = (a: Pick<Account, "checkEvery" | "checking" | "stopped">) => a.checkEvery > 0 && !a.checking && !a.stopped;
+
+// Its last check and the next one: "Checked 14:05 · next 15:05"
+export function checkLine(a: Account, now = Date.now() / 1000): string {
+  if (a.checking) return "Checking now";
+  const next = a.nextCheck > now ? `next ${clock(a.nextCheck)}` : "next check soon";
+  if (!a.checked) return `Checked every ${hours(a.checkEvery)} · ${next}`;
+  return `${a.checkResult === "failed" ? "Check failed" : "Checked"} ${clock(a.checked)} · ${next}`;
+}
 
 export function readStorage(key: string): string | null {
   try {

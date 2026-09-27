@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { config } from "@/lib/config";
 import { controlClient } from "@/lib/control";
 import { mcpConfigError } from "@/lib/mcp/access";
+import { runChecks, settleChecks, slotPort } from "@/lib/checks";
 import { keepSlotsUp } from "@/lib/slots";
 import { syncEnvAdmin } from "./env-admin";
 
@@ -26,5 +27,9 @@ export async function boot() {
     fatal(e instanceof Error ? e.message : String(e));
   }
   if (config.mcpToken) console.log("MCP endpoint on: /mcp");
-  keepSlotsUp(controlClient(), appDb());
+  const ctl = controlClient();
+  // a check cut by the restart left its browser running: stopped first, through the same queue
+  void settleChecks(ctl, appDb());
+  keepSlotsUp(ctl, appDb());
+  runChecks({ ctl, db: appDb(), slot: slotPort() });
 }

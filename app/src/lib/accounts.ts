@@ -19,14 +19,25 @@ export type AccountSummary = {
   // Unix seconds the account took its slot: a slot freed and taken by another account gets a new value
   added: number;
   desktop: string;
+  // seconds between two checks, 0 for an account always on; end and outcome (ok, login, failed) of the last check, 0
+  // and "" before the first; when the next one is due, 0 once asked from the app; a check running now
+  checkEvery: number;
+  checked: number;
+  checkResult: string;
+  nextCheck: number;
+  checking: boolean;
 };
 
-// The grace for a browser still starting runs from the last start, not from the day the account was added
-export const upSince = (s: Slot) => Math.max(s.added, s.started);
+// The grace for a browser still starting runs from the last start, not from the day the account was added: a start
+// from the app or the start of a check
+export const upSince = (s: Slot) => Math.max(s.added, s.started, s.checking);
 
-// A stopped account is grey, whatever its agent wrote before it stopped
+// A stopped account is grey, whatever its agent wrote before it stopped; so is an account checked every N hours
+// between two checks, whose browser does not run
 export function slotHealth(h: Health, s: Slot): Health {
-  return s.stopped ? { ...h, teams: "stopped", agent: "stopped", watcher: "stopped", overall: "grey" } : h;
+  if (s.stopped) return { ...h, teams: "stopped", agent: "stopped", watcher: "stopped", overall: "grey" };
+  if (s.check_every && !s.checking) return { ...h, teams: "checked", agent: "stopped", watcher: "stopped", overall: "grey" };
+  return h;
 }
 
 export function accountSummary(s: Slot): AccountSummary {
@@ -59,6 +70,11 @@ export function accountSummary(s: Slot): AccountSummary {
     unreadActivity,
     added: s.added,
     desktop: desktopUrlOf(s.slot),
+    checkEvery: s.check_every,
+    checked: s.checked,
+    checkResult: s.check_result,
+    nextCheck: s.check_due,
+    checking: !!s.checking,
   };
 }
 

@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { appDb, isSlotStopped } from "@/lib/appdb";
-import { chatName, queue } from "@/lib/commands";
+import { chatName, idleReason, queue } from "@/lib/commands";
 import { HttpError, route, text } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
 import { MAX_UPLOAD, saveUpload, uploadsDir } from "@/lib/uploads";
@@ -11,7 +10,8 @@ export const POST = route(async (req) => {
   const { slot } = await requireSlot(req);
   // a declared length over the limit is refused before the form is read into memory
   if (Number(req.headers.get("content-length")) > MAX_UPLOAD + 100_000) throw new HttpError(413, "Image larger than 10 MB");
-  if (isSlotStopped(appDb(), slot)) throw new HttpError(409, "This Teams account is stopped: start it from the account menu");
+  const why = idleReason(slot);
+  if (why) throw new HttpError(409, why);
   let form: FormData;
   try {
     form = await req.formData();
