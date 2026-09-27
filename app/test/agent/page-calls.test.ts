@@ -14,7 +14,7 @@ describe("incoming call toast", () => {
   });
 
   it("names a caller of the same organization", async () => {
-    await chrome.page.setContent(fixture("call-toast.html").replace("<div><span>External</span></div>", ""));
+    await chrome.page.setContent(fixture("call-toast.html").replace('<div aria-label="External unfamiliar">External</div>', ""));
     expect(await read()).toEqual({ caller: "Anna Rossi" });
   });
 
