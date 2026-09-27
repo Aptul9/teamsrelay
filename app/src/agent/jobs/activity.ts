@@ -16,7 +16,7 @@ export async function readActivity(a: Agent): Promise<number | null> {
   let items: ActivityEntry[] | null = null;
   try {
     await a.tp.clearOverlays();
-    await page.locator(`${SEL.activityView}:visible`).first().click({ timeout: 4000 });
+    await a.tp.clickRail(SEL.activityView);
     await page.locator(SEL.feedItem).first().waitFor({ timeout: 8000 });
     await sleep(500);
     // this list is virtualized too: scroll and collect by id
@@ -32,7 +32,7 @@ export async function readActivity(a: Agent): Promise<number | null> {
   } finally {
     // always back to Chat: the rest of the agent works on the chat view
     try {
-      await page.locator(`${SEL.chatView}:visible`).first().click({ timeout: 4000 });
+      await a.tp.clickRail(SEL.chatView);
       await page.locator(SEL.anyChatRow).first().waitFor({ timeout: 8000 });
       const want = wantedChat(active, a.store.getState(STATE.viewing), nowSeconds(), a.store.selfChat());
       if (want) await a.tp.openChat(want);

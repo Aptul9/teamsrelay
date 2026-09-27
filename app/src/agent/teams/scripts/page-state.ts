@@ -87,6 +87,25 @@ export function drainNotifications(): Captured[] {
   return captured;
 }
 
+// A point of the first visible element of `sel` that nothing covers (a tooltip, a popup), or null
+export function uncoveredPoint(sel: string): { x: number; y: number } | null {
+  const el = [...document.querySelectorAll<HTMLElement>(sel)].find((e) => {
+    const r = e.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  });
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  for (const fy of [0.5, 0.85, 0.15]) {
+    for (const fx of [0.5, 0.2, 0.8]) {
+      const x = r.left + r.width * fx;
+      const y = r.top + r.height * fy;
+      const hit = document.elementFromPoint(x, y);
+      if (hit && (hit === el || el.contains(hit))) return { x, y };
+    }
+  }
+  return null;
+}
+
 // What the health row needs from the page. presence: own status as the header shows it (available, away,
 // busy, do not disturb...), read on the Teams page only.
 export function probePage({ s, t, withPresence }: { s: Selectors; t: Texts; withPresence: boolean }) {

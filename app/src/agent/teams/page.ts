@@ -5,6 +5,7 @@ import type { SlotStore } from "../store/slot-store";
 import { openChatTitle, clickChatRow } from "./scripts/chat-list";
 import { composerLeft } from "./scripts/compose";
 import { barButtonPoint, centerElement, openOverlays } from "./scripts/message-actions";
+import { uncoveredPoint } from "./scripts/page-state";
 import { SEL, TEXTS } from "./selectors";
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -139,5 +140,14 @@ export class TeamsPage {
 
   async mouseAway() {
     await this.page.mouse.move(2, 2).catch(() => undefined);
+  }
+
+  // A button of the Teams rail (Activity, Chat), clicked with the mouse brought first to a part of it nothing
+  // covers. Left on the app launcher (mouseAway, presence keeper), the mouse keeps the launcher tooltip open over
+  // the Activity button, and the tooltip stays while the mouse is on it: a click there never lands.
+  async clickRail(selector: string) {
+    const point = await this.page.evaluate(uncoveredPoint, selector);
+    if (point) await this.page.mouse.move(point.x, point.y);
+    await this.page.locator(`${selector}:visible`).first().click({ timeout: 4000 });
   }
 }
