@@ -240,6 +240,10 @@ export async function togglePill(tp: TeamsPage, chat: string, mid: string, emoji
     log.warn("pill", "reaction not found", { mid, emoji });
     return false;
   }
+  if (was.covered) {
+    log.warn("pill", "reaction covered by something else on the page (a call?): not clicked", { mid, emoji });
+    return false;
+  }
   await tp.page.mouse.click(was.x, was.y);
   await tp.mouseAway();
   if (await until(async () => {

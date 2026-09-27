@@ -5,8 +5,11 @@ import type { Selectors } from "../selectors";
 type Point = { x: number; y: number };
 type MessageArgs = { s: Selectors; mid: string };
 
+// Every point handed out for a click at coordinates is one where the button itself is on top: what covers it (the
+// toast of an incoming call, with its Accept and Decline buttons, a tooltip, a popup) would take the click instead.
+
 // Teams draws the action bars in a portal outside the message and more than one can be visible: the one
-// closest to the message wins, within 120 px. Center of button `tid` of that bar, null when not visible.
+// closest to the message wins, within 120 px. Center of button `tid` of that bar, null when not visible or covered.
 export function barButtonPoint({ s, mid, tid }: MessageArgs & { tid: string }): Point | null {
   const m = document.querySelector(`${s.message}[data-mid="${CSS.escape(mid)}"]`);
   if (!m) return null;
@@ -26,18 +29,24 @@ export function barButtonPoint({ s, mid, tid }: MessageArgs & { tid: string }): 
   const btn = best.querySelector<HTMLElement>(`[data-tid="${CSS.escape(tid)}"]`);
   if (!btn || btn.offsetParent === null) return null;
   const q = btn.getBoundingClientRect();
-  return { x: q.left + q.width / 2, y: q.top + q.height / 2 };
+  const x = q.left + q.width / 2;
+  const y = q.top + q.height / 2;
+  const hit = document.elementFromPoint(x, y);
+  return hit && btn.contains(hit) ? { x, y } : null;
 }
 
-// The pill of reaction `emoji` under the message: center and whether it is yours
-export function reactionPill({ s, mid, emoji }: MessageArgs & { emoji: string }): (Point & { found: true; pressed: boolean }) | { found: false } | null {
+// The pill of reaction `emoji` under the message: center, whether it is yours, and whether something covers it
+export function reactionPill({ s, mid, emoji }: MessageArgs & { emoji: string }): (Point & { found: true; pressed: boolean; covered: boolean }) | { found: false } | null {
   const m = document.querySelector(`${s.message}[data-mid="${CSS.escape(mid)}"]`);
   if (!m) return null;
   const item = m.closest(s.item) || m;
   const pill = [...item.querySelectorAll<HTMLElement>(s.pill)].find((x) => [...x.querySelectorAll("img")].some((i) => i.alt === emoji));
   if (!pill) return { found: false };
   const r = pill.getBoundingClientRect();
-  return { found: true, x: r.left + r.width / 2, y: r.top + r.height / 2, pressed: pill.getAttribute("aria-pressed") === "true" };
+  const x = r.left + r.width / 2;
+  const y = r.top + r.height / 2;
+  const hit = document.elementFromPoint(x, y);
+  return { found: true, x, y, pressed: pill.getAttribute("aria-pressed") === "true", covered: !hit || !pill.contains(hit) };
 }
 
 // Your reactions under the message, by the id Teams gives each pill
@@ -88,7 +97,7 @@ export function deletedState({ s, mid }: MessageArgs): "deleted" | "present" | "
   return item.querySelector(s.tombstone) ? "deleted" : "present";
 }
 
-// Center of the Undo button of a message just deleted, scrolled into view
+// Center of the Undo button of a message just deleted, scrolled into view; null when something covers it
 export function undoButtonPoint({ s, mid }: MessageArgs): Point | null {
   const m = document.querySelector(`${s.message}[data-mid="${CSS.escape(mid)}"]`);
   const item = m && m.closest(s.item);
@@ -96,7 +105,10 @@ export function undoButtonPoint({ s, mid }: MessageArgs): Point | null {
   if (!btn) return null;
   btn.scrollIntoView({ block: "center" });
   const r = btn.getBoundingClientRect();
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  const x = r.left + r.width / 2;
+  const y = r.top + r.height / 2;
+  const hit = document.elementFromPoint(x, y);
+  return hit && btn.contains(hit) ? { x, y } : null;
 }
 
 // Names in the submenu of "Read by X of Y": the open menus other than the one holding the entry itself

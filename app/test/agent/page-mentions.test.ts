@@ -16,6 +16,11 @@ describe("list of people of the @, captured from a group chat", () => {
     expect(tid).toBe("autocomplete-picker-item-DUS Saf");
   });
 
+  it("gives no point when something covers the entry, like an incoming call toast", async () => {
+    await chrome.page.setContent(`${fixture("mention-popup.html")}<div data-testid="calling-notification" style="position:fixed; inset:0; z-index:10"><button aria-label="Decline call">Decline</button></div>`);
+    expect(await chrome.page.evaluate(mentionOptionPoint, { s: SEL, name: "DUS Saf" })).toBeNull();
+  });
+
   it("finds no entry for someone else, a part of a name or an entry that is not a person", async () => {
     await chrome.page.setContent(fixture("mention-popup.html"));
     expect(await chrome.page.evaluate(mentionOptionPoint, { s: SEL, name: "DUS" })).toBeNull();

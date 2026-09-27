@@ -57,6 +57,16 @@ describe("message action page scripts", () => {
     expect(await chrome.page.evaluate(barButtonPoint, { s: SEL, mid: "9", tid: ACTIONS.more })).toBeNull();
   });
 
+  it("gives no point where something covers the button, like an incoming call toast: the click would land on it", async () => {
+    const toast = '<div data-testid="calling-notification" style="position:fixed; inset:0; z-index:10"><button aria-label="Accept with audio">Accept</button></div>';
+    await chrome.page.setContent(PAGE + toast);
+    expect(await chrome.page.evaluate(barButtonPoint, { s: SEL, mid: "1", tid: "message-actions-like" })).toBeNull();
+    expect(await chrome.page.evaluate(reactionPill, { s: SEL, mid: "1", emoji: "❤️" })).toMatchObject({ found: true, covered: true });
+    expect(await chrome.page.evaluate(undoButtonPoint, { s: SEL, mid: "3" })).toBeNull();
+    await chrome.page.setContent(PAGE);
+    expect(await chrome.page.evaluate(reactionPill, { s: SEL, mid: "1", emoji: "❤️" })).toMatchObject({ found: true, covered: false });
+  });
+
   it("finds a bar only within 120 px of the message", async () => {
     await chrome.page.setContent(PAGE.replace(bar(10), "").replace(bar(110), bar(400)));
     expect(await chrome.page.evaluate(barButtonPoint, { s: SEL, mid: "1", tid: "message-actions-like" })).toBeNull();
