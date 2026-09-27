@@ -70,7 +70,7 @@ docker compose logs -f --no-log-prefix browsers | grep '^\[1\]'   # NEWMSG, CMD 
 docker compose exec browsers node /app/supervisor.cjs status         # browsers and agents, restarts
 ```
 
-An account is restarted from the account menu of the app (stop, then start); `docker compose restart browsers` restarts every account.
+An account is restarted from the app: **Stopped** in Settings, then **Start** on its page, which starts it again in the status it had; `docker compose restart browsers` restarts every account.
 
 ### Agent log
 
@@ -99,8 +99,8 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 **No notifications.** In the status panel:
 
 - *Teams: Session expired*: sign in again.
-- *Browser engine: Not responding*: `docker compose logs --no-log-prefix --tail 300 browsers | grep '^\[N\]'`, then stop and start the account from the account menu.
-- *New message detection: Stopped*: stop and start the account from the account menu.
+- *Browser engine: Not responding*: `docker compose logs --no-log-prefix --tail 300 browsers | grep '^\[N\]'`, then restart the account (above).
+- *New message detection: Stopped*: restart the account (above).
 - *Push notifications: 0 devices*: enable notifications from the installed app.
 
 Muted chats never notify, like in Teams. On iPhone the app must be opened from the Home Screen icon; check *Settings → Notifications → TeamsRelay* and the Focus modes. New VAPID keys require enabling notifications again on every device. **Recheck** in the status panel sends a test push.

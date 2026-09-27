@@ -9,7 +9,7 @@ type Ctx = { params: Promise<{ slot: string }> };
 export const POST = route<Ctx>(async (req, { params }) => {
   const n = await requireAccount(req, (await params).slot);
   const s = slotRow(appDb(), n);
-  if (s?.stopped) throw new HttpError(409, "This Teams account is stopped: start it from the account menu");
+  if (s?.stopped) throw new HttpError(409, "This Teams account is stopped: start it from its page or from Settings");
   if (!s?.check_every) throw new HttpError(409, "This Teams account is always on: there is nothing to check");
   askCheck(appDb(), n);
   return Response.json({ ok: true });
