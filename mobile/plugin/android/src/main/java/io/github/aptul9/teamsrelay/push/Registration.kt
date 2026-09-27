@@ -12,8 +12,9 @@ import org.json.JSONObject
 
 // The relay sends to this phone once it knows its Firebase token and whose phone it is. The web page cannot call the
 // app, so the plugin posts the token itself with the session cookie of the page (POST /api/push/fcm), at each start,
-// each return to the app and each new token; the relay answers with the key of the phone. Without a session there
-// (signed out), it asks the relay to forget the phone.
+// each return to the app, each sign-in or sign-out in its web page while it is on screen (PushPlugin) and each new
+// token; the relay answers with the key of the phone. Without a session there (signed out, or a session the relay
+// ended: signed out elsewhere, password changed), it asks the relay to forget the phone.
 object Registration {
     fun sync(context: Context) {
         val app = context.applicationContext
@@ -28,8 +29,18 @@ object Registration {
             }
         // the token API, deprecated since firebase-messaging 25.1.0: see PushService.onNewToken
         @Suppress("DEPRECATION")
-        messaging.token.addOnSuccessListener { token -> thread { exchange(app, origin, token) } }
+        messaging.token
+            .addOnSuccessListener { token -> thread { exchange(app, origin, token) } }
+            .addOnFailureListener { e -> Log.w(TAG, "no Firebase token: $e") }
     }
+
+    // Whether the web page of the relay has a session on this phone (its cookie)
+    fun signedIn(context: Context): Boolean {
+        val origin = Store(context.applicationContext).relay
+        return origin.isNotEmpty() && hasSession(CookieManager.getInstance().getCookie(origin) ?: "")
+    }
+
+    private fun hasSession(cookies: String) = cookies.split(";").any { it.trim().substringBefore("=").endsWith("session_token") }
 
     // The app changes server: the previous one forgets this phone (DELETE /api/push/fcm, the token is the proof), and its
     // key goes, so nothing it still sends opens here. A server that does not answer keeps sending: Firebase delivers,
@@ -53,22 +64,36 @@ object Registration {
     private fun exchange(context: Context, origin: String, token: String) {
         val store = Store(context)
         val cookies = CookieManager.getInstance().getCookie(origin) ?: ""
-        val signedIn = cookies.split(";").any { it.trim().substringBefore("=").endsWith("session_token") }
         try {
-            if (signedIn) {
+            if (hasSession(cookies)) {
                 val (status, body) = call("POST", "$origin/api/push/fcm", cookies, JSONObject().put("token", token).put("name", "${Build.MANUFACTURER} ${Build.MODEL}"))
-                if (status == 200) {
-                    store.key = JSONObject(body).getString("key")
-                    store.token = token
-                } else {
-                    Log.w(TAG, "registration refused by the relay: HTTP $status")
+                // the app changed server meanwhile: this answer belongs to the previous one
+                if (store.relay != origin) return
+                when (status) {
+                    200 -> {
+                        store.key = JSONObject(body).getString("key")
+                        store.token = token
+                    }
+                    // a session the relay ended (signed out elsewhere, password changed): as signed out
+                    401, 403 -> forget(store, origin, token)
+                    else -> Log.w(TAG, "registration refused by the relay: HTTP $status")
                 }
             } else if (store.token.isNotEmpty()) {
-                val (status, _) = call("DELETE", "$origin/api/push/fcm", "", JSONObject().put("token", store.token))
-                if (status == 200) store.token = ""
+                forget(store, origin, store.token)
             }
         } catch (e: Exception) {
             Log.w(TAG, "relay not reached: $e")
+        }
+    }
+
+    // The relay forgets this phone, and its key goes: what it may still send is not opened
+    private fun forget(store: Store, origin: String, token: String) {
+        val (status, _) = call("DELETE", "$origin/api/push/fcm", "", JSONObject().put("token", token))
+        if (status == 200) {
+            store.token = ""
+            store.key = ""
+        } else {
+            Log.w(TAG, "the relay did not forget the phone: HTTP $status")
         }
     }
 

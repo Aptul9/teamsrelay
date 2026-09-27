@@ -10,7 +10,8 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        minSdk = 24
+        // Android 8.0: notification channels, which carry the ringtone of the calls
+        minSdk = 26
     }
 
     compileOptions {

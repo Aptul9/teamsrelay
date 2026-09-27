@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import org.json.JSONObject
 
@@ -30,7 +29,6 @@ object Notices {
 
     // A channel keeps the sound it was created with: the user changes it in the Android settings of the app
     fun channels(context: Context) {
-        if (Build.VERSION.SDK_INT < 26) return
         val ringtone = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -98,15 +96,15 @@ object Notices {
     // The same line again (one message pushed twice) adds nothing and does not alert; a notification the user dismissed
     // starts over
     private fun message(context: Context, acc: Int, d: JSONObject) {
-        val store = Store(context)
         val nm = manager(context)
         val tag = d.optString("tag")
         val body = d.optString("body")
-        val shown = nm.activeNotifications.any { it.tag == tag }
-        val before = if (shown) store.lines(tag) else emptyList()
+        // the lines the notification of the chat shows now, while it is there: nothing of the chats is kept on the phone
+        val before =
+            nm.activeNotifications.firstOrNull { it.tag == tag }?.notification?.extras
+                ?.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.map { it.toString() } ?: emptyList()
         val again = body.isNotEmpty() && body in before
         val lines = if (again) before else (before + body).filter { it.isNotEmpty() }.takeLast(LINES)
-        store.setLines(tag, lines)
         val style = NotificationCompat.InboxStyle()
         lines.forEach { style.addLine(it) }
         val n = builder(context, MESSAGES, acc, d.optString("title"), lines.lastOrNull() ?: "")
