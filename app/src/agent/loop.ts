@@ -36,7 +36,8 @@ export function agentJobs(a: Agent): Job<Round>[] {
     // until Teams is connected (sign-in to do, session expired) there is nothing to scroll or read
     { name: "chats-full", every: { rounds: 300, offset: 1 }, when: teamsOk, run: () => scanChatsFull(a) },
     { name: "chats", every: { rounds: 3 }, run: () => scanChats(a) },
-    a.config.activity && { name: "activity", every: { rounds: 150, offset: 5 }, when: teamsOk, run: () => readActivity(a) },
+    // Teams is still loading at round 5 after a start: read once its side bar can be clicked, not 150 rounds later
+    a.config.activity && { name: "activity", every: { rounds: 150, offset: 5 }, when: () => teamsOk() && !!a.railReady, catchUp: true, run: () => readActivity(a) },
     { name: "identity", every: { rounds: 300, offset: 7 }, force: () => !a.store.getState(STATE.me), when: teamsOk, run: () => saveIdentity(a) },
     { name: "health", every: { rounds: 5 }, anyPage: true, run: () => updateHealth(a) },
     {

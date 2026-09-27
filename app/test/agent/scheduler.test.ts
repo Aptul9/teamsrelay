@@ -50,6 +50,23 @@ describe("scheduler", () => {
     expect(runs).toEqual(["identity", "activity", "identity", "activity"]);
   });
 
+  it("runs a job that catches up at the first round it is allowed, after skipping the round it was due", async () => {
+    const { runs, job } = recorder();
+    const s = new Scheduler(
+      [job("activity", { rounds: 10, offset: 2 }, { when: (c) => c.flag, catchUp: true }), job("full", { rounds: 10, offset: 2 }, { when: (c) => c.flag })],
+      () => {},
+    );
+    // due at round 2 on the sign-in page, then not allowed at rounds 3 and 4
+    await rounds(s, 3, { onTeams: false, flag: true });
+    await rounds(s, 2, { onTeams: true, flag: false });
+    expect(runs).toEqual([]);
+    await rounds(s, 2, { onTeams: true, flag: true });
+    expect(runs).toEqual(["activity"]);
+    // then at its own rounds again
+    await rounds(s, 6, { onTeams: true, flag: true });
+    expect(runs).toEqual(["activity", "activity", "full"]);
+  });
+
   it("runs only the jobs meant for any page on the sign-in page, and still counts the round", async () => {
     const { runs, job } = recorder();
     const s = new Scheduler([job("health", { rounds: 5 }, { anyPage: true }), job("chats", { rounds: 1 })], () => {});

@@ -3,17 +3,19 @@ import { nowSeconds, type Agent } from "../context";
 import { computeHealth, watchProblem, type PageProbe } from "../logic/health";
 import { isTeamsUrl } from "../logic/hosts";
 import { errorText, log } from "../log";
-import { probePage } from "../teams/scripts/page-state";
+import { probePage, uncoveredPoint } from "../teams/scripts/page-state";
 import { SEL, TEXTS } from "../teams/selectors";
 
 // Health row read by the app (healthOf in src/lib/slotdb.ts and the status panel; /api/state of the local relay),
 // about every 5 s
 export async function updateHealth(a: Agent): Promise<AgentHealth> {
   let probe: PageProbe | null = null;
+  let rail = false;
   try {
     const url = a.tp.page.url();
     const onTeams = isTeamsUrl(url);
     probe = { url, ...(await a.tp.page.evaluate(probePage, { s: SEL, t: TEXTS, withPresence: onTeams })) };
+    if (onTeams && a.config.activity) rail = !!(await a.tp.page.evaluate(uncoveredPoint, SEL.activityView));
     if (onTeams && probe.presence) {
       const before = a.store.getState(STATE.presencePrev);
       if (probe.presence !== before) {
@@ -24,6 +26,7 @@ export async function updateHealth(a: Agent): Promise<AgentHealth> {
   } catch (e) {
     log.warn("health", errorText(e));
   }
+  a.railReady = rail;
   const h = computeHealth({
     probe,
     pushSubs: a.notifier.deviceCount(),

@@ -33,6 +33,9 @@ export type Agent = {
   tp: TeamsPage;
   // last health row written, null until the first one
   health: AgentHealth | null;
+  // the Activity button of the side bar could be clicked at the last health check: right after a start Teams shows
+  // the chat list first, then the side bar under its loading bar
+  railReady?: boolean;
 };
 
 export const nowSeconds = () => Math.floor(Date.now() / 1000);

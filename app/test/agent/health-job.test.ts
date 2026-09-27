@@ -4,6 +4,7 @@ import type { Agent } from "@/agent/context";
 import { browserDownHealth, noTabHealth, updateHealth } from "@/agent/jobs/health";
 import type { Notifier } from "@/agent/push/notifier";
 import type { TeamsPage } from "@/agent/teams/page";
+import { uncoveredPoint } from "@/agent/teams/scripts/page-state";
 import { SlotStore } from "@/agent/store/slot-store";
 import { AgentHealth, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
@@ -53,6 +54,20 @@ describe("health without a Teams tab", () => {
     const h = await browserDownHealth(agent());
     expect(h).toMatchObject({ cdp: "ok", browser: "down", teams: "err", overall: "red" });
     expect(AgentHealth.safeParse(h).success).toBe(true);
+  });
+});
+
+describe("side bar for the Activity job", () => {
+  it("is ready once a point of the Activity button is free, not while the loading bar of Teams covers it", async () => {
+    const a = agent();
+    let point: { x: number; y: number } | null = null;
+    const probe = { reduced: false, domReady: true, hookInstalled: true, presence: "available" };
+    a.tp = { page: { url: () => "https://teams.cloud.microsoft/v2/", evaluate: async (fn: unknown) => (fn === uncoveredPoint ? point : probe) } } as unknown as TeamsPage;
+    expect((await updateHealth(a)).teams).toBe("ok");
+    expect(a.railReady).toBe(false);
+    point = { x: 34, y: 70 };
+    await updateHealth(a);
+    expect(a.railReady).toBe(true);
   });
 });
 

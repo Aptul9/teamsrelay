@@ -320,6 +320,17 @@ describe("agent loop", () => {
     ]);
   });
 
+  it("reads the Activity feed once Teams shows a side bar it can click, as soon as that happens after a start", () => {
+    const a = agent();
+    const job = agentJobs(a).find((j) => j.name === "activity");
+    expect(agentJobs(a).filter((j) => j.catchUp).map((j) => j.name)).toEqual(["activity"]);
+    a.health = { cdp: "ok", teams: "ok", overall: "green", ts: 1 };
+    a.railReady = false;
+    expect(job?.when?.({ onTeams: true, want: "" })).toBe(false);
+    a.railReady = true;
+    expect(job?.when?.({ onTeams: true, want: "" })).toBe(true);
+  });
+
   it("leaves out the Activity feed and Read by for an app that does not show them", () => {
     const a = agent();
     a.config = { ...a.config, activity: false, readBy: false };

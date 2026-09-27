@@ -12,6 +12,8 @@ export type Job<C> = {
   when?: (ctx: C) => boolean;
   // also on the Microsoft sign-in page; every other job needs the Teams page
   anyPage?: boolean;
+  // a round it was due on but could not run on (not the Teams page, `when` false): it runs at the first round it can
+  catchUp?: boolean;
 };
 
 export type RoundContext = { onTeams: boolean };
@@ -19,6 +21,8 @@ export type RoundContext = { onTeams: boolean };
 export class Scheduler<C extends RoundContext> {
   private rounds = 0;
   private readonly lastRun = new Map<string, number>();
+  // jobs that catch up, waiting for a round they can run on
+  private readonly late = new Set<string>();
 
   constructor(
     private readonly jobs: Job<C>[],
@@ -31,7 +35,7 @@ export class Scheduler<C extends RoundContext> {
   }
 
   private due(job: Job<C>, ctx: C): boolean {
-    if (job.force?.(ctx)) return true;
+    if (job.force?.(ctx) || this.late.has(job.name)) return true;
     if ("seconds" in job.every) return this.clock() - (this.lastRun.get(job.name) ?? -Infinity) >= job.every.seconds * 1000;
     return this.rounds % job.every.rounds === (job.every.offset ?? 0);
   }
@@ -40,8 +44,12 @@ export class Scheduler<C extends RoundContext> {
   // reported and the round goes on with the next one.
   async runRound(ctx: C) {
     for (const job of this.jobs) {
-      if (!ctx.onTeams && !job.anyPage) continue;
-      if (!this.due(job, ctx) || (job.when && !job.when(ctx))) continue;
+      if (!this.due(job, ctx)) continue;
+      if ((!ctx.onTeams && !job.anyPage) || (job.when && !job.when(ctx))) {
+        if (job.catchUp) this.late.add(job.name);
+        continue;
+      }
+      this.late.delete(job.name);
       this.lastRun.set(job.name, this.clock());
       try {
         await job.run(ctx);

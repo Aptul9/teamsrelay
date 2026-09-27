@@ -174,10 +174,21 @@ export class TeamsPage {
 
   // A button of the Teams rail (Activity, Chat), clicked with the mouse brought first to a part of it nothing
   // covers. Left on the app launcher (mouseAway, presence keeper), the mouse keeps the launcher tooltip open over
-  // the Activity button, and the tooltip stays while the mouse is on it: a click there never lands.
-  async clickRail(selector: string) {
-    const point = await this.page.evaluate(uncoveredPoint, selector);
+  // the Activity button, and the tooltip stays while the mouse is on it: a click there never lands. While Teams
+  // starts, the button is not there yet or its loading bar covers all of it: up to `waitMs` for a free point.
+  async clickRail(selector: string, waitMs = 0) {
+    const until = Date.now() + waitMs;
+    let point = await this.railPoint(selector);
+    while (!point && Date.now() < until) {
+      await sleep(250);
+      point = await this.railPoint(selector);
+    }
     if (point) await this.page.mouse.move(point.x, point.y);
     await this.page.locator(`${selector}:visible`).first().click({ timeout: 4000 });
+  }
+
+  // none while the page navigates (a start goes through the sign-in hosts)
+  private railPoint(selector: string) {
+    return this.page.evaluate(uncoveredPoint, selector).catch(() => null);
   }
 }
