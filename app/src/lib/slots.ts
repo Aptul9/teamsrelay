@@ -13,6 +13,17 @@ export type SlotOptions = SlotPaths & { db: Database.Database; slotCount: number
 export const slotUp = (ctl: ControlClient, n: number) => ctl.start(n);
 export const slotDown = (ctl: ControlClient, n: number) => ctl.stop(n);
 
+// A start the supervisor did not confirm in time may still be under way: a stop queued after it ends it, so the account
+// is not left running while it shows as stopped or checked
+async function startOrUndo(ctl: ControlClient, n: number) {
+  try {
+    await slotUp(ctl, n);
+  } catch (e) {
+    await slotDown(ctl, n).catch(() => undefined);
+    throw e;
+  }
+}
+
 // Browser profile (the Microsoft session) and agent data of the slot, with the slot stopped. The web app has
 // no access to the profiles: the supervisor deletes config/N, then the web app deletes data/N.
 export async function wipeSlot(ctl: ControlClient, n: number, paths: SlotPaths) {
@@ -62,7 +73,7 @@ export function setAccountRunning(n: number, running: boolean, ctl: ControlClien
     const s = slotRow(db, n);
     if (!s) throw new HttpError(404, "Account not found");
     if (!running) await slotDown(ctl, n);
-    else if (!s.check_every) await slotUp(ctl, n);
+    else if (!s.check_every) await startOrUndo(ctl, n);
     setSlotStopped(db, n, !running);
     if (running && s.check_every) askCheck(db, n);
   });
@@ -79,13 +90,13 @@ export function setCheckMode(n: number, every: number, ctl: ControlClient, db: D
     const s = slotRow(db, n);
     if (!s) throw new HttpError(404, "Account not found");
     // the browser first: a start or stop that fails leaves the mode as it was
-    if (!every) await slotUp(ctl, n);
+    if (!every) await startOrUndo(ctl, n);
     else if (!s.stopped && !s.checking) await slotDown(ctl, n);
     setCheckEvery(db, n, every, now);
-    if (!s.stopped) return;
-    setSlotStopped(db, n, false);
+    // in service; a start from now on (the grace of a browser starting counts from it)
+    if (!every || s.stopped) setSlotStopped(db, n, false);
     // stopped, its chats are old: checked at once
-    if (every) askCheck(db, n);
+    if (every && s.stopped) askCheck(db, n);
   });
 }
 

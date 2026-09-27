@@ -152,6 +152,30 @@ describe("setCheckMode", () => {
     expect(slotRow(db, 1)).toMatchObject({ stopped: 0, check_every: 0 });
   });
 
+  it("stops an account whose start did not answer in time, set always on from checks or from the switch: it may still be starting", async () => {
+    await addAccount("u1", control(), opts());
+    await setCheckMode(1, 3600, control(), db);
+    calls = [];
+    await expect(setCheckMode(1, 0, control("start 1"), db)).rejects.toThrow(/start 1 failed/);
+    expect(calls).toEqual(["start 1", "stop 1"]);
+    expect(slotRow(db, 1)).toMatchObject({ check_every: 3600 });
+    await setAccountRunning(1, false, control(), db);
+    await setCheckMode(1, 0, control(), db);
+    await setAccountRunning(1, false, control(), db);
+    calls = [];
+    await expect(setAccountRunning(1, true, control("start 1"), db)).rejects.toThrow(/start 1 failed/);
+    expect(calls).toEqual(["start 1", "stop 1"]);
+    expect(isSlotStopped(db, 1)).toBe(true);
+  });
+
+  it("records the start of an account set always on from checks: the grace of a browser starting counts from it", async () => {
+    await addAccount("u1", control(), opts());
+    await setCheckMode(1, 3600, control(), db);
+    db.prepare("UPDATE teams_accounts SET started=1 WHERE slot=1").run();
+    await setCheckMode(1, 0, control(), db);
+    expect(slotRow(db, 1)!.started).toBeGreaterThan(1);
+  });
+
   it("refuses an interval not offered or an unknown account", async () => {
     await addAccount("u1", control(), opts());
     await expect(setCheckMode(1, 60, control(), db)).rejects.toMatchObject({ status: 400 });

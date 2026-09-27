@@ -43,10 +43,11 @@ function SectionTitle({ icon: Icon, children }: { icon: React.ComponentType<{ cl
   );
 }
 
+// null when the list could not be read (web app restarting, device offline): the list shown stays
 const fetchAccounts = () =>
   call<{ accounts: Account[] }>("/api/accounts", undefined, 0).then(
     (d) => d.accounts,
-    () => [] as Account[],
+    () => null,
   );
 
 // Each Teams account of the user: always on, or checked every 1, 2 or 4 hours (its browser runs only during a check)
@@ -56,8 +57,9 @@ function TeamsAccounts() {
 
   // read again every 10 s: checks start and end while the page is open
   useEffect(() => {
-    void fetchAccounts().then(setAccounts);
-    const timer = setInterval(() => void fetchAccounts().then(setAccounts), 10_000);
+    const show = (list: Account[] | null) => setAccounts((shown) => list ?? shown ?? []);
+    void fetchAccounts().then(show);
+    const timer = setInterval(() => void fetchAccounts().then(show), 10_000);
     return () => clearInterval(timer);
   }, []);
 
@@ -68,11 +70,12 @@ function TeamsAccounts() {
     try {
       const change = value === "stopped" ? { running: false } : { checkEvery };
       await call(`/api/accounts/${a.slot}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) }, 0);
-      setAccounts(await fetchAccounts());
+      const list = await fetchAccounts();
+      if (list) setAccounts(list);
       if (value === "stopped") toast.success(`${accName(a)}: stopped`, { description: "Still signed in: no messages or notifications until you choose another status." });
       else if (checkEvery)
         toast.success(`${accName(a)}: checked every ${hours(checkEvery)}`, {
-          description: a.stopped ? "Its first check runs within a minute." : "Its browser runs only during its checks, one account at a time.",
+          description: a.stopped ? "A first check is asked now: it starts as soon as no other check runs." : "Its browser runs only during its checks, one account at a time.",
         });
       else toast.success(`${accName(a)}: always on`, { description: "Its browser starts now and stays up." });
     } catch (e) {
