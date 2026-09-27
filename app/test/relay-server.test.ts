@@ -18,7 +18,7 @@ import { withSlot } from "@/lib/slotdb";
 import { addRelayAccount, keepSlotsUp, removeAccount, renewRelayToken, setAccountRunning, setCheckMode } from "@/lib/slots";
 import { HaveBody } from "@/shared/relay-sync";
 import { ringingCall, STATE } from "@/shared/slot-db/state";
-import { tempDir } from "./helpers";
+import { held, tempDir } from "./helpers";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -275,6 +275,54 @@ describe("the files of a relay", () => {
       delete process.env.RELAY_QUOTA_MB;
     }
     expect(fs.readdirSync(path.join(dataDir, String(slot), "files")).sort()).toEqual(["4444444444444444.txt", "6666666666666666.txt"]);
+  });
+
+  // a refusal in the middle of a body can reach the relay as a reset connection instead of its answer
+  it("are refused by their length before a byte is read", async () => {
+    const { token } = await addRelayAccount("f4", opts());
+    // a body that never comes: only its length can tell
+    const put = (kind: "media" | "files", name: string, length: number) =>
+      Promise.race([
+        (kind === "media" ? mediaRoute : filesRoute).PUT(
+          new Request(`http://localhost:8090/api/relay/${kind}/${name}`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${token}`, "Content-Length": String(length) },
+            body: new ReadableStream<Uint8Array>({ pull: () => new Promise<void>(() => undefined) }),
+            duplex: "half",
+          } as RequestInit),
+          { params: Promise.resolve({ file: name }) },
+        ),
+        new Promise<null>((r) => setTimeout(() => r(null), 3000)),
+      ]);
+    process.env.RELAY_QUOTA_MB = String(1000 / 2 ** 20);
+    try {
+      expect((await put("files", "9999999999999999.bin", 5000))?.status).toBe(413);
+    } finally {
+      delete process.env.RELAY_QUOTA_MB;
+    }
+    expect((await put("media", "9999999999999999.png", 10e6 + 1))?.status).toBe(413);
+  });
+
+  it("share the room of the account while they upload side by side", async () => {
+    const { token } = await addRelayAccount("f5", opts());
+    const put = (name: string, body: ReadableStream<Uint8Array>) =>
+      filesRoute.PUT(new Request(`http://localhost:8090/api/relay/files/${name}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body, duplex: "half" } as RequestInit), {
+        params: Promise.resolve({ file: name }),
+      });
+    process.env.RELAY_QUOTA_MB = String(150 / 2 ** 20);
+    try {
+      const a = held(Buffer.alloc(90, 97), Buffer.alloc(10, 97));
+      const b = held(Buffer.alloc(90, 98), Buffer.alloc(10, 98));
+      const first = put("7777777777777777.txt", a.body);
+      await a.reading;
+      const second = put("8888888888888888.txt", b.body);
+      await new Promise((r) => setTimeout(r, 200));
+      a.release();
+      b.release();
+      expect([(await first).status, (await second).status]).toEqual([200, 413]);
+    } finally {
+      delete process.env.RELAY_QUOTA_MB;
+    }
   });
 });
 

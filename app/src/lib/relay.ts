@@ -317,29 +317,42 @@ function roomOf(caller: RelayCaller): RelayRoom {
   return r;
 }
 
-// A file of the relay, written whole or not at all, within the room of the account (RELAY_QUOTA_MB). An image must be
-// the type its name says by its first bytes: the app serves it with that type.
-export async function saveRelayFile(caller: RelayCaller, kind: RelayFileKind, name: string, body: ReadableStream<Uint8Array> | null) {
+// A file of the relay, written whole or not at all, within the room of the account (RELAY_QUOTA_MB). `length`: its
+// Content-Length, which refuses a file too large before a byte of it is read (a refusal in the middle of a body can
+// reach the relay as a reset connection instead of its answer); the bytes are counted as they come all the same, and
+// held against the room while they do, so uploads side by side share it. An image must be the type its name says by
+// its first bytes: the app serves it with that type.
+export async function saveRelayFile(caller: RelayCaller, kind: RelayFileKind, name: string, body: ReadableStream<Uint8Array> | null, length: number | null = null) {
   const k = KINDS[kind];
   if (!k.name.test(name)) throw new HttpError(400, "Invalid file name");
   if (!body) throw new HttpError(400, "Missing file");
   // the folder of the slot comes with the account, never from here
   if (!fs.existsSync(slotDbPath(caller.slot))) throw new SlotNotReady();
   const room = roomOf(caller);
-  const free = config.relayQuotaBytes - room.used;
+  const quota = config.relayQuotaBytes;
+  const tooLarge = () => new HttpError(413, "File too large");
+  const noRoom = () => new HttpError(413, "No room left for the files of this account on the server");
+  if (length !== null && Number.isFinite(length)) {
+    if (length > k.max) throw tooLarge();
+    if (room.used + length > quota) throw noRoom();
+  }
   const dir = folderOf(caller.slot, kind);
   fs.mkdirSync(dir, { recursive: true });
   const target = path.join(dir, name);
   const part = `${target}.${crypto.randomBytes(4).toString("hex")}.part`;
   let size = 0;
+  let held = 0;
   const limit = new Transform({
     transform(chunk: Buffer, _encoding, done) {
       size += chunk.length;
-      if (size > k.max) done(new HttpError(413, "File too large"));
-      else if (size > free) done(new HttpError(413, "No room left for the files of this account on the server"));
-      else done(null, chunk);
+      if (size > k.max) return done(tooLarge());
+      if (room.used + chunk.length > quota) return done(noRoom());
+      room.used += chunk.length;
+      held += chunk.length;
+      done(null, chunk);
     },
   });
+  let kept = false;
   try {
     await pipeline(Readable.fromWeb(body as import("node:stream/web").ReadableStream<Uint8Array>), limit, fs.createWriteStream(part));
     if (!size) throw new HttpError(400, "Missing file");
@@ -356,8 +369,16 @@ export async function saveRelayFile(caller: RelayCaller, kind: RelayFileKind, na
     stillRelay(caller);
     const replaced = fs.statSync(target, { throwIfNoEntry: false })?.size ?? 0;
     fs.renameSync(part, target);
-    room.used += size - replaced;
+    room.used -= replaced;
+    kept = true;
   } finally {
+    if (!kept) room.used -= held;
     fs.rmSync(part, { force: true });
   }
 }
+
+// Content-Length of a request, null without one
+export const declaredLength = (req: Request) => {
+  const v = req.headers.get("content-length");
+  return v === null ? null : Number(v);
+};

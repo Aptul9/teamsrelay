@@ -44,6 +44,9 @@ const SYNC_EVERY_MS = 1000;
 // a notification waits its turn this long at most: later it would only confuse
 const PUSH_STALE_MS = 120_000;
 const PUSH_TIMEOUT_MS = 10_000;
+// read right before the rows go (live()): the server takes them by their age, and the files before the rows may take a
+// while; neither names a file
+const LIVE: readonly string[] = [STATE.health, STATE.call];
 
 const hash = (json: string) => crypto.createHash("sha1").update(json).digest("base64");
 const digest = (v: unknown) => hash(JSON.stringify(v));
@@ -130,6 +133,8 @@ export class ServerLink {
   private readonly errors = new Map<string, string>();
   // rows the server would refuse, logged once each
   private readonly leftOut = new Set<string>();
+  // files that did not go for a failure of the server or of the network, logged once each until they go
+  private readonly failed = new Set<string>();
   // notifications, one after the other in the order they came
   private pushes: Promise<unknown> = Promise.resolve();
   // the stop of the relay: every request ends with it
@@ -198,16 +203,20 @@ export class ServerLink {
   }
 
   // One sync: what changed in relay.db is read first, then the files go, then the rows. The agent writes a file before
-  // the row that names it (src/agent/media.ts), so the files the rows name are on the server before the rows. True when
-  // part of what changed is left for the next sync.
+  // the row that names it (src/agent/media.ts), so the files the rows name are on the server before the rows. The
+  // health and the call are read last, as they are when the rows go. True when part of what changed is left for the
+  // next sync.
   async syncOnce(): Promise<boolean> {
     const version = this.db.pragma("data_version", { simple: true }) as number;
     const changes = version === this.version ? null : this.changes();
     await this.uploadFiles();
     if (!changes) return false;
     const { body, complete, commit } = changes;
+    const live = this.live();
+    if (Object.keys(live.state).length) body.state = { ...body.state, ...live.state };
     if (Object.keys(body).length > 1) await this.call("POST", "/api/relay/sync", { json: { ...body, now: Date.now() } satisfies SyncBody, timeout: 60_000 });
     commit();
+    live.commit();
     // what is left goes at the next sync, which reads again even without a new write
     if (complete) this.version = version;
     return !complete;
@@ -251,10 +260,8 @@ export class ServerLink {
     for (const [chat, rows] of byChat) {
       const d = digest(rows);
       if (this.sent.messages.get(chat) === d) continue;
-      if (!this.fits(ChatName, chat, `messages of ${chat}`)) {
-        messageDigests.set(chat, d);
-        continue;
-      }
+      // never sent, never to remove there
+      if (!this.fits(ChatName, chat, `messages of ${chat}`)) continue;
       const fitting = rows.filter((m) => this.fits(MessageRow, m, `message ${m.mid ?? m.idx} of ${chat}`)).slice(0, 2000);
       if (!chatRoom.take(JSON.stringify(fitting).length)) {
         complete = false;
@@ -281,7 +288,7 @@ export class ServerLink {
     const state = new Map<string, string>();
     let viewing: { raw: string; ts: number } | null = null;
     for (const { k, v } of all<{ k: string; v: string | null }>("SELECT k, v FROM state")) {
-      if (k === STATE.relay) continue;
+      if (k === STATE.relay || LIVE.includes(k)) continue;
       if (k === STATE.viewing) {
         const local = parseState(Viewing, v, { chat: "", ts: 0 });
         const ts = local.ts + (this.offset ?? 0);
@@ -298,7 +305,9 @@ export class ServerLink {
     for (const [k, v] of state) {
       const d = digest(v);
       if (this.sent.state.get(k) === d) continue;
-      if (!this.fits(StateKey, k, `state ${k}`) || !this.fits(StateValue, v, `state ${k}`)) {
+      // a key the server would refuse is never sent, nor removed there; a value too long waits for a new one
+      if (!this.fits(StateKey, k, `state ${k}`)) continue;
+      if (!this.fits(StateValue, v, `state ${k}`)) {
         stateDigests.set(k, d);
         continue;
       }
@@ -310,7 +319,7 @@ export class ServerLink {
       stateDigests.set(k, d);
     }
     for (const k of this.sent.state.keys()) {
-      if (state.has(k)) continue;
+      if (state.has(k) || LIVE.includes(k)) continue;
       if (!keyRoom.take(k.length)) {
         complete = false;
         continue;
@@ -380,6 +389,35 @@ export class ServerLink {
     return { body, complete, commit };
   }
 
+  // The health and the call as they are now, when they changed since the server took them
+  private live(): { state: Record<string, string | null>; commit: () => void } {
+    const state: Record<string, string | null> = {};
+    const digests = new Map<string, string | null>();
+    const read = this.db.prepare("SELECT v FROM state WHERE k=?").pluck();
+    for (const k of LIVE) {
+      const row = read.get(k) as string | null | undefined;
+      if (row === undefined) {
+        if (this.sent.state.has(k)) {
+          state[k] = null;
+          digests.set(k, null);
+        }
+        continue;
+      }
+      const v = row ?? "";
+      const d = digest(v);
+      if (this.sent.state.get(k) === d || !this.fits(StateValue, v, `state ${k}`)) continue;
+      state[k] = v;
+      digests.set(k, d);
+    }
+    const commit = () => {
+      for (const [k, d] of digests) {
+        if (d === null) this.sent.state.delete(k);
+        else this.sent.state.set(k, d);
+      }
+    };
+    return { state, commit };
+  }
+
   // The commands of the server queued here in the last day, of the current series: local id to the id and status there
   private serverCommands(): Map<number, { id: number; status: CommandStatus }> {
     const out = new Map<number, { id: number; status: CommandStatus }>();
@@ -411,8 +449,15 @@ export class ServerLink {
         if (need.has(name)) {
           try {
             await this.call("PUT", `/api/relay/${kind}/${name}`, { body: new Uint8Array(fs.readFileSync(path.join(dir, name))), timeout: 300_000 });
+            this.failed.delete(`${kind}/${name}`);
           } catch (e) {
-            if (!(e instanceof ServerError) || e.status < 400 || e.status >= 500 || e.status === 401) throw e;
+            if (this.signal?.aborted || (e instanceof ServerError && e.status === 401)) throw e;
+            if (!(e instanceof ServerError) || e.status >= 500) {
+              // the server or the network failed on this one: it goes again at the next sync, the rest goes on
+              if (!this.failed.has(`${kind}/${name}`)) log.warn("server", `${kind} file not sent: ${errorText(e)}`, { file: name });
+              this.failed.add(`${kind}/${name}`);
+              continue;
+            }
             log.warn("server", `${kind} file refused: ${e.message}`, { file: name });
           }
         }

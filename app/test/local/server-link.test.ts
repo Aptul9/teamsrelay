@@ -127,7 +127,7 @@ const joined: Joined[] = [];
 // One more account on another computer, with a relay.db and a link of its own. `seed` fills relay.db (and the slot
 // database of the server) before the link starts; start() starts it.
 async function join(owner: string, o: Partial<ServerLinkOptions> = {}, seed?: (r: Relay) => void): Promise<Joined> {
-  const { slot: n, token: t } = await addRelayAccount(owner, { db: appDb(), dataDir, slotCount: 8, perUser: 4 });
+  const { slot: n, token: t } = await addRelayAccount(owner, { db: appDb(), dataDir, slotCount: 16, perUser: 4 });
   const dir = path.join(root, `relay-${owner}`);
   const r: Relay = { slot: n, token: t, added: slotRow(appDb(), n)!.added, dir, store: SlotStore.open(path.join(dir, "relay.db")) };
   seed?.(r);
@@ -166,7 +166,7 @@ beforeAll(async () => {
   relayDir = path.join(root, "relay");
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
-  ({ slot, token } = await addRelayAccount("owner-1", { db: appDb(), dataDir, slotCount: 8, perUser: 4 }));
+  ({ slot, token } = await addRelayAccount("owner-1", { db: appDb(), dataDir, slotCount: 16, perUser: 4 }));
   server = serve();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   serverUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -437,6 +437,78 @@ describe("the pictures a chat shows", () => {
     await until("the new chat on the server", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Carla Verdi")));
     expect(wrote).toBe(true);
     expect(unseen).toEqual([]);
+    await j.stop();
+  });
+});
+
+describe("a sync whose files take a while", () => {
+  it("sends the health and the call as they are when its rows go", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let holding = false;
+    // the server takes the first picture only when the test says
+    const slow: typeof fetch = async (input, init) => {
+      if (init?.method === "PUT" && !holding) {
+        holding = true;
+        await gate;
+      }
+      return fetch(input, init);
+    };
+    const now = Math.floor(Date.now() / 1000);
+    const j = await join("owner-live", { fetch: slow }, (r) => {
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      fs.writeFileSync(path.join(r.dir, "media", "cdcdcdcdcdcdcdcd.png"), PNG);
+      r.store.saveChats([{ name: "Anna Rossi", preview: "", time: "", unread: false, mention: false, muted: false, av: "cdcdcdcdcdcdcdcd.png" }]);
+      r.store.setState(STATE.health, JSON.stringify({ cdp: "ok", ts: now - 30, teams: "ok", overall: "green" }));
+      r.store.setState(STATE.call, JSON.stringify({ caller: "Anna Rossi", since: now * 1000 - 20_000, seen: now * 1000 - 15_000, ringing: true }));
+    });
+    j.start();
+    await until("the picture on its way", () => holding);
+    // written by the agent while the picture goes
+    const health = JSON.stringify({ cdp: "ok", ts: Math.floor(Date.now() / 1000), teams: "ok", overall: "green" });
+    const call = JSON.stringify({ caller: "Anna Rossi", since: now * 1000 - 20_000, seen: Date.now(), ringing: true });
+    j.store.setState(STATE.health, health);
+    j.store.setState(STATE.call, call);
+    release();
+    const first = await until("the first sync", () => syncsOf.get(j.token)?.[0]);
+    expect((first.state as Record<string, string>)[STATE.health]).toBe(health);
+    expect((first.state as Record<string, string>)[STATE.call]).toBe(call);
+    await j.stop();
+  });
+
+  it("goes on without a file that fails, which goes again at the next sync", async () => {
+    let failing = true;
+    const flaky: typeof fetch = async (input, init) => {
+      if (failing && init?.method === "PUT" && String(input).endsWith("/efefefefefefefef.png")) throw new TypeError("fetch failed");
+      return fetch(input, init);
+    };
+    const j = await join("owner-flaky", { fetch: flaky }, (r) => {
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      fs.writeFileSync(path.join(r.dir, "media", "efefefefefefefef.png"), PNG);
+      r.store.saveChats([{ name: "Luca Bianchi", preview: "ok", time: "", unread: false, mention: false, muted: false, av: "" }]);
+    });
+    j.start();
+    await until("the chats on the server", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Luca Bianchi")));
+    const onServer = path.join(dataDir, String(j.slot), "media", "efefefefefefefef.png");
+    expect(fs.existsSync(onServer)).toBe(false);
+    failing = false;
+    await until("the picture at last", () => fs.existsSync(onServer));
+    await j.stop();
+  });
+});
+
+describe("a key longer than the server takes", () => {
+  it("stays here, and once gone holds up nothing", async () => {
+    const long = `members:${"x".repeat(1100)}`;
+    const j = await join("owner-long", {}, (r) => {
+      r.store.setState(long, "{}");
+      r.store.saveChats([{ name: "Anna Rossi", preview: "", time: "", unread: false, mention: false, muted: false, av: "" }]);
+    });
+    j.start();
+    await until("the first sync", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Anna Rossi")));
+    using(path.join(j.dir, "relay.db"), (db) => db.prepare("DELETE FROM state WHERE k=?").run(long));
+    j.store.saveChats([{ name: "After the long key", preview: "", time: "", unread: false, mention: false, muted: false, av: "" }]);
+    await until("the chat after it", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "After the long key")));
     await j.stop();
   });
 });

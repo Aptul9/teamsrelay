@@ -12,7 +12,7 @@ import * as syncRoute from "@/app/api/relay/sync/route";
 import { appDb, migrateAppSchema } from "@/lib/appdb";
 import type { ControlClient } from "@/lib/control";
 import { addRelayAccount, removeAccount, renewRelayToken } from "@/lib/slots";
-import { tempDir } from "./helpers";
+import { held, tempDir } from "./helpers";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -25,27 +25,6 @@ beforeAll(() => {
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
 });
-
-// A body sent in two parts: the first at once, the rest on release(). `reading` resolves once the route has taken the
-// first part and waits for the rest: it has checked the token by then.
-function held(first: string | Uint8Array, rest: string | Uint8Array = "") {
-  const bytes = (v: string | Uint8Array) => (typeof v === "string" ? new TextEncoder().encode(v) : v);
-  let release!: () => void;
-  const gate = new Promise<void>((r) => (release = r));
-  let started!: () => void;
-  const reading = new Promise<void>((r) => (started = r));
-  let parts = 0;
-  const body = new ReadableStream<Uint8Array>({
-    async pull(c) {
-      if (parts++ === 0) return c.enqueue(bytes(first));
-      started();
-      await gate;
-      if (rest.length) c.enqueue(bytes(rest));
-      c.close();
-    },
-  });
-  return { body, reading, release };
-}
 
 const request = (p: string, token: string, method: string, body?: ReadableStream<Uint8Array>) =>
   new Request(`http://localhost:8090${p}`, { method, headers: { Authorization: `Bearer ${token}` }, body, duplex: "half" } as RequestInit);
