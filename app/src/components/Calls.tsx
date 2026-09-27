@@ -4,7 +4,7 @@ import { PhoneIcon, PhoneIncomingIcon, PhoneMissedIcon } from "lucide-react";
 import { cn } from "cn";
 import { Avatar } from "./Avatar";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import type { ActivityItem, CallLogEntry, RingingCall } from "@/lib/client";
+import { newCalls, type ActivityItem, type CallLogEntry, type RingingCall } from "@/lib/client";
 
 // When a call rang: the time today, the day and the time before
 function when(ms: number, now = Date.now()): string {
@@ -17,7 +17,8 @@ type Row = { key: string; name: string; line: string; icon: typeof PhoneIcon; to
 
 // The calls of the account: the one ringing now, the missed calls of the Teams Activity feed (those that rang while
 // no browser ran too, found by a check) and the calls the agent saw ring, with how long. A call whose caller has a chat
-// in the list opens it. A red dot marks a missed call this device has not shown yet.
+// in the list opens it. A red dot marks a missed call this device has not shown yet: Teams shows every missed call as
+// read, new or not.
 export function Calls({
   acc,
   ringing,
@@ -38,13 +39,14 @@ export function Calls({
   const now: Row[] = ringing
     ? [{ key: "now", name: ringing.caller || "Incoming call", line: "Ringing now", icon: PhoneIncomingIcon, tone: "text-primary motion-safe:animate-pulse" }]
     : [];
+  const fresh = new Set(newCalls(missed.map((a) => a.id), seen));
   const missedRows: Row[] = missed.map((a) => ({
     key: a.id,
     name: a.actor || a.chat || "Unknown caller",
     line: `Missed call${a.tm ? ` · ${a.tm}` : ""}`,
     icon: PhoneMissedIcon,
     tone: "text-destructive",
-    dot: !!a.unread && !!seen && !seen.includes(a.id),
+    dot: fresh.has(a.id),
   }));
   const logRows: Row[] = log.map((c) => ({
     key: `${c.since}`,

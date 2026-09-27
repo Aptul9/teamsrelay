@@ -72,7 +72,8 @@ db.transaction(() => {
     ["a1", "reaction", "Luca Bianchi", "Luca Bianchi reacted to your message", "👍", "Yes, sending the summary now", "10:31", "Luca Bianchi", 1],
     ["a2", "mention", "Anna Rossi", "Anna Rossi mentioned you", "", "@you can you check the deploy?", "9:58", "Project Alpha", 1],
     ["a3", "reply", "Marco Neri", "Marco Neri replied to your message", "", "Looks good from here", "9:59", "Project Alpha", 0],
-    ["a4", "call", "Luca Bianchi", "Missed call from Luca Bianchi", "", "Teams call", "9:40", "Luca Bianchi", 1],
+    // Teams shows a missed call as read, new or not
+    ["a4", "call", "Luca Bianchi", "Missed call from Luca Bianchi", "", "Teams call", "9:40", "Luca Bianchi", 0],
   ].forEach(([id, kind, actor, title, emoji, preview, tm, chat, unread], i) =>
     db.prepare("INSERT INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,unread,ts,channel,av) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, i, kind, actor, title, emoji, preview, tm, chat, unread, now, 0, ""),
   );

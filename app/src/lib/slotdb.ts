@@ -129,10 +129,11 @@ export class SlotReader {
     return this.all<{ id: string }>("SELECT id FROM activity WHERE unread=1 ORDER BY pos").map((r) => r.id);
   }
 
-  // The same for the missed calls of the feed only
-  unreadCalls(): string[] | null {
+  // Ids of every missed call of the feed, in feed order, null until the agent has saved the feed once. Teams shows a
+  // missed call as read (not bold), new or not: a device tells a new one by an id it has not shown yet.
+  missedCalls(): string[] | null {
     if (!Number(this.state(STATE.activityTs, 0))) return null;
-    return this.all<{ id: string }>("SELECT id FROM activity WHERE unread=1 AND kind='call' ORDER BY pos").map((r) => r.id);
+    return this.all<{ id: string }>("SELECT id FROM activity WHERE kind='call' ORDER BY pos").map((r) => r.id);
   }
 
   // The incoming call as the agent keeps it, null before the first one

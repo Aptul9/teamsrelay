@@ -210,14 +210,20 @@ export class SlotStore {
     })();
   }
 
+  // Ids of every item of the Activity feed, in feed order (newest first)
+  activityIds(): string[] {
+    return this.db.prepare("SELECT id FROM activity ORDER BY pos").pluck().all() as string[];
+  }
+
   // Ids of the items the Activity feed shows unread (bold), in feed order
   unreadActivity(): string[] {
     return this.db.prepare("SELECT id FROM activity WHERE unread=1 ORDER BY pos").pluck().all() as string[];
   }
 
-  // The missed calls among them: who called, and the time Teams shows
-  unreadMissedCalls(): { id: string; caller: string; time: string }[] {
-    return this.db.prepare("SELECT id, actor AS caller, tm AS time FROM activity WHERE unread=1 AND kind='call' ORDER BY pos").all() as {
+  // Every missed call of the feed, in feed order: who called, and the time Teams shows. Teams shows them as read (not
+  // bold), new or not: a new one is an id not seen before.
+  missedCalls(): { id: string; caller: string; time: string }[] {
+    return this.db.prepare("SELECT id, actor AS caller, tm AS time FROM activity WHERE kind='call' ORDER BY pos").all() as {
       id: string;
       caller: string;
       time: string;
