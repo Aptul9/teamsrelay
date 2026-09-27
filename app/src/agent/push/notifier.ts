@@ -32,6 +32,12 @@ const APPLE_PUSH = /^https:\/\/web\.push\.apple\.com\//;
 // A phone of the Android app (mobile/), registered through /api/push/fcm: FCM, not Web Push
 const isPhone = (t: PushTarget) => t.endpoint.startsWith("fcm:");
 
+// The outcome of one send, handed to took when the push service took it
+function noteTook(ok: boolean, t: PushTarget, took?: (t: PushTarget) => void): boolean {
+  if (ok) took?.(t);
+  return ok;
+}
+
 // An FCM message carries 4096 bytes of data: long texts are cut, as for ntfy, and once more when the sealed message
 // is still too big (text of many bytes per character)
 function sealFitting(key: string, content: Record<string, unknown>): Record<string, string> {
@@ -101,14 +107,26 @@ export class Notifier {
     const title = ringing ? (caller ? `${caller} is calling` : "Incoming call") : caller ? `Call from ${caller}` : "Call ended";
     const body = ringing ? "Teams call, ringing now" : seconds ? `Ended after ${seconds} s` : "Ended";
     const chat = caller && this.o.store.isKnownChat(caller) ? caller : "";
-    if (state !== "again") await this.ntfyCall(title, body, since, ringing);
-    return this.deliver((acc) => ({ title, body, chat, tag: callTag(acc), call: ringing ? "ringing" : "ended", ts: since }), {
-      urgency: "high",
-      ttl: ringing ? CALL_TTL : PUSH_TTL,
-      retry: !ringing,
-      skip: state === "again" ? (t) => APPLE_PUSH.test(t.endpoint) || isPhone(t) : undefined,
-    });
+    // a phone that did not take the first push of the call gets the next one, until one reaches it
+    if (state === "ringing") this.phonesRinging = { since, took: new Set() };
+    const took = this.phonesRinging?.since === since ? this.phonesRinging.took : null;
+    const [n] = await Promise.all([
+      this.deliver((acc) => ({ title, body, chat, tag: callTag(acc), call: ringing ? "ringing" : "ended", ts: since }), {
+        urgency: "high",
+        ttl: ringing ? CALL_TTL : PUSH_TTL,
+        retry: !ringing,
+        skip: state === "again" ? (t) => APPLE_PUSH.test(t.endpoint) || (isPhone(t) && (!took || took.has(t.endpoint))) : undefined,
+        took: ringing && took ? (t) => void (isPhone(t) && took.add(t.endpoint)) : undefined,
+      }),
+      // ntfy beside the devices, not before them: a slow ntfy.sh holds no ring
+      state !== "again" ? this.ntfyCall(title, body, since, ringing) : undefined,
+    ]);
+    return n;
   }
+
+  // The phones of the Android app the ringing call (since, when it started) reached: they ring on their own until it
+  // ends, another push would start the ringtone again
+  private phonesRinging: { since: number; took: Set<string> } | null = null;
 
   // A missed call the check of an account checked every N hours found in its Teams Activity feed: its browser did not
   // run while the call rang. A notification of its own, which alerts, and ntfy when enabled; time is the one Teams shows.
@@ -123,7 +141,10 @@ export class Notifier {
   // title naming the account when the owner has more: Web Push to the browsers, a sealed FCM message to the phones.
   // Returns the devices the push service took on the first try; the ones it reported as gone are removed, the ones it
   // could not take now are tried again later when `retry`.
-  private async deliver(content: (acc: number) => { title: string } & Record<string, unknown>, o: Delivery & { skip?: (t: PushTarget) => boolean }): Promise<number> {
+  private async deliver(
+    content: (acc: number) => { title: string } & Record<string, unknown>,
+    o: Delivery & { skip?: (t: PushTarget) => boolean; took?: (t: PushTarget) => void },
+  ): Promise<number> {
     const { vapid, devices, store, fcm } = this.o;
     const targets = devices.targets().filter((t) => !o.skip?.(t));
     if (!targets.length) return 0;
@@ -140,10 +161,10 @@ export class Notifier {
         urgency: o.urgency,
         timeout: 15_000,
       };
-      sends.push(...browsers.map((t) => this.sendTo(t, payload, options, 0, o.retry)));
+      sends.push(...browsers.map((t) => this.sendTo(t, payload, options, 0, o.retry).then((ok) => noteTook(ok, t, o.took))));
     }
     const phones = targets.filter(isPhone);
-    if (phones.length && fcm) sends.push(...phones.map((t) => this.sendToPhone(t, message, o, 0)));
+    if (phones.length && fcm) sends.push(...phones.map((t) => this.sendToPhone(t, message, o, 0).then((ok) => noteTook(ok, t, o.took))));
     else if (phones.length && !this.fcmMissing) {
       this.fcmMissing = true;
       log.warn("push", "phones of the Android app registered, but no Firebase service account key: FCM off");

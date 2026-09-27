@@ -73,6 +73,7 @@ describe("FCM sender", () => {
       { status: 400, body: { error: { status: "INVALID_ARGUMENT", message: "The registration token is not a valid FCM registration token" } } },
       { status: 429, body: { error: { status: "RESOURCE_EXHAUSTED" } }, headers: { "Retry-After": "90" } },
       { status: 503, body: { error: { status: "UNAVAILABLE" } } },
+      { status: 403, body: { error: { status: "PERMISSION_DENIED", details: [{ errorCode: "SENDER_ID_MISMATCH" }] } } },
     ]);
     const sender = new FcmSender(sa, { fetch: g.fetch });
     const send = () => sender.send("phone-token-1234567890", { v: "1" }, { ttl: 60, high: true });
@@ -80,6 +81,8 @@ describe("FCM sender", () => {
     expect(await send()).toEqual({ ok: false, status: 400, gone: true });
     expect(await send()).toEqual({ ok: false, status: 429, gone: false, retryAfter: "90" });
     expect(await send()).toEqual({ ok: false, status: 503, gone: false });
+    // a token of another Firebase project (the phone changed server to one with another project) never works here
+    expect(await send()).toEqual({ ok: false, status: 403, gone: true });
   });
 
   it("asks for a new access token once when FCM refuses the one it has", async () => {
@@ -117,6 +120,9 @@ describe("service account key file", () => {
     fs.writeFileSync(file, JSON.stringify({ type: "service_account", ...sa, private_key_id: "k1" }));
     expect(loadServiceAccount(file)).toMatchObject({ project_id: "teamsrelay-test", client_email: sa.client_email });
     fs.writeFileSync(file, JSON.stringify({ project_info: {} }));
+    expect(() => loadServiceAccount(file)).toThrow(ConfigError);
+    fs.writeFileSync(file, "");
+    expect(() => loadServiceAccount(file)).toThrow(/service-account\.json/);
     expect(() => loadServiceAccount(file)).toThrow(ConfigError);
   });
 });

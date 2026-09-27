@@ -25,7 +25,7 @@ flowchart LR
 4. The web app must answer, and every agent the supervisor runs must keep its restart count and write a health row younger than a minute (an agent with a wrong environment or VAPID key stops at start and restarts in a loop); otherwise the previous code comes back and the job fails.
 5. `https://<DOMAIN>/healthz` is checked from the Internet.
 
-One deploy at a time: close pushes queue up. The deploy never touches `.env`, `config/`, `data/` or `vapid/`. The browsers container is recreated when its image or its configuration changes (a Chromium update, a release of the agent or of the supervisor): every account restarts and the web app starts them again within a minute. The Teams sessions stay in `config/` and survive deploys.
+One deploy at a time: close pushes queue up. The deploy never touches `.env`, `config/`, `data/`, `vapid/` or `fcm/`. The browsers container is recreated when its image or its configuration changes (a Chromium update, a release of the agent or of the supervisor): every account restarts and the web app starts them again within a minute. The Teams sessions stay in `config/` and survive deploys.
 
 The first deploy of the browsers container removes the containers of the releases before it (`chromium-N`, `agent-N`, `wipe-N`, `dockerproxy`) and starts `browsers` on the same `config/N`: the accounts stay signed in. The volume `wipe` of those releases is then unused: `docker volume rm teamsrelay_wipe`.
 
@@ -118,7 +118,7 @@ Muted chats never notify, like in Teams. On iPhone the app must be opened from t
 
 ## Backup
 
-- `.env` (secrets), `vapid/` (push keys).
+- `.env` (secrets), `vapid/` (push keys), `fcm/` (Firebase service account key, when the Android app is used).
 - `data/app.db` (users, slot ownership, devices).
 - `config/` (Microsoft sessions of every account: **sensitive**, encrypt the backup).
 - `data/N/` for each slot (messages, images, files): optional, the agent rebuilds the chat list from Teams.

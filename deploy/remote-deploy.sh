@@ -2,7 +2,7 @@
 # TeamsRelay deploy on the server, run by the GitHub Action over SSH.
 #   remote-deploy.sh backup        saves the current code (for the rollback)
 #   remote-deploy.sh up <sha>      rebuilds and restarts; if the web app does not answer, goes back to the saved code
-# The code arrives through rsync from the Action; .env, config/, data/ and vapid/ stay on the server untouched.
+# The code arrives through rsync from the Action; .env, config/, data/, vapid/ and fcm/ stay on the server untouched.
 set -euo pipefail
 TR_DIR="${TR_DIR:-/opt/teamsrelay}"
 BACKUP=/var/tmp/teamsrelay-prev.tgz
@@ -13,7 +13,7 @@ export COMPOSE_PROFILES=accounts
 
 code_files() {
   # everything but the runtime data
-  find . -mindepth 1 -maxdepth 1 ! -name .env ! -name config ! -name data ! -name vapid ! -name .caddyfile-sum -printf '%P\n'
+  find . -mindepth 1 -maxdepth 1 ! -name .env ! -name config ! -name data ! -name vapid ! -name fcm ! -name .caddyfile-sum -printf '%P\n'
 }
 
 preflight() {

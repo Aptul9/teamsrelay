@@ -468,6 +468,17 @@ describe("notifier to the phones of the Android app (FCM)", () => {
     expect(opened(1)).toMatchObject({ title: "Call from Anna Rossi", body: "Ended after 7 s", call: "ended", ts: 1_790_000_000_000 });
   });
 
+  it("rings a phone that did not take the first push of a call with the next one, and only that phone", async () => {
+    answers.push({ ok: false, status: 503, gone: false });
+    const n = notifier();
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await n.call("Anna Rossi", "again", 1_790_000_000_000);
+    await n.call("Anna Rossi", "again", 1_790_000_000_000);
+    expect(fcmSent).toHaveLength(2);
+    expect(opened(1)).toMatchObject({ title: "Anna Rossi is calling", call: "ringing", ts: 1_790_000_000_000 });
+    expect(retries).toEqual([]);
+  });
+
   it("sends a check that passed at normal priority, and cuts a long message to fit the 4 KB of an FCM message", async () => {
     const n = notifier();
     await n.alert("Teams OK", "Automatic check: the whole chain works.", "normal");
@@ -514,5 +525,25 @@ describe("notifier on ntfy for calls", () => {
       { url: "https://ntfy.example", body: { topic: "relay-test", title: "Anna Rossi is calling", message: "Teams call, ringing now", priority: 5, tags: ["telephone_receiver"], sequence_id: "call-1-1790000000000" } },
       { url: "https://ntfy.example", body: { topic: "relay-test", title: "Call from Anna Rossi", message: "Ended after 7 s", priority: 2, tags: ["telephone_receiver"], sequence_id: "call-1-1790000000000" } },
     ]);
+  });
+
+  it("does not hold the push of a ringing call while ntfy is slow to answer", async () => {
+    let answer: () => void = () => undefined;
+    vi.stubGlobal("fetch", () => new Promise<Response>((resolve) => (answer = () => resolve(new Response("{}")))));
+    const store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
+    const web: string[] = [];
+    const endpoint = "https://push/u1-phone";
+    const n = new Notifier({
+      store,
+      devices: new AppStore(seedAppDb([[endpoint, "u1", JSON.stringify({ endpoint, keys: { p256dh: "k", auth: "a" } })]]), 1),
+      vapid: { publicKey: "BPublic", privateKey: "private" },
+      subject: "mailto:a@b.c",
+      ntfy: { url: "https://ntfy.example", topic: "relay-test" },
+      send: async (s) => void web.push(s.endpoint),
+    });
+    const ring = n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await vi.waitFor(() => expect(web).toEqual([endpoint]));
+    answer();
+    expect(await ring).toBe(1);
   });
 });

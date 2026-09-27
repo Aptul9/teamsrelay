@@ -19,7 +19,13 @@ export type ServiceAccount = z.infer<typeof ServiceAccount>;
 // The service account key file of the Firebase project; none means FCM off
 export function loadServiceAccount(file: string): ServiceAccount | null {
   if (!file || !fs.existsSync(file)) return null;
-  const r = ServiceAccount.safeParse(JSON.parse(fs.readFileSync(file, "utf8")));
+  let json: unknown;
+  try {
+    json = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    throw new ConfigError(`${file}: not JSON (${e instanceof Error ? e.message : String(e)})`);
+  }
+  const r = ServiceAccount.safeParse(json);
   if (!r.success) throw new ConfigError(`${file}: not a service account key file of Google Cloud`);
   return r.data;
 }
@@ -88,13 +94,14 @@ export class FcmSender {
 
 type FcmError = { error?: { status?: string; message?: string; details?: { errorCode?: string }[] } };
 
-// UNREGISTERED (404): the app was removed or its data cleared; INVALID_ARGUMENT about the token (400): never valid
+// UNREGISTERED (404): the app was removed or its data cleared; INVALID_ARGUMENT about the token (400): never valid;
+// SENDER_ID_MISMATCH (403): a token of another Firebase project, which a phone that changed server may have left here
 function tokenGone(status: number, d: FcmError): boolean {
   const code = d.error?.details?.find((x) => x.errorCode)?.errorCode ?? d.error?.status;
-  return status === 404 || code === "UNREGISTERED" || (status === 400 && /registration token/i.test(d.error?.message ?? ""));
+  return status === 404 || code === "UNREGISTERED" || code === "SENDER_ID_MISMATCH" || (status === 400 && /registration token/i.test(d.error?.message ?? ""));
 }
 
-// The key of a phone: 32 random bytes, base64url, handed to the app once at registration
+// The key of a phone: 32 random bytes, base64url, answered to each registration of the phone
 export const newDeviceKey = () => crypto.randomBytes(32).toString("base64url");
 
 // The data of the FCM message for `content`: v 1, iv (12 random bytes), ct (ciphertext and 16-byte tag), base64url

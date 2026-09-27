@@ -1,7 +1,7 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { admin } from "better-auth/plugins";
-import { appDb } from "./appdb";
+import { appDb, forgetFcmDevicesOfSession } from "./appdb";
 import { config } from "./config";
 import { ENV_PASSWORD_MESSAGE, isEnvAdmin } from "./env-admin";
 
@@ -36,6 +36,17 @@ export function authOptions() {
     },
     plugins: [admin()],
     hooks: { before: envPasswordGuard },
+    // a phone of the Android app gets pushes as long as the session that registered it lasts: a lost phone stops with
+    // "Sign out every other device" or a password change
+    databaseHooks: {
+      session: {
+        delete: {
+          after: async (session) => {
+            forgetFcmDevicesOfSession(appDb(), session.id);
+          },
+        },
+      },
+    },
   } satisfies BetterAuthOptions;
 }
 

@@ -182,10 +182,11 @@ export function savePushSubscription(db: Database.Database, userId: string, sub:
 }
 
 // A phone of the Android app (mobile/), a push device as a browser is: endpoint fcm:<token>, sub {fcm: {token, key,
-// name}}, key being what the messages of the relay are sealed with (src/agent/push/fcm.ts). The same phone registered
+// name, session}}, key being what the messages of the relay are sealed with (src/agent/push/fcm.ts), session the id of
+// the session that registered it (it goes with that session, forgetFcmDevicesOfSession). The same phone registered
 // again by its user keeps its key; registered by another user, it gets a new one, so that the first user's messages it
 // may still receive stay sealed.
-export function saveFcmDevice(db: Database.Database, userId: string, token: string, name: string): string {
+export function saveFcmDevice(db: Database.Database, userId: string, token: string, name: string, session: string): string {
   const endpoint = `fcm:${token}`;
   const row = db.prepare("SELECT user_id, sub FROM push_subscriptions WHERE endpoint=?").get(endpoint) as { user_id: string; sub: string } | undefined;
   let key = "";
@@ -200,10 +201,15 @@ export function saveFcmDevice(db: Database.Database, userId: string, token: stri
   db.prepare("INSERT OR REPLACE INTO push_subscriptions(endpoint, user_id, sub, created) VALUES(?,?,?,?)").run(
     endpoint,
     userId,
-    JSON.stringify({ fcm: { token, key, name } }),
+    JSON.stringify({ fcm: { token, key, name, session } }),
     Math.floor(Date.now() / 1000),
   );
   return key;
+}
+
+// The phones a session registered, once it ends: signed out, signed out by another device or by a password change
+export function forgetFcmDevicesOfSession(db: Database.Database, session: string) {
+  db.prepare("DELETE FROM push_subscriptions WHERE endpoint LIKE 'fcm:%' AND json_extract(sub, '$.fcm.session')=?").run(session);
 }
 
 export function forgetFcmDevice(db: Database.Database, token: string) {

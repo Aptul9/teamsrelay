@@ -23,6 +23,8 @@ describe("safeNext", () => {
     expect(safeNext("/desktop/")).toBe("/desktop/");
     expect(safeNext("//evil.example")).toBe("/");
     expect(safeNext("https://evil.example")).toBe("/");
+    expect(safeNext("/\\evil.example/x")).toBe("/");
+    expect(safeNext("/a\\b")).toBe("/");
     expect(safeNext(null)).toBe("/");
   });
 });

@@ -12,8 +12,10 @@ export function pickSlot(owned: number[], param: string | null): number {
   return n;
 }
 
+// A path of this site to go to after the sign-in; browsers read a backslash as a slash, so "/\\evil.example" would be
+// another site
 export function safeNext(next: string | null): string {
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/";
 }
 
 // The sign-in page for a visit to the app without a session: the account asked by a tapped notification (a) and the

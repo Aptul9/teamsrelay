@@ -1,15 +1,15 @@
 import { appDb, forgetFcmDevice, saveFcmDevice } from "@/lib/appdb";
 import { body, HttpError, route, text } from "@/lib/http";
-import { requireUser } from "@/lib/session";
+import { requireSession } from "@/lib/session";
 
 // The TeamsRelay app for Android (mobile/) registers its phone here, with the session cookie of its web page: the
 // relay then sends it the notifications of every Teams account of the user through Firebase, sealed with the key it
-// answers (src/agent/push/fcm.ts).
+// answers (src/agent/push/fcm.ts), for as long as that session lasts (src/lib/auth.ts).
 export const POST = route(async (req) => {
-  const user = await requireUser(req);
+  const { user, session } = await requireSession(req);
   const b = await body<{ token?: unknown; name?: unknown }>(req);
   const name = typeof b.name === "string" ? b.name.slice(0, 80) : "";
-  return Response.json({ key: saveFcmDevice(appDb(), user.id, fcmToken(b.token), name) });
+  return Response.json({ key: saveFcmDevice(appDb(), user.id, fcmToken(b.token), name, session) });
 });
 
 // The app forgets its phone once its web page has no session any more (signed out): the token is the proof
