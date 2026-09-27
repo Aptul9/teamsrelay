@@ -19,3 +19,8 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # typescript-eslint supports TypeScript below 6.1 (8.70.1, 2026-09-27): with TypeScript 7 the lint fails.
+      # Remove once typescript-eslint supports 7.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
