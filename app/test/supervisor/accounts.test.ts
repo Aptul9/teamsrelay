@@ -30,9 +30,9 @@ beforeEach(() => {
   calls = [];
 });
 
-function accounts(opts: { stopMs?: number; focused?: number[] } = {}) {
+function accounts(opts: { stopMs?: number; focused?: number[]; lines?: string[] } = {}) {
   return new Accounts(cfg, {
-    log: () => undefined,
+    log: (line) => void opts.lines?.push(line),
     process: (name) => fakeProcess(name, calls, opts.stopMs),
     focus: async (n) => {
       opts.focused?.push(n);
@@ -107,6 +107,22 @@ describe("Accounts", () => {
 
     expect(calls).toEqual(["start browser-1", "start agent-1"]);
     expect(fs.existsSync(path.join(cfg.profilesDir, "1"))).toBe(true);
+  });
+
+  // the web app asks every minute that the running accounts run
+  it("logs an account as started only when it was not running", async () => {
+    const lines: string[] = [];
+    const a = accounts({ lines });
+    await a.start(1);
+    await a.start(1);
+    await a.stop(1);
+    await a.start(1);
+
+    expect(lines.filter((l) => l.includes("account 1"))).toEqual([
+      expect.stringMatching(/account 1 started$/),
+      expect.stringMatching(/account 1 stopped$/),
+      expect.stringMatching(/account 1 started$/),
+    ]);
   });
 
   it.runIf(process.getuid?.() === 0)("gives a profile directory made by root to the browser user", async () => {
