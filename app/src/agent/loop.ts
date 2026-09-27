@@ -17,6 +17,7 @@ import { sleep, TeamsPage } from "./teams/page";
 
 // Seconds between two inputs on the Teams page
 export const ACTIVE_EVERY = 60;
+export const ACTIVITY_RETRY = 30;
 // Pages that show nothing: a tab just opened, an error page of the browser
 const BLANK = /^(about:|chrome:|edge:|chrome-error:)/;
 
@@ -27,6 +28,13 @@ type Round = { onTeams: boolean; want: string };
 export function agentJobs(a: Agent): Job<Round>[] {
   const teamsOk = () => a.health?.teams === "ok";
   const active = () => a.store.getState(STATE.activeChat);
+  // a feed read that failed is tried once more ACTIVITY_RETRY seconds later, not 150 rounds later
+  let retryAt = 0;
+  const activity = async () => {
+    const retry = retryAt > 0;
+    retryAt = 0;
+    if ((await readActivity(a)) === null && !retry) retryAt = Date.now() + ACTIVITY_RETRY * 1000;
+  };
   const jobs: (Job<Round> | false)[] = [
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
     { name: "input", every: { seconds: ACTIVE_EVERY }, run: () => keepActive(a) },
@@ -36,7 +44,15 @@ export function agentJobs(a: Agent): Job<Round>[] {
     // until Teams is connected (sign-in to do, session expired) there is nothing to scroll or read
     { name: "chats-full", every: { rounds: 300, offset: 1 }, when: teamsOk, run: () => scanChatsFull(a) },
     { name: "chats", every: { rounds: 3 }, run: () => scanChats(a) },
-    a.config.activity && { name: "activity", every: { rounds: 150, offset: 5 }, when: teamsOk, run: () => readActivity(a) },
+    // Teams is still loading at round 5 after a start: read once its side bar can be clicked, not 150 rounds later
+    a.config.activity && {
+      name: "activity",
+      every: { rounds: 150, offset: 5 },
+      force: () => retryAt > 0 && Date.now() >= retryAt,
+      when: () => teamsOk() && !!a.railReady,
+      catchUp: true,
+      run: activity,
+    },
     { name: "identity", every: { rounds: 300, offset: 7 }, force: () => !a.store.getState(STATE.me), when: teamsOk, run: () => saveIdentity(a) },
     { name: "health", every: { rounds: 5 }, anyPage: true, run: () => updateHealth(a) },
     {
@@ -103,6 +119,8 @@ export async function runAgent(a: Omit<Agent, "tp" | "health">, browser: Browser
       if (!tp) {
         tp = new TeamsPage(page, agent.store);
         pages.set(page, tp);
+        // a new tab (browser restarted): its side bar is not known clickable until the next health check
+        agent.railReady = false;
       }
       agent.tp = tp;
       const onTeams = isTeamsUrl(page.url());

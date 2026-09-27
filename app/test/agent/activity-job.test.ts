@@ -3,7 +3,8 @@
 // after the mouse leaves the launcher, and stays open while the mouse is on it.
 import path from "node:path";
 import type { BrowserContext, Page } from "playwright-core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { activity } from "@/agent/commands/activity";
 import type { Agent } from "@/agent/context";
 import { readActivity } from "@/agent/jobs/activity";
 import { keepActive } from "@/agent/jobs/page-setup";
@@ -51,6 +52,38 @@ const RAIL = `<!doctype html>
   chat.click();
 </script>`;
 
+// Teams right after a start (slot 2, 2026-09-27): the chat list is there, the rail shows a few seconds later, then
+// the loading bar of Teams covers it a few seconds more
+const STARTING = `<!doctype html>
+<style>
+  body { margin: 0 }
+  .rail { position: absolute; left: 0; width: 68px; height: 44px }
+  #main { position: absolute; left: 80px; top: 48px; width: 600px }
+  #loading { position: fixed; inset: 0; z-index: 10 }
+</style>
+<div id="loading" role="progressbar"></div>
+<div id="main"><div role="tree"><div role="treeitem" aria-level="2">Anna Rossi</div></div></div>
+<script>
+{
+  const main = document.getElementById("main");
+  const views = [
+    ["Activity (Ctrl+Shift+1)", 48, ${JSON.stringify(FEED_ITEM)}],
+    ["Chat (Ctrl+Shift+2)", 92, '<div role="tree"><div role="treeitem" aria-level="2">Anna Rossi</div></div>'],
+  ];
+  setTimeout(() => {
+    for (const [label, top, html] of views) {
+      const b = document.createElement("button");
+      b.className = "rail";
+      b.style.top = top + "px";
+      b.setAttribute("aria-label", label);
+      b.addEventListener("click", () => (main.innerHTML = html));
+      document.body.appendChild(b);
+    }
+  }, 2000);
+  setTimeout(() => document.getElementById("loading").remove(), 6000);
+}
+</script>`;
+
 const chrome = withChrome();
 let context: BrowserContext;
 let page: Page;
@@ -81,6 +114,20 @@ describe("Activity feed read", () => {
     await keepActive(agent);
     expect(await page.locator("#tip").isVisible()).toBe(true);
     expect(await readActivity(agent)).toBe(1);
+    expect(await page.locator('[role="treeitem"][aria-level="2"]').count()).toBe(1);
+  }, 30_000);
+
+  it("waits for the side bar once: the way back to the chat view does not wait again", async () => {
+    await page.setContent('<div role="tree"><div role="treeitem" aria-level="2">Anna Rossi</div></div>');
+    const clicks = vi.spyOn(agent.tp, "clickRail");
+    expect(await readActivity(agent, 500)).toBeNull();
+    expect(clicks.mock.calls).toEqual([['button[aria-label^="Activity"]', 500], ['button[aria-label^="Chat"]']]);
+  }, 30_000);
+
+  it("reads the feed on a refresh asked right after a start, once the side bar shows and the loading bar is gone", async () => {
+    await page.setContent(STARTING);
+    expect(await activity(agent, { id: 1, type: "activity", arg1: "", arg2: "" })).toBe("done");
+    expect(Number(store.getState(STATE.activityTs))).toBeGreaterThan(0);
     expect(await page.locator('[role="treeitem"][aria-level="2"]').count()).toBe(1);
   }, 30_000);
 });

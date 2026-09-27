@@ -15,7 +15,7 @@ Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-
 | Muted | row with `data-item-type="muted-chat"`, icon `[data-testid="muted-icon"]` |
 | Picture | `img.fui-Avatar__image` |
 | Open chat | `[data-tid="chat-title"]`, first line; a group chat without a name shows its first person, then `+N` on the next line, read as `Anna Rossi, +2` like the list |
-| Activity / Chat view | side bar buttons whose `aria-label` starts with `Activity` / `Chat`; the tooltip of the app launcher (`[data-tid="waffle-open-button"]`) can cover Activity and stays open while the mouse is on it |
+| Activity / Chat view | side bar buttons whose `aria-label` starts with `Activity` / `Chat`; the tooltip of the app launcher (`[data-tid="waffle-open-button"]`) can cover Activity and stays open while the mouse is on it; right after a start the side bar shows a few seconds after the chat list, then a `[role="progressbar"]` covers both buttons a few seconds more |
 | Your status | `aria-label` of `[data-tid="me-control-avatar-presence"]` in the header: `available`, `away`, `busy`... |
 
 ## Messages

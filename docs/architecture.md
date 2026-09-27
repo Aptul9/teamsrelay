@@ -68,9 +68,9 @@ About one round per second. Each step is a job of a small scheduler (`app/src/ag
 | every round | notifications caught by the hook (secondary source), queued commands (the chat list is read after each one) |
 | every 300 rounds, Teams connected | full chat list, scrolled from top to bottom |
 | every 3 rounds | visible chat list: pictures, previews, unread, muted; new message detection and push |
-| every 150 rounds, Teams connected | Activity feed (switches to the Activity view and back; the mouse goes first to a part of the side bar button nothing covers, such as the tooltip of the app launcher); not in the local relay |
+| every 150 rounds, Teams connected and its side bar clickable; after a start, as soon as it is | Activity feed (switches to the Activity view and back; the mouse goes first to a part of the side bar button nothing covers, such as the tooltip of the app launcher). While Teams starts the side bar shows after the chat list and its loading bar covers it a few seconds more: a refresh asked then waits up to 20 s for it. A read that failed is tried once more 30 s later. Not in the local relay |
 | every 300 rounds, or while unknown | identity: name, email, organization, picture |
-| every 5 rounds, sign-in page included | health; a push when Teams stays signed out for a minute, another when it is back |
+| every 5 rounds, sign-in page included | health, and whether the Activity button of the side bar can be clicked (a menu or dialog over it counts as clickable: the Activity job closes it first); a push when Teams stays signed out for a minute, another when it is back |
 | every round | open conversation |
 | every 2 rounds, no commands | "Read by" of one of your recent messages in the open group chat; not in the local relay |
 | 8-11 and 17-20 | automatic check with a push of the outcome |
