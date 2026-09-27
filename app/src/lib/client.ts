@@ -218,12 +218,32 @@ export const accountStatus = (a: Pick<Account, "stopped" | "checkEvery">): "stop
 // An account checked every N hours, between two checks: no browser, no agent, the chats and numbers of its last check
 export const idleChecked = (a: Pick<Account, "checkEvery" | "checking" | "stopped">) => a.checkEvery > 0 && !a.checking && !a.stopped;
 
+// Its last check: "Checked 14:05", "Check failed 14:05"
+export const lastCheck = (a: Pick<Account, "checked" | "checkResult">) => `${a.checkResult === "failed" ? "Check failed" : "Checked"} ${clock(a.checked)}`;
+
 // Its last check and the next one: "Checked 14:05 · next 15:05"
 export function checkLine(a: Account, now = Date.now() / 1000): string {
   if (a.checking) return "Checking now";
   const next = a.nextCheck > now ? `next ${clock(a.nextCheck)}` : "next check soon";
   if (!a.checked) return `Checked every ${hours(a.checkEvery)} · ${next}`;
-  return `${a.checkResult === "failed" ? "Check failed" : "Checked"} ${clock(a.checked)} · ${next}`;
+  return `${lastCheck(a)} · ${next}`;
+}
+
+// Time left, for the account menu: "45 min", "1 h 20 min", "2 h"; less than a minute is one
+export function untilText(seconds: number): string {
+  const min = Math.max(1, Math.ceil(seconds / 60));
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
+}
+
+// The status of an account on its row of the account menu: stopped, active (always on), or when the next check
+// updates it. A check asked from the app has no time yet; a due one waits for the check of another account.
+export function statusText(a: Pick<Account, "stopped" | "checkEvery" | "checking" | "nextCheck">, now = Date.now() / 1000): string {
+  if (a.stopped) return "Stopped";
+  if (!a.checkEvery) return "Active";
+  if (a.checking) return "Updating now";
+  return a.nextCheck > now ? `Updating in ${untilText(a.nextCheck - now)}` : "Updating soon";
 }
 
 export function readStorage(key: string): string | null {

@@ -1,7 +1,8 @@
 "use client";
 
-import { CheckIcon, ChevronsUpDownIcon, LogOutIcon, MonitorIcon, PlusIcon, SettingsIcon, Trash2Icon, UsersIcon } from "lucide-react";
+import { CheckIcon, ChevronsUpDownIcon, ClockIcon, LogOutIcon, MonitorIcon, PlusIcon, SettingsIcon, Trash2Icon, UsersIcon } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { cn } from "cn";
 import { Avatar, LogoTile } from "./Avatar";
 import { Badge } from "@/components/ui/badge";
@@ -15,8 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
-import { checkLine, hours, idleChecked, type Account, type Unread } from "@/lib/client";
+import { checkLine, idleChecked, lastCheck, statusText, type Account, type Unread } from "@/lib/client";
 
 export const accName = (a: Account) => a.name || a.email || `Account ${a.slot}`;
 
@@ -55,9 +55,38 @@ export function accSub(a: Account): { text: string; warn: boolean } {
   return accState(a) ?? { text: accIdentity(a), warn: false };
 }
 
+// The line under the name in the menu, whose status stands on the right: only what the status does not say
+function menuState(a: Account): { text: string; warn: boolean } | null {
+  if (a.stopped) return { text: "Still signed in", warn: false };
+  if (idleChecked(a) && !needsLogin(a)) return a.checked ? { text: lastCheck(a), warn: a.checkResult === "failed" } : null;
+  if (a.checking && a.teams !== "login") return null;
+  return accState(a);
+}
+
+// Stopped, active, or when the next check updates the account, on its right in the menu; the time left counts down
+// while the menu is open. "Updating in" and the time go on two lines, so the name keeps its room.
+function AccountStatus({ a }: { a: Account }) {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const checked = !a.stopped && a.checkEvery > 0;
+  useEffect(() => {
+    if (!checked) return;
+    const t = setInterval(() => setNow(Date.now() / 1000), 30_000);
+    return () => clearInterval(t);
+  }, [checked]);
+  const [head, rest] = statusText(a, now).split(/(?<=^Updating in) /);
+  return (
+    <span className="flex shrink-0 flex-col items-end text-right text-xs leading-tight text-muted-foreground">
+      <span className="flex items-center gap-1.5">
+        {checked ? <ClockIcon className="size-3" /> : <span className={cn("size-2 rounded-full", a.stopped ? "bg-muted-foreground/40" : "bg-success")} />}
+        {head}
+      </span>
+      {rest && <span className="whitespace-nowrap">{rest}</span>}
+    </span>
+  );
+}
+
 // Name, who it is and what it is doing, for the lists of accounts (menu, Settings)
-export function AccountLines({ a }: { a: Account }) {
-  const state = accState(a);
+export function AccountLines({ a, state = accState(a) }: { a: Account; state?: { text: string; warn: boolean } | null }) {
   const who = accIdentity(a);
   return (
     <div className="min-w-0 flex-1">
@@ -68,8 +97,9 @@ export function AccountLines({ a }: { a: Account }) {
   );
 }
 
-// Switch between the Teams accounts of the user, stop or start one, add or remove one, reach settings and sign out.
-// Every account shows its unread chats plus new notifications; the button shows the total of the other accounts.
+// Switch between the Teams accounts of the user, add or remove one, reach settings and sign out. Every account shows
+// its unread chats plus new notifications and its status (set in Settings); the button shows the total of the other
+// accounts.
 export function AccountMenu({
   user,
   accounts,
@@ -79,9 +109,7 @@ export function AccountMenu({
   canAdd,
   addLabel,
   adding,
-  toggling,
   onSelect,
-  onSetRunning,
   onAdd,
   onOpenDesktop,
   onRemove,
@@ -96,9 +124,7 @@ export function AccountMenu({
   canAdd: boolean;
   addLabel: string;
   adding: boolean;
-  toggling: number;
   onSelect: (slot: number) => void;
-  onSetRunning: (a: Account, running: boolean) => void;
   onAdd: () => void;
   onOpenDesktop: (slot: number) => void;
   onRemove: (a: Account) => void;
@@ -125,51 +151,24 @@ export function AccountMenu({
           <ChevronsUpDownIcon className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-80 max-w-[calc(100vw-1rem)]">
+      <DropdownMenuContent align="start" className="w-[22rem] max-w-[calc(100vw-1rem)]">
         <DropdownMenuLabel>Teams accounts</DropdownMenuLabel>
         <DropdownMenuGroup>
           {(accounts ?? []).map((a) => {
-            const busy = toggling === a.slot;
             const unread = unreadOf(a);
             return (
-              <div key={a.slot} className="flex items-center gap-1">
-                <DropdownMenuItem onSelect={() => onSelect(a.slot)} className="min-w-0 flex-1 gap-3 py-2">
-                  <Avatar name={accName(a)} av={a.av} acc={a.slot} className={cn("size-8", a.stopped && "opacity-50 grayscale")} />
-                  <AccountLines a={a} />
-                  {total(unread) > 0 && (
-                    <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums" title={unreadText(unread)}>
-                      {capped(total(unread))}
-                      <span className="sr-only"> ({unreadText(unread)})</span>
-                    </Badge>
-                  )}
-                  {a.slot === current?.slot && <CheckIcon className="text-primary" />}
-                </DropdownMenuItem>
-                {/* on: green, off: grey. The menu stays open to show the switch move */}
-                <DropdownMenuItem
-                  role="menuitemcheckbox"
-                  aria-checked={!a.stopped}
-                  aria-label={`${a.stopped ? "Start" : "Stop"} ${accName(a)}`}
-                  title={
-                    a.stopped
-                      ? `Stopped: click to start again, ${a.checkEvery ? `checked every ${hours(a.checkEvery)}` : "always on"}`
-                      : a.checkEvery
-                        ? `Checked every ${hours(a.checkEvery)}: click to stop the checks, the account stays signed in`
-                        : "Always on: click to stop, the account stays signed in"
-                  }
-                  disabled={busy}
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    onSetRunning(a, a.stopped);
-                  }}
-                  className="shrink-0 justify-center self-stretch px-2"
-                >
-                  {busy ? (
-                    <Spinner />
-                  ) : (
-                    <Switch checked={!a.stopped} tabIndex={-1} aria-hidden className="pointer-events-none data-[state=checked]:bg-success" />
-                  )}
-                </DropdownMenuItem>
-              </div>
+              <DropdownMenuItem key={a.slot} onSelect={() => onSelect(a.slot)} className="gap-3 py-2">
+                <Avatar name={accName(a)} av={a.av} acc={a.slot} className={cn("size-8", a.stopped && "opacity-50 grayscale")} />
+                <AccountLines a={a} state={menuState(a)} />
+                {total(unread) > 0 && (
+                  <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums" title={unreadText(unread)}>
+                    {capped(total(unread))}
+                    <span className="sr-only"> ({unreadText(unread)})</span>
+                  </Badge>
+                )}
+                {a.slot === current?.slot && <CheckIcon className="text-primary" />}
+                <AccountStatus a={a} />
+              </DropdownMenuItem>
             );
           })}
           <DropdownMenuItem disabled={!canAdd || adding} onSelect={onAdd}>

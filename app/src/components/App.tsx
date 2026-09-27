@@ -403,9 +403,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             canAdd={canAdd}
             addLabel={addLabel}
             adding={adding}
-            toggling={toggling}
             onSelect={selectAccount}
-            onSetRunning={(a, running) => void setRunning(a, running)}
             onAdd={() => void addAccount()}
             onOpenDesktop={openDesktop}
             onRemove={setRemoving}

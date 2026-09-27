@@ -6,9 +6,11 @@ import {
   markActivitySeen,
   parseSeen,
   seenKey,
+  statusText,
   unreadInOthers,
   unseenActivity,
   unseenIds,
+  untilText,
   type Account,
   type ActivityItem,
 } from "@/lib/client";
@@ -109,6 +111,32 @@ describe("accountStatus", () => {
     expect(accountStatus(account({ stopped: true, checkEvery: 14400 }))).toBe("stopped");
     expect(accountStatus(account({ checkEvery: 0 }))).toBe(0);
     expect(accountStatus(account({ checkEvery: 7200 }))).toBe(7200);
+  });
+});
+
+describe("statusText", () => {
+  const now = 1790500000;
+
+  it("says stopped, active for an account always on, or when the next check updates a checked one", () => {
+    expect(statusText(account({ stopped: true, checkEvery: 3600, nextCheck: now + 600 }), now)).toBe("Stopped");
+    expect(statusText(account({ checkEvery: 0 }), now)).toBe("Active");
+    expect(statusText(account({ checkEvery: 3600, checking: true, nextCheck: now + 3600 }), now)).toBe("Updating now");
+    expect(statusText(account({ checkEvery: 7200, nextCheck: now + 80 * 60 }), now)).toBe("Updating in 1 h 20 min");
+  });
+
+  it("says soon for a check asked from the app (no time) or already due, waiting for another account's check", () => {
+    expect(statusText(account({ checkEvery: 3600, nextCheck: 0 }), now)).toBe("Updating soon");
+    expect(statusText(account({ checkEvery: 3600, nextCheck: now - 30 }), now)).toBe("Updating soon");
+  });
+});
+
+describe("untilText", () => {
+  it("counts whole minutes up to the hour, then hours and minutes; under a minute is one", () => {
+    expect(untilText(20)).toBe("1 min");
+    expect(untilText(45 * 60)).toBe("45 min");
+    expect(untilText(59 * 60 + 30)).toBe("1 h");
+    expect(untilText(2 * 3600)).toBe("2 h");
+    expect(untilText(3 * 3600 + 59 * 60)).toBe("3 h 59 min");
   });
 });
 
