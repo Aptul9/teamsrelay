@@ -50,8 +50,8 @@ export function readChatList({ s, t }: ListArgs): ListRow[] {
 }
 
 // Clicks the row of chat `name`. Row names are parsed as in readChatList; the exact name wins, a prefix is used
-// only when a single row matches it. No match or an ambiguous prefix: nothing is clicked.
-export function clickChatRow({ s, t, name }: ListArgs & { name: string }): boolean {
+// only when a single row matches it and `exact` is not asked. No match or an ambiguous prefix: nothing is clicked.
+export function clickChatRow({ s, t, name, exact }: ListArgs & { name: string; exact?: boolean }): boolean {
   const header = (sec: Element) => (sec.querySelector(s.sectionHeader) || sec) as HTMLElement;
   const headText = (sec: Element) => (header(sec).innerText || "").replace(/\s+/g, " ").trim();
   // chats only (level 2): the header of the Chats section holds the text of the first chat, and a click closes it
@@ -66,7 +66,7 @@ export function clickChatRow({ s, t, name }: ListArgs & { name: string }): boole
   };
   const names = rows.map(rowName);
   let i = names.indexOf(name);
-  if (i < 0) {
+  if (i < 0 && !exact) {
     const prefixed = names.map((n, k) => (n.startsWith(name) ? k : -1)).filter((k) => k >= 0);
     if (prefixed.length === 1) i = prefixed[0];
   }

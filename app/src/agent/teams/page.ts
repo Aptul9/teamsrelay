@@ -2,7 +2,7 @@ import type { Page } from "playwright-core";
 import { sameChat } from "../logic/chats";
 import { errorText, log } from "../log";
 import type { SlotStore } from "../store/slot-store";
-import { openChatTitle, clickChatRow } from "./scripts/chat-list";
+import { openChatTitle, clickChatRow, scrollChatList } from "./scripts/chat-list";
 import { composerLeft } from "./scripts/compose";
 import { barButtonPoint, centerElement, openOverlays } from "./scripts/message-actions";
 import { uncoveredPoint } from "./scripts/page-state";
@@ -52,7 +52,7 @@ export class TeamsPage {
   // Clicks the row of the chat and waits until Teams shows it: the messages of the previous chat are still in
   // the page for a moment
   async openChat(name: string): Promise<boolean> {
-    if (!(await this.page.evaluate(clickChatRow, { s: SEL, t: TEXTS, name }))) return false;
+    if (!(await this.clickRow(name))) return false;
     let open = false;
     for (let i = 0; i < 24 && !open; i++) {
       open = await this.isOpen(name).catch(() => false);
@@ -65,6 +65,26 @@ export class TeamsPage {
     await this.page.waitForSelector(SEL.message, { timeout: 3000 }).catch(() => undefined);
     await sleep(400);
     return true;
+  }
+
+  // The list is virtualized: only the rows in view are in the page. The row of that exact name, the list scrolled
+  // down from the top to reach it; a name that only starts the same as a last resort. The list goes back to the
+  // top, where the chats with new messages are.
+  private async clickRow(name: string): Promise<boolean> {
+    const click = (exact: boolean) => this.page.evaluate(clickChatRow, { s: SEL, t: TEXTS, name, exact });
+    if (await click(true)) return true;
+    const scroll = (to: "top" | "down") => this.page.evaluate(scrollChatList, { s: SEL, to });
+    await scroll("top");
+    let clicked = false;
+    for (let i = 0; i < 9 && !clicked; i++) {
+      await sleep(400);
+      clicked = await click(true);
+      if (!clicked && !(await scroll("down"))) break;
+    }
+    await scroll("top");
+    if (clicked) return true;
+    await sleep(400);
+    return click(false);
   }
 
   // Menus or dialogs left open over the chat would catch the mouse: Escape, up to three times
