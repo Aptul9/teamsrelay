@@ -259,7 +259,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   function openDesktop(n: number) {
     const a = accounts?.find((x) => x.slot === n);
     if (a?.stopped) {
-      toast.info("This account is stopped", { description: "Start it from the account menu to open its remote Teams." });
+      toast.info("This account is stopped", { description: "Start it (Start on its page, or a status in Settings) to open its remote Teams." });
       return;
     }
     if (a && idleChecked(a)) {
@@ -403,9 +403,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             canAdd={canAdd}
             addLabel={addLabel}
             adding={adding}
-            toggling={toggling}
             onSelect={selectAccount}
-            onSetRunning={(a, running) => void setRunning(a, running)}
             onAdd={() => void addAccount()}
             onOpenDesktop={openDesktop}
             onRemove={setRemoving}

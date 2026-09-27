@@ -10,7 +10,7 @@ export { chatName, mentionNames, messageArgs, messageId, messageText, reactArgs,
 // runs only during a check, which stops it right after reading)
 export function idleReason(slot: number): string | null {
   const s = slotRow(appDb(), slot);
-  if (s?.stopped) return "This Teams account is stopped: start it from the account menu";
+  if (s?.stopped) return "This Teams account is stopped: start it from its page or from Settings";
   if (s?.check_every) return "This Teams account runs only during its checks: set it to always on in Settings to act on Teams";
   return null;
 }
