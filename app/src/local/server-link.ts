@@ -3,21 +3,26 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type webpush from "web-push";
+import type { z } from "zod";
 import { errorText, log } from "@/agent/log";
 import type { Notify } from "@/agent/push/notifier";
 import type { SlotStore } from "@/agent/store/slot-store";
 import {
+  ActivityRow,
+  CallRow,
+  ChatName,
+  ChatRow,
   COMMANDS_WAIT_MS,
+  HOST_LENGTH,
+  MessageRow,
+  ReadByRow,
   SERVER_COMMAND_KEY,
   serverCommandKey,
-  type ActivityRow,
-  type CallRow,
-  type ChatRow,
+  StateKey,
+  StateValue,
   type CommandsAnswer,
   type HaveBody,
-  type MessageRow,
   type PushBody,
-  type ReadByRow,
   type ServerCommand,
   type SyncBody,
 } from "@/shared/relay-sync";
@@ -29,10 +34,19 @@ import { cmdResultKey, parseState, STATE, Viewing } from "@/shared/slot-db/state
 // server.md): relay.db mirrored into data/N/messages.db of the server, the commands the app queues there run here,
 // the notifications sent by the server. The relay opens every connection; the server never reaches this computer.
 
-// About 4 MB of messages per sync: the chats left over go at the next one
-const MESSAGES_PER_SYNC = 4e6;
+// What one sync carries at most, well under what the server takes (SyncBody): about 4 MB each of messages, of state and
+// of "Read by", and at most this many chats, keys, rows and statuses. What is left goes at the next sync, at once.
+const PER_SYNC = { chats: 1000, keys: 1000, readby: 5000, statuses: 1000, bytes: 4e6 };
+// the statuses of the commands of the server queued in the last day: the app waits for a command for seconds, and a
+// relay that starts again does not send those of every command it ever ran
+const STATUSES_FOR_S = 86_400;
 const SYNC_EVERY_MS = 1000;
-const digest = (v: unknown) => crypto.createHash("sha1").update(JSON.stringify(v)).digest("base64");
+// a notification waits its turn this long at most: later it would only confuse
+const PUSH_STALE_MS = 120_000;
+const PUSH_TIMEOUT_MS = 10_000;
+
+const hash = (json: string) => crypto.createHash("sha1").update(json).digest("base64");
+const digest = (v: unknown) => hash(JSON.stringify(v));
 
 export class ServerError extends Error {
   constructor(
@@ -59,6 +73,22 @@ type Sent = {
 };
 const nothingSent = (): Sent => ({ chats: "", activity: "", calls: "", messages: new Map(), state: new Map(), readby: new Map(), commands: new Map() });
 
+// Room left in one sync for one part: so many rows or keys, and about so many bytes of JSON; the first always fits
+class Room {
+  private taken = 0;
+  constructor(
+    private readonly count: number,
+    private bytes = PER_SYNC.bytes,
+  ) {}
+
+  take(size: number): boolean {
+    if (this.taken && (this.taken >= this.count || size > this.bytes)) return false;
+    this.taken++;
+    this.bytes -= size;
+    return true;
+  }
+}
+
 export type ServerLinkOptions = {
   url: string;
   token: string;
@@ -70,6 +100,8 @@ export type ServerLinkOptions = {
   filesDir: string;
   uploadsDir: string;
   fetch?: typeof fetch;
+  // wall clock for the age of the notifications waiting their turn (ms)
+  clock?: () => number;
 };
 
 const pause = (ms: number, signal: AbortSignal) =>
@@ -91,9 +123,17 @@ export class ServerLink {
   private added = 0;
   // the last command of the series queued here
   private after = 0;
-  // `ts` of the viewing the server has, sent from here or received
+  // `ts` of the viewing the server has, sent from here or received, by the clock of the server
   private viewingTs = 0;
+  // the clock of the server minus the clock of this computer, in seconds; null until the server answered
+  private offset: number | null = null;
   private readonly errors = new Map<string, string>();
+  // rows the server would refuse, logged once each
+  private readonly leftOut = new Set<string>();
+  // notifications, one after the other in the order they came
+  private pushes: Promise<unknown> = Promise.resolve();
+  // the stop of the relay: every request ends with it
+  private signal: AbortSignal | undefined;
 
   constructor(private readonly o: ServerLinkOptions) {
     this.db = new Database(o.dbPath, { fileMustExist: true });
@@ -102,8 +142,12 @@ export class ServerLink {
 
   // Sync out and commands in, until `signal` aborts
   async run(signal: AbortSignal) {
+    this.signal = signal;
     log.info("server", "joining", { url: this.o.url });
-    await Promise.all([this.loop("sync", signal, () => this.syncOnce().then(() => SYNC_EVERY_MS)), this.loop("commands", signal, () => this.pollCommands(signal))]);
+    await Promise.all([
+      this.loop("sync", signal, () => this.syncOnce().then((more) => (more ? 0 : SYNC_EVERY_MS))),
+      this.loop("commands", signal, () => this.pollCommands()),
+    ]);
     this.db.close();
   }
 
@@ -129,8 +173,9 @@ export class ServerLink {
     }
   }
 
-  private async call(method: string, p: string, o: { json?: unknown; body?: Uint8Array<ArrayBuffer>; signal?: AbortSignal; timeout?: number } = {}): Promise<Response> {
-    const signals = [AbortSignal.timeout(o.timeout ?? 30_000), ...(o.signal ? [o.signal] : [])];
+  private async call(method: string, p: string, o: { json?: unknown; body?: Uint8Array<ArrayBuffer>; timeout?: number } = {}): Promise<Response> {
+    // a stop of the relay ends the request at once: it waits for no server that does not answer
+    const signals = [AbortSignal.timeout(o.timeout ?? 30_000), ...(this.signal ? [this.signal] : [])];
     const headers: Record<string, string> = { Authorization: `Bearer ${this.o.token}` };
     if (o.json !== undefined) headers["Content-Type"] = "application/json";
     if (o.body) headers["Content-Type"] = "application/octet-stream";
@@ -152,25 +197,42 @@ export class ServerLink {
     return r;
   }
 
-  // One sync: the files first (the rows name them), then what changed in relay.db. True when something went.
+  // One sync: what changed in relay.db is read first, then the files go, then the rows. The agent writes a file before
+  // the row that names it (src/agent/media.ts), so the files the rows name are on the server before the rows. True when
+  // part of what changed is left for the next sync.
   async syncOnce(): Promise<boolean> {
-    await this.uploadFiles();
     const version = this.db.pragma("data_version", { simple: true }) as number;
-    if (version === this.version) return false;
-    const { body, complete, commit } = this.changes();
-    if (Object.keys(body).length > 1) await this.call("POST", "/api/relay/sync", { json: body, timeout: 60_000 });
+    const changes = version === this.version ? null : this.changes();
+    await this.uploadFiles();
+    if (!changes) return false;
+    const { body, complete, commit } = changes;
+    if (Object.keys(body).length > 1) await this.call("POST", "/api/relay/sync", { json: { ...body, now: Date.now() } satisfies SyncBody, timeout: 60_000 });
     commit();
-    // chats left for the next sync: that one reads again even without a new write
+    // what is left goes at the next sync, which reads again even without a new write
     if (complete) this.version = version;
-    return Object.keys(body).length > 1;
+    return !complete;
   }
 
-  private changes(): { body: SyncBody; complete: boolean; commit: () => void } {
-    const body: SyncBody = { host: this.o.host };
-    const next: Partial<Omit<Sent, "messages" | "state" | "readby" | "commands">> = {};
-    const all = <T>(sql: string) => this.db.prepare(sql).all() as T[];
+  // A row the server would refuse (a field longer than it takes) stays here, logged once: it must not hold up the sync
+  // of everything else
+  private fits<T>(schema: z.ZodType<T>, value: unknown, what: string): boolean {
+    if (schema.safeParse(value).success) return true;
+    if (!this.leftOut.has(what)) {
+      this.leftOut.add(what);
+      log.warn("server", "left out of the sync: larger than the server takes", { what: what.slice(0, 200) });
+    }
+    return false;
+  }
 
-    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av FROM chats ORDER BY pos");
+  private changes(): { body: Omit<SyncBody, "now">; complete: boolean; commit: () => void } {
+    const body: Omit<SyncBody, "now"> = { host: this.o.host.slice(0, HOST_LENGTH) };
+    const next: Partial<Omit<Sent, "messages" | "state" | "readby" | "commands">> = {};
+    const all = <T>(sql: string, ...args: unknown[]) => this.db.prepare(sql).all(...args) as T[];
+    let complete = true;
+
+    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av FROM chats ORDER BY pos")
+      .filter((c) => this.fits(ChatRow, c, `chat ${c.name}`))
+      .slice(0, 2000);
     const chatsDigest = digest(chats);
     if (chatsDigest !== this.sent.chats) {
       body.chats = chats;
@@ -179,32 +241,41 @@ export class ServerLink {
 
     const byChat = new Map<string, MessageRow[]>();
     for (const { chat, ...m } of all<MessageRow & { chat: string }>("SELECT chat, idx, mid, author, text, mine, reacts, extra FROM chat_messages ORDER BY chat, idx")) {
-      byChat.set(chat, [...(byChat.get(chat) ?? []), m]);
+      const rows = byChat.get(chat);
+      if (rows) rows.push(m);
+      else byChat.set(chat, [m]);
     }
     const messages: Record<string, MessageRow[]> = {};
     const messageDigests = new Map<string, string | null>();
-    let room = MESSAGES_PER_SYNC;
-    let complete = true;
+    const chatRoom = new Room(PER_SYNC.chats);
     for (const [chat, rows] of byChat) {
       const d = digest(rows);
       if (this.sent.messages.get(chat) === d) continue;
-      const size = JSON.stringify(rows).length;
-      if (Object.keys(messages).length && size > room) {
+      if (!this.fits(ChatName, chat, `messages of ${chat}`)) {
+        messageDigests.set(chat, d);
+        continue;
+      }
+      const fitting = rows.filter((m) => this.fits(MessageRow, m, `message ${m.mid ?? m.idx} of ${chat}`)).slice(0, 2000);
+      if (!chatRoom.take(JSON.stringify(fitting).length)) {
         complete = false;
         continue;
       }
-      room -= size;
-      messages[chat] = rows;
+      messages[chat] = fitting;
       messageDigests.set(chat, d);
     }
     for (const chat of this.sent.messages.keys()) {
       if (byChat.has(chat)) continue;
+      if (!chatRoom.take(2)) {
+        complete = false;
+        continue;
+      }
       messages[chat] = [];
       messageDigests.set(chat, null);
     }
     if (Object.keys(messages).length) body.messages = messages;
 
-    // results of the commands of the server go under their id there; the viewing only when newer than the server's
+    // results of the commands of the server go under their id there; the viewing by the clock of the server, once
+    // known, and only when newer than the server's
     const commands = this.serverCommands();
     const serverIdOf = new Map([...commands].map(([local, c]) => [local, c.id]));
     const state = new Map<string, string>();
@@ -212,8 +283,9 @@ export class ServerLink {
     for (const { k, v } of all<{ k: string; v: string | null }>("SELECT k, v FROM state")) {
       if (k === STATE.relay) continue;
       if (k === STATE.viewing) {
-        const ts = parseState(Viewing, v, { chat: "", ts: 0 }).ts;
-        if (ts > this.viewingTs) viewing = { raw: v ?? "", ts };
+        const local = parseState(Viewing, v, { chat: "", ts: 0 });
+        const ts = local.ts + (this.offset ?? 0);
+        if (this.offset !== null && ts > this.viewingTs) viewing = { raw: JSON.stringify({ ...local, ts }), ts };
         continue;
       }
       const result = /^cmd_result:(\d+)$/.exec(k);
@@ -222,27 +294,44 @@ export class ServerLink {
     }
     const stateOut: Record<string, string | null> = {};
     const stateDigests = new Map<string, string | null>();
+    const keyRoom = new Room(PER_SYNC.keys);
     for (const [k, v] of state) {
       const d = digest(v);
       if (this.sent.state.get(k) === d) continue;
+      if (!this.fits(StateKey, k, `state ${k}`) || !this.fits(StateValue, v, `state ${k}`)) {
+        stateDigests.set(k, d);
+        continue;
+      }
+      if (!keyRoom.take(k.length + v.length)) {
+        complete = false;
+        continue;
+      }
       stateOut[k] = v;
       stateDigests.set(k, d);
     }
     for (const k of this.sent.state.keys()) {
       if (state.has(k)) continue;
+      if (!keyRoom.take(k.length)) {
+        complete = false;
+        continue;
+      }
       stateOut[k] = null;
       stateDigests.set(k, null);
     }
     if (viewing) stateOut[STATE.viewing] = viewing.raw;
     if (Object.keys(stateOut).length) body.state = stateOut;
 
-    const activity = all<ActivityRow>("SELECT id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av FROM activity ORDER BY pos");
+    const activity = all<ActivityRow>("SELECT id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av FROM activity ORDER BY pos")
+      .filter((a) => this.fits(ActivityRow, a, `activity ${a.id}`))
+      .slice(0, 2000);
     const activityDigest = digest(activity);
     if (activityDigest !== this.sent.activity) {
       body.activity = activity;
       next.activity = activityDigest;
     }
-    const calls = all<CallRow>("SELECT since, caller, seconds FROM calls ORDER BY id");
+    const calls = all<CallRow>("SELECT since, caller, seconds FROM calls ORDER BY id")
+      .filter((c) => this.fits(CallRow, c, `call ${c.since}`))
+      .slice(-500);
     const callsDigest = digest(calls);
     if (callsDigest !== this.sent.calls) {
       body.calls = calls;
@@ -251,15 +340,27 @@ export class ServerLink {
 
     const readby: ReadByRow[] = [];
     const readbyDigests = new Map<string, string>();
+    const readbyRoom = new Room(PER_SYNC.readby);
     for (const r of all<ReadByRow>("SELECT mid, chat, label, names, ts FROM readby")) {
-      const d = digest(r);
+      const json = JSON.stringify(r);
+      const d = hash(json);
       if (this.sent.readby.get(r.mid) === d) continue;
+      if (!this.fits(ReadByRow, r, `Read by ${r.mid}`)) {
+        readbyDigests.set(r.mid, d);
+        continue;
+      }
+      if (!readbyRoom.take(json.length)) {
+        complete = false;
+        continue;
+      }
       readby.push(r);
       readbyDigests.set(r.mid, d);
     }
     if (readby.length) body.readby = readby;
 
-    const statuses = [...commands.values()].filter((c) => this.sent.commands.get(c.id) !== c.status);
+    const changed = [...commands.values()].filter((c) => this.sent.commands.get(c.id) !== c.status);
+    const statuses = changed.slice(0, PER_SYNC.statuses);
+    if (statuses.length < changed.length) complete = false;
     if (statuses.length) body.commands = statuses;
 
     const commit = () => {
@@ -279,11 +380,17 @@ export class ServerLink {
     return { body, complete, commit };
   }
 
-  // The commands of the server queued here, of the current series: local id to the id and status there
+  // The commands of the server queued here in the last day, of the current series: local id to the id and status there
   private serverCommands(): Map<number, { id: number; status: CommandStatus }> {
     const out = new Map<number, { id: number; status: CommandStatus }>();
     if (!this.added) return out;
-    for (const r of this.db.prepare("SELECT id, key, status FROM commands WHERE key LIKE 'srv-%'").all() as { id: number; key: string; status: CommandStatus }[]) {
+    const since = Math.floor(Date.now() / 1000) - STATUSES_FOR_S;
+    const rows = this.db.prepare("SELECT id, key, status FROM commands WHERE key LIKE ? AND ts >= ?").all(`srv-${this.added}-%`, since) as {
+      id: number;
+      key: string;
+      status: CommandStatus;
+    }[];
+    for (const r of rows) {
       const m = SERVER_COMMAND_KEY.exec(r.key);
       if (m && Number(m[1]) === this.added) out.set(r.id, { id: Number(m[2]), status: r.status });
     }
@@ -292,7 +399,7 @@ export class ServerLink {
 
   // New images and attachments: the server says which it lacks, those go up one by one. Names are written once each
   // (src/agent/media.ts), so a name the server has is the same file. A file the server refuses (not the image its name
-  // says, too large) is left out, logged: it must not hold up the sync of everything else.
+  // says, too large, no room left for the account) is left out, logged: it must not hold up the sync of everything else.
   private async uploadFiles() {
     const fresh = { media: this.fresh("media", this.o.mediaDir, MEDIA_NAME), files: this.fresh("files", this.o.filesDir, FILE_NAME) };
     if (!fresh.media.length && !fresh.files.length) return;
@@ -324,10 +431,27 @@ export class ServerLink {
     return names.filter((n) => name.test(n) && !this.uploaded[kind].has(n)).slice(0, 500);
   }
 
+  // The clock of the server against the one of this computer, from the Date of an answer: the times of the commands
+  // and of the viewing are the server's. Date has whole seconds, so a second or less counts as none, and the offset
+  // moves only by more than a second: the same time read twice converts the same.
+  private readClock(r: Response) {
+    const date = Date.parse(r.headers.get("date") ?? "");
+    if (Number.isNaN(date)) {
+      this.offset ??= 0;
+      return;
+    }
+    const seconds = (date + 500 - Date.now()) / 1000;
+    const next = Math.abs(seconds) <= 1 ? 0 : Math.round(seconds);
+    if (this.offset !== null && Math.abs(next - this.offset) <= 1) return;
+    if (next || this.offset) log.info("server", "the clock of the server differs from this one", { seconds: next });
+    this.offset = next;
+  }
+
   // One wait for commands: the first one answers at once, with the series of the account
-  private async pollCommands(signal: AbortSignal): Promise<number> {
+  private async pollCommands(): Promise<number> {
     const wait = this.added ? "" : "&wait=0";
-    const r = await this.call("GET", `/api/relay/commands?after=${this.after}&vts=${this.viewingTs}${wait}`, { signal, timeout: COMMANDS_WAIT_MS + 15_000 });
+    const r = await this.call("GET", `/api/relay/commands?after=${this.after}&vts=${this.viewingTs}${wait}`, { timeout: COMMANDS_WAIT_MS + 15_000 });
+    this.readClock(r);
     const a = (await r.json()) as CommandsAnswer;
     if (a.added !== this.added) {
       log.info("server", this.added ? "the account is new on the server: its commands start again" : "joined", { added: a.added, devices: a.devices });
@@ -340,8 +464,10 @@ export class ServerLink {
     this.devices = a.devices;
     if (a.viewing && a.viewing.ts > this.viewingTs) {
       this.viewingTs = a.viewing.ts;
+      // by the clock of this computer, as the agent reads it
+      const ts = a.viewing.ts - (this.offset ?? 0);
       const local = parseState(Viewing, this.o.store.getState(STATE.viewing), { chat: "", ts: 0 });
-      if (a.viewing.ts > local.ts) this.o.store.setState(STATE.viewing, JSON.stringify(a.viewing));
+      if (ts > local.ts) this.o.store.setState(STATE.viewing, JSON.stringify({ chat: a.viewing.chat, ts }));
     }
     for (const c of a.commands) await this.queue(c);
     return 0;
@@ -357,8 +483,8 @@ export class ServerLink {
     return last;
   }
 
-  // A command of the app, queued here with the time the app queued it: one that waited too long fails like any other.
-  // The image of sendimage comes first from the server.
+  // A command of the app, queued here with the time the app queued it, by the clock of this computer: one that waited
+  // too long fails like any other. The image of sendimage comes first from the server.
   private async queue(c: ServerCommand) {
     if (c.type === "sendimage") {
       const { file } = parseArgs(ImageArgs, c.arg2);
@@ -373,14 +499,28 @@ export class ServerLink {
         }
       }
     }
-    this.o.store.enqueue(c.type as CommandType, c.arg1, c.arg2, serverCommandKey(this.added, c.id), c.ts);
+    this.o.store.enqueue(c.type as CommandType, c.arg1, c.arg2, serverCommandKey(this.added, c.id), c.ts - (this.offset ?? 0));
     this.after = Math.max(this.after, c.id);
   }
 
-  // A notification, sent by the server to the devices of the owner. Devices it went to, 0 when it could not go.
-  async push(b: PushBody): Promise<number> {
+  // A notification, sent by the server to the devices of the owner, after the ones before it: devices it went to, 0
+  // when it could not go. A server slow to answer holds up only the notifications after it, never the caller that does
+  // not wait (ServerNotifier.message).
+  push(b: PushBody): Promise<number> {
+    const queued = (this.o.clock ?? Date.now)();
+    const turn = this.pushes.then(() => this.sendPush(b, queued));
+    this.pushes = turn;
+    return turn;
+  }
+
+  private async sendPush(b: PushBody, queued: number): Promise<number> {
+    if (this.signal?.aborted) return 0;
+    if ((this.o.clock ?? Date.now)() - queued > PUSH_STALE_MS) {
+      log.warn("push", "dropped: over two minutes old by its turn", { op: b.op });
+      return 0;
+    }
     try {
-      const r = await this.call("POST", "/api/relay/push", { json: b, timeout: 20_000 });
+      const r = await this.call("POST", "/api/relay/push", { json: b, timeout: PUSH_TIMEOUT_MS });
       return Number(((await r.json()) as { sent?: unknown }).sent) || 0;
     } catch (e) {
       log.warn("push", `through the server: ${errorText(e)}`, { op: b.op });
@@ -396,10 +536,11 @@ export class ServerNotifier implements Notify {
     private readonly store: SlotStore,
   ) {}
 
-  // the server keeps the history the app shows; the relay keeps the time of its last message, for its health
+  // The server keeps the history the app shows; the relay keeps the time of its last message, for its health. Not
+  // waited for: the agent goes on reading Teams while the server takes it.
   async message(title: string, body: string, chat = "") {
     this.store.addNotification(title, body);
-    await this.link.push({ op: "message", title, body: body || "", chat });
+    void this.link.push({ op: "message", title, body: body || "", chat });
   }
 
   alert(title: string, body: string, urgency: webpush.Urgency = "high"): Promise<number> {

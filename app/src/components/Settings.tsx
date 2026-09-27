@@ -55,8 +55,8 @@ const fetchAccounts = () =>
 function TeamsAccounts() {
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [saving, setSaving] = useState(0);
-  // a new token of an account on another computer, shown once
-  const [token, setToken] = useState<string | null>(null);
+  // a new token of an account on another computer, shown once, with the address of the server its relay joins
+  const [token, setToken] = useState<{ token: string; server: string } | null>(null);
 
   // read again every 10 s: checks start and end while the page is open
   useEffect(() => {
@@ -92,7 +92,7 @@ function TeamsAccounts() {
   async function renewToken(a: Account) {
     setSaving(a.slot);
     try {
-      setToken((await post<{ token: string }>(`/api/accounts/${a.slot}/token`, undefined, 0)).token);
+      setToken(await post<{ token: string; server: string }>(`/api/accounts/${a.slot}/token`, undefined, 0));
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "No new token");
     } finally {
@@ -102,7 +102,7 @@ function TeamsAccounts() {
 
   return (
     <Card>
-      <RelayTokenDialog token={token} onClose={() => setToken(null)} />
+      <RelayTokenDialog token={token?.token ?? null} server={token?.server ?? ""} onClose={() => setToken(null)} />
       <CardHeader>
         <SectionTitle icon={MessagesSquareIcon}>Teams accounts</SectionTitle>
         <CardDescription>

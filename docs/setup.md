@@ -178,7 +178,7 @@ Checks of the relay are part of `npm test`; `node dist/relay.cjs --check` loads 
 
 A Teams account whose browser runs on another computer (a laptop, a PC at the office) can show in the web app next to the accounts of the browsers container: the [local relay](#local-relay) on that computer reads it and joins this server ([design](design/2026-09-27-relay-joins-server.md)). Only the relay opens connections, to the web app over HTTPS: nothing on that computer has to be reachable, and the phone keeps using the web app of the server.
 
-1. In the web app: account menu → **Add from another computer…**. A dialog shows two lines, once: `SERVER_URL` (the address of this web app) and `SERVER_TOKEN`.
+1. In the web app: account menu → **Add from another computer…**. A dialog shows two lines, once: `SERVER_URL` (the public address of this web app, `APP_URL`) and `SERVER_TOKEN`. **Copy** copies them; where the browser allows no copy (a page on plain HTTP) it leaves them selected for Ctrl+C.
 2. On the other computer, set up the relay as above (`npm ci --ignore-scripts`, `npm run relay:setup`, `npm run build:relay`), add the two lines to `app/relay.env`, and sign in once with `npm run relay:login`.
 3. Start it (`npx pm2 start ecosystem.config.cjs`, `npx pm2 save`, and the logon task on Windows). Within a minute the account shows its chats in the web app.
 

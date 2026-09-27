@@ -17,11 +17,12 @@ import * as mediaRoute from "@/app/api/relay/media/[file]/route";
 import * as pushRoute from "@/app/api/relay/push/route";
 import * as syncRoute from "@/app/api/relay/sync/route";
 import * as uploadsRoute from "@/app/api/relay/uploads/[file]/route";
-import { appDb, migrateAppSchema } from "@/lib/appdb";
+import { appDb, migrateAppSchema, relayAccount, slotRow } from "@/lib/appdb";
+import { relayDigest } from "@/lib/relay";
 import { withSlot } from "@/lib/slotdb";
 import { addRelayAccount, renewRelayToken } from "@/lib/slots";
-import { ServerLink, ServerNotifier } from "@/local/server-link";
-import { serverCommandKey } from "@/shared/relay-sync";
+import { ServerLink, ServerNotifier, type ServerLinkOptions } from "@/local/server-link";
+import { serverCommandKey, type PushBody } from "@/shared/relay-sync";
 import { cmdResultKey, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
@@ -38,8 +39,10 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["GET", /^\/api\/relay\/uploads\/([^/]+)$/, uploadsRoute.GET as Handler],
 ];
 
+let root: string;
 let dataDir: string;
 let relayDir: string;
+let serverUrl: string;
 let slot: number;
 let token: string;
 let server: http.Server;
@@ -47,8 +50,27 @@ let store: SlotStore;
 let link: ServerLink;
 let running: Promise<void>;
 const stop = new AbortController();
+// bodies of the syncs of the first account, and of every account by its token
 const syncs: Record<string, unknown>[] = [];
+const syncsOf = new Map<string, Record<string, unknown>[]>();
+// notifications as the server took them, in that order
+const pushed: PushBody[] = [];
+// pictures a sync named while the server did not have them yet
+const unseen: string[] = [];
 const refused: number[] = [];
+
+const bearerOf = (req: http.IncomingMessage) => /^Bearer (\S+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "";
+
+// What a sync names, checked the moment it comes: the pictures of its chats must be on the server already
+function taken(req: http.IncomingMessage, b: Record<string, unknown>) {
+  const bearer = bearerOf(req);
+  if (bearer === token) syncs.push(b);
+  syncsOf.set(bearer, [...(syncsOf.get(bearer) ?? []), b]);
+  const account = relayAccount(appDb(), relayDigest(bearer));
+  for (const c of (b.chats as { av?: string }[] | undefined) ?? []) {
+    if (account && c.av && !fs.existsSync(path.join(dataDir, String(account.slot), "media", c.av))) unseen.push(c.av);
+  }
+}
 
 // The routes of the web app behind a plain HTTP server, as Next serves them
 function serve() {
@@ -59,7 +81,8 @@ function serve() {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
     const body = chunks.length ? Buffer.concat(chunks) : undefined;
-    if (url.pathname === "/api/relay/sync" && body) syncs.push(JSON.parse(body.toString("utf8")) as Record<string, unknown>);
+    if (url.pathname === "/api/relay/sync" && body) taken(req, JSON.parse(body.toString("utf8")) as Record<string, unknown>);
+    if (url.pathname === "/api/relay/push" && body) pushed.push(JSON.parse(body.toString("utf8")) as PushBody);
     const gone = new AbortController();
     res.on("close", () => gone.abort());
     const headers = Object.entries(req.headers).flatMap(([k, v]) => (v === undefined ? [] : [[k, Array.isArray(v) ? v.join(", ") : v] as [string, string]]));
@@ -81,35 +104,72 @@ async function until<T>(what: string, check: () => T | null | undefined | false,
   }
 }
 
-// The slot database of the server, as the web app reads it
-const onServer = <T>(fn: (db: Database.Database) => T): T => {
-  const db = new Database(path.join(dataDir, String(slot), "messages.db"), { fileMustExist: true });
+const using = <T>(file: string, fn: (db: Database.Database) => T): T => {
+  const db = new Database(file, { fileMustExist: true });
   try {
     return fn(db);
   } finally {
     db.close();
   }
 };
-const serverState = (k: string) => onServer((db) => db.prepare("SELECT v FROM state WHERE k=?").pluck().get(k) as string | undefined);
+// The slot database of the server, as the web app reads it
+const onServerAt = <T>(n: number, fn: (db: Database.Database) => T): T => using(path.join(dataDir, String(n), "messages.db"), fn);
+const onServer = <T>(fn: (db: Database.Database) => T): T => onServerAt(slot, fn);
+const serverStateAt = (n: number, k: string) => onServerAt(n, (db) => db.prepare("SELECT v FROM state WHERE k=?").pluck().get(k) as string | undefined);
+const serverState = (k: string) => serverStateAt(slot, k);
 // relay.db, written as the agent writes it
-const inRelay = (sql: string, ...args: unknown[]) => {
-  const db = new Database(path.join(relayDir, "relay.db"));
-  try {
-    db.prepare(sql).run(...args);
-  } finally {
-    db.close();
-  }
-};
+const inRelay = (sql: string, ...args: unknown[]) => using(path.join(relayDir, "relay.db"), (db) => db.prepare(sql).run(...args));
+
+type Relay = { slot: number; token: string; added: number; dir: string; store: SlotStore };
+type Joined = Relay & { link: ServerLink; start: () => void; stop: () => Promise<void> };
+const joined: Joined[] = [];
+
+// One more account on another computer, with a relay.db and a link of its own. `seed` fills relay.db (and the slot
+// database of the server) before the link starts; start() starts it.
+async function join(owner: string, o: Partial<ServerLinkOptions> = {}, seed?: (r: Relay) => void): Promise<Joined> {
+  const { slot: n, token: t } = await addRelayAccount(owner, { db: appDb(), dataDir, slotCount: 8, perUser: 4 });
+  const dir = path.join(root, `relay-${owner}`);
+  const r: Relay = { slot: n, token: t, added: slotRow(appDb(), n)!.added, dir, store: SlotStore.open(path.join(dir, "relay.db")) };
+  seed?.(r);
+  const l = new ServerLink({
+    url: serverUrl,
+    token: t,
+    host: "test-pc",
+    dbPath: path.join(dir, "relay.db"),
+    store: r.store,
+    mediaDir: path.join(dir, "media"),
+    filesDir: path.join(dir, "files"),
+    uploadsDir: path.join(dir, "uploads"),
+    ...o,
+  });
+  const stopper = new AbortController();
+  let run: Promise<void> = Promise.resolve();
+  const j: Joined = {
+    ...r,
+    link: l,
+    start: () => void (run = l.run(stopper.signal)),
+    stop: async () => {
+      stopper.abort();
+      await run;
+      r.store.close();
+    },
+  };
+  joined.push(j);
+  return j;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeAll(async () => {
-  const root = tempDir("teamsrelay-join-");
+  root = tempDir("teamsrelay-join-");
   dataDir = path.join(root, "data");
   relayDir = path.join(root, "relay");
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
-  ({ slot, token } = await addRelayAccount("owner-1", { db: appDb(), dataDir, slotCount: 4, perUser: 4 }));
+  ({ slot, token } = await addRelayAccount("owner-1", { db: appDb(), dataDir, slotCount: 8, perUser: 4 }));
   server = serve();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  serverUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
   store = SlotStore.open(path.join(relayDir, "relay.db"));
   store.saveChats([
@@ -127,7 +187,7 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(relayDir, "media", "0123456789abcdef.png"), PNG);
 
   link = new ServerLink({
-    url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    url: serverUrl,
     token,
     host: "test-pc",
     dbPath: path.join(relayDir, "relay.db"),
@@ -143,6 +203,7 @@ afterAll(async () => {
   stop.abort();
   await running;
   store?.close();
+  await Promise.all(joined.map((j) => j.stop().catch(() => undefined)));
   server?.closeAllConnections();
   await new Promise((resolve) => server?.close(resolve));
   vi.restoreAllMocks();
@@ -269,5 +330,163 @@ describe("relay joined to a server", () => {
     store.saveChats([{ name: "After the new token", preview: "", time: "14:00", unread: false, mention: false, muted: false, av: "" }]);
     await until("the refusal logged", () => warn.mock.calls.find((c) => /token refused \(401\)/.test(String(c[1]))));
     expect(withSlot(slot, (r) => r.chats().some((c) => c.name === "After the new token"))).toBe(false);
+  });
+});
+
+describe("a relay.db past what one sync carries", () => {
+  it("goes over in as many syncs as it takes, with the statuses of the last day only and without what the server refuses", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const warn = vi.spyOn(log, "warn");
+    const j = await join("owner-big", { host: `office-${"x".repeat(150)}` }, (r) => {
+      using(path.join(r.dir, "relay.db"), (db) =>
+        db.transaction(() => {
+          const readby = db.prepare("INSERT INTO readby(mid, chat, label, names, ts) VALUES(?,?,?,?,?)");
+          for (let i = 0; i < 20_001; i++) readby.run(String(1_790_000_000_000 + i), "Anna Rossi", "Seen by 1", "[]", now);
+          const state = db.prepare("INSERT INTO state(k, v) VALUES(?, ?)");
+          for (let i = 0; i < 5_001; i++) state.run(`members:Chat ${i}`, JSON.stringify({ ts: now, names: ["Anna Rossi"] }));
+          state.run("members:Too big", "x".repeat(2_000_001));
+          const command = db.prepare("INSERT INTO commands(ts, type, arg1, arg2, key, status) VALUES(?, 'resync', '', '', ?, 'done')");
+          for (let id = 1; id <= 6_000; id++) command.run(id <= 900 ? now - 2 * 86_400 : now - 60, serverCommandKey(r.added, id));
+        })(),
+      );
+      // the same commands on the server, where the app queued them
+      onServerAt(r.slot, (db) =>
+        db.transaction(() => {
+          const command = db.prepare("INSERT INTO commands(id, ts, type, arg1, arg2) VALUES(?, ?, 'resync', '', '')");
+          for (let id = 1; id <= 6_000; id++) command.run(id, id <= 900 ? now - 2 * 86_400 : now - 60);
+        })(),
+      );
+    });
+    j.start();
+    const count = (sql: string) => onServerAt(j.slot, (db) => db.prepare(sql).pluck().get() as number);
+    await until("every Read by on the server", () => count("SELECT COUNT(*) FROM readby") === 20_001);
+    await until("every key on the server", () => count("SELECT COUNT(*) FROM state WHERE k LIKE 'members:Chat %'") === 5_001);
+    await until("the statuses of the last day", () => count("SELECT COUNT(*) FROM commands WHERE status='done'") === 5_100);
+    expect(count("SELECT MIN(id) FROM commands WHERE status='done'")).toBe(901);
+    const statuses = (syncsOf.get(j.token) ?? []).flatMap((b) => (b.commands as { id: number }[] | undefined) ?? []);
+    expect(statuses.filter((c) => c.id <= 900)).toEqual([]);
+    expect(serverStateAt(j.slot, "members:Too big")).toBeUndefined();
+    expect(warn.mock.calls.some((c) => JSON.stringify(c).includes("members:Too big"))).toBe(true);
+    expect(JSON.parse(serverStateAt(j.slot, STATE.relay) ?? "{}").host).toBe(`office-${"x".repeat(93)}`);
+    await j.stop();
+  });
+});
+
+describe("a relay whose clock is not the server's", () => {
+  it("reads the times of the server by its own clock, and gives its own by the server's", async () => {
+    // the clock of the server is 5 minutes behind this computer's: the Date of its answers says so
+    const behind = 300;
+    const skewed: typeof fetch = async (input, init) => {
+      const r = await fetch(input, init);
+      const date = Date.parse(r.headers.get("date") ?? "");
+      if (Number.isNaN(date)) return r;
+      const headers = new Headers(r.headers);
+      headers.set("date", new Date(date - behind * 1000).toUTCString());
+      return new Response(r.body, { status: r.status, statusText: r.statusText, headers });
+    };
+    const j = await join("owner-clock", { fetch: skewed });
+    j.start();
+    const local = () => Math.floor(Date.now() / 1000);
+    const serverNow = () => local() - behind;
+
+    // queued by the app 5 s ago, by the clock of the server
+    const id = onServerAt(j.slot, (db) => Number(db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, 'resync', '', '')").run(serverNow() - 5).lastInsertRowid));
+    const queued = await until("the command in relay.db", () => j.store.commandIdByKey(serverCommandKey(j.added, id)));
+    const ts = using(path.join(j.dir, "relay.db"), (db) => db.prepare("SELECT ts FROM commands WHERE id=?").pluck().get(queued) as number);
+    expect(Math.abs(ts - (local() - 5))).toBeLessThanOrEqual(2);
+
+    // the app shows a chat since now, by the clock of the server
+    onServerAt(j.slot, (db) => db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.viewing, JSON.stringify({ chat: "Anna Rossi", ts: serverNow() })));
+    const shown = await until("the viewing in relay.db", () => {
+      const v = JSON.parse(j.store.getState(STATE.viewing) || "{}") as { chat?: string; ts?: number };
+      return v.chat === "Anna Rossi" && v;
+    });
+    expect(Math.abs((shown.ts ?? 0) - local())).toBeLessThanOrEqual(2);
+
+    // the agent opens another chat, by the clock of this computer
+    j.store.setState(STATE.viewing, JSON.stringify({ chat: "Luca Bianchi", ts: local() + 1 }));
+    const sent = await until("the viewing on the server", () => {
+      const v = JSON.parse(serverStateAt(j.slot, STATE.viewing) ?? "{}") as { chat?: string; ts?: number };
+      return v.chat === "Luca Bianchi" && v;
+    });
+    expect(Math.abs((sent.ts ?? 0) - (serverNow() + 1))).toBeLessThanOrEqual(2);
+    await j.stop();
+  });
+});
+
+describe("the pictures a chat shows", () => {
+  it("are on the server before the chat that names them", async () => {
+    let wrote = false;
+    let relay: Relay | null = null;
+    // the agent saves a new picture, and the chat that shows it, while the relay asks the server about its files
+    const racing: typeof fetch = async (input, init) => {
+      if (!wrote && relay && String(input).endsWith("/api/relay/have")) {
+        wrote = true;
+        fs.writeFileSync(path.join(relay.dir, "media", "abababababababab.png"), PNG);
+        relay.store.saveChats([{ name: "Carla Verdi", preview: "look", time: "10:00", unread: true, mention: false, muted: false, av: "abababababababab.png" }]);
+      }
+      return fetch(input, init);
+    };
+    const j = await join("owner-pictures", { fetch: racing }, (r) => {
+      relay = r;
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      fs.writeFileSync(path.join(r.dir, "media", "0123456789abcdef.png"), PNG);
+      r.store.saveChats([{ name: "Anna Rossi", preview: "ciao", time: "12:19", unread: false, mention: false, muted: false, av: "0123456789abcdef.png" }]);
+    });
+    j.start();
+    await until("the new chat on the server", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Carla Verdi")));
+    expect(wrote).toBe(true);
+    expect(unseen).toEqual([]);
+    await j.stop();
+  });
+});
+
+describe("notifications through the server", () => {
+  it("never hold up the agent, go in order, and are dropped when older than two minutes by their turn", async () => {
+    let now = Date.now();
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    // the server takes no notification until the gate opens
+    const slow: typeof fetch = async (input, init) => {
+      if (String(input).endsWith("/api/relay/push")) await gate;
+      return fetch(input, init);
+    };
+    vi.spyOn(Notifier.prototype, "message").mockResolvedValue(undefined);
+    const j = await join("owner-push", { fetch: slow, clock: () => now });
+    j.start();
+    const notifier = new ServerNotifier(j.link, j.store);
+    const first = await Promise.race([notifier.message("Anna Rossi", "one", "Anna Rossi").then(() => "returned"), sleep(1000).then(() => "held")]);
+    expect(first).toBe("returned");
+    void notifier.message("Anna Rossi", "two", "Anna Rossi");
+    // the first one takes over two minutes: the second one is too old by its turn
+    now += 121_000;
+    open();
+    await until("the first one on the server", () => pushed.some((p) => p.op === "message" && p.body === "one"));
+    for (const body of ["three", "four", "five"]) void notifier.message("Anna Rossi", body, "Anna Rossi");
+    await until("the last one on the server", () => pushed.some((p) => p.op === "message" && p.body === "five"));
+    const bodies = pushed.flatMap((p) => (p.op === "message" && ["one", "two", "three", "four", "five"].includes(p.body) ? [p.body] : []));
+    expect(bodies).toEqual(["one", "three", "four", "five"]);
+    await j.stop();
+  });
+});
+
+describe("a relay that stops", () => {
+  it("stops at once, with a request on its way", async () => {
+    let inFlight!: () => void;
+    const started = new Promise<void>((r) => (inFlight = r));
+    // the server never answers a sync
+    const stuck: typeof fetch = (input, init) => {
+      if (!String(input).endsWith("/api/relay/sync")) return fetch(input, init);
+      inFlight();
+      return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+    };
+    const j = await join("owner-stop", { fetch: stuck }, (r) =>
+      r.store.saveChats([{ name: "Anna Rossi", preview: "", time: "", unread: false, mention: false, muted: false, av: "" }]),
+    );
+    j.start();
+    await started;
+    const t = Date.now();
+    await j.stop();
+    expect(Date.now() - t).toBeLessThan(3000);
   });
 });

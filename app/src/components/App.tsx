@@ -135,8 +135,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [refreshing, setRefreshing] = useState(false);
   const [deskOpened, setDeskOpened] = useState(false);
   const [adding, setAdding] = useState(false);
-  // the token of an account on another computer just added, shown once
-  const [relayToken, setRelayToken] = useState<string | null>(null);
+  // the token of an account on another computer just added, shown once, with the address of the server its relay joins
+  const [relayToken, setRelayToken] = useState<{ token: string; server: string } | null>(null);
   const [toggling, setToggling] = useState(0);
   const [removing, setRemoving] = useState<Account | null>(null);
   const isPc = useSyncExternalStore(noSubscribe, isPcNow, () => false);
@@ -351,10 +351,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   async function addRelayAccount() {
     setAdding(true);
     try {
-      const r = await post<{ slot: number; token: string }>("/api/accounts", { relay: true }, 0);
+      const r = await post<{ slot: number; token: string; server: string }>("/api/accounts", { relay: true }, 0);
       await loadAccounts();
       selectAccount(r.slot);
-      setRelayToken(r.token);
+      setRelayToken({ token: r.token, server: r.server });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Account not added");
     } finally {
@@ -742,7 +742,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
         {pane === "desktop" && phoneNav}
       </main>
 
-      <RelayTokenDialog token={relayToken} onClose={() => setRelayToken(null)} />
+      <RelayTokenDialog token={relayToken?.token ?? null} server={relayToken?.server ?? ""} onClose={() => setRelayToken(null)} />
       <AlertDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -7,7 +7,7 @@ type Ctx = { params: Promise<{ file: string }> };
 
 // An attachment the relay downloaded for the app, into data/N/files
 export const PUT = route<Ctx>(async (req, { params }) => {
-  const { slot } = requireRelay(req);
-  await saveRelayFile(slot, "files", (await params).file, req.body);
+  const caller = requireRelay(req);
+  await saveRelayFile(caller, "files", (await params).file, req.body);
   return Response.json({ ok: true });
 });

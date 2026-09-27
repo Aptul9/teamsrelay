@@ -44,6 +44,12 @@ export const config = {
     const topic = process.env.NTFY_TOPIC || "";
     return process.env.NTFY_ENABLED === "1" && topic ? { url: process.env.NTFY_URL || "https://ntfy.sh", topic } : null;
   },
+  // Room of an account on another computer for its images and attachments on this server: RELAY_QUOTA_MB, 2048 by
+  // default. Past it the server refuses its new files, and the app shows them missing.
+  get relayQuotaBytes() {
+    const mb = Number(process.env.RELAY_QUOTA_MB);
+    return (Number.isFinite(mb) && mb > 0 ? mb : 2048) * 2 ** 20;
+  },
   // Public URL of the app: APP_URL, otherwise https://DOMAIN (DOMAIN may already carry a scheme locally)
   get appUrl() {
     const explicit = process.env.APP_URL;

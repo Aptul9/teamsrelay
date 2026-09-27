@@ -16,8 +16,14 @@ export const COMMANDS_WAIT_MS = 25_000;
 const int = z.number().int();
 const text = (max: number) => z.string().max(max);
 
+// name of the computer of the relay (HOST_LABEL), as long as the server takes it
+export const HOST_LENGTH = 100;
+export const ChatName = text(1000);
+export const StateKey = text(1000);
+export const StateValue = text(2_000_000);
+
 export const ChatRow = z.object({
-  name: text(1000),
+  name: ChatName,
   preview: text(20_000).nullable(),
   pos: int.nullable(),
   ts: int.nullable(),
@@ -63,19 +69,22 @@ export type CallRow = z.infer<typeof CallRow>;
 export const ReadByRow = z.object({ mid: text(200), chat: text(1000).nullable(), label: text(1000).nullable(), names: text(100_000).nullable(), ts: int.nullable() });
 export type ReadByRow = z.infer<typeof ReadByRow>;
 
-// POST /api/relay/sync: the parts of relay.db that changed since the last sync the server took
+// POST /api/relay/sync: the parts of relay.db that changed since the last sync the server took. The caps are the
+// server's; the relay sends less at a time (src/local/server-link.ts).
 export const SyncBody = z.object({
   // name of the computer of the relay (HOST_LABEL)
-  host: text(100),
+  host: text(HOST_LENGTH),
+  // the clock of the relay when it sent this (ms): the server reads the times of the relay by its own clock from it
+  now: int.positive(),
   chats: z.array(ChatRow).max(2000).optional(),
   // rows of each chat that changed; [] for a chat whose rows are gone
   messages: z
-    .record(text(1000), z.array(MessageRow).max(2000))
+    .record(ChatName, z.array(MessageRow).max(2000))
     .refine((m) => Object.keys(m).length <= 2000, "too many chats")
     .optional(),
   // keys that changed; null for a key gone
   state: z
-    .record(text(1000), text(2_000_000).nullable())
+    .record(StateKey, StateValue.nullable())
     .refine((s) => Object.keys(s).length <= 5000, "too many keys")
     .optional(),
   activity: z.array(ActivityRow).max(2000).optional(),

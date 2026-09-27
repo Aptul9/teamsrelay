@@ -5,14 +5,19 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { beforeAll, describe, expect, it } from "vitest";
+import * as filesRoute from "@/app/api/relay/files/[file]/route";
+import * as mediaRoute from "@/app/api/relay/media/[file]/route";
+import * as syncRoute from "@/app/api/relay/sync/route";
 import { accountSummary } from "@/lib/accounts";
 import { appDb, claimSlot, listSlots, migrateAppSchema, slotRow, slotsOf } from "@/lib/appdb";
 import { queue } from "@/lib/commands";
 import type { ControlClient } from "@/lib/control";
 import { HttpError } from "@/lib/http";
-import { applySync, missingRelayFiles, requireRelay, saveRelayFile, waitForRelayCommands } from "@/lib/relay";
+import { applySync, missingRelayFiles, relayJson, requireRelay, saveRelayFile, waitForRelayCommands } from "@/lib/relay";
+import { withSlot } from "@/lib/slotdb";
 import { addRelayAccount, keepSlotsUp, removeAccount, renewRelayToken, setAccountRunning, setCheckMode } from "@/lib/slots";
-import { STATE } from "@/shared/slot-db/state";
+import { HaveBody } from "@/shared/relay-sync";
+import { ringingCall, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "./helpers";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
@@ -27,6 +32,8 @@ const ctl: ControlClient = {
 };
 const opts = () => ({ db: appDb(), dataDir, slotCount: 50, perUser: 6 });
 const bearer = (token: string, extra: Record<string, string> = {}) => new Request("http://localhost:8090/api/relay/sync", { headers: { Authorization: `Bearer ${token}`, ...extra } });
+// the account a request of its relay comes from, as the routes take it
+const caller = (token: string) => requireRelay(bearer(token));
 const slotDb = (n: number) => new Database(path.join(dataDir, String(n), "messages.db"), { fileMustExist: true });
 const stream = (data: Buffer | string) => new Response(typeof data === "string" ? data : new Uint8Array(data)).body;
 
@@ -102,18 +109,22 @@ describe("an account on another computer", () => {
   });
 
   it("takes commands only while its relay syncs", async () => {
-    const { slot } = await addRelayAccount("q1", opts());
+    const { slot, token } = await addRelayAccount("q1", opts());
     const health = (ts: number) => JSON.stringify({ cdp: "ok", ts, teams: "ok", overall: "green" });
     expect(() => queue(slot, "resync")).toThrow(/relay of this Teams account is not connected/);
-    applySync(slot, { host: "office-pc", state: { [STATE.health]: health(Math.floor(Date.now() / 1000)) } });
+    applySync(caller(token), { host: "office-pc", now: Date.now(), state: { [STATE.health]: health(Math.floor(Date.now() / 1000)) } });
     expect(queue(slot, "resync")).toBeGreaterThan(0);
-    applySync(slot, { host: "office-pc", state: { [STATE.health]: health(Math.floor(Date.now() / 1000) - 120) } });
+    applySync(caller(token), { host: "office-pc", now: Date.now(), state: { [STATE.health]: health(Math.floor(Date.now() / 1000) - 120) } });
     expect(() => queue(slot, "resync")).toThrow(/relay of this Teams account on office-pc is not connected/);
   });
 
   it("shows where it runs, with no remote desktop", async () => {
-    const { slot } = await addRelayAccount("u6", opts());
-    applySync(slot, { host: "office-pc", state: { [STATE.me]: JSON.stringify({ name: "Anna Rossi", email: "anna@contoso.example", tenant: "Contoso" }) } }, 1790500000);
+    const { slot, token } = await addRelayAccount("u6", opts());
+    applySync(
+      caller(token),
+      { host: "office-pc", now: 1790500000000, state: { [STATE.me]: JSON.stringify({ name: "Anna Rossi", email: "anna@contoso.example", tenant: "Contoso" }) } },
+      1790500000000,
+    );
     expect(accountSummary(slotsOf(appDb(), "u6").find((s) => s.slot === slot)!)).toMatchObject({
       relay: true,
       host: "office-pc",
@@ -126,13 +137,17 @@ describe("an account on another computer", () => {
 
 describe("a sync", () => {
   it("keeps the newer viewing, lets the server alone write relay, and sets the status of commands of the server", async () => {
-    const { slot } = await addRelayAccount("s1", opts());
+    const { slot, token } = await addRelayAccount("s1", opts());
     const db = slotDb(slot);
     db.prepare("INSERT INTO state(k, v) VALUES(?, ?)").run(STATE.viewing, JSON.stringify({ chat: "Anna Rossi", ts: 200 }));
     const id = Number(db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(1, 'send', 'Anna Rossi', 'hi')").run().lastInsertRowid);
     db.close();
 
-    applySync(slot, { host: "pc", state: { [STATE.viewing]: JSON.stringify({ chat: "Old", ts: 100 }), [STATE.relay]: '{"host":"forged"}' }, commands: [{ id, status: "done" }] }, 1000);
+    applySync(
+      caller(token),
+      { host: "pc", now: 1_000_000, state: { [STATE.viewing]: JSON.stringify({ chat: "Old", ts: 100 }), [STATE.relay]: '{"host":"forged"}' }, commands: [{ id, status: "done" }] },
+      1_000_000,
+    );
     const read = () => {
       const d = slotDb(slot);
       try {
@@ -146,15 +161,35 @@ describe("a sync", () => {
       }
     };
     expect(read()).toEqual({ viewing: "Anna Rossi", relay: { host: "pc", seen: 1000 }, status: "done" });
-    applySync(slot, { host: "pc", state: { [STATE.viewing]: JSON.stringify({ chat: "Newer", ts: 300 }) } }, 1001);
+    applySync(caller(token), { host: "pc", now: 1_001_000, state: { [STATE.viewing]: JSON.stringify({ chat: "Newer", ts: 300 }) } }, 1_001_000);
     expect(read().viewing).toBe("Newer");
   });
 
+  it("reads the times of the relay by the clock of the server, keeping how old they are", async () => {
+    const { slot, token } = await addRelayAccount("s3", opts());
+    // the clock of the other computer is 1000 s behind the server's
+    const relayNow = Date.now() - 1_000_000;
+    const post = (b: object) =>
+      syncRoute.POST(
+        new Request("http://localhost:8090/api/relay/sync", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ host: "pc", now: relayNow, ...b }) }),
+        undefined,
+      );
+    const health = JSON.stringify({ cdp: "ok", ts: Math.floor(relayNow / 1000) - 3, teams: "ok", overall: "green" });
+    const ringing = JSON.stringify({ caller: "Anna Rossi", since: relayNow - 4000, seen: relayNow - 2000, ringing: true });
+    expect((await post({ state: { [STATE.health]: health, [STATE.call]: ringing } })).status).toBe(200);
+    expect(withSlot(slot, (r) => [r.health(0).agent, ringingCall(r.call(), Date.now())?.caller])).toEqual(["ok", "Anna Rossi"]);
+
+    // a relay stopped an hour ago while a call rang sends that call again at its start: it rings nowhere
+    const stale = JSON.stringify({ caller: "Luca Bianchi", since: relayNow - 3_600_000, seen: relayNow - 3_590_000, ringing: true });
+    expect((await post({ state: { [STATE.call]: stale } })).status).toBe(200);
+    expect(withSlot(slot, (r) => ringingCall(r.call(), Date.now()))).toBeNull();
+  });
+
   it("replaces the rows of a chat, and drops them for a chat gone", async () => {
-    const { slot } = await addRelayAccount("s2", opts());
+    const { slot, token } = await addRelayAccount("s2", opts());
     const row = (idx: number, text: string) => ({ idx, mid: String(1790000000000 + idx), author: "A", text, mine: 0, reacts: "", extra: null });
-    applySync(slot, { host: "pc", messages: { A: [row(0, "one"), row(1, "two")], B: [row(0, "b")] } });
-    applySync(slot, { host: "pc", messages: { A: [row(0, "three")], B: [] } });
+    applySync(caller(token), { host: "pc", now: Date.now(), messages: { A: [row(0, "one"), row(1, "two")], B: [row(0, "b")] } });
+    applySync(caller(token), { host: "pc", now: Date.now(), messages: { A: [row(0, "three")], B: [] } });
     const db = slotDb(slot);
     expect(db.prepare("SELECT chat, text FROM chat_messages ORDER BY chat, idx").all()).toEqual([{ chat: "A", text: "three" }]);
     db.close();
@@ -163,26 +198,26 @@ describe("a sync", () => {
 
 describe("the wait for commands", () => {
   it("answers at once with the pending commands after the id given, else after the wait", async () => {
-    const { slot } = await addRelayAccount("c1", opts());
+    const { slot, token } = await addRelayAccount("c1", opts());
     const db = slotDb(slot);
     const insert = db.prepare("INSERT INTO commands(ts, type, arg1, arg2, status) VALUES(?, ?, 'Anna Rossi', '', ?)");
     const first = Number(insert.run(10, "open", "done").lastInsertRowid);
     const second = Number(insert.run(11, "open", "pending").lastInsertRowid);
     db.close();
 
-    expect(await waitForRelayCommands(slot, { after: 0, vts: 0, waitMs: 10_000 })).toEqual({
+    expect(await waitForRelayCommands(caller(token), { after: 0, vts: 0, waitMs: 10_000 })).toEqual({
       commands: [{ id: second, ts: 11, type: "open", arg1: "Anna Rossi", arg2: "" }],
       viewing: null,
     });
     expect(first).toBeLessThan(second);
     const t = Date.now();
-    expect(await waitForRelayCommands(slot, { after: second, vts: 0, waitMs: 400 })).toEqual({ commands: [], viewing: null });
+    expect(await waitForRelayCommands(caller(token), { after: second, vts: 0, waitMs: 400 })).toEqual({ commands: [], viewing: null });
     expect(Date.now() - t).toBeGreaterThanOrEqual(350);
   });
 
   it("wakes up for a command queued meanwhile, and for a newer viewing", async () => {
-    const { slot } = await addRelayAccount("c2", opts());
-    const waiting = waitForRelayCommands(slot, { after: 0, vts: 50, waitMs: 10_000 });
+    const { slot, token } = await addRelayAccount("c2", opts());
+    const waiting = waitForRelayCommands(caller(token), { after: 0, vts: 50, waitMs: 10_000 });
     setTimeout(() => {
       const db = slotDb(slot);
       db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(1, 'resync', '', '')").run();
@@ -193,8 +228,8 @@ describe("the wait for commands", () => {
     const db = slotDb(slot);
     db.prepare("INSERT INTO state(k, v) VALUES(?, ?)").run(STATE.viewing, JSON.stringify({ chat: "Anna Rossi", ts: 40 }));
     db.close();
-    expect((await waitForRelayCommands(slot, { after: 1, vts: 50, waitMs: 300 })).viewing).toBeNull();
-    expect((await waitForRelayCommands(slot, { after: 1, vts: 39, waitMs: 300 })).viewing).toEqual({ chat: "Anna Rossi", ts: 40 });
+    expect((await waitForRelayCommands(caller(token), { after: 1, vts: 50, waitMs: 300 })).viewing).toBeNull();
+    expect((await waitForRelayCommands(caller(token), { after: 1, vts: 39, waitMs: 300 })).viewing).toEqual({ chat: "Anna Rossi", ts: 40 });
   });
 });
 
@@ -209,17 +244,47 @@ describe("the files of a relay", () => {
   });
 
   it("are written whole, an image only when its bytes are the type its name says", async () => {
-    const { slot } = await addRelayAccount("f2", opts());
+    const { slot, token } = await addRelayAccount("f2", opts());
     const media = path.join(dataDir, String(slot), "media");
-    await expect(saveRelayFile(slot, "media", "../../app.db", stream(PNG))).rejects.toMatchObject({ status: 400 });
-    await expect(saveRelayFile(slot, "media", "0123456789abcdef.jpg", stream(PNG))).rejects.toMatchObject({ status: 415 });
-    await expect(saveRelayFile(slot, "media", "0123456789abcdef.png", stream("<svg onload=alert(1)>"))).rejects.toMatchObject({ status: 415 });
-    await expect(saveRelayFile(slot, "media", "0123456789abcdef.png", stream(Buffer.alloc(10e6 + 1, 1)))).rejects.toMatchObject({ status: 413 });
+    await expect(saveRelayFile(caller(token), "media", "../../app.db", stream(PNG))).rejects.toMatchObject({ status: 400 });
+    await expect(saveRelayFile(caller(token), "media", "0123456789abcdef.jpg", stream(PNG))).rejects.toMatchObject({ status: 415 });
+    await expect(saveRelayFile(caller(token), "media", "0123456789abcdef.png", stream("<svg onload=alert(1)>"))).rejects.toMatchObject({ status: 415 });
+    await expect(saveRelayFile(caller(token), "media", "0123456789abcdef.png", stream(Buffer.alloc(10e6 + 1, 1)))).rejects.toMatchObject({ status: 413 });
     expect(fs.existsSync(media) ? fs.readdirSync(media) : []).toEqual([]);
 
-    await saveRelayFile(slot, "media", "0123456789abcdef.png", stream(PNG));
-    await saveRelayFile(slot, "files", "3333333333333333.pdf", stream("%PDF-1.7"));
+    await saveRelayFile(caller(token), "media", "0123456789abcdef.png", stream(PNG));
+    await saveRelayFile(caller(token), "files", "3333333333333333.pdf", stream("%PDF-1.7"));
     expect(fs.readdirSync(media)).toEqual(["0123456789abcdef.png"]);
     expect(fs.readFileSync(path.join(dataDir, String(slot), "files", "3333333333333333.pdf"), "utf8")).toBe("%PDF-1.7");
+  });
+
+  it("take at most the room of the account, images and attachments together", async () => {
+    const { slot, token } = await addRelayAccount("f3", opts());
+    const put = (kind: "media" | "files", name: string, data: Buffer) =>
+      (kind === "media" ? mediaRoute : filesRoute).PUT(
+        new Request(`http://localhost:8090/api/relay/${kind}/${name}`, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: new Uint8Array(data) }),
+        { params: Promise.resolve({ file: name }) },
+      );
+    process.env.RELAY_QUOTA_MB = String((PNG.length + 150) / 2 ** 20);
+    try {
+      expect((await put("media", "0123456789abcdef.png", PNG)).status).toBe(200);
+      expect((await put("files", "4444444444444444.txt", Buffer.alloc(100, 97))).status).toBe(200);
+      expect((await put("files", "5555555555555555.txt", Buffer.alloc(60, 97))).status).toBe(413);
+      expect((await put("files", "6666666666666666.txt", Buffer.alloc(40, 97))).status).toBe(200);
+    } finally {
+      delete process.env.RELAY_QUOTA_MB;
+    }
+    expect(fs.readdirSync(path.join(dataDir, String(slot), "files")).sort()).toEqual(["4444444444444444.txt", "6666666666666666.txt"]);
+  });
+});
+
+describe("the body of a relay request", () => {
+  it("is read only up to its limit, with or without Content-Length", async () => {
+    const chunked = (text: string) => new Request("http://localhost:8090/api/relay/have", { method: "POST", body: stream(text), duplex: "half" } as RequestInit);
+    const big = JSON.stringify({ media: Array.from({ length: 100 }, (_, i) => `${String(i).padStart(16, "0")}.png`), files: [] });
+    expect(chunked(big).headers.get("content-length")).toBeNull();
+    await expect(relayJson(chunked(big), HaveBody, 1000)).rejects.toMatchObject({ status: 413 });
+    await expect(relayJson(chunked('{"media":[],"files":[]}'), HaveBody, 1000)).resolves.toEqual({ media: [], files: [] });
+    await expect(relayJson(chunked('{"media":['), HaveBody, 1000)).rejects.toMatchObject({ status: 400 });
   });
 });

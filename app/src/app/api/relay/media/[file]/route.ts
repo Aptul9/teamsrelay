@@ -7,7 +7,7 @@ type Ctx = { params: Promise<{ file: string }> };
 
 // An image or profile picture of the account on another computer, into data/N/media
 export const PUT = route<Ctx>(async (req, { params }) => {
-  const { slot } = requireRelay(req);
-  await saveRelayFile(slot, "media", (await params).file, req.body);
+  const caller = requireRelay(req);
+  await saveRelayFile(caller, "media", (await params).file, req.body);
   return Response.json({ ok: true });
 });
