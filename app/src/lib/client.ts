@@ -211,6 +211,10 @@ export const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString(unde
 // The interval of the checks of an account: "1 h", "2 h", "4 h"
 export const hours = (seconds: number) => `${Math.round(seconds / 3600)} h`;
 
+// The one status of an account, as Settings chooses it: stopped, always on (0) or checked every N seconds. A stopped
+// account keeps its interval, the mode it resumes when started again.
+export const accountStatus = (a: Pick<Account, "stopped" | "checkEvery">): "stopped" | number => (a.stopped ? "stopped" : a.checkEvery);
+
 // An account checked every N hours, between two checks: no browser, no agent, the chats and numbers of its last check
 export const idleChecked = (a: Pick<Account, "checkEvery" | "checking" | "stopped">) => a.checkEvery > 0 && !a.checking && !a.stopped;
 

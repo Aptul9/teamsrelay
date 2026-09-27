@@ -69,7 +69,8 @@ export function setAccountRunning(n: number, running: boolean, ctl: ControlClien
 }
 
 // Always on (every 0), or checked every `every` seconds: its browser runs only while it is checked (src/lib/checks.ts),
-// so it stops now, unless a check runs; back to always on, it starts now. A stopped account only changes mode.
+// so it stops now, unless a check runs; back to always on, it starts now. The app shows one status per account (stopped,
+// always on, checked every N): a stopped account given a mode is back in service, checked ones with a check asked.
 export function setCheckMode(n: number, every: number, ctl: ControlClient, db: Database.Database, now = Math.floor(Date.now() / 1000)): Promise<void> {
   if (every !== 0 && !(CHECK_INTERVALS as readonly number[]).includes(every)) {
     return Promise.reject(new HttpError(400, `checkEvery must be 0 or one of ${CHECK_INTERVALS.join(", ")}`));
@@ -78,9 +79,13 @@ export function setCheckMode(n: number, every: number, ctl: ControlClient, db: D
     const s = slotRow(db, n);
     if (!s) throw new HttpError(404, "Account not found");
     // the browser first: a start or stop that fails leaves the mode as it was
-    if (!s.stopped && !every) await slotUp(ctl, n);
+    if (!every) await slotUp(ctl, n);
     else if (!s.stopped && !s.checking) await slotDown(ctl, n);
     setCheckEvery(db, n, every, now);
+    if (!s.stopped) return;
+    setSlotStopped(db, n, false);
+    // stopped, its chats are old: checked at once
+    if (every) askCheck(db, n);
   });
 }
 

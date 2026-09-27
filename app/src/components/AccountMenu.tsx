@@ -32,7 +32,8 @@ export const needsLogin = (a: Account) =>
   !a.stopped &&
   (idleChecked(a) ? a.checkResult === "login" || !a.name : a.teams === "login" || (a.teams !== "starting" && a.teams !== "ok" && !a.name));
 
-export function accSub(a: Account): { text: string; warn: boolean } {
+// What the account is doing, when it is not simply running: stopped, checked, starting, a sign-in to do...
+export function accState(a: Account): { text: string; warn: boolean } | null {
   if (a.stopped) return { text: "Stopped · still signed in", warn: false };
   if (idleChecked(a)) {
     if (needsLogin(a)) return { text: "Microsoft sign-in needed", warn: true };
@@ -43,7 +44,28 @@ export function accSub(a: Account): { text: string; warn: boolean } {
   if (a.teams === "login") return { text: "Microsoft sign-in needed", warn: true };
   if (!a.name) return { text: "Waiting for sign-in", warn: true };
   if (a.teams === "unknown") return { text: "Browser unreachable", warn: true };
-  return { text: [a.email, a.tenant].filter(Boolean).join(" · "), warn: false };
+  return null;
+}
+
+// Who the account is: the accounts of one person share the name
+export const accIdentity = (a: Account) => [a.email, a.tenant].filter(Boolean).join(" · ");
+
+// The line under the name on the account menu button: what the account is doing, else who it is
+export function accSub(a: Account): { text: string; warn: boolean } {
+  return accState(a) ?? { text: accIdentity(a), warn: false };
+}
+
+// Name, who it is and what it is doing, for the lists of accounts (menu, Settings)
+export function AccountLines({ a }: { a: Account }) {
+  const state = accState(a);
+  const who = accIdentity(a);
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="truncate text-sm font-medium">{accName(a)}</div>
+      {who && <div className="truncate text-xs text-muted-foreground">{who}</div>}
+      {state && <div className={cn("truncate text-xs", state.warn ? "text-destructive" : "text-muted-foreground")}>{state.text}</div>}
+    </div>
+  );
 }
 
 // Switch between the Teams accounts of the user, stop or start one, add or remove one, reach settings and sign out.
@@ -107,17 +129,13 @@ export function AccountMenu({
         <DropdownMenuLabel>Teams accounts</DropdownMenuLabel>
         <DropdownMenuGroup>
           {(accounts ?? []).map((a) => {
-            const sub = accSub(a);
             const busy = toggling === a.slot;
             const unread = unreadOf(a);
             return (
               <div key={a.slot} className="flex items-center gap-1">
                 <DropdownMenuItem onSelect={() => onSelect(a.slot)} className="min-w-0 flex-1 gap-3 py-2">
                   <Avatar name={accName(a)} av={a.av} acc={a.slot} className={cn("size-8", a.stopped && "opacity-50 grayscale")} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{accName(a)}</div>
-                    <div className={cn("truncate text-xs", sub.warn ? "text-destructive" : "text-muted-foreground")}>{sub.text}</div>
-                  </div>
+                  <AccountLines a={a} />
                   {total(unread) > 0 && (
                     <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums" title={unreadText(unread)}>
                       {capped(total(unread))}
@@ -133,10 +151,10 @@ export function AccountMenu({
                   aria-label={`${a.stopped ? "Start" : "Stop"} ${accName(a)}`}
                   title={
                     a.stopped
-                      ? "Stopped: click to start"
+                      ? `Stopped: click to start again, ${a.checkEvery ? `checked every ${hours(a.checkEvery)}` : "always on"}`
                       : a.checkEvery
                         ? `Checked every ${hours(a.checkEvery)}: click to stop the checks, the account stays signed in`
-                        : "Running: click to stop, the account stays signed in"
+                        : "Always on: click to stop, the account stays signed in"
                   }
                   disabled={busy}
                   onSelect={(e) => {

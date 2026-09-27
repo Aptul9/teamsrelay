@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
-import { accName, accSub } from "./AccountMenu";
+import { AccountLines, accName } from "./AccountMenu";
 import { Avatar } from "./Avatar";
 import { PageHeader } from "./PageHeader";
 import {
@@ -29,7 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { authClient } from "@/lib/auth-client";
-import { ApiError, call, CHECK_INTERVALS, hours, toLogin, type Account } from "@/lib/client";
+import { accountStatus, ApiError, call, CHECK_INTERVALS, hours, toLogin, type Account } from "@/lib/client";
 import { enablePush, pushState, type PushState } from "@/lib/push";
 
 const noSubscribe = () => () => {};
@@ -54,19 +54,29 @@ function TeamsAccounts() {
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [saving, setSaving] = useState(0);
 
+  // read again every 10 s: checks start and end while the page is open
   useEffect(() => {
     void fetchAccounts().then(setAccounts);
+    const timer = setInterval(() => void fetchAccounts().then(setAccounts), 10_000);
+    return () => clearInterval(timer);
   }, []);
 
-  async function setMode(a: Account, checkEvery: number) {
+  // one status: stopped (session kept), always on, or checked every N
+  async function setStatus(a: Account, value: string) {
+    const checkEvery = Number(value);
     setSaving(a.slot);
     try {
-      await call(`/api/accounts/${a.slot}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ checkEvery }) }, 0);
+      const change = value === "stopped" ? { running: false } : { checkEvery };
+      await call(`/api/accounts/${a.slot}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) }, 0);
       setAccounts(await fetchAccounts());
-      if (checkEvery) toast.success(`${accName(a)}: checked every ${hours(checkEvery)}`, { description: "Its browser runs only during its checks, one account at a time." });
+      if (value === "stopped") toast.success(`${accName(a)}: stopped`, { description: "Still signed in: no messages or notifications until you choose another status." });
+      else if (checkEvery)
+        toast.success(`${accName(a)}: checked every ${hours(checkEvery)}`, {
+          description: a.stopped ? "Its first check runs within a minute." : "Its browser runs only during its checks, one account at a time.",
+        });
       else toast.success(`${accName(a)}: always on`, { description: "Its browser starts now and stays up." });
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Mode not changed");
+      toast.error(e instanceof ApiError ? e.message : "Status not changed");
     } finally {
       setSaving(0);
     }
@@ -78,7 +88,8 @@ function TeamsAccounts() {
         <SectionTitle icon={MessagesSquareIcon}>Teams accounts</SectionTitle>
         <CardDescription>
           Always on: every message is relayed as it arrives. Checked every few hours: the account starts, reads its chats and notifications, and stops
-          again, one account at a time; it saves memory, and what it finds arrives as one notification per check.
+          again, one account at a time; it saves memory, and what it finds arrives as one notification per check. Stopped: still signed in, nothing is
+          read.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -88,31 +99,26 @@ function TeamsAccounts() {
           <p className="text-sm text-muted-foreground">No Teams account yet: add one from the account menu.</p>
         ) : (
           <div className="divide-y">
-            {accounts.map((a) => {
-              const sub = accSub(a);
-              return (
-                <div key={a.slot} className="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
-                  <Avatar name={accName(a)} av={a.av} acc={a.slot} className={cn("size-9", a.stopped && "opacity-50 grayscale")} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{accName(a)}</div>
-                    <div className={cn("truncate text-xs", sub.warn ? "text-destructive" : "text-muted-foreground")}>{sub.text}</div>
-                  </div>
-                  <Select value={String(a.checkEvery)} onValueChange={(v) => void setMode(a, Number(v))} disabled={saving === a.slot}>
-                    <SelectTrigger className="h-10 w-full sm:w-52 md:h-9" aria-label={`When ${accName(a)} runs`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="0">Always on</SelectItem>
-                      {CHECK_INTERVALS.map((s) => (
-                        <SelectItem key={s} value={String(s)}>
-                          Checked every {hours(s)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              );
-            })}
+            {accounts.map((a) => (
+              <div key={a.slot} className="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
+                <Avatar name={accName(a)} av={a.av} acc={a.slot} className={cn("size-9", a.stopped && "opacity-50 grayscale")} />
+                <AccountLines a={a} />
+                <Select value={String(accountStatus(a))} onValueChange={(v) => void setStatus(a, v)} disabled={saving === a.slot}>
+                  <SelectTrigger className="h-10 w-full sm:w-52 md:h-9" aria-label={`Status of ${accName(a)}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="stopped">Stopped</SelectItem>
+                    <SelectItem value="0">Always on</SelectItem>
+                    {CHECK_INTERVALS.map((s) => (
+                      <SelectItem key={s} value={String(s)}>
+                        Checked every {hours(s)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ))}
           </div>
         )}
       </CardContent>

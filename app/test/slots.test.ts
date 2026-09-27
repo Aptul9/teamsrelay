@@ -138,13 +138,22 @@ describe("setCheckMode", () => {
     expect(slotRow(db, 1)).toMatchObject({ check_every: 0 });
   });
 
-  it("changes only the mode of a stopped account, and refuses an interval not offered or an unknown account", async () => {
+  it("puts a stopped account back in service in the mode chosen: checked, with a check asked and no start; always on, started", async () => {
     await addAccount("u1", control(), opts());
     await setAccountRunning(1, false, control(), db);
     calls = [];
     await setCheckMode(1, 14400, control(), db);
-    await setCheckMode(1, 0, control(), db);
     expect(calls).toEqual([]);
+    expect(slotRow(db, 1)).toMatchObject({ stopped: 0, check_every: 14400, check_due: 0 });
+    await setAccountRunning(1, false, control(), db);
+    calls = [];
+    await setCheckMode(1, 0, control(), db);
+    expect(calls).toEqual(["start 1"]);
+    expect(slotRow(db, 1)).toMatchObject({ stopped: 0, check_every: 0 });
+  });
+
+  it("refuses an interval not offered or an unknown account", async () => {
+    await addAccount("u1", control(), opts());
     await expect(setCheckMode(1, 60, control(), db)).rejects.toMatchObject({ status: 400 });
     await expect(setCheckMode(3, 3600, control(), db)).rejects.toMatchObject({ status: 404 });
   });
