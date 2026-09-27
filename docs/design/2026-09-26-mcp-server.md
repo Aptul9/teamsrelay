@@ -64,7 +64,7 @@ Uses the `open` command the app already queues when a chat is shown; the agent d
 1. Account stopped, chat not in the chat list, agent silent or Teams not signed in: error, nothing queued.
 2. `open` queued, its status read every 500 ms for up to 30 s.
 3. `done` and `active_chat` equal to the chat: the messages are read as in `read_chat`, with `live` true.
-4. `done` with another `active_chat`: error "Teams did not open this chat". `open` ends as done even when Teams did not open the chat, for example a group chat listed as "Name, +2" or a name that is not in the list.
+4. `done` with another `active_chat`: error "Teams did not open this chat". `open` ends as done even when Teams did not open the chat, for example a name that is not in the list.
 5. `failed`, or no outcome after 30 s: error with that outcome.
 
 The app showing another chat of the same account stops updating that chat until it is opened again in the app, as after opening a chat from the app on another device.

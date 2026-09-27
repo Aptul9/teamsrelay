@@ -77,9 +77,13 @@ export function clickChatRow({ s, t, name }: ListArgs & { name: string }): boole
 }
 
 // Name of the chat open in Teams, so the messages of one chat are never saved under the name of another
+// The title of the open chat, as the list names it: a group chat without a name shows its first person, and the
+// others as "+N" on a line of their own, where the list says "Anna Rossi, +2"
 export function openChatTitle(s: Selectors): string {
   const title = document.querySelector<HTMLElement>(s.chatTitle);
-  return title ? (title.innerText || "").split("\n")[0].trim() : "";
+  if (!title) return "";
+  const [first = "", next = ""] = (title.innerText || "").split("\n").map((line) => line.trim());
+  return /^\+\d+$/.test(next) ? `${first}, ${next}` : first;
 }
 
 // Scrolls the virtualized chat list to the top, or down by most of a screen. True when it moved.

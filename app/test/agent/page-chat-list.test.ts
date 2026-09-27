@@ -105,4 +105,14 @@ describe("chat list page scripts", () => {
     expect(await chrome.page.evaluate(scrollChatList, { s: SEL, to: "top" as const })).toBe(true);
     expect(await chrome.page.evaluate(scrollChatList, { s: SEL, to: "top" as const })).toBe(false);
   });
+
+  // header of a group chat without a name (structure taken from Teams web in September 2026): its first person,
+  // then the others as "+N" on a line of their own; the list names the chat "Anna Rossi, +2"
+  it("reads the title of a group chat without a name as the list names it", async () => {
+    await chrome.page.setContent(`
+      <h2 data-tid="chat-title"><div><ul role="list" data-tid="chat-topic-menu"><li role="listitem" data-tid="chat-topic-menu-list-item">
+        <span data-tid="participant-8:orgid:00000000-0000-0000-0000-000000000001"><div data-tid="persona-presence-paceholder"></div><span>Anna Rossi</span></span>
+      </li></ul><div><span> +2</span></div></div></h2>`);
+    expect(await chrome.page.evaluate(openChatTitle, SEL)).toBe("Anna Rossi, +2");
+  });
 });
