@@ -148,7 +148,7 @@ describe("agent store", () => {
     ]);
     expect(reader((r) => r.missedCalls())).toBeNull();
     store.setState(STATE.activityTs, "1790000000");
-    expect(reader((r) => [r.unreadActivity(), r.missedCalls()])).toEqual([["c1", "m1"], ["c1", "c2"]]);
+    expect(reader((r) => [r.unreadActivity(), r.missedCalls(), r.activityIds()])).toEqual([["c1", "m1"], ["c1", "c2"], ["c1", "m1", "c2"]]);
     expect(store.missedCalls()).toEqual([
       { id: "c1", caller: "Anna Rossi", time: "1:15 PM" },
       { id: "c2", caller: "Anna Rossi", time: "1:15 PM" },

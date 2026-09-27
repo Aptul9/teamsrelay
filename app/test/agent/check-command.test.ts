@@ -169,6 +169,27 @@ describe("check command", () => {
     expect(missed).toEqual([["Luca Bianchi", "4:10 PM"]]);
   });
 
+  it("pushes a missed call a shorter read had left out, once a longer read shows it", async () => {
+    store.saveActivity(feedTop(40));
+    await check(agent(), cmd);
+    // a call, then 15 other items: the next read stops at 12, above the call
+    const now = [...Array.from({ length: 15 }, (_, i) => mention(`a${i}`)), missedCall("c-late", "Luca Bianchi", "1:15 PM"), ...feedTop(24)];
+    store.saveActivity(now.slice(0, 12));
+    await check(agent(), cmd);
+    expect(missed).toEqual([]);
+    store.saveActivity(now);
+    await check(agent(), cmd);
+    expect(missed).toEqual([["Luca Bianchi", "1:15 PM"]]);
+  });
+
+  it("pushes a new missed call below an item Teams moved to the top", async () => {
+    store.saveActivity(feedTop(40));
+    await check(agent(), cmd);
+    store.saveActivity([mention("m20"), missedCall("c-new", "Luca Bianchi", "4:10 PM"), ...feedTop(38).filter((e) => e.id !== "m20")]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([["Luca Bianchi", "4:10 PM"]]);
+  });
+
   it("counts no older unread notification a shorter read left out as new", async () => {
     const old = { 36: mention("n-old", true) };
     store.saveActivity(feedTop(40, old));

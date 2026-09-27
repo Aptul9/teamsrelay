@@ -136,6 +136,13 @@ export class SlotReader {
     return this.all<{ id: string }>("SELECT id FROM activity WHERE kind='call' ORDER BY pos").map((r) => r.id);
   }
 
+  // Ids of every item of the feed, newest first, null likewise: below the lowest one a device has shown, an item it has
+  // not shown is older (newIds in lib/client.ts)
+  activityIds(): string[] | null {
+    if (!Number(this.state(STATE.activityTs, 0))) return null;
+    return this.all<{ id: string }>("SELECT id FROM activity ORDER BY pos").map((r) => r.id);
+  }
+
   // The incoming call as the agent keeps it, null before the first one
   call(): CallState | null {
     const v = this.all<{ v: string }>("SELECT v FROM state WHERE k=?", STATE.call)[0]?.v;

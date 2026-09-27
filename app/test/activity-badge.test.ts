@@ -7,14 +7,13 @@ import {
   loadSeen,
   markActivitySeen,
   markShown,
-  newCalls,
+  newIds,
   parseSeen,
   seenKey,
   statusText,
   unreadInOthers,
   unseenActivity,
   unseenCalls,
-  unseenIds,
   untilText,
   type Account,
   type ActivityItem,
@@ -46,6 +45,7 @@ const account = (extra: Partial<Account> = {}): Account => ({
   unread: 2,
   unreadActivity: ["n2", "n1"],
   missedCalls: [],
+  activityIds: [],
   added: 1790000000,
   desktop: "",
   checkEvery: 0,
@@ -104,12 +104,38 @@ describe("missed calls", () => {
     expect(unreadInOthers(accounts, 1, (a) => accountUnread(a, []))).toBe(1);
   });
 
-  it("count none below a call this device has shown: the feed lists newest first, a shorter read had left it out", () => {
-    expect(newCalls(["c3", "c2", "c1"], ["c2"])).toEqual(["c3"]);
-    expect(newCalls(["c3", "c2", "c1"], ["n1"])).toEqual(["c3", "c2", "c1"]);
-    expect(newCalls(["c3"], null)).toEqual([]);
+  it("count none below the lowest item this device has shown: the feed lists newest first, a shorter read had left it out", () => {
+    expect(newIds(["c3", "c2", "c1"], ["c2"], ["c3", "c2", "c1"])).toEqual(["c3"]);
+    expect(newIds(["c3", "c2", "c1"], ["n1"], ["c3", "c2", "c1"])).toEqual(["c3", "c2", "c1"]);
+    expect(newIds(["c3"], null, ["c3"])).toEqual([]);
     expect(unseenCalls([call("c3"), call("c2"), item("n1"), call("c1")], ["c2"])).toBe(1);
-    expect(accountUnread(account({ unreadActivity: [], missedCalls: ["c3", "c2", "c1"] }), ["c2"]).calls).toBe(1);
+    expect(accountUnread(account({ unreadActivity: [], missedCalls: ["c3", "c2", "c1"], activityIds: ["c3", "c2", "c1"] }), ["c2"]).calls).toBe(1);
+  });
+});
+
+describe("the lowest item this device has shown", () => {
+  const call = (id: string): ActivityItem => ({ ...item(id, 0), kind: "call" });
+  const many = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => item(`${prefix}${i}`, 0));
+
+  it("counts the calls a shorter read had left out, above it, when a longer read shows them", () => {
+    // c1 shown; then c3, c2, twelve other items and c5 came, and the Calls list showed a read of 12 items: c5 only
+    const seen = ["c5", "c1", "o1"];
+    const items = [call("c5"), ...many("a", 12), call("c2"), call("c3"), call("c1"), item("o1", 0)];
+    expect(unseenCalls(items, seen)).toBe(2);
+  });
+
+  it("counts no older call below it: a shorter read, the first one here, had left it out", () => {
+    const seen = many("m", 12).map((x) => x.id);
+    const items = [...many("m", 30), call("c-old"), ...many("o", 9)];
+    expect(unseenCalls(items, seen)).toBe(0);
+    const a = account({ unreadActivity: [], missedCalls: ["c-old"], activityIds: items.map((x) => x.id) });
+    expect(accountUnread(a, seen).calls).toBe(0);
+  });
+
+  it("counts a new call below an item Teams moved to the top", () => {
+    const items = [call("c0"), call("c-new"), item("m0", 0), item("m1", 0)];
+    expect(unseenCalls(items, ["c0", "m0", "m1"])).toBe(1);
+    expect(accountUnread(account({ unreadActivity: [], missedCalls: ["c0", "c-new"], activityIds: items.map((x) => x.id) }), ["c0", "m0", "m1"]).calls).toBe(1);
   });
 });
 
@@ -157,11 +183,11 @@ describe("markActivitySeen", () => {
   });
 });
 
-describe("unseenIds", () => {
-  it("counts the unread ids not seen yet, nothing before the first look", () => {
-    expect(unseenIds(["a", "b"], null)).toBe(0);
-    expect(unseenIds(["c", "a"], ["a", "b"])).toBe(1);
-    expect(unseenIds([], ["a"])).toBe(0);
+describe("newIds", () => {
+  it("gives the ids not seen yet, nothing before the first look", () => {
+    expect(newIds(["a", "b"], null, ["a", "b"])).toEqual([]);
+    expect(newIds(["c", "a"], ["a", "b"], ["c", "a", "b"])).toEqual(["c"]);
+    expect(newIds([], ["a"], ["a"])).toEqual([]);
   });
 });
 
@@ -264,8 +290,19 @@ describe("loadSeen", () => {
     expect(accountUnread(later, loadSeen([later])[2]).calls).toBe(1);
   });
 
+  it("takes every item of the feed of an account met for the first time as seen", () => {
+    expect(loadSeen([account({ unreadActivity: ["n2"], missedCalls: ["c1"], activityIds: ["n2", "r1", "c1"] })])).toEqual({ 2: ["n2", "r1", "c1"] });
+  });
+
+  it("keeps the missed calls a migration added when a later mark cuts the list at 200 ids", () => {
+    const a = account({ unreadActivity: [], missedCalls: ["c2", "c1"], activityIds: ["c2", "r1", "c1"] });
+    store.set(seenKey(a), JSON.stringify(Array.from({ length: 200 }, (_, i) => `old${i}`)));
+    const items = ["c2", "r1", "c1"].map((id): ActivityItem => ({ ...item(id, 0), kind: id.startsWith("c") ? "call" : "reaction" }));
+    expect(unseenCalls(items, markShown(loadSeen([a])[2], items, "activity"))).toBe(0);
+  });
+
   it("stores nothing for an account whose feed the agent has not saved yet", () => {
-    expect(loadSeen([account({ unreadActivity: null, missedCalls: null })])).toEqual({});
+    expect(loadSeen([account({ unreadActivity: null, missedCalls: null, activityIds: null })])).toEqual({});
     expect(store.size).toBe(0);
   });
 

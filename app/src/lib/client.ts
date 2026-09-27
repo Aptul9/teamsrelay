@@ -14,6 +14,8 @@ export type Account = {
   unread: number;
   unreadActivity: string[] | null;
   missedCalls: string[] | null;
+  // ids of every item of the feed, newest first: where a device tells new items from older ones a shorter read left out
+  activityIds: string[] | null;
   added: number;
   desktop: string;
   // checked every N hours (0: always on): seconds between two checks, end (0 before the first) and outcome of the
@@ -119,34 +121,28 @@ export const mediaUrl = (file: string, acc: number) => `/media/${encodeURICompon
 export const isSelf = (name: string) => /\(you\)/i.test(name || "");
 
 // Teams keeps an activity bold until it is clicked in Teams itself, while its Activity badge counts only
-// what arrived after the feed was last opened. The tab badge does the same with the ids already seen here. Missed
-// calls count on the Calls tab instead: Teams shows them as read (not bold), new or not, so the calls this device has
-// not shown yet count (newCalls).
+// what arrived after the feed was last opened. The tab badge does the same with the ids already seen here (newIds).
+// Missed calls count on the Calls tab instead: Teams shows them as read (not bold), new or not, so the calls this
+// device has not shown yet count.
 export const isMissedCall = (a: Pick<ActivityItem, "kind">) => a.kind === "call";
 
 export function unseenActivity(items: ActivityItem[], seen: string[] | null): number {
-  return unseenIds(items.filter((a) => a.unread && !isMissedCall(a)).map((a) => a.id), seen);
+  return newIds(items.filter((a) => a.unread && !isMissedCall(a)).map((a) => a.id), seen, items.map((a) => a.id)).length;
 }
 
 export function unseenCalls(items: ActivityItem[], seen: string[] | null): number {
-  return newCalls(items.filter(isMissedCall).map((a) => a.id), seen).length;
+  return newIds(items.filter(isMissedCall).map((a) => a.id), seen, items.map((a) => a.id)).length;
 }
 
-// The missed calls this device has not shown yet, from the ids of the calls in feed order: the ones above the first
-// call it has shown. The feed lists newest first: a call below one already shown is older, only left out by an earlier,
-// shorter read of the feed. Nothing before the first look.
-export function newCalls(calls: string[], seen: string[] | null): string[] {
+// Among ids of the feed (its ids in feed order), the ones this device has not shown yet and that sit above the lowest
+// item of the feed it has shown. The feed lists newest first: below that item, an id not shown is an older item an
+// earlier, shorter read left out. Nothing before the first look.
+export function newIds(ids: string[], seen: string[] | null, feed: string[]): string[] {
   if (!seen) return [];
   const known = new Set(seen);
-  const first = calls.findIndex((id) => known.has(id));
-  return first < 0 ? calls : calls.slice(0, first);
-}
-
-// Same count from the ids of the unread items, as /api/accounts gives them for every account
-export function unseenIds(unread: string[], seen: string[] | null): number {
-  if (!seen) return 0;
-  const known = new Set(seen);
-  return unread.filter((id) => !known.has(id)).length;
+  const lowest = feed.findLastIndex((id) => known.has(id));
+  const pos = new Map(feed.map((id, i) => [id, i]));
+  return ids.filter((id) => !known.has(id) && (lowest < 0 || (pos.get(id) ?? -1) < lowest));
 }
 
 export type Unread = { chats: number; notifications: number; calls: number };
@@ -160,10 +156,11 @@ export function accountUnread(a: Account, seen: string[] | null): Unread {
   if (a.stopped) return { chats: 0, notifications: 0, calls: 0 };
   const calls = a.missedCalls ?? [];
   const isCall = new Set(calls);
+  const feed = a.activityIds ?? [];
   return {
     chats: a.unread,
-    notifications: unseenIds((a.unreadActivity ?? []).filter((id) => !isCall.has(id)), seen),
-    calls: newCalls(calls, seen).length,
+    notifications: newIds((a.unreadActivity ?? []).filter((id) => !isCall.has(id)), seen, feed).length,
+    calls: newIds(calls, seen, feed).length,
   };
 }
 
@@ -212,17 +209,18 @@ export const seenKey = (a: Pick<Account, "slot" | "added">) => `actseen:${a.slot
 // Set once the seen list holds the missed calls of the account: a list an earlier release stored has none of them
 const callsKey = (a: Pick<Account, "slot" | "added">) => `actcalls:${a.slot}:${a.added}`;
 
-// Notification ids already seen on this device, per slot. An account met here for the first time takes the unread
-// ones and the missed calls it has now as seen, like the first feed of the selected account: only what comes later
-// counts. A list stored by an earlier release takes the missed calls it lists now, once. Nothing is stored for an
-// account whose feed the agent has not saved yet.
+// Notification ids already seen on this device, per slot. An account met here for the first time takes every item of
+// its feed as seen, like the first feed of the selected account: only what comes later counts. A list stored by an
+// earlier release takes the items it lists now, once, first (a later mark keeps the first 200 ids). Nothing is stored
+// for an account whose feed the agent has not saved yet.
 export function loadSeen(accounts: Account[]): Record<number, string[]> {
   const seen: Record<number, string[]> = {};
   for (const a of accounts) {
     const stored = parseSeen(readStorage(seenKey(a)));
     if (stored && (!a.missedCalls || readStorage(callsKey(a)))) seen[a.slot] = stored;
     else if (stored || a.unreadActivity) {
-      seen[a.slot] = [...new Set([...(stored ?? a.unreadActivity ?? []), ...(a.missedCalls ?? [])])];
+      const now = [...(a.activityIds ?? []), ...(a.unreadActivity ?? []), ...(a.missedCalls ?? [])];
+      seen[a.slot] = [...new Set([...now, ...(stored ?? [])])].slice(0, 200);
       writeStorage(seenKey(a), JSON.stringify(seen[a.slot]));
       writeStorage(callsKey(a), "1");
     }
