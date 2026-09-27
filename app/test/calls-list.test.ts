@@ -25,6 +25,7 @@ const render = (seen: string[] | null) =>
       acc: 2,
       ringing: undefined,
       missed: [missed("c2", "Anna Rossi"), missed("c1", "Luca Bianchi")],
+      feed: ["c2", "r1", "c1"],
       log: [],
       seen,
       chatOf: () => null,

@@ -123,7 +123,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [calls, setCalls] = useState<RingingCall[]>([]);
   const [seenAct, setSeenAct] = useState<Record<number, string[]>>({});
   // the notifications of the account seen here when the Calls list opened: its missed calls not seen then keep their
-  // dot while it stays open
+  // dot while it stays open, and the ones of the new account when the account changes under it
   const [callsSeen, setCallsSeen] = useState<{ acc: number; seen: string[] | null } | null>(null);
   // streams opened again after the browser gave one up
   const [reconnects, setReconnects] = useState(0);
@@ -623,6 +623,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             acc={acc}
             ringing={calls.find((c) => c.acc === acc)}
             missed={acc ? (activity?.items ?? []).filter(isMissedCall) : []}
+            feed={acc ? (activity?.items ?? []).map((a) => a.id) : []}
             log={acc ? (callLog ?? []) : []}
             seen={callsSeen?.acc === acc ? callsSeen.seen : (seenAct[acc] ?? null)}
             chatOf={chatOf}

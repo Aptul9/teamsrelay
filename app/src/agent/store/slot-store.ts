@@ -221,7 +221,7 @@ export class SlotStore {
   }
 
   // Every missed call of the feed, in feed order: who called, and the time Teams shows. Teams shows them as read (not
-  // bold), new or not: a new one is an id not seen before.
+  // bold), new or not: the check tells a new one by its id and its place (commands/check.ts).
   missedCalls(): { id: string; caller: string; time: string }[] {
     return this.db.prepare("SELECT id, actor AS caller, tm AS time FROM activity WHERE kind='call' ORDER BY pos").all() as {
       id: string;
