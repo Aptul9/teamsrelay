@@ -21,6 +21,8 @@ const page_ = (names: string[]) => `<!doctype html>
   const list = document.getElementById("list");
   const rows = document.getElementById("rows");
   window.clicked = [];
+  window.scrolls = 0;
+  list.addEventListener("scroll", () => window.scrolls++);
   function render() {
     const from = Math.max(0, Math.floor(list.scrollTop / 40) - 1);
     const to = Math.min(names.length, Math.ceil((list.scrollTop + 300) / 40) + 1);
@@ -61,6 +63,7 @@ async function open(names: string[]) {
 const title = () => page.evaluate(() => document.querySelector('[data-tid="chat-title"]')?.textContent);
 const scrollTop = () => page.evaluate(() => document.getElementById("list")?.scrollTop);
 const clicked = () => page.evaluate(() => (window as unknown as { clicked: string[] }).clicked);
+const scrolls = () => page.evaluate(() => (window as unknown as { scrolls: number }).scrolls);
 
 afterEach(async () => {
   await context?.close();
@@ -87,5 +90,27 @@ describe("open a chat of a virtualized list", () => {
     await open(["Anna Rossi, +2", ...chats.slice(0, 20), "Anna Rossi"]);
     expect(await tp.openChat("Anna Rossi")).toBe(true);
     expect(await clicked()).toEqual(["Anna Rossi"]);
+  }, 30_000);
+
+  // the Read by prefetch opens the chat in use every other round: no click and no scroll when Teams shows it
+  it("does nothing when Teams shows the chat already", async () => {
+    await open(chats);
+    expect(await tp.openChat("Chat 34")).toBe(true);
+    const before = await scrolls();
+    expect(await tp.openChat("Chat 34")).toBe(true);
+    expect(await clicked()).toEqual(["Chat 34"]);
+    expect(await scrolls()).toBe(before);
+  }, 30_000);
+
+  it("sweeps the list once for a chat that is not in it, then answers at once for a while", async () => {
+    await open(chats);
+    expect(await tp.openChat("Nobody Here")).toBe(false);
+    const before = await scrolls();
+    expect(before).toBeGreaterThan(0);
+    const t0 = Date.now();
+    expect(await tp.openChat("Nobody Here")).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(await scrolls()).toBe(before);
+    expect(await clicked()).toEqual([]);
   }, 30_000);
 });
