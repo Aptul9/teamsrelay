@@ -41,6 +41,13 @@ describe("SameChat", () => {
     expect(same("Luca Bianchi", "Luca Bianchini")).toBe(false);
   });
 
+  it("tells a group chat without a name from the chat with its first person", () => {
+    setChats("Anna Rossi, +2", "Anna Rossi");
+    expect(same("Anna Rossi, +2", "Anna Rossi, +2")).toBe(true);
+    expect(same("Anna Rossi, +2", "Anna Rossi")).toBe(false);
+    expect(same("Anna Rossi", "Anna Rossi, +2")).toBe(false);
+  });
+
   it("matches a title longer than the stored name", () => {
     const longName = "Project " + "x".repeat(70);
     setChats(longName.slice(0, 60));
