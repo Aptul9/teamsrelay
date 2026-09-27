@@ -236,8 +236,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   }
 
   async function refreshActivity() {
-    // an account checked every N hours has no agent between two checks: its feed is the one of the last check
-    if (!acc || refreshing || (current && idleChecked(current))) return;
+    // an account checked every N hours: its feed is the one of the last check
+    if (!acc || refreshing || (current && current.checkEvery > 0)) return;
     setRefreshing(true);
     // while Teams starts the agent keeps the refresh until its side bar can be clicked, up to the 2 minutes a command
     // may wait
@@ -582,8 +582,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               chat={openChat}
               entry={(chats ?? []).find((c) => c.name === openChat)}
               rows={messages?.chat === openChat ? messages.rows : null}
-              stopped={!!current && (current.stopped || idleChecked(current))}
-              stoppedText={current && idleChecked(current) ? "Runs only during its checks: set it to always on in Settings to send" : undefined}
+              stopped={!!current && (current.stopped || current.checkEvery > 0)}
+              stoppedText={current?.checkEvery ? "Runs only during its checks: set it to always on in Settings to send" : undefined}
               others={others}
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}

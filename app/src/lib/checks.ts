@@ -53,21 +53,26 @@ export async function runCheck(n: number, d: CheckDeps): Promise<CheckResult | n
   const sleep = d.sleep ?? pause;
   const begun = now();
   let asked = false;
-  let needsSignIn = false;
+  let signIn = false;
   const started = await exclusive(async () => {
     const s = slotRow(d.db, n);
     if (!s || s.stopped || !s.check_every) return false;
     asked = s.check_due === 0;
-    needsSignIn = s.check_result === "login";
+    // asked from the app for an account whose last check found a sign-in to do, or never signed in
+    signIn = asked && (s.check_result === "login" || !d.slot.signInAlert(n).armed);
     beginCheck(d.db, n, begun);
-    await slotUp(d.ctl, n);
+    try {
+      await slotUp(d.ctl, n);
+    } catch (e) {
+      // no answer in time: the supervisor may still be starting it, and a stop queued after the start ends it
+      report(n)(e as Error);
+      await slotDown(d.ctl, n).catch(report(n));
+      endCheck(d.db, n, { now: now(), result: "failed", asked });
+      return "failed" as const;
+    }
     return true;
-  }).catch((e: Error) => {
-    report(n)(e);
-    endCheck(d.db, n, { now: now(), result: "failed" });
-    return false;
   });
-  if (!started) return null;
+  if (started !== true) return started || null;
 
   // still checked and in service
   const current = () => {
@@ -76,13 +81,13 @@ export async function runCheck(n: number, d: CheckDeps): Promise<CheckResult | n
   };
   let result: CheckResult | null = "failed";
   try {
-    result = await waitAndRead(n, d, { begun, now, sleep, current, signIn: asked && needsSignIn });
+    result = await waitAndRead(n, d, { begun, now, sleep, current, signIn });
   } finally {
     await exclusive(async () => {
       const s = slotRow(d.db, n);
       // stopped by its owner meanwhile: already down; back to always on: it stays up
       if (s && !s.stopped && s.check_every) await slotDown(d.ctl, n).catch(report(n));
-      if (s) endCheck(d.db, n, { now: now(), result });
+      if (s) endCheck(d.db, n, { now: now(), result, asked });
     });
   }
   return result;
@@ -105,7 +110,11 @@ async function waitAndRead(n: number, d: CheckDeps, o: Loop): Promise<CheckResul
       await waitForAlert(n, d, o);
       return "login";
     }
-    if (o.now() - o.begun >= (o.signIn ? SIGN_IN_WAIT : TEAMS_WAIT)) return signedOutSince ? "login" : "failed";
+    if (o.now() - o.begun >= (o.signIn ? SIGN_IN_WAIT : TEAMS_WAIT)) {
+      if (!signedOutSince) return "failed";
+      await waitForAlert(n, d, o);
+      return "login";
+    }
     await o.sleep(2000);
   }
 }
@@ -113,11 +122,20 @@ async function waitAndRead(n: number, d: CheckDeps, o: Loop): Promise<CheckResul
 async function readAll(n: number, d: CheckDeps, o: Loop): Promise<CheckResult | null> {
   const id = d.slot.enqueue(n);
   const until = o.now() + COMMAND_WAIT;
+  // Teams can show its chats from its cache, then send the browser to the Microsoft sign-in
+  let signedOutSince = 0;
   while (o.now() < until) {
     if (!o.current()) return null;
     const status = d.slot.commandStatus(n, id);
     if (status === "done") return "ok";
     if (status === "failed") return "failed";
+    const h = d.slot.health(n);
+    if (h && h.ts >= o.begun && h.teams === "login") signedOutSince ||= o.now();
+    else signedOutSince = 0;
+    if (signedOutSince && o.now() - signedOutSince >= SIGNED_OUT) {
+      await waitForAlert(n, d, o);
+      return "login";
+    }
     await o.sleep(1000);
   }
   return "failed";

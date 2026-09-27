@@ -51,6 +51,16 @@ export class AppStore implements PushDevices {
     );
   }
 
+  // The web app starts this account only to check it (check_every, src/lib/checks.ts). Read at most once a minute.
+  private checked = { at: 0, value: false };
+  checkedOnly(): boolean {
+    if (Date.now() - this.checked.at > 60_000) {
+      const row = this.use((db) => db.prepare("SELECT * FROM teams_accounts WHERE slot=?").get(this.slot) as { check_every?: number } | undefined, undefined);
+      this.checked = { at: Date.now(), value: Number(row?.check_every) > 0 };
+    }
+    return this.checked.value;
+  }
+
   remove(endpoint: string) {
     this.use((db) => db.prepare("DELETE FROM push_subscriptions WHERE endpoint=?").run(endpoint), null);
   }

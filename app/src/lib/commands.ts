@@ -6,12 +6,12 @@ import { withSlot } from "./slotdb";
 // The checks of what the app sends, shared with the API of the local relay
 export { chatName, mentionNames, messageArgs, messageId, messageText, reactArgs, REACTIONS, textArgs } from "@/shared/command-input";
 
-// Why the account has no agent running now, null while it has one: stopped by its owner, or checked every N hours
-// and between two checks
+// Why the account takes no command, null when it takes them: stopped by its owner, or checked every N hours (its agent
+// runs only during a check, which stops it right after reading)
 export function idleReason(slot: number): string | null {
   const s = slotRow(appDb(), slot);
   if (s?.stopped) return "This Teams account is stopped: start it from the account menu";
-  if (s?.check_every && !s.checking) return "This Teams account runs only during its checks: set it to always on in Settings to act on Teams";
+  if (s?.check_every) return "This Teams account runs only during its checks: set it to always on in Settings to act on Teams";
   return null;
 }
 

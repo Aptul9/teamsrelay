@@ -80,7 +80,7 @@ describe("an account checked every N hours", () => {
     expect(() => queue(n, "resync")).toThrow(/only during its checks/);
   });
 
-  it("during a check: the health its agent writes, starting from the start of the check, and commands again", () => {
+  it("during a check: the health its agent writes, starting from the start of the check; still no commands", () => {
     const n = claimSlot(appDb(), "u6", { slotCount: 8, perUser: 4 });
     const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
     slotDb.prepare("INSERT INTO state(k, v) VALUES('health', ?)").run(JSON.stringify({ ts: Date.now() / 1000 - 3600, teams: "ok", overall: "green" }));
@@ -91,6 +91,6 @@ describe("an account checked every N hours", () => {
     expect(summary("u6", n)).toMatchObject({ teams: "starting", overall: "yellow", checking: true });
     slotDb.prepare("UPDATE state SET v=? WHERE k='health'").run(JSON.stringify({ ts: Date.now() / 1000, teams: "ok", overall: "green" }));
     expect(summary("u6", n)).toMatchObject({ teams: "ok", overall: "green", checking: true });
-    expect(queue(n, "resync")).toBeGreaterThan(0);
+    expect(() => queue(n, "resync")).toThrow(/only during its checks/);
   });
 });

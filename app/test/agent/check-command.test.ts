@@ -72,9 +72,9 @@ describe("check command", () => {
     expect(alerts).toEqual([]);
   });
 
-  it("fails when a read failed", async () => {
+  it("fails when the chat list could not be read; not for a feed that could not be read (an empty one reads as failed)", async () => {
     vi.mocked(readActivity).mockResolvedValue(null);
-    expect(await check(agent(), cmd)).toBe("failed");
+    expect(await check(agent(), cmd)).toBe("done");
     vi.mocked(readActivity).mockResolvedValue(1);
     vi.mocked(scanChatsFull).mockResolvedValue(null);
     expect(await check(agent(), cmd)).toBe("failed");

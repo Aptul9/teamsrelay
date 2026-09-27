@@ -133,6 +133,35 @@ describe("a check", () => {
     expect(SIGN_IN_WAIT).toBeGreaterThan(300);
   });
 
+  it("waits up to ten minutes for a sign-in when its owner asks for a check of an account never signed in", async () => {
+    account(1, 3600, 0, { teams: (elapsed) => (elapsed < 300 ? "login" : "ok"), armed: false });
+    expect(await runCheck(1, deps())).toBe("ok");
+  });
+
+  it("waits for the agent's alert also when the sign-out began late and the wait ran out", async () => {
+    account(1, 3600, T0, { teams: (elapsed) => (elapsed < 200 ? "loading" : "login"), alertAfter: 262 });
+    expect(await runCheck(1, deps())).toBe("login");
+    expect(Number(calls.at(-1)!.split("@")[1])).toBeGreaterThanOrEqual(262);
+  });
+
+  it("finds a sign-in to do when Teams signs out while the agent reads", async () => {
+    account(1, 3600, T0, { teams: (elapsed) => (elapsed < 45 ? "ok" : "login"), checkTakes: 100_000, alertAfter: 110 });
+    expect(await runCheck(1, deps())).toBe("login");
+    expect(Number(calls.at(-1)!.split("@")[1])).toBeLessThan(200);
+  });
+
+  it("records a start that failed, and stops the account all the same: the supervisor may still be starting it", async () => {
+    account(1, 3600, T0);
+    const ctl = control();
+    ctl.start = async (n) => {
+      calls.push(`start ${n}@${secs() - T0}`);
+      throw new Error("no answer within 40 s");
+    };
+    expect(await runCheck(1, { ...deps(), ctl })).toBe("failed");
+    expect(calls).toEqual(["start 1@0", "stop 1@0"]);
+    expect(slotRow(db, 1)).toMatchObject({ check_result: "failed", checking: 0, check_due: T0 + 3600 });
+  });
+
   it("fails when Teams is never ready, and stops the account all the same", async () => {
     account(1, 3600, T0, { readyAfter: 100_000 });
     expect(await runCheck(1, deps())).toBe("failed");
@@ -178,6 +207,15 @@ describe("the checks of the web app", () => {
     at(10, () => askCheck(db, 2));
     await runDueChecks(deps());
     expect(calls.map((c) => c.split("@")[0])).toEqual(["start 1", "stop 1", "start 2", "stop 2"]);
+  });
+
+  it("runs a check asked during a scheduled check of the same account right after it", async () => {
+    account(1, 3600, T0);
+    at(10, () => askCheck(db, 1));
+    await runDueChecks(deps());
+    expect(slotRow(db, 1)).toMatchObject({ check_due: 0 });
+    await runDueChecks(deps());
+    expect(calls.map((c) => c.split("@")[0])).toEqual(["start 1", "stop 1", "start 1", "stop 1"]);
   });
 
   it("checks nothing stopped by its owner, nor an account always on", async () => {

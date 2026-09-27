@@ -69,7 +69,8 @@ export function agentJobs(a: Agent): Job<Round>[] {
       when: (r) => !!r.want && active() === r.want && teamsOk() && !a.store.hasPendingCommands(),
       run: (r) => prefetchReadBy(a, r.want),
     },
-    { name: "self-check", every: { rounds: 1 }, when: () => !!selfCheckDue(a), run: () => scheduledSelfCheck(a) },
+    // an account started only to be checked has its checks: its start would find Teams still loading
+    { name: "self-check", every: { rounds: 1 }, when: () => !!selfCheckDue(a) && !a.checkedOnly?.(), run: () => scheduledSelfCheck(a) },
   ];
   return jobs.filter((j): j is Job<Round> => !!j);
 }

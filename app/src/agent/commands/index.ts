@@ -68,9 +68,9 @@ export async function runPendingCommands(a: Agent) {
     const expired = a.store.expirePendingCommands(COMMAND_MAX_AGE);
     if (expired) log.warn("cmd", "waited too long, not run", { commands: expired });
     if (a.store.commandStatus(cmd.id) !== "pending") continue;
-    // a refresh of the Activity feed stays pending until the health check finds the side bar clickable: while Teams
-    // starts (sign-in redirects, then its loading bar) the clicks would time out
-    if (cmd.type === "activity" && !a.railReady) continue;
+    // a refresh of the Activity feed, or a check, stays pending until the health check finds the side bar clickable:
+    // while Teams starts (sign-in redirects, then its loading bar) the clicks would time out
+    if ((cmd.type === "activity" || cmd.type === "check") && !a.railReady) continue;
     log.info("CMD", cmd.type, { id: cmd.id, arg: cmd.type === "download" ? undefined : cmd.arg1 });
     a.store.startCommand(cmd.id);
     a.store.finishCommand(cmd.id, await runCommand(a, cmd));

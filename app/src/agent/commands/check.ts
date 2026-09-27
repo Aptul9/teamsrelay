@@ -2,6 +2,7 @@ import { z } from "zod";
 import { parseState, STATE } from "@/shared/slot-db/state";
 import { readActivity } from "../jobs/activity";
 import { scanChatsFull } from "../jobs/chat-list";
+import { log } from "../log";
 import { RAIL_WAIT } from "./activity";
 import type { Handler } from "./index";
 
@@ -31,5 +32,7 @@ export const check: Handler = async (a) => {
     }
   }
   a.store.setState(STATE.checkSeen, JSON.stringify(now));
-  return chats !== null && feed !== null ? "done" : "failed";
+  // the chat list decides: a feed not read (an empty one reads the same) keeps the notifications of the last read
+  if (feed === null) log.warn("check", "Activity feed not read: notifications as last read");
+  return chats !== null ? "done" : "failed";
 };

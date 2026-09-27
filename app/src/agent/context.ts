@@ -36,6 +36,8 @@ export type Agent = {
   // the Activity button of the side bar could be clicked at the last health check: right after a start Teams shows
   // the chat list first, then the side bar under its loading bar
   railReady?: boolean;
+  // the web app starts this account only to check it, every few hours (server only)
+  checkedOnly?: () => boolean;
 };
 
 export const nowSeconds = () => Math.floor(Date.now() / 1000);

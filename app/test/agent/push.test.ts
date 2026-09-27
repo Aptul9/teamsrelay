@@ -119,6 +119,14 @@ describe("notifier", () => {
     db.close();
   });
 
+  it("tells the agent when the web app runs its account only to check it", () => {
+    expect(new AppStore(appDbFile, 1).checkedOnly()).toBe(false);
+    const db = new Database(appDbFile);
+    db.prepare("UPDATE teams_accounts SET check_every=3600 WHERE slot=1").run();
+    db.close();
+    expect(new AppStore(appDbFile, 1).checkedOnly()).toBe(true);
+  });
+
   it("names the account when the owner has more", async () => {
     const db = new Database(appDbFile);
     db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(3, 'u1', 0)").run();

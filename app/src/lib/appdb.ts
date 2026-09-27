@@ -119,13 +119,14 @@ export function beginCheck(db: Database.Database, slot: number, now: number) {
   db.prepare("UPDATE teams_accounts SET checking=? WHERE slot=?").run(now, slot);
 }
 
-// A check that ended: its time and outcome, and the next one an interval later. result null: cut short (the account
-// stopped, removed or set back to always on meanwhile), nothing recorded.
-export function endCheck(db: Database.Database, slot: number, { now, result }: { now: number; result: CheckResult | null }) {
+// A check that ended: its time and outcome, and the next one an interval later, unless its owner asked for one while
+// it ran (asked: this check was the one asked). result null: cut short (the account stopped, removed or set back to
+// always on meanwhile), nothing recorded.
+export function endCheck(db: Database.Database, slot: number, { now, result, asked = false }: { now: number; result: CheckResult | null; asked?: boolean }) {
   if (!result) return db.prepare("UPDATE teams_accounts SET checking=0 WHERE slot=?").run(slot);
   db.prepare(
-    "UPDATE teams_accounts SET checking=0, checked=?, check_result=?, check_due=CASE WHEN check_every > 0 THEN ? + check_every ELSE 0 END WHERE slot=?",
-  ).run(now, result, now, slot);
+    "UPDATE teams_accounts SET checking=0, checked=?, check_result=?, check_due=CASE WHEN check_due = 0 AND NOT ? THEN 0 WHEN check_every > 0 THEN ? + check_every ELSE 0 END WHERE slot=?",
+  ).run(now, result, asked ? 1 : 0, now, slot);
 }
 
 // The checked account in service whose check is due first, asked ones before

@@ -306,6 +306,14 @@ describe("command handlers", () => {
     expect(store.commandStatus(refresh)).toBe("failed");
   });
 
+  it("keeps a check pending while the side bar cannot be clicked, like a refresh", async () => {
+    const a = agent();
+    const id = store.enqueue("check");
+    a.railReady = false;
+    await runPendingCommands(a);
+    expect(store.commandStatus(id)).toBe("pending");
+  });
+
   it("never runs a command that waited too long: a send queued while Teams was down stays unsent", async () => {
     const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
     insert.run(Math.floor(Date.now() / 1000) - COMMAND_MAX_AGE - 5, "send", "Anna Rossi", "from an hour ago");
@@ -381,6 +389,20 @@ describe("agent loop", () => {
       vi.advanceTimersByTime(60_000);
       await round(10);
       expect(reads).toEqual([11, 15]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("runs no automatic check of the day on an account the web app starts only to check it", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 8, 27, 9, 0));
+      const a = agent();
+      const job = agentJobs(a).find((j) => j.name === "self-check");
+      expect(job?.when?.({ onTeams: true, want: "" })).toBe(true);
+      a.checkedOnly = () => true;
+      expect(job?.when?.({ onTeams: true, want: "" })).toBe(false);
     } finally {
       vi.useRealTimers();
     }
