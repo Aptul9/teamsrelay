@@ -86,6 +86,7 @@ export function Conversation({
   entry,
   rows,
   stopped,
+  others,
   onBack,
   onOpenDesktop,
 }: {
@@ -95,6 +96,8 @@ export function Conversation({
   rows: Message[] | null;
   // the account is switched off: the messages are the last ones read, nothing can be sent
   stopped: boolean;
+  // unread in the other accounts: on a phone the account menu, which shows it, is hidden while a chat is open
+  others: number;
   onBack: () => void;
   onOpenDesktop: () => void;
 }) {
@@ -654,8 +657,19 @@ export function Conversation({
       }}
     >
       <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-2 backdrop-blur md:px-4 max-md:h-[calc(3.5rem+env(safe-area-inset-top))] max-md:pt-[env(safe-area-inset-top)]">
-        <Button variant="ghost" size="icon" className="size-10 md:hidden" onClick={onBack} aria-label="Back to the list">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative size-10 md:hidden"
+          onClick={onBack}
+          aria-label={others ? `Back to the list, ${others} unread in other accounts` : "Back to the list"}
+        >
           <ArrowLeftIcon className="size-5" />
+          {others > 0 && (
+            <span aria-hidden className="absolute top-0.5 left-5 min-w-4 rounded-full bg-primary px-1 text-center text-[0.625rem] leading-4 font-semibold text-primary-foreground tabular-nums">
+              {others > 99 ? "99+" : others}
+            </span>
+          )}
         </Button>
         <Avatar name={chat} av={entry?.av} acc={acc} muted={!!entry?.muted} className="size-9" />
         <div className="min-w-0 flex-1">
