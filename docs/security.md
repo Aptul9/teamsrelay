@@ -60,3 +60,10 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 - One API, on loopback unless the owner binds it elsewhere. Everything but the app page, its files, `/healthz` and the VAPID public key needs the bearer token (192 bits, compared in constant time). Wrong tokens are limited per address; the right one never is. No CORS headers and no cookies: a web page cannot use the API from the phone's browser.
 - The app page carries a Content Security Policy that loads nothing from outside, and inserts every message as text, never as HTML. Images are served by name only (16 hex characters and an image extension).
 - The token stays in the browser of the phone (`localStorage`). Signing out of the app forgets it and removes the push subscription of that phone from the relay and from the browser; a new token (delete `state/token`, run `npm run relay:setup`, restart the relay) signs every phone out.
+
+## Account on another computer
+
+- The token of the account (256 bits) is shown once when the account is added, or when its owner makes a new one; the server keeps only its SHA-256, and looks a token up by its digest. It gives what the agent of a slot has: the database, media and uploads of that one slot, and notifications to its owner. It opens no session of the web app and reads no other account.
+- `/api/relay/*` refuses requests with an `Origin` header (a web page), and takes no cookie. The relay sends the token over HTTPS; `http://` only to a server on the same machine.
+- What a relay writes reaches the app like the rows of an agent: message HTML through DOMPurify with the allowlist of the conversation view, images stored only when their first bytes are the type their name says and served with `nosniff`, attachments served as downloads. Names are checked against the patterns of the slot folders before any file is written; a file is written whole or not at all.
+- The relay holds the Microsoft session of the account on its computer (`app/state/profile`), and the token in `app/relay.env`: protect that computer like the server. Removing the account on the server, or a new token, shuts the relay out at once.

@@ -21,6 +21,10 @@ export type PushDevices = {
   account?(me: Identity): { acc: number; label: string };
 };
 
+// What the jobs notify through: the Notifier below, or the web app of the server a local relay joined
+// (ServerNotifier, src/local/server-link.ts), which sends with this Notifier on its side
+export type Notify = Pick<Notifier, "message" | "alert" | "call" | "missedCall" | "deviceCount">;
+
 // Retries run on timers, so a push service that answers slowly or not at all never holds up the read loop
 const later: Later = (ms, fn) => void setTimeout(fn, ms).unref();
 

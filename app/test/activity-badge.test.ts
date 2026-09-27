@@ -53,6 +53,9 @@ const account = (extra: Partial<Account> = {}): Account => ({
   checkResult: "",
   nextCheck: 0,
   checking: false,
+  relay: false,
+  host: "",
+  relaySeen: 0,
   ...extra,
 });
 

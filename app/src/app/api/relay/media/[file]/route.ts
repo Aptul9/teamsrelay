@@ -1,0 +1,13 @@
+import { route } from "@/lib/http";
+import { requireRelay, saveRelayFile } from "@/lib/relay";
+
+export const dynamic = "force-dynamic";
+
+type Ctx = { params: Promise<{ file: string }> };
+
+// An image or profile picture of the account on another computer, into data/N/media
+export const PUT = route<Ctx>(async (req, { params }) => {
+  const { slot } = requireRelay(req);
+  await saveRelayFile(slot, "media", (await params).file, req.body);
+  return Response.json({ ok: true });
+});

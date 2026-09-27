@@ -30,6 +30,9 @@ const account: Account = {
   checkResult: "",
   nextCheck: 0,
   checking: false,
+  relay: false,
+  host: "",
+  relaySeen: 0,
 };
 
 const ringer = new Ringer({

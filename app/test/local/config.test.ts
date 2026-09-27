@@ -65,6 +65,30 @@ describe("relay configuration", () => {
   });
 });
 
+describe("a server to join", () => {
+  const TOKEN = "t".repeat(43);
+
+  it("is none by default", () => {
+    expect(loadConfig({}, CWD).server).toBeNull();
+  });
+
+  it("takes its address and token, and turns on what its web app shows", () => {
+    const c = loadConfig({ SERVER_URL: "https://teams.example.com/", SERVER_TOKEN: TOKEN }, CWD);
+    expect(c).toMatchObject({ server: { url: "https://teams.example.com", token: TOKEN }, activity: true, readBy: true, filesDir: path.join(CWD, "state", "files") });
+  });
+
+  it("wants both, a real token, and HTTPS unless the server is on this machine", () => {
+    expect(() => loadConfig({ SERVER_URL: "https://teams.example.com" }, CWD)).toThrow(/go together/);
+    expect(() => loadConfig({ SERVER_TOKEN: TOKEN }, CWD)).toThrow(/go together/);
+    expect(() => loadConfig({ SERVER_URL: "https://teams.example.com", SERVER_TOKEN: "short" }, CWD)).toThrow(/SERVER_TOKEN/);
+    expect(() => loadConfig({ SERVER_URL: "http://teams.example.com", SERVER_TOKEN: TOKEN }, CWD)).toThrow(/https:\/\/ needed/);
+    expect(() => loadConfig({ SERVER_URL: "http://192.168.1.10:8090", SERVER_TOKEN: TOKEN }, CWD)).toThrow(/https:\/\/ needed/);
+    for (const url of ["http://localhost:8090", "http://127.0.0.1:8090", "http://[::1]:8090"]) {
+      expect(loadConfig({ SERVER_URL: url, SERVER_TOKEN: TOKEN }, CWD).server?.url).toBe(url);
+    }
+  });
+});
+
 describe("API token", () => {
   it("is read from its file, without the line end", () => {
     const file = path.join(tempDir(), "token");

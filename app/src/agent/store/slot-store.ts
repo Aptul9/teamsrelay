@@ -153,11 +153,12 @@ export class SlotStore {
       .run(mid, chat, readBy.label, JSON.stringify(readBy.names), nowSeconds());
   }
 
-  // A command with a key already queued is not queued again: the id of the first one comes back
-  enqueue(type: CommandType, arg1 = "", arg2 = "", key: string | null = null): number {
+  // A command with a key already queued is not queued again: the id of the first one comes back. ts: when it was
+  // queued, where the relay of an account on another computer takes it from the server
+  enqueue(type: CommandType, arg1 = "", arg2 = "", key: string | null = null, ts = nowSeconds()): number {
     const known = key ? this.commandIdByKey(key) : null;
     if (known) return known;
-    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2, key) VALUES(?,?,?,?,?)").run(nowSeconds(), type, arg1, arg2, key);
+    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2, key) VALUES(?,?,?,?,?)").run(ts, type, arg1, arg2, key);
     return Number(r.lastInsertRowid);
   }
 

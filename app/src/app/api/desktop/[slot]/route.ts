@@ -1,6 +1,7 @@
-import { appDb, slotOwner } from "@/lib/appdb";
+import { appDb, slotOwner, slotRow } from "@/lib/appdb";
 import { controlClient } from "@/lib/control";
 import { HttpError, route } from "@/lib/http";
+import { ON_ANOTHER_COMPUTER } from "@/lib/relay";
 import { currentUser } from "@/lib/session";
 
 type Ctx = { params: Promise<{ slot: string }> };
@@ -14,6 +15,7 @@ export const GET = route<Ctx>(async (req, { params }) => {
   if (!user) return redirect(`/login?next=${encodeURIComponent(new URL(req.url).pathname)}`);
   const n = Number((await params).slot);
   if (!Number.isInteger(n) || slotOwner(appDb(), n) !== user.id) throw new HttpError(404, "Account not found");
+  if (slotRow(appDb(), n)?.relay) throw new HttpError(409, ON_ANOTHER_COMPUTER);
   // the desktop is still useful with the windows as they are
   await controlClient()
     .show(n)

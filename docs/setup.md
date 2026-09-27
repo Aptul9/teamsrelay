@@ -173,3 +173,21 @@ The phone opens the relay address, enters the token once and taps **Notification
 When Teams signs out, the relay pushes "Teams signed out" after a minute and its window shows the sign-in page: sign in there, the relay pushes "Teams back". Commands meanwhile answer 409.
 
 Checks of the relay are part of `npm test`; `node dist/relay.cjs --check` loads the packages, the page scripts and the files of the app.
+
+## An account on another computer
+
+A Teams account whose browser runs on another computer (a laptop, a PC at the office) can show in the web app next to the accounts of the browsers container: the [local relay](#local-relay) on that computer reads it and joins this server ([design](design/2026-09-27-relay-joins-server.md)). Only the relay opens connections, to the web app over HTTPS: nothing on that computer has to be reachable, and the phone keeps using the web app of the server.
+
+1. In the web app: account menu → **Add from another computer…**. A dialog shows two lines, once: `SERVER_URL` (the address of this web app) and `SERVER_TOKEN`.
+2. On the other computer, set up the relay as above (`npm ci --ignore-scripts`, `npm run relay:setup`, `npm run build:relay`), add the two lines to `app/relay.env`, and sign in once with `npm run relay:login`.
+3. Start it (`npx pm2 start ecosystem.config.cjs`, `npx pm2 save`, and the logon task on Windows). Within a minute the account shows its chats in the web app.
+
+The account then works like the others in the app, with these differences:
+
+- No remote desktop: the sign-in happens in the relay window on that computer, and the app says so when Teams asks for one.
+- Its status is its relay's: **Active** while the relay syncs, **Not connected** a minute after it stopped; no **Stopped** or **Checked every N h** modes.
+- Notifications go from this server to the devices of its owner, with the push keys of the server (`vapid/`, mounted in the web app; `VAPID_SUBJECT` and `NTFY_*` of `.env` apply).
+- **Settings** → **Teams accounts** → **New token** replaces the token: the relay stops syncing until its `relay.env` gets the new one.
+- Removing the account deletes its data here and its token; the relay keeps its own Teams session until it is stopped there.
+
+Joined, the relay keeps its own app on loopback, without devices of its own.

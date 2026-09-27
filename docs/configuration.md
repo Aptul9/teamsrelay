@@ -14,10 +14,10 @@ Every setting is in `.env`, next to `docker-compose.yml`. Template: [.env.exampl
 | `ACCOUNTS_PER_USER` | no | Teams accounts one user may add. Empty: up to `SLOT_COUNT`. |
 | `DESKTOP_USER`, `DESKTOP_PASS` | no | Password of the remote desktop. Leave empty: the desktop is behind the web app login and opens only for users with a Teams account. |
 | `DESKTOP_URL` | no | Address of the remote desktop of account `{n}`. Default `/api/desktop/{n}`, which brings the window of the account to the front of `/desktop/`. |
-| `VAPID_SUBJECT` | no | Contact required by the Web Push standard, `mailto:` or `https:` URL. |
+| `VAPID_SUBJECT` | no | Contact required by the Web Push standard, `mailto:` or `https:` URL. Used by the agents, and by the web app for the accounts on another computer. |
 | `TZ` | no | Time zone of the automatic checks (8-11 and 17-20). Default `UTC`. |
 | `HTTPS_PORT`, `HTTPS_BIND` | no | Port and bind address of Caddy for HTTPS. Default `443` on `0.0.0.0`. |
-| `NTFY_ENABLED`, `NTFY_URL`, `NTFY_TOPIC` | no | Notifications through ntfy as well (`NTFY_ENABLED=1` and a topic). Every account of the server posts to the same topic. |
+| `NTFY_ENABLED`, `NTFY_URL`, `NTFY_TOPIC` | no | Notifications through ntfy as well (`NTFY_ENABLED=1` and a topic). Every account of the server posts to the same topic, the accounts on another computer included (the web app sends theirs). |
 
 ## Agent environment
 
@@ -57,8 +57,8 @@ Set by `docker-compose.yml` and the browsers image. The supervisor checks these 
 |---|---|
 | `vapid/private_key.pem`, `vapid/appkey.txt` | Web Push keys, generated once ([setup.md](setup.md)). |
 | `config/N/` | Chromium profile of account N: the signed-in Microsoft session. |
-| `data/app.db` | Users, sessions, slot ownership, push subscriptions. |
-| `data/N/` | Database, images and files of slot N. |
+| `data/app.db` | Users, sessions, slot ownership, push subscriptions, the SHA-256 of the token of each account on another computer. |
+| `data/N/` | Database, images and files of slot N; for an account on another computer, written by the web app from what its relay sends. |
 
 ## Local relay environment
 
@@ -73,6 +73,7 @@ Set by `docker-compose.yml` and the browsers image. The supervisor checks these 
 | `RELAY_TLS_CERT`, `RELAY_TLS_KEY` | empty | PEM files for HTTPS on the API itself, both or neither, relative to `app/` |
 | `VAPID_SUBJECT` | `mailto:admin@example.com` | Contact for the push services, `mailto:` or `https://` |
 | `NTFY_URL`, `NTFY_TOPIC` | `https://ntfy.sh`, empty | ntfy as a second channel, on when the topic is set |
-| `HOST_LABEL` | host name | Name of the machine in the alerts ("sign in again in the relay window on ...") |
+| `HOST_LABEL` | host name | Name of the machine in the alerts ("sign in again in the relay window on ...") and, joined to a server, in its web app |
+| `SERVER_URL`, `SERVER_TOKEN` | empty | A TeamsRelay server to join as an account on another computer ([setup](setup.md#an-account-on-another-computer)): the address of its web app and the token its account menu showed, both or neither. `https://`, or `http://` to `localhost`, `127.0.0.1`, `[::1]` only |
 
-Files under `STATE_DIR`: `profile/` (the signed-in Microsoft session), `relay.db`, `media/`, `vapid/private_key.pem` and `vapid/appkey.txt`, `token`, `relay.lock`. None is in git or in the Docker build context.
+Files under `STATE_DIR`: `profile/` (the signed-in Microsoft session), `relay.db`, `media/`, `files/` (attachments a server joined asked for), `uploads/` (its images to send), `vapid/private_key.pem` and `vapid/appkey.txt`, `token`, `relay.lock`. None is in git or in the Docker build context.
