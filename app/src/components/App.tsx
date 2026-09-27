@@ -583,7 +583,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               entry={(chats ?? []).find((c) => c.name === openChat)}
               rows={messages?.chat === openChat ? messages.rows : null}
               stopped={!!current && (current.stopped || current.checkEvery > 0)}
-              stoppedText={current?.checkEvery ? "Runs only during its checks: set it to always on in Settings to send" : undefined}
+              stoppedText={current?.checkEvery && !current.stopped ? "Runs only during its checks: set it to always on in Settings to send" : undefined}
               others={others}
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}

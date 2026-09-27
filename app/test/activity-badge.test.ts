@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  accountStatus,
   accountUnread,
   loadSeen,
   markActivitySeen,
@@ -100,6 +101,14 @@ describe("accountUnread", () => {
 
   it("counts nothing for a stopped account, whose numbers would stay until it starts", () => {
     expect(accountUnread(account({ stopped: true }), [])).toEqual({ chats: 0, notifications: 0 });
+  });
+});
+
+describe("accountStatus", () => {
+  it("is one of stopped, always on (0) or the interval of the checks: a stopped account is stopped whatever its interval", () => {
+    expect(accountStatus(account({ stopped: true, checkEvery: 14400 }))).toBe("stopped");
+    expect(accountStatus(account({ checkEvery: 0 }))).toBe(0);
+    expect(accountStatus(account({ checkEvery: 7200 }))).toBe(7200);
   });
 });
 
