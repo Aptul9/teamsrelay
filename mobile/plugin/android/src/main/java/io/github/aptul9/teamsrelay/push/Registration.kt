@@ -31,6 +31,25 @@ object Registration {
         messaging.token.addOnSuccessListener { token -> thread { exchange(app, origin, token) } }
     }
 
+    // The app changes server: the previous one forgets this phone (DELETE /api/push/fcm, the token is the proof), and its
+    // key goes, so nothing it still sends opens here. A server that does not answer keeps sending: Firebase delivers,
+    // the plugin drops those messages (no key of theirs).
+    fun leave(context: Context, origin: String) {
+        val store = Store(context.applicationContext)
+        val token = store.token
+        store.token = ""
+        store.key = ""
+        if (origin.isEmpty() || token.isEmpty()) return
+        thread {
+            try {
+                val (status, _) = call("DELETE", "$origin/api/push/fcm", "", JSONObject().put("token", token))
+                if (status != 200) Log.w(TAG, "previous server did not forget the phone: HTTP $status")
+            } catch (e: Exception) {
+                Log.w(TAG, "previous server not reached: $e")
+            }
+        }
+    }
+
     private fun exchange(context: Context, origin: String, token: String) {
         val store = Store(context)
         val cookies = CookieManager.getInstance().getCookie(origin) ?: ""

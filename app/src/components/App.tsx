@@ -40,6 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { appStart, keepAppStart, useAppStart } from "@/lib/android-app";
 import { authClient } from "@/lib/auth-client";
 import {
   accountUnread,
@@ -135,6 +136,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [toggling, setToggling] = useState(0);
   const [removing, setRemoving] = useState<Account | null>(null);
   const isPc = useSyncExternalStore(noSubscribe, isPcNow, () => false);
+  // the Android app opened this server: the account menu offers Change server
+  const appPage = useAppStart();
   const onScreen = useSyncExternalStore(onVisibility, visibleNow, () => true);
 
   const deskUrl = useCallback((n: number) => desktopUrl.replace("{n}", String(n)), [desktopUrl]);
@@ -211,14 +214,15 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     }
   }, [applyAccounts]);
 
-  // first load: an account asked for in the URL (tap on a notification) wins over the remembered one.
-  // The account list itself arrives with the first event of the stream.
+  // first load: an account asked for in the URL (tap on a notification) wins over the remembered one, and the start page
+  // of the Android app (app=) is kept before the address is cleaned. The account list itself arrives with the first
+  // event of the stream.
   useEffect(() => {
-    const want = Number(new URLSearchParams(window.location.search).get("a")) || 0;
-    if (want) {
-      writeStorage("acc", String(want));
-      window.history.replaceState(null, "", "/");
-    }
+    const q = new URLSearchParams(window.location.search);
+    const want = Number(q.get("a")) || 0;
+    if (want) writeStorage("acc", String(want));
+    keepAppStart(appStart(window.location.search));
+    if (want || q.has("app")) window.history.replaceState(null, "", "/");
   }, []);
 
   // server-sent events: account list, health, chats, activity and the open chat, pushed on change
@@ -478,6 +482,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             onOpenDesktop={openDesktop}
             onRemove={setRemoving}
             onSignOut={() => void authClient.signOut().then(toLogin)}
+            appPage={appPage}
           />
           <StatusPanel
             acc={acc}

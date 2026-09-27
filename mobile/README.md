@@ -6,7 +6,11 @@ A Tauri 2 app that shows the TeamsRelay web app of a server in an app window and
 
 - First start: a page bundled with the app asks for the address of the TeamsRelay server, keeps it (`localStorage` of the bundled page) and opens it. `https://` only; `http://` is accepted for `localhost` and `127.0.0.1`, to reach a local stack through `adb reverse tcp:8090 tcp:8090`, and works only in debug builds (the Tauri Android template allows clear text for the debug build type only).
 - Next starts: the saved server opens directly.
-- Changing the server: Android Settings, Apps, TeamsRelay, Storage, **Clear storage** (it also signs out). Back from the first server page right after typing the address shows the form again: tested in Chrome; in the app the Back button calls `webView.goBack()` while the WebView has history (Tauri 2.12 `AppPlugin.kt`), not tried on a device yet.
+- Changing the server, both ways bring back the form of the start page with the address in use (`#change`):
+  - long press on the app icon, **Change server**: a launcher shortcut the push plugin publishes at each start (`Shortcuts.kt`, dynamic, Android 7.1 and later; it brings back the running app). It works when the server does not answer or no longer lets the app in;
+  - **Change server** in the account menu of the web app, and under its sign-in form: the start page opens the server with its own address (`?app=http://tauri.localhost/`, the origin Tauri 2.12 serves the bundled page from on Android), which the web app keeps on the device and links back to. The server page itself still cannot call Tauri.
+  - The previous server forgets the phone when it answers (`DELETE /api/push/fcm` with the token), and the key it gave is dropped: what it may still send is not opened. Android Settings, Apps, TeamsRelay, Storage, **Clear storage** starts from scratch (it also signs out).
+- Back from the first server page right after typing the address shows the form again: tested in Chrome; in the app the Back button calls `webView.goBack()` while the WebView has history (Tauri 2.12 `AppPlugin.kt`), not tried on a device yet.
 - The server page runs in the app WebView with its own session cookie. No Tauri capability names a remote URL, so the server page cannot call Tauri: only the bundled start page calls the push plugin (`src-tauri/capabilities/default.json`).
 - Android WebView has no Push API and no service worker notifications (MDN compatibility data): the notifications come from the push plugin (`plugin/`), not from the web page, whose Settings still say the browser does not support push notifications.
 - No downloads inside the app: Tauri 2.12 sets no download listener on the Android WebView, so attachment downloads of the web app do nothing. Open files in Teams or in the PWA.
@@ -27,7 +31,7 @@ A Tauri 2 app that shows the TeamsRelay web app of a server in an app window and
 |---|---|
 | `start/` | The bundled start page: `index.html`, `start.js`, `relay.js` (address rules), `start.css`, `icon.png` |
 | `src-tauri/` | Tauri project: `tauri.conf.json` (identifier `io.github.aptul9.teamsrelay`, CSP of the start page), `src/lib.rs` (entry point, push plugin), `capabilities/default.json` (the start page may call the plugin), `icons/` (made by `npx tauri icon ../app/public/static/icon-512.png`) |
-| `plugin/` | Tauri plugin `push`: Rust glue (`src/lib.rs`, commands `relay` and `opened`) and the Kotlin of Android (`android/`: Firebase service, channels, registration, decryption; JVM tests in `android/src/test`) |
+| `plugin/` | Tauri plugin `push`: Rust glue (`src/lib.rs`, commands `relay` and `opened`) and the Kotlin of Android (`android/`: Firebase service, channels, registration, decryption, launcher shortcut; JVM tests in `android/src/test`) |
 | `scripts/firebase-values.mjs` | `google-services.json` to the string resources of the plugin |
 | `src-tauri/gen/android` | Android project made by `npx tauri android init`, not in git: the plugin brings its Kotlin, manifest entries and Firebase settings, so the generated project needs no edit |
 | `test/` | `npm test`: address rules, Firebase values, and the start page in headless Google Chrome (with a stand-in for the plugin) |

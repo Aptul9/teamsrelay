@@ -15,3 +15,14 @@ export function pickSlot(owned: number[], param: string | null): number {
 export function safeNext(next: string | null): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 }
+
+// The sign-in page for a visit to the app without a session: the account asked by a tapped notification (a) and the
+// start page of the Android app (app) come back with the page after the sign-in
+export function loginFor(params: Record<string, string | string[] | undefined>): string {
+  const back = new URLSearchParams();
+  for (const k of ["a", "app"]) {
+    const v = params[k];
+    if (typeof v === "string" && v) back.set(k, v);
+  }
+  return String(back) ? `/login?next=${encodeURIComponent(`/?${back}`)}` : "/login";
+}

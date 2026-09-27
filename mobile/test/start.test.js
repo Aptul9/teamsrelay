@@ -111,42 +111,77 @@ test("shows the address again when Back restores the page from the back/forward 
   assert.deepEqual(errors, []);
 });
 
-// In the app, the push plugin (plugin/android) answers the start page: it takes the server, and names the account of
-// a notification that started the app
-async function inTheApp(page, opened) {
+// In the app, the push plugin (plugin/android) answers the start page: it takes the server and the address of the
+// page, and says what started the app (launch: the account of a tapped notification, the launcher shortcut Change
+// server)
+async function inTheApp(page, launch) {
   const invoked = [];
   await page.exposeBinding("recordInvoke", (_source, cmd, args) => invoked.push([cmd, args]));
-  await page.addInitScript((acc) => {
+  await page.addInitScript((launch) => {
     window.__TAURI_INTERNALS__ = {
       invoke: async (cmd, args) => {
         await window.recordInvoke(cmd, args ?? null);
-        return cmd === "plugin:push|opened" ? { acc } : null;
+        return cmd === "plugin:push|opened" ? launch : null;
       },
     };
-  }, opened);
+  }, launch);
   return invoked;
 }
 
-test("in the app, hands the server to the plugin and opens the account of the notification that started the app", async () => {
+// The server address the start page opens in the app: the account asked, and the page itself for Change server
+const inApp = (server, acc = 0) => `${server}/?${acc ? `a=${acc}&` : ""}app=${encodeURIComponent(origin + "/")}`;
+
+test("in the app, hands the server and the address of the page to the plugin", async () => {
   const { page, errors } = await newPage();
-  const invoked = await inTheApp(page, 2);
+  const invoked = await inTheApp(page, { acc: 0, change: false });
   await page.goto(origin + "/");
   await page.fill("#relay", "https://relay.test");
-  await Promise.all([page.waitForURL(`${RELAY}/?a=2`), page.click("button[type=submit]")]);
+  await Promise.all([page.waitForURL(inApp(RELAY)), page.click("button[type=submit]")]);
   assert.deepEqual(invoked.slice(0, 2), [
-    ["plugin:push|relay", { origin: RELAY }],
     ["plugin:push|opened", null],
+    ["plugin:push|relay", { origin: RELAY, page: origin + "/" }],
   ]);
+  assert.deepEqual(errors, []);
+});
+
+test("in the app, opens the saved server on the account of the notification that started the app", async () => {
+  const { page, errors } = await newPage();
+  await inTheApp(page, { acc: 2, change: false });
+  await page.goto(origin + "/");
+  await page.fill("#relay", "https://relay.test");
+  await Promise.all([page.waitForURL(inApp(RELAY)), page.click("button[type=submit]")]);
+  await page.goto(origin + "/");
+  await page.waitForURL(inApp(RELAY, 2));
   assert.deepEqual(errors, []);
 });
 
 test("in the app, opens the saved server as it is when no notification started it", async () => {
   const { page, errors } = await newPage();
-  await inTheApp(page, 0);
+  await inTheApp(page, { acc: 0, change: false });
   await page.goto(origin + "/");
   await page.fill("#relay", "https://relay.test");
-  await Promise.all([page.waitForURL(`${RELAY}/`), page.click("button[type=submit]")]);
+  await Promise.all([page.waitForURL(inApp(RELAY)), page.click("button[type=submit]")]);
   await page.goto(origin + "/");
-  await page.waitForURL(`${RELAY}/`);
+  await page.waitForURL(inApp(RELAY));
+  assert.deepEqual(errors, []);
+});
+
+test("in the app, the launcher shortcut Change server shows the form with the address in use", async () => {
+  const { page, errors } = await newPage();
+  await inTheApp(page, { acc: 0, change: true });
+  await page.context().route("https://other.test/**", (route) => route.fulfill({ contentType: "text/html", body: "<title>other</title>" }));
+  await page.goto(origin + "/");
+  await page.fill("#relay", "https://relay.test");
+  await Promise.all([page.waitForURL(inApp(RELAY)), page.click("button[type=submit]")]);
+
+  // started from the shortcut: the form, the saved address filled in, nothing opened
+  await page.goto(origin + "/");
+  await page.waitForSelector("#relay-form", { state: "visible" });
+  assert.equal(await page.inputValue("#relay"), RELAY);
+  assert.equal(page.url(), origin + "/");
+
+  // another server, opened with the page named for the next Change server
+  await page.fill("#relay", "https://other.test");
+  await Promise.all([page.waitForURL(inApp("https://other.test")), page.click("button[type=submit]")]);
   assert.deepEqual(errors, []);
 });
