@@ -9,9 +9,9 @@ import type { Handler } from "./index";
 // What was unread at the end of a check: each unread chat with its preview (a new message changes it) and, from the
 // recent reads of the feed (newest first, up to KEEP), the ids of the unread Activity items and of the missed calls
 // (Teams shows those as read, new or not), and whether any feed was read (a row of an earlier release, without it,
-// was written after one). New is an id the recent reads did not have; an item a read shows keeps the state it has
-// there, one it does not show the state of the reads before (a shorter read leaves out the older items). Feed items
-// carry no time: an older item that only a longer read shows counts as new too. A row without calls, from an earlier
+// was written after one). New is an id the recent reads did not have; an item a read shows takes the state it has
+// there, one the read leaves out keeps the state of the reads before (a shorter read leaves out the older items). Feed
+// items carry no time: an older item that only a longer read shows counts as new too. A row without calls, from an earlier
 // release, pushes no missed call: the check only records them.
 const Seen = z.object({
   chats: z.array(z.string()).catch([]),

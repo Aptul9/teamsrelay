@@ -126,7 +126,7 @@ export class SlotReader {
   // (it saves none while the feed is empty)
   unreadActivity(): string[] | null {
     if (!Number(this.state(STATE.activityTs, 0))) return null;
-    return this.all<{ id: string }>("SELECT id FROM activity WHERE unread=1 ORDER BY pos").map((r) => r.id);
+    return this.all<{ id: string }>(`SELECT id FROM activity WHERE unread=1 AND ${HAS_TEAMS_ID} ORDER BY pos`).map((r) => r.id);
   }
 
   // Ids of every missed call of the feed that has its Teams id, in feed order, null until the agent has saved the feed

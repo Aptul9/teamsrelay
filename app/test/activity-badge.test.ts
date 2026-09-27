@@ -111,6 +111,7 @@ describe("missed calls", () => {
 
   it("never count a missed call saved without its Teams id: its id is its place", () => {
     expect(unseenCalls([call("x3"), call("c1")], [])).toBe(1);
+    expect(unseenActivity([item("x4"), item("n1")], [])).toBe(1);
   });
 });
 

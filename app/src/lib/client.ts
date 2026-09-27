@@ -128,7 +128,7 @@ export const isSelf = (name: string) => /\(you\)/i.test(name || "");
 export const isMissedCall = (a: Pick<ActivityItem, "kind">) => a.kind === "call";
 
 export function unseenActivity(items: ActivityItem[], seen: string[] | null): number {
-  return unseenIds(items.filter((a) => a.unread && !isMissedCall(a)).map((a) => a.id), seen);
+  return unseenIds(items.filter((a) => a.unread && !isMissedCall(a) && hasTeamsId(a.id)).map((a) => a.id), seen);
 }
 
 export function unseenCalls(items: ActivityItem[], seen: string[] | null): number {

@@ -215,9 +215,9 @@ export class SlotStore {
     return this.db.prepare("SELECT id FROM activity ORDER BY pos").pluck().all() as string[];
   }
 
-  // Ids of the items the Activity feed shows unread (bold), in feed order
+  // Ids of the items with their Teams id the Activity feed shows unread (bold), in feed order
   unreadActivity(): string[] {
-    return this.db.prepare("SELECT id FROM activity WHERE unread=1 ORDER BY pos").pluck().all() as string[];
+    return this.db.prepare(`SELECT id FROM activity WHERE unread=1 AND ${HAS_TEAMS_ID} ORDER BY pos`).pluck().all() as string[];
   }
 
   // Every missed call of the feed that has its Teams id, in feed order: who called, and the time Teams shows. Teams

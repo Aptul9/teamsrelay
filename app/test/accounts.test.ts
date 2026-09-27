@@ -49,15 +49,15 @@ describe("the unread counts of an account", () => {
 
     const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
     slotDb.prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av) VALUES('Anna Rossi','hi',0,0,'',1,0,0,'')").run();
-    slotDb.prepare("INSERT INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,unread,ts,channel,av) VALUES('x1',0,'mention','','','','','','',1,0,0,'')").run();
+    slotDb.prepare("INSERT INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,unread,ts,channel,av) VALUES('n1',0,'mention','','','','','','',1,0,0,'')").run();
     expect(summary("u3", n)).toMatchObject({ unread: 1, unreadActivity: null });
 
     slotDb.prepare("INSERT INTO state(k, v) VALUES('activity_ts', ?)").run(String(Math.floor(Date.now() / 1000)));
-    expect(summary("u3", n)).toMatchObject({ unread: 1, unreadActivity: ["x1"], missedCalls: [], activityIds: ["x1"] });
+    expect(summary("u3", n)).toMatchObject({ unread: 1, unreadActivity: ["n1"], missedCalls: [], activityIds: ["n1"] });
 
     // Teams shows a missed call as read, new or not: every one of the feed is listed
     slotDb.prepare("INSERT INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,unread,ts,channel,av) VALUES('c1',1,'call','Luca Bianchi','Missed call from Luca Bianchi','','','1:15 PM','Luca Bianchi',0,0,0,'')").run();
-    expect(summary("u3", n)).toMatchObject({ unreadActivity: ["x1"], missedCalls: ["c1"], activityIds: ["x1", "c1"] });
+    expect(summary("u3", n)).toMatchObject({ unreadActivity: ["n1"], missedCalls: ["c1"], activityIds: ["n1", "c1"] });
   });
 
   it("carry when the account took its slot, which changes when another account takes the slot", () => {

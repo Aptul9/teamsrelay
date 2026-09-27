@@ -169,6 +169,14 @@ describe("check command", () => {
     expect(alerts).toEqual(["1 new notification: Found by the check: open TeamsRelay to read them."]);
   });
 
+  it("counts no unread item saved without its Teams id as a new notification: its id is its place", async () => {
+    store.saveActivity([mention("x0", true)]);
+    await check(agent(), cmd);
+    store.saveActivity([mention("m-new"), mention("x1", true)]);
+    await check(agent(), cmd);
+    expect(alerts).toEqual([]);
+  });
+
   it("never pushes a missed call saved without its Teams id: its id is its place", async () => {
     store.saveActivity([missedCall("x0", "Anna Rossi", "8/29")]);
     await check(agent(), cmd);
