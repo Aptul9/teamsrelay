@@ -200,6 +200,45 @@ describe("notifier", () => {
     expect(retries.map((r) => r.ms)).toEqual([5000]);
   });
 
+  it("rings an iPhone when the call starts and when it ends only: Safari there shows every push apart", async () => {
+    appDbFile = seedAppDb([
+      ["https://push/u1-phone", "u1", sub("https://push/u1-phone")],
+      ["https://web.push.apple.com/QK1-iphone", "u1", sub("https://web.push.apple.com/QK1-iphone")],
+    ]);
+    const n = notifier();
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await n.call("Anna Rossi", "again", 1_790_000_000_000);
+    await n.call("Anna Rossi", "ended", 1_790_000_000_000, 9);
+    const calls = (endpoint: string) => sent.filter((s) => s.endpoint === endpoint).map((s) => (s.payload as { call: string }).call);
+    expect(calls("https://push/u1-phone")).toEqual(["ringing", "ringing", "ended"]);
+    expect(calls("https://web.push.apple.com/QK1-iphone")).toEqual(["ringing", "ended"]);
+  });
+
+  it("sends to every device at once: a push service that does not answer holds no other", async () => {
+    appDbFile = seedAppDb([
+      ["https://0-slow/u1", "u1", sub("https://0-slow/u1")],
+      ["https://push/u1-phone", "u1", sub("https://push/u1-phone")],
+    ]);
+    let release = () => {};
+    const got: string[] = [];
+    const n = new Notifier({
+      store,
+      devices: new AppStore(appDbFile, 1),
+      vapid,
+      subject: "mailto:admin@example.com",
+      ntfy: null,
+      send: async (s) => {
+        if (s.endpoint.includes("slow")) await new Promise<void>((resolve) => (release = resolve));
+        got.push(s.endpoint);
+      },
+    });
+    const done = n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(got).toEqual(["https://push/u1-phone"]);
+    release();
+    expect(await done).toBe(2);
+  });
+
   it("keeps calls out of the history of notified messages", async () => {
     await notifier().call("Anna Rossi", "ringing", 1_790_000_000_000);
     const db = (store as unknown as { db: import("better-sqlite3").Database }).db;

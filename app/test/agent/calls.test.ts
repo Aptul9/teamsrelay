@@ -7,7 +7,7 @@ import { CALL_END_AFTER, CALL_RING_EVERY, CALL_RING_FOR, CallTracker } from "@/a
 
 describe("call tracker", () => {
   let now = 1_790_000_000_000;
-  const tracker = () => new CallTracker(() => now);
+  const tracker = () => new CallTracker(() => now, () => now);
   const at = (t: CallTracker, seconds: number, caller: string | null) => {
     now = 1_790_000_000_000 + seconds * 1000;
     return t.update(caller === null ? null : { caller });
@@ -53,7 +53,30 @@ describe("call tracker", () => {
     const t = tracker();
     at(t, 0, "Anna Rossi");
     expect(at(t, 1, "Luca Bianchi")).toMatchObject({ kind: "ringing", caller: "Luca Bianchi", again: false });
-    expect(at(t, 30, "")).toMatchObject({ kind: "ringing", caller: "", again: false });
+    const u = tracker();
+    expect(at(u, 0, "")).toMatchObject({ kind: "ringing", caller: "", again: false });
+  });
+
+  it("keeps one call when the name shows a moment after the toast, or goes for a moment, and ends it named", () => {
+    const t = tracker();
+    at(t, 0, "");
+    expect(at(t, 1, "Anna Rossi")).toBeNull();
+    expect(at(t, 2, "")).toBeNull();
+    expect(at(t, CALL_RING_EVERY, "Anna Rossi")).toMatchObject({ kind: "ringing", caller: "Anna Rossi", again: true });
+    at(t, 6, null);
+    expect(at(t, 6 + CALL_END_AFTER, null)).toMatchObject({ kind: "ended", caller: "Anna Rossi", seconds: 5 });
+  });
+
+  it("times the ringing on a clock that only goes forward: the wall clock set back keeps no call ringing", () => {
+    let mono = 0;
+    let wall = 1_790_000_000_000;
+    const t = new CallTracker(() => mono, () => wall);
+    expect(t.update({ caller: "Anna Rossi" })).toMatchObject({ since: 1_790_000_000_000 });
+    mono += 1000;
+    wall -= 600_000;
+    t.update(null);
+    mono += CALL_END_AFTER * 1000;
+    expect(t.update(null)).toEqual({ kind: "ended", caller: "Anna Rossi", since: 1_790_000_000_000, seconds: 0 });
   });
 
   it("has nothing to say without a call", () => {
@@ -78,16 +101,17 @@ describe("call watch", () => {
       notifier: { call: vi.fn(async (...args: unknown[]) => void calls.push(args)) },
     } as unknown as Agent;
     let now = 1_790_000_000_000;
-    const w = new CallWatch(a, () => now);
+    const w = new CallWatch(a, () => now, () => now);
     return { w, calls, evaluate, tick: async (seconds = 1) => ((now += seconds * 1000), await w.tick()) };
   }
 
-  it("pushes the call when it rings and when it ends", async () => {
-    const { calls, tick } = watch(["Anna Rossi", "Anna Rossi", null, null, null]);
-    for (let i = 0; i < 5; i++) await tick();
+  it("pushes the call when it rings, again while it rings, and when it ends", async () => {
+    const { calls, tick } = watch([...Array<string>(CALL_RING_EVERY + 1).fill("Anna Rossi"), null, null, null]);
+    for (let i = 0; i < CALL_RING_EVERY + 4; i++) await tick();
     expect(calls).toEqual([
       ["Anna Rossi", "ringing", 1_790_000_001_000],
-      ["Anna Rossi", "ended", 1_790_000_001_000, 1],
+      ["Anna Rossi", "again", 1_790_000_001_000],
+      ["Anna Rossi", "ended", 1_790_000_001_000, CALL_RING_EVERY],
     ]);
   });
 

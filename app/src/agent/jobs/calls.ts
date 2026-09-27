@@ -19,9 +19,10 @@ export class CallWatch {
 
   constructor(
     private readonly a: Pick<Agent, "notifier"> & { tp?: Agent["tp"] },
-    private readonly clock: () => number = Date.now,
+    private readonly clock: () => number = () => performance.now(),
+    wall: () => number = Date.now,
   ) {
-    this.tracker = new CallTracker(clock);
+    this.tracker = new CallTracker(clock, wall);
   }
 
   start(signal?: AbortSignal) {
@@ -38,14 +39,14 @@ export class CallWatch {
       const event = this.tracker.update(await page.evaluate(readIncomingCall, { s: SEL, t: TEXTS }));
       if (event?.kind === "ringing") {
         if (!event.again) log.info("call", "ringing", { caller: event.caller });
-        await this.a.notifier.call(event.caller, "ringing", event.since);
+        await this.a.notifier.call(event.caller, event.again ? "again" : "ringing", event.since);
       } else if (event) {
         log.info("call", "ended", { caller: event.caller, seconds: event.seconds });
         await this.a.notifier.call(event.caller, "ended", event.since, event.seconds);
       }
     } catch (e) {
       // a page that navigates fails every look for a while: one line a minute
-      if (this.clock() - this.warned > 60_000) {
+      if (!this.warned || this.clock() - this.warned > 60_000) {
         log.warn("call", errorText(e));
         this.warned = this.clock();
       }

@@ -114,6 +114,21 @@ describe("service worker call notifications", () => {
     expect(n.vibrate).toBeUndefined();
   });
 
+  it("keeps the notification of a newer call when a late push of an older one arrives (a retry)", async () => {
+    const sw = serviceWorker();
+    await sw.push({ ...ringing, ts: 9000 });
+    const n = await sw.push({ ...ringing, title: "Call from Anna Rossi", body: "Ended after 9 s", call: "ended", ts: 1000 });
+    expect(n).toMatchObject({ title: "Anna Rossi is calling", body: "Teams call, ringing now", tag: "call-2", requireInteraction: true, silent: true, renotify: false });
+    expect(n.vibrate).toBeUndefined();
+  });
+
+  it("keeps an ended call quiet when a late ringing push of the same call arrives", async () => {
+    const sw = serviceWorker();
+    await sw.push({ ...ringing, title: "Call from Anna Rossi", body: "Ended after 9 s", call: "ended" });
+    const n = await sw.push(ringing);
+    expect(n).toMatchObject({ title: "Call from Anna Rossi", silent: true, requireInteraction: false });
+  });
+
   it("keeps a call apart from the lines of a chat of the same person", async () => {
     const sw = serviceWorker();
     await sw.push({ title: "Anna Rossi", body: "are you there?", acc: 2, tag: "chat-2-Anna Rossi" });

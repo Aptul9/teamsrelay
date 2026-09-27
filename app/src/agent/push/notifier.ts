@@ -24,6 +24,9 @@ export type PushDevices = {
 // Retries run on timers, so a push service that answers slowly or not at all never holds up the read loop
 const later: Later = (ms, fn) => void setTimeout(fn, ms).unref();
 
+// Push service of Safari (web apps on the Home Screen of an iPhone or iPad, Safari on a Mac)
+const APPLE_PUSH = /^https:\/\/web\.push\.apple\.com\//;
+
 // Notifications of the account: Web Push to its devices, ntfy when enabled, and the history of the messages
 // notified (messages table).
 export class Notifier {
@@ -71,25 +74,35 @@ export class Notifier {
     return this.deliver((acc) => ({ title, body: body || "", chat, ...(group && { tag: chatTag(acc, group) }) }), { urgency, ttl: PUSH_TTL, retry: true });
   }
 
-  // An incoming Teams call, on a notification of its own per account. While it rings, every push alerts again on the
-  // device (sw.js), and the push service keeps it only while the call could still be answered, with no retry: the
-  // next one follows in seconds. Once it stops, the same notification turns quiet and stays a day. Not in the
-  // history of notified messages, not on ntfy.
-  async call(caller: string, state: "ringing" | "ended", since: number, seconds = 0): Promise<number> {
-    const ringing = state === "ringing";
+  // An incoming Teams call, on a notification of its own per account: "ringing" when it starts, "again" every few
+  // seconds while it rings, "ended" once it stops. While it rings every push alerts again on the device (sw.js), and
+  // the push service keeps it only while the call could still be answered, with no retry: the next one follows in
+  // seconds. Once it stops, the same notification turns quiet and stays a day. Safari devices get the start and the
+  // end only: on an iPhone every push shows apart, the tag ignored (WebKit bug 258922). Not in the history of
+  // notified messages, not on ntfy.
+  async call(caller: string, state: "ringing" | "again" | "ended", since: number, seconds = 0): Promise<number> {
+    const ringing = state !== "ended";
     const title = ringing ? (caller ? `${caller} is calling` : "Incoming call") : caller ? `Call from ${caller}` : "Call ended";
     const body = ringing ? "Teams call, ringing now" : seconds ? `Ended after ${seconds} s` : "Ended";
     const chat = caller && this.o.store.isKnownChat(caller) ? caller : "";
-    return this.deliver((acc) => ({ title, body, chat, tag: callTag(acc), call: state, ts: since }), { urgency: "high", ttl: ringing ? CALL_TTL : PUSH_TTL, retry: !ringing });
+    return this.deliver((acc) => ({ title, body, chat, tag: callTag(acc), call: ringing ? "ringing" : "ended", ts: since }), {
+      urgency: "high",
+      ttl: ringing ? CALL_TTL : PUSH_TTL,
+      retry: !ringing,
+      skip: state === "again" ? (t) => APPLE_PUSH.test(t.endpoint) : undefined,
+    });
   }
 
-  // Sends to every device what `content` makes for the account (its slot, 0 for the local relay), the title naming
-  // the account when the owner has more. Returns the devices the push service took on the first try; the ones it
-  // reported as gone are removed, the ones it could not take now are tried again later when `retry`.
-  private async deliver(content: (acc: number) => { title: string } & Record<string, unknown>, o: { urgency: webpush.Urgency; ttl: number; retry: boolean }): Promise<number> {
+  // Sends to every device, all at once, what `content` makes for the account (its slot, 0 for the local relay), the
+  // title naming the account when the owner has more. Returns the devices the push service took on the first try;
+  // the ones it reported as gone are removed, the ones it could not take now are tried again later when `retry`.
+  private async deliver(
+    content: (acc: number) => { title: string } & Record<string, unknown>,
+    o: { urgency: webpush.Urgency; ttl: number; retry: boolean; skip?: (t: PushTarget) => boolean },
+  ): Promise<number> {
     const { vapid, devices, store } = this.o;
     if (!vapid) return 0;
-    const targets = devices.targets();
+    const targets = devices.targets().filter((t) => !o.skip?.(t));
     if (!targets.length) return 0;
     const account = devices.account?.(parseState(Identity, store.getState(STATE.me), Identity.parse({})));
     const c = content(account?.acc ?? 0);
@@ -100,9 +113,8 @@ export class Notifier {
       urgency: o.urgency,
       timeout: 15_000,
     };
-    let sent = 0;
-    for (const t of targets) if (await this.sendTo(t, payload, options, 0, o.retry)) sent++;
-    return sent;
+    // one push service that does not answer (15 s) holds no other device
+    return (await Promise.all(targets.map((t) => this.sendTo(t, payload, options, 0, o.retry)))).filter(Boolean).length;
   }
 
   private async sendTo(t: PushTarget, payload: string, options: webpush.RequestOptions, attempt: number, retry = true): Promise<boolean> {
