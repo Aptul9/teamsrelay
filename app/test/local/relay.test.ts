@@ -8,6 +8,7 @@ import path from "node:path";
 import type { BrowserContext, Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
+import { selfCheckWindow } from "@/agent/logic/self-check";
 import { runAgent } from "@/agent/loop";
 import { Media } from "@/agent/media";
 import { Notifier } from "@/agent/push/notifier";
@@ -69,6 +70,12 @@ beforeAll(async () => {
   execFileSync(process.execPath, [path.join(APP, "scripts", "gen-vapid.mjs"), path.dirname(config.vapid.privateKeyFile)], { stdio: "pipe" });
   const vapid = loadVapidKeys(config.vapid.privateKeyFile, config.vapid.appKeyFile);
   store = SlotStore.open(config.dbPath);
+  // the automatic check (8-11 and 17-20 local time) would add its push to the exact list checked at the end: the
+  // windows the test can run in are marked as checked already
+  for (const at of [Date.now(), Date.now() + 10 * 60_000]) {
+    const key = selfCheckWindow(new Date(at));
+    if (key) store.setState(key, "1");
+  }
   devices = RelayDevices.open(config.dbPath);
   push = await fakePushService();
   const sub = push.subscription("phone");
