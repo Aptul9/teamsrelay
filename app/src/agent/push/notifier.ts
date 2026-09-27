@@ -1,6 +1,6 @@
 import webpush from "web-push";
 import { Identity, parseState, STATE } from "@/shared/slot-db/state";
-import { chatTag, PUSH_TTL, pushRetryDelay, pushTitle, RecentPushes } from "../logic/notify";
+import { CALL_TTL, callTag, chatTag, PUSH_TTL, pushRetryDelay, pushTitle, RecentPushes } from "../logic/notify";
 import { errorText, log } from "../log";
 import type { SlotStore } from "../store/slot-store";
 import type { VapidKeys } from "./vapid";
@@ -63,31 +63,49 @@ export class Notifier {
     return this.o.devices.targets().length;
   }
 
-  // Push to every device. Returns the devices the push service took on the first try; the ones it reported as gone
-  // are removed, the ones it could not take now are tried again later. Urgency high unless the caller says it can
-  // wait: a phone on low battery asks its push service for high only (RFC 8030 section 5.3), and web-push sends
-  // normal unless told. Pushes of one `group` (a chat) share one notification on the device.
+  // Push to every device. Urgency high unless the caller says it can wait: a phone on low battery asks its push
+  // service for high only (RFC 8030 section 5.3), and web-push sends normal unless told. Pushes of one `group` (a
+  // chat) share one notification on the device.
   async push(title: string, body: string, chat = "", urgency: webpush.Urgency = "high", group = ""): Promise<number> {
+    // tag: the chat it belongs to, per account (the local relay has one, 0)
+    return this.deliver((acc) => ({ title, body: body || "", chat, ...(group && { tag: chatTag(acc, group) }) }), { urgency, ttl: PUSH_TTL, retry: true });
+  }
+
+  // An incoming Teams call, on a notification of its own per account. While it rings, every push alerts again on the
+  // device (sw.js), and the push service keeps it only while the call could still be answered, with no retry: the
+  // next one follows in seconds. Once it stops, the same notification turns quiet and stays a day. Not in the
+  // history of notified messages, not on ntfy.
+  async call(caller: string, state: "ringing" | "ended", since: number, seconds = 0): Promise<number> {
+    const ringing = state === "ringing";
+    const title = ringing ? (caller ? `${caller} is calling` : "Incoming call") : caller ? `Call from ${caller}` : "Call ended";
+    const body = ringing ? "Teams call, ringing now" : seconds ? `Ended after ${seconds} s` : "Ended";
+    const chat = caller && this.o.store.isKnownChat(caller) ? caller : "";
+    return this.deliver((acc) => ({ title, body, chat, tag: callTag(acc), call: state, ts: since }), { urgency: "high", ttl: ringing ? CALL_TTL : PUSH_TTL, retry: !ringing });
+  }
+
+  // Sends to every device what `content` makes for the account (its slot, 0 for the local relay), the title naming
+  // the account when the owner has more. Returns the devices the push service took on the first try; the ones it
+  // reported as gone are removed, the ones it could not take now are tried again later when `retry`.
+  private async deliver(content: (acc: number) => { title: string } & Record<string, unknown>, o: { urgency: webpush.Urgency; ttl: number; retry: boolean }): Promise<number> {
     const { vapid, devices, store } = this.o;
     if (!vapid) return 0;
     const targets = devices.targets();
     if (!targets.length) return 0;
     const account = devices.account?.(parseState(Identity, store.getState(STATE.me), Identity.parse({})));
-    // tag: the chat it belongs to, per account (the local relay has one, 0)
-    const tag = group && chatTag(account?.acc ?? 0, group);
-    const payload = JSON.stringify({ title: pushTitle(title, account?.label ?? ""), body: body || "", chat, ...(account ? { acc: account.acc } : {}), ...(tag && { tag }) });
+    const c = content(account?.acc ?? 0);
+    const payload = JSON.stringify({ ...c, title: pushTitle(c.title, account?.label ?? ""), ...(account ? { acc: account.acc } : {}) });
     const options: webpush.RequestOptions = {
       vapidDetails: { subject: this.o.subject, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
-      TTL: PUSH_TTL,
-      urgency,
+      TTL: o.ttl,
+      urgency: o.urgency,
       timeout: 15_000,
     };
     let sent = 0;
-    for (const t of targets) if (await this.sendTo(t, payload, options, 0)) sent++;
+    for (const t of targets) if (await this.sendTo(t, payload, options, 0, o.retry)) sent++;
     return sent;
   }
 
-  private async sendTo(t: PushTarget, payload: string, options: webpush.RequestOptions, attempt: number): Promise<boolean> {
+  private async sendTo(t: PushTarget, payload: string, options: webpush.RequestOptions, attempt: number, retry = true): Promise<boolean> {
     const send: Send = this.o.send ?? webpush.sendNotification;
     try {
       await send(JSON.parse(t.sub) as webpush.PushSubscription, payload, options);
@@ -104,7 +122,7 @@ export class Notifier {
       // subscription web-push refuses before sending fails the same way every time
       const reached = status !== undefined || typeof code === "string" || errorText(e) === "Socket timeout";
       const retryAfter = headers?.["retry-after"];
-      const wait = reached ? pushRetryDelay(status, Array.isArray(retryAfter) ? retryAfter[0] : retryAfter, attempt, (this.o.clock ?? Date.now)()) : null;
+      const wait = retry && reached ? pushRetryDelay(status, Array.isArray(retryAfter) ? retryAfter[0] : retryAfter, attempt, (this.o.clock ?? Date.now)()) : null;
       log.warn("push", errorText(e), { status, attempt, retry: wait ?? "none" });
       if (wait !== null) (this.o.later ?? later)(wait * 1000, () => this.retry(t.endpoint, payload, options, attempt + 1));
       return false;

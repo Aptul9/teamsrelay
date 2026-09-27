@@ -3,6 +3,7 @@ import { STATE } from "@/shared/slot-db/state";
 import { runPendingCommands } from "./commands";
 import type { Agent } from "./context";
 import { readActivity } from "./jobs/activity";
+import { CallWatch } from "./jobs/calls";
 import { scanChats, scanChatsFull } from "./jobs/chat-list";
 import { saveOpenChat } from "./jobs/conversation";
 import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
@@ -89,6 +90,8 @@ export type BrowserSource = {
 export async function runAgent(a: Omit<Agent, "tp" | "health">, browser: BrowserSource, signal?: AbortSignal): Promise<void> {
   const agent = { ...a, health: null } as Agent;
   const scheduler = new Scheduler<Round>(agentJobs(agent), (job, e) => log.warn("job", errorText(e), { job }));
+  // incoming calls on a timer of their own: a call rings a few seconds, a round can take longer
+  new CallWatch(agent).start(signal);
   const pages = new WeakMap<Page, TeamsPage>();
   let away: { since: number; url: string } | null = null;
   while (!signal?.aborted) {

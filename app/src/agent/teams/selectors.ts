@@ -85,6 +85,11 @@ export const SEL = {
   discardConfirm: '[data-tid="messagedraft-discard-confirm"]',
   closeQuote: '[data-tid="close-quoted-reply"]',
 
+  // incoming call: a toast of its own in the page, never a browser notification while the page is visible, with the
+  // buttons to answer and decline (never clicked); its text names the caller
+  callToast: '[data-testid="calling-notification"]',
+  callText: '[id^="cn-calling-main-content-"]',
+
   // Activity feed: the id of an item is in the id of its title, named by aria-labelledby
   feedItem: '[data-tid="activity-feed-list-item"]',
   feedTitle: '[data-tid="activity-feed-item-title"]',
@@ -144,6 +149,11 @@ export const TEXTS = {
   sending: /^Sending/i,
   // status of a message Teams could not send
   sendFailed: /fail/i,
+
+  // incoming call toast: "Anna Rossi is calling you", with "External" before the name of a person of another
+  // organization
+  callingYou: /^(.+?)\s+is (?:video )?calling you\b/i,
+  externalMark: /^External\s+/i,
 
   // session expired or Teams syncing in reduced mode
   sessionLost:

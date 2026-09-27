@@ -15,6 +15,7 @@ import { loadVapidKeys } from "./push/vapid";
 import { AppStore } from "./store/app-store";
 import { SlotStore } from "./store/slot-store";
 import * as activityScripts from "./teams/scripts/activity";
+import * as callScripts from "./teams/scripts/calls";
 import * as chatListScripts from "./teams/scripts/chat-list";
 import * as composeScripts from "./teams/scripts/compose";
 import * as conversationScripts from "./teams/scripts/conversation";
@@ -31,7 +32,7 @@ function check() {
   const sqlite = (db.prepare("SELECT sqlite_version() AS v").get() as { v: string }).v;
   db.close();
   let scripts = 0;
-  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts]) {
+  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts, callScripts]) {
     for (const [name, fn] of Object.entries(scriptModule)) {
       if (typeof fn !== "function") continue;
       const source = fn.toString();

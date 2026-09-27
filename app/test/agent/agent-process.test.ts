@@ -137,6 +137,15 @@ describe("agent process", () => {
     expect(logged(/^NEWMSG: /)).toBe(1);
   }, 60_000);
 
+  it("follows an incoming call from its toast, ringing then ended", async () => {
+    const page = context?.pages()[0] as Page;
+    await page.evaluate((html) => document.body.insertAdjacentHTML("beforeend", `<div id="call-under-test">${html}</div>`), fixture("call-toast.html"));
+    await until(() => logged(/^call: ringing caller="Anna Rossi"/) > 0, 5000, "the ringing line");
+    await page.evaluate(() => document.getElementById("call-under-test")?.remove());
+    await until(() => logged(/^call: ended caller="Anna Rossi"/) > 0, 8000, "the ended line");
+    expect(logged(/^call: ringing/)).toBe(1);
+  }, 30_000);
+
   it("runs queued commands and marks unknown ones done", async () => {
     const db = new Database(path.join(dir, "2", "messages.db"));
     // queued now: a command older than two minutes is never run

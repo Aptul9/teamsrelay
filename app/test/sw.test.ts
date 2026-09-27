@@ -3,7 +3,18 @@ import path from "node:path";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 
-type Shown = { title: string; body: string; tag: string; renotify?: boolean; data: { lines?: string[] } };
+type Shown = {
+  title: string;
+  body: string;
+  tag: string;
+  renotify?: boolean;
+  requireInteraction?: boolean;
+  silent?: boolean;
+  vibrate?: number[];
+  actions?: { action: string; title: string }[];
+  timestamp?: number;
+  data: { lines?: string[] };
+};
 
 // public/sw.js run with the service worker globals it uses. The fake registration keeps what a device shows: one
 // notification per tag, the last one shown with it, until the user dismisses it.
@@ -77,5 +88,37 @@ describe("service worker notifications", () => {
     await sw.push({ title: "Anna Rossi", body: "old", acc: 1, tag: "chat-1-Anna Rossi" });
     sw.dismiss("chat-1-Anna Rossi");
     expect((await sw.push({ title: "Anna Rossi", body: "new", acc: 1, tag: "chat-1-Anna Rossi" })).body).toBe("new");
+  });
+});
+
+describe("service worker call notifications", () => {
+  const ringing = { title: "Anna Rossi is calling", body: "Teams call, ringing now", chat: "", acc: 2, tag: "call-2", call: "ringing", ts: 1_790_000_000_000 };
+
+  it("rings: stays on screen with a button (Windows keeps it only with one), vibrates, alerts at every push", async () => {
+    const sw = serviceWorker();
+    await sw.push(ringing);
+    const n = await sw.push(ringing);
+    expect(sw.shown).toHaveLength(2);
+    expect(n).toMatchObject({ title: "Anna Rossi is calling", body: "Teams call, ringing now", tag: "call-2", renotify: true, requireInteraction: true, silent: false, timestamp: 1_790_000_000_000 });
+    expect(n.actions).toEqual([{ action: "open", title: "Open" }]);
+    expect(n.vibrate?.length).toBeGreaterThan(2);
+    expect(n.data).toMatchObject({ acc: 2, call: "ringing" });
+  });
+
+  it("turns quiet on the same notification when the call ends", async () => {
+    const sw = serviceWorker();
+    await sw.push(ringing);
+    const n = await sw.push({ ...ringing, title: "Call from Anna Rossi", body: "Ended after 9 s", call: "ended" });
+    expect(n).toMatchObject({ title: "Call from Anna Rossi", body: "Ended after 9 s", tag: "call-2", renotify: false, requireInteraction: false, silent: true });
+    expect(n.actions).toBeUndefined();
+    expect(n.vibrate).toBeUndefined();
+  });
+
+  it("keeps a call apart from the lines of a chat of the same person", async () => {
+    const sw = serviceWorker();
+    await sw.push({ title: "Anna Rossi", body: "are you there?", acc: 2, tag: "chat-2-Anna Rossi" });
+    const n = await sw.push(ringing);
+    expect(n.body).toBe("Teams call, ringing now");
+    expect((await sw.push({ title: "Anna Rossi", body: "hello?", acc: 2, tag: "chat-2-Anna Rossi" })).body).toBe("are you there?\nhello?");
   });
 });
