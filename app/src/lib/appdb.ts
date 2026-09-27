@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -178,6 +179,35 @@ export function savePushSubscription(db: Database.Database, userId: string, sub:
     JSON.stringify(sub),
     Math.floor(Date.now() / 1000),
   );
+}
+
+// A phone of the Android app (mobile/), a push device as a browser is: endpoint fcm:<token>, sub {fcm: {token, key,
+// name}}, key being what the messages of the relay are sealed with (src/agent/push/fcm.ts). The same phone registered
+// again by its user keeps its key; registered by another user, it gets a new one, so that the first user's messages it
+// may still receive stay sealed.
+export function saveFcmDevice(db: Database.Database, userId: string, token: string, name: string): string {
+  const endpoint = `fcm:${token}`;
+  const row = db.prepare("SELECT user_id, sub FROM push_subscriptions WHERE endpoint=?").get(endpoint) as { user_id: string; sub: string } | undefined;
+  let key = "";
+  if (row?.user_id === userId) {
+    try {
+      key = String((JSON.parse(row.sub) as { fcm?: { key?: unknown } }).fcm?.key ?? "");
+    } catch {
+      // a broken row gets a new key
+    }
+  }
+  key ||= crypto.randomBytes(32).toString("base64url");
+  db.prepare("INSERT OR REPLACE INTO push_subscriptions(endpoint, user_id, sub, created) VALUES(?,?,?,?)").run(
+    endpoint,
+    userId,
+    JSON.stringify({ fcm: { token, key, name } }),
+    Math.floor(Date.now() / 1000),
+  );
+  return key;
+}
+
+export function forgetFcmDevice(db: Database.Database, token: string) {
+  db.prepare("DELETE FROM push_subscriptions WHERE endpoint=?").run(`fcm:${token}`);
 }
 
 export function countPushSubscriptions(db: Database.Database, userId: string): number {

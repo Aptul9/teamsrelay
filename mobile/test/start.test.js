@@ -110,3 +110,43 @@ test("shows the address again when Back restores the page from the back/forward 
   assert.equal(await page.inputValue("#relay"), RELAY);
   assert.deepEqual(errors, []);
 });
+
+// In the app, the push plugin (plugin/android) answers the start page: it takes the server, and names the account of
+// a notification that started the app
+async function inTheApp(page, opened) {
+  const invoked = [];
+  await page.exposeBinding("recordInvoke", (_source, cmd, args) => invoked.push([cmd, args]));
+  await page.addInitScript((acc) => {
+    window.__TAURI_INTERNALS__ = {
+      invoke: async (cmd, args) => {
+        await window.recordInvoke(cmd, args ?? null);
+        return cmd === "plugin:push|opened" ? { acc } : null;
+      },
+    };
+  }, opened);
+  return invoked;
+}
+
+test("in the app, hands the server to the plugin and opens the account of the notification that started the app", async () => {
+  const { page, errors } = await newPage();
+  const invoked = await inTheApp(page, 2);
+  await page.goto(origin + "/");
+  await page.fill("#relay", "https://relay.test");
+  await Promise.all([page.waitForURL(`${RELAY}/?a=2`), page.click("button[type=submit]")]);
+  assert.deepEqual(invoked.slice(0, 2), [
+    ["plugin:push|relay", { origin: RELAY }],
+    ["plugin:push|opened", null],
+  ]);
+  assert.deepEqual(errors, []);
+});
+
+test("in the app, opens the saved server as it is when no notification started it", async () => {
+  const { page, errors } = await newPage();
+  await inTheApp(page, 0);
+  await page.goto(origin + "/");
+  await page.fill("#relay", "https://relay.test");
+  await Promise.all([page.waitForURL(`${RELAY}/`), page.click("button[type=submit]")]);
+  await page.goto(origin + "/");
+  await page.waitForURL(`${RELAY}/`);
+  assert.deepEqual(errors, []);
+});

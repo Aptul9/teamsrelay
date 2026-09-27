@@ -13,14 +13,29 @@ function saved() {
   }
 }
 
+// The push plugin of the app (plugin/android): it registers the phone with the server for notifications, and names
+// the account of a notification tapped to start the app. Absent in a browser, where the page works the same.
+async function plugin(command, args) {
+  const tauri = window.__TAURI_INTERNALS__;
+  if (!tauri) return null;
+  try {
+    return await tauri.invoke(`plugin:push|${command}`, args);
+  } catch {
+    return null;
+  }
+}
+
 // After the form, Back from the server page comes here, where the address can be changed. The automatic open at
 // start replaces this page: Chrome keeps no history entry for a page that leaves while it loads.
-function open(origin, replace) {
+async function open(origin, replace) {
   $("target").textContent = origin;
   $("opening").hidden = false;
   $("relay-form").hidden = true;
-  if (replace) location.replace(origin + "/");
-  else location.assign(origin + "/");
+  await plugin("relay", { origin });
+  const acc = (await plugin("opened"))?.acc || 0;
+  const target = origin + "/" + (acc ? `?a=${acc}` : "");
+  if (replace) location.replace(target);
+  else location.assign(target);
 }
 
 function showForm() {
@@ -41,12 +56,12 @@ $("relay-form").addEventListener("submit", (e) => {
   } catch {
     // storage refused: the address lasts for this start
   }
-  open(origin, false);
+  void open(origin, false);
 });
 $("relay").addEventListener("input", () => ($("error").textContent = ""));
 
 // Back from the server page, or #change: the form with the address in use; otherwise straight to the server
 const back = performance.getEntriesByType("navigation")[0]?.type === "back_forward";
-if (saved() && !back && location.hash !== "#change") open(saved(), true);
+if (saved() && !back && location.hash !== "#change") void open(saved(), true);
 else showForm();
 addEventListener("pageshow", (e) => e.persisted && showForm());

@@ -11,6 +11,7 @@ import { errorText, log } from "./log";
 import { runAgent } from "./loop";
 import { Media } from "./media";
 import { Notifier } from "./push/notifier";
+import { FcmSender, loadServiceAccount } from "./push/fcm";
 import { loadVapidKeys } from "./push/vapid";
 import { AppStore } from "./store/app-store";
 import { SlotStore } from "./store/slot-store";
@@ -56,8 +57,11 @@ async function main() {
   if (!vapid) log.warn("push", "no VAPID private key: push notifications off", { file: config.vapid.privateKeyFile });
   // pushes go to the devices of the slot owner, in the web app's database
   const devices = new AppStore(config.appDb, config.slot);
-  const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy });
-  log.info("agent", "start", { slot: config.slot, cdp: config.cdp, push: !!vapid, ntfy: !!config.ntfy });
+  // phones of the Android app: FCM once the service account key of the Firebase project is there
+  const sa = loadServiceAccount(config.fcmCredentials);
+  const fcm = sa ? new FcmSender(sa) : null;
+  const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy, fcm });
+  log.info("agent", "start", { slot: config.slot, cdp: config.cdp, push: !!vapid, fcm: !!fcm, ntfy: !!config.ntfy });
   const media = new Media(config.mediaDir, config.filesDir);
   await runAgent({ config, store, notifier, media, detector: new NewMessageDetector(), checkedOnly: () => devices.checkedOnly() }, new CdpBrowser(config.cdp));
 }

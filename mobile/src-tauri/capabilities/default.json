@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "The bundled start page may call the push plugin; the pages of the server may call nothing (no remote URL here)",
+  "windows": ["main"],
+  "permissions": ["push:default"]
+}

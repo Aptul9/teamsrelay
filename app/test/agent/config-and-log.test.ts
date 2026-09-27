@@ -9,6 +9,8 @@ describe("agent configuration", () => {
     expect(c).toMatchObject({ cdp: "http://localhost:9222", slot: 1, dbPath: "/data/1/messages.db", appDb: "/data/app.db", ntfy: null });
     expect(c.mediaDir).toBe(path.join("/data/1", "media"));
     expect(c.vapid).toEqual({ privateKeyFile: "/vapid/private_key.pem", appKeyFile: "/vapid/appkey.txt", subject: "mailto:admin@example.com" });
+    // the service account key of Firebase, for the phones of the Android app: FCM stays off while the file is missing
+    expect(c.fcmCredentials).toBe("/fcm/service-account.json");
   });
 
   it("reads the environment docker-compose.yml gives a slot", () => {

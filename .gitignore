@@ -6,6 +6,8 @@ config/
 data/
 # Web Push private key
 vapid/
+# Firebase service account key (push to the Android app)
+fcm/
 # Local relay: browser profile, database, images, push keys and API token (app/state), and its settings
 /app/state/
 /app/relay.env

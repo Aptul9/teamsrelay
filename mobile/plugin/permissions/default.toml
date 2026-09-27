@@ -1,0 +1,5 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "The start page hands over the address of the relay and asks which account a tapped notification opens."
+permissions = ["allow-relay", "allow-opened"]
