@@ -63,6 +63,7 @@ Open `https://<DOMAIN>`, sign in as the administrator, add a Teams account and s
 | AI clients over MCP: setup, tools, limits | [docs/mcp.md](docs/mcp.md) |
 | Teams selectors used by the agent | [docs/teams-selectors.md](docs/teams-selectors.md) |
 | Known limitations | [docs/limitations.md](docs/limitations.md) |
+| Android app (Tauri shell, push not built yet) | [mobile/README.md](mobile/README.md) |
 | Decisions and plans | [docs/decisions/](docs/decisions/), [docs/design/](docs/design/) |
 
 ## License

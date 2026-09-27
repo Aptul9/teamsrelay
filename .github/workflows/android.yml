@@ -1,0 +1,58 @@
+name: Android app
+
+on:
+  pull_request:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # start page tests run in the Google Chrome of the runner
+      - name: Tests
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
+      # the runner image carries the Android SDK and NDK; Tauri reads the NDK from NDK_HOME. The launcher icons go
+      # into the Android project only once it exists, so they are made again after init.
+      - name: Android project
+        run: |
+          echo "NDK_HOME=$ANDROID_NDK_HOME" >> "$GITHUB_ENV"
+          rustup target add aarch64-linux-android
+          NDK_HOME="$ANDROID_NDK_HOME" npx tauri android init --ci --skip-targets-install
+          npx tauri icon ../app/public/static/icon-512.png
+
+      - name: Build
+        run: npx tauri android build --debug --apk --target aarch64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: teamsrelay-android-debug
+          path: mobile/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>TeamsRelay</title>
+    <link rel="stylesheet" href="start.css" />
+    <script type="module" src="start.js"></script>
+  </head>
+  <body>
+    <main>
+      <img src="icon.png" alt="" width="72" height="72" />
+      <h1>TeamsRelay</h1>
+      <form id="relay-form" novalidate hidden>
+        <label for="relay">Address of your TeamsRelay server</label>
+        <input id="relay" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://teamsrelay.example.com" />
+        <p id="error" role="alert"></p>
+        <button type="submit">Open</button>
+      </form>
+      <p id="opening" hidden>Opening <span id="target"></span></p>
+    </main>
+  </body>
+</html>

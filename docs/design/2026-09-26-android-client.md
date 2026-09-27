@@ -1,6 +1,6 @@
 # Android client: Tauri app with Firebase push
 
-Status: proposed 2026-09-26, not scheduled. Web Push stays for browsers and the installed PWA; this app adds a second kind of device.
+Status: app shell built 2026-09-27 ([mobile/README.md](../../mobile/README.md)): start page, remote web app, debug APK in CI; push not built. Web Push stays for browsers and the installed PWA; this app adds a second kind of device. Android WebView has no Push API, so inside the app the web page gets no notifications until the plugin below exists.
 
 ## Goal
 
@@ -51,7 +51,7 @@ The relay sends one FCM message per device and notification. FCM `data` values a
 
 ## Registration
 
-1. First start: a page bundled in the app asks for the relay address and stores it through a plugin command (bundled code, trusted IPC), then the window navigates to the relay.
+1. First start: a page bundled in the app asks for the relay address and keeps it, then the window navigates to the relay. The shell keeps it in `localStorage` of the bundled page; the plugin will need it natively, through a plugin command (bundled code, trusted IPC).
 2. The user signs in to the web app in the window, as in a browser.
 3. After each page load on the relay origin with a session cookie, and when Firebase hands a new token (`onNewToken`), the plugin posts `POST /api/push/fcm` `{token}` with the cookie. Newer Firebase SDKs describe Firebase Installation IDs delivered by `onRegistered()`: follow the Firebase docs current at build time.
 4. The relay stores the device for the session user and answers `{key}`: 32 random bytes, base64url, generated per device. The plugin keeps it in storage protected by the Android Keystore.
@@ -79,7 +79,7 @@ The service account key and `google-services.json` stay out of git. The service 
 | `mobile/plugin/` | Kotlin plugin (`@TauriPlugin`): `FirebaseMessagingService`, channels, notification builder, reply receiver and WorkManager job, cookie reader, key storage, `setRelay` command |
 | `mobile/start/` | The bundled start page |
 
-Build machine: Android Studio with SDK Platform, Platform-Tools, Build-Tools, Command-line Tools and NDK; `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`; `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`. None of it was installed on the development laptop on 2026-09-26. The APK is built locally; CI is out of scope for the first version.
+Build machine: Android Studio with SDK Platform, Platform-Tools, Build-Tools, Command-line Tools and NDK; `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`; `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`. None of it was installed on the development laptop on 2026-09-26. The debug APK of the shell is built by `.github/workflows/android.yml` on the GitHub runner, which carries SDK and NDK; release builds and signing stay local.
 
 ## Tests
 
@@ -94,7 +94,7 @@ Build machine: Android Studio with SDK Platform, Platform-Tools, Build-Tools, Co
 ## Open questions
 
 - Relay: this web app, or `teamsrelay-local`, whose page keeps a bearer token instead of a session cookie (the start page would hand the token to the plugin).
-- Package name, and who keeps the signing key.
+- Who keeps the signing key. The package name of the shell is `io.github.aptul9.teamsrelay`: changing it after a first install means a new app on the phone.
 
 ## Out of scope
 
