@@ -3,6 +3,7 @@ import { nowSeconds, type Agent } from "../context";
 import { computeHealth, watchProblem, type PageProbe } from "../logic/health";
 import { isTeamsUrl } from "../logic/hosts";
 import { errorText, log } from "../log";
+import { openOverlays } from "../teams/scripts/message-actions";
 import { probePage, uncoveredPoint } from "../teams/scripts/page-state";
 import { SEL, TEXTS } from "../teams/selectors";
 
@@ -15,7 +16,10 @@ export async function updateHealth(a: Agent): Promise<AgentHealth> {
     const url = a.tp.page.url();
     const onTeams = isTeamsUrl(url);
     probe = { url, ...(await a.tp.page.evaluate(probePage, { s: SEL, t: TEXTS, withPresence: onTeams })) };
-    if (onTeams && a.config.activity) rail = !!(await a.tp.page.evaluate(uncoveredPoint, SEL.activityView));
+    // a menu or dialog over the side bar does not count: the Activity job closes those first
+    if (onTeams && a.config.activity) {
+      rail = !!(await a.tp.page.evaluate(uncoveredPoint, SEL.activityView)) || (await a.tp.page.evaluate(openOverlays, SEL)) > 0;
+    }
     if (onTeams && probe.presence) {
       const before = a.store.getState(STATE.presencePrev);
       if (probe.presence !== before) {

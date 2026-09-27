@@ -179,7 +179,7 @@ export class TeamsPage {
   async clickRail(selector: string, waitMs = 0) {
     const until = Date.now() + waitMs;
     let point = await this.railPoint(selector);
-    while (!point && Date.now() < until) {
+    while (!point && Date.now() < until && !this.page.isClosed()) {
       await sleep(250);
       point = await this.railPoint(selector);
     }

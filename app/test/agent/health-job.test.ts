@@ -4,7 +4,9 @@ import type { Agent } from "@/agent/context";
 import { browserDownHealth, noTabHealth, updateHealth } from "@/agent/jobs/health";
 import type { Notifier } from "@/agent/push/notifier";
 import type { TeamsPage } from "@/agent/teams/page";
+import { openOverlays } from "@/agent/teams/scripts/message-actions";
 import { uncoveredPoint } from "@/agent/teams/scripts/page-state";
+import { SEL } from "@/agent/teams/selectors";
 import { SlotStore } from "@/agent/store/slot-store";
 import { AgentHealth, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
@@ -58,16 +60,46 @@ describe("health without a Teams tab", () => {
 });
 
 describe("side bar for the Activity job", () => {
+  // the page as the health check reads it: the Activity button's free point and the open menus or dialogs
+  function sideBar(a: Agent, state: { point: { x: number; y: number } | null; overlays: number }) {
+    const probe = { reduced: false, domReady: true, hookInstalled: true, presence: "available" };
+    const asked: unknown[] = [];
+    const evaluate = async (fn: unknown, arg: unknown) => {
+      if (fn === uncoveredPoint) asked.push(arg);
+      if (fn === uncoveredPoint) return arg === SEL.activityView ? state.point : null;
+      if (fn === openOverlays) return state.overlays;
+      return probe;
+    };
+    a.tp = { page: { url: () => "https://teams.cloud.microsoft/v2/", evaluate } } as unknown as TeamsPage;
+    return asked;
+  }
+
   it("is ready once a point of the Activity button is free, not while the loading bar of Teams covers it", async () => {
     const a = agent();
-    let point: { x: number; y: number } | null = null;
-    const probe = { reduced: false, domReady: true, hookInstalled: true, presence: "available" };
-    a.tp = { page: { url: () => "https://teams.cloud.microsoft/v2/", evaluate: async (fn: unknown) => (fn === uncoveredPoint ? point : probe) } } as unknown as TeamsPage;
+    const state = { point: null as { x: number; y: number } | null, overlays: 0 };
+    const asked = sideBar(a, state);
     expect((await updateHealth(a)).teams).toBe("ok");
     expect(a.railReady).toBe(false);
-    point = { x: 34, y: 70 };
+    state.point = { x: 34, y: 70 };
     await updateHealth(a);
     expect(a.railReady).toBe(true);
+    expect(asked).toEqual([SEL.activityView, SEL.activityView]);
+  });
+
+  it("is ready under a menu or dialog, which the Activity job closes first", async () => {
+    const a = agent();
+    sideBar(a, { point: null, overlays: 1 });
+    await updateHealth(a);
+    expect(a.railReady).toBe(true);
+  });
+
+  it("is never read for a product without the Activity feed", async () => {
+    const a = agent();
+    a.config = { ...a.config, activity: false };
+    const asked = sideBar(a, { point: { x: 34, y: 70 }, overlays: 0 });
+    await updateHealth(a);
+    expect(a.railReady).toBe(false);
+    expect(asked).toEqual([]);
   });
 });
 

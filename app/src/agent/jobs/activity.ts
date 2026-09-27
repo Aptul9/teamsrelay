@@ -10,7 +10,8 @@ import type { ActivityEntry } from "../store/slot-store";
 const FEED_LIMIT = 40;
 
 // Reads the Teams Activity feed and goes back to the chat view. Number of items read, or null. railWait: milliseconds
-// the side bar may take to show up clickable (a refresh asked while Teams starts).
+// the side bar may take to show up clickable (a refresh asked while Teams starts); the way back does not wait again,
+// the side bar was clickable or the page never left the chat view.
 export async function readActivity(a: Agent, railWait = 0): Promise<number | null> {
   const page = a.tp.page;
   const active = a.store.getState(STATE.activeChat);
@@ -33,7 +34,7 @@ export async function readActivity(a: Agent, railWait = 0): Promise<number | nul
   } finally {
     // always back to Chat: the rest of the agent works on the chat view
     try {
-      await a.tp.clickRail(SEL.chatView, railWait);
+      await a.tp.clickRail(SEL.chatView);
       await page.locator(SEL.anyChatRow).first().waitFor({ timeout: 8000 });
       const want = wantedChat(active, a.store.getState(STATE.viewing), nowSeconds(), a.store.selfChat());
       if (want) await a.tp.openChat(want);

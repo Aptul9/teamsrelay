@@ -5,6 +5,7 @@ import { COMMAND_MAX_AGE, runCommand, runPendingCommands } from "@/agent/command
 import type { Agent } from "@/agent/context";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { agentJobs } from "@/agent/loop";
+import { Scheduler } from "@/agent/scheduler";
 import type { Media } from "@/agent/media";
 import type { Notifier } from "@/agent/push/notifier";
 import { SlotStore } from "@/agent/store/slot-store";
@@ -329,6 +330,46 @@ describe("agent loop", () => {
     expect(job?.when?.({ onTeams: true, want: "" })).toBe(false);
     a.railReady = true;
     expect(job?.when?.({ onTeams: true, want: "" })).toBe(true);
+    a.health = { cdp: "ok", teams: "loading", overall: "yellow", ts: 1 };
+    expect(job?.when?.({ onTeams: true, want: "" })).toBe(false);
+  });
+
+  it("reads the feed at the round after the health check found the side bar clickable, and once more 30 s after a failed read", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const a = agent();
+      let point: { x: number; y: number } | null = null;
+      const evaluate = a.tp.page.evaluate.bind(a.tp.page) as (fn: { name: string }) => Promise<unknown>;
+      Object.assign(a.tp.page, { evaluate: async (fn: { name: string }) => (fn.name === "uncoveredPoint" ? point : evaluate(fn)) });
+      const reads: number[] = [];
+      const s = new Scheduler(agentJobs(a).filter((j) => j.name === "activity" || j.name === "health"), () => {});
+      Object.assign(a.tp, {
+        clearOverlays: async () => true,
+        clickRail: async (sel: string) => {
+          if (sel.includes("Activity")) reads.push(s.round);
+          throw new Error("no feed");
+        },
+      });
+      const round = async (n: number) => {
+        for (let i = 0; i < n; i++) await s.runRound({ onTeams: true, want: "" });
+      };
+      await round(8);
+      expect(reads).toEqual([]);
+      point = { x: 34, y: 70 };
+      await round(5);
+      expect(reads).toEqual([11]);
+      vi.advanceTimersByTime(29_000);
+      await round(2);
+      expect(reads).toEqual([11]);
+      vi.advanceTimersByTime(1_000);
+      await round(1);
+      expect(reads).toEqual([11, 15]);
+      vi.advanceTimersByTime(60_000);
+      await round(10);
+      expect(reads).toEqual([11, 15]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("leaves out the Activity feed and Read by for an app that does not show them", () => {

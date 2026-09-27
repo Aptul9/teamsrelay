@@ -3,7 +3,7 @@
 // after the mouse leaves the launcher, and stays open while the mouse is on it.
 import path from "node:path";
 import type { BrowserContext, Page } from "playwright-core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { activity } from "@/agent/commands/activity";
 import type { Agent } from "@/agent/context";
 import { readActivity } from "@/agent/jobs/activity";
@@ -115,6 +115,13 @@ describe("Activity feed read", () => {
     expect(await page.locator("#tip").isVisible()).toBe(true);
     expect(await readActivity(agent)).toBe(1);
     expect(await page.locator('[role="treeitem"][aria-level="2"]').count()).toBe(1);
+  }, 30_000);
+
+  it("waits for the side bar once: the way back to the chat view does not wait again", async () => {
+    await page.setContent('<div role="tree"><div role="treeitem" aria-level="2">Anna Rossi</div></div>');
+    const clicks = vi.spyOn(agent.tp, "clickRail");
+    expect(await readActivity(agent, 500)).toBeNull();
+    expect(clicks.mock.calls).toEqual([['button[aria-label^="Activity"]', 500], ['button[aria-label^="Chat"]']]);
   }, 30_000);
 
   it("reads the feed on a refresh asked right after a start, once the side bar shows and the loading bar is gone", async () => {
