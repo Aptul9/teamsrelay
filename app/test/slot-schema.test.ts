@@ -28,8 +28,12 @@ const PYTHON_LAYOUT = {
   activity: ["id TEXT PK", "pos INTEGER", "kind TEXT", "actor TEXT", "title TEXT", "emoji TEXT", "preview TEXT", "tm TEXT", "chat TEXT", "unread INTEGER", "ts INTEGER", "channel INTEGER", "av TEXT"],
 };
 
-// Added by the TypeScript agent: the key an app gives a command, queued once per key
-const LAYOUT = { ...PYTHON_LAYOUT, commands: [...PYTHON_LAYOUT.commands, "key TEXT"] };
+// Added by the TypeScript agent: the key an app gives a command, queued once per key; the calls it saw ring
+const LAYOUT = {
+  ...PYTHON_LAYOUT,
+  commands: [...PYTHON_LAYOUT.commands, "key TEXT"],
+  calls: ["id INTEGER PK", "since INTEGER", "caller TEXT", "seconds INTEGER"],
+};
 
 const fresh = () => new Database(path.join(tempDir(), "messages.db"));
 

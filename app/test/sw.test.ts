@@ -17,10 +17,12 @@ type Shown = {
 };
 
 // public/sw.js run with the service worker globals it uses. The fake registration keeps what a device shows: one
-// notification per tag, the last one shown with it, until the user dismisses it.
-function serviceWorker() {
+// notification per tag, the last one shown with it, until the user dismisses it. windows: the windows of the app open
+// now; badges: what the service worker put on the icon of the installed app ("dot" without a number).
+function serviceWorker(o: { windows?: { visibilityState: string }[] } = {}) {
   const listeners = new Map<string, (event: unknown) => void>();
   const shown: Shown[] = [];
+  const badges: (number | "dot")[] = [];
   const displayed = new Map<string, Shown>();
   const registration = {
     showNotification: async (title: string, options: Omit<Shown, "title">) => {
@@ -30,11 +32,13 @@ function serviceWorker() {
     },
     getNotifications: async ({ tag }: { tag: string }) => (displayed.has(tag) ? [displayed.get(tag)] : []),
   };
-  const clients = { claim: async () => undefined };
-  const self = { addEventListener: (type: string, fn: (event: unknown) => void) => listeners.set(type, fn), registration, skipWaiting: () => undefined, clients };
+  const clients = { claim: async () => undefined, matchAll: async () => o.windows ?? [] };
+  const navigator = { setAppBadge: async (n?: number) => void badges.push(n ?? "dot") };
+  const self = { addEventListener: (type: string, fn: (event: unknown) => void) => listeners.set(type, fn), registration, skipWaiting: () => undefined, clients, navigator };
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../public/sw.js"), "utf8"), { self, clients });
   return {
     shown,
+    badges,
     dismiss: (tag: string) => displayed.delete(tag),
     push: async (data: unknown) => {
       const pending: Promise<unknown>[] = [];
@@ -135,5 +139,33 @@ describe("service worker call notifications", () => {
     const n = await sw.push(ringing);
     expect(n.body).toBe("Teams call, ringing now");
     expect((await sw.push({ title: "Anna Rossi", body: "hello?", acc: 2, tag: "chat-2-Anna Rossi" })).body).toBe("are you there?\nhello?");
+  });
+});
+
+describe("service worker app icon", () => {
+  it("puts a dot on the icon of the installed app for a push while no window of the app is on screen", async () => {
+    const closed = serviceWorker();
+    await closed.push({ title: "Anna Rossi", body: "ciao", acc: 2, tag: "chat-2-Anna Rossi" });
+    expect(closed.badges).toEqual(["dot"]);
+    const hidden = serviceWorker({ windows: [{ visibilityState: "hidden" }] });
+    await hidden.push({ title: "Anna Rossi is calling", body: "Teams call, ringing now", acc: 2, tag: "call-2", call: "ringing", ts: 1000 });
+    expect(hidden.badges).toEqual(["dot"]);
+  });
+
+  it("leaves the icon to the app on screen, which shows the count, and adds nothing for a call that ended", async () => {
+    const open = serviceWorker({ windows: [{ visibilityState: "hidden" }, { visibilityState: "visible" }] });
+    await open.push({ title: "Anna Rossi", body: "ciao", acc: 2, tag: "chat-2-Anna Rossi" });
+    expect(open.badges).toEqual([]);
+    const closed = serviceWorker();
+    await closed.push({ title: "Call from Anna Rossi", body: "Ended after 9 s", acc: 2, tag: "call-2", call: "ended", ts: 1000 });
+    expect(closed.badges).toEqual([]);
+  });
+});
+
+describe("service worker app icon of the local relay", () => {
+  it("puts no dot for a push without an account: the page of the local relay never takes it away", async () => {
+    const closed = serviceWorker();
+    await closed.push({ title: "Anna Rossi", body: "ciao", chat: "Anna Rossi", tag: "chat-0-Anna Rossi" });
+    expect(closed.badges).toEqual([]);
   });
 });

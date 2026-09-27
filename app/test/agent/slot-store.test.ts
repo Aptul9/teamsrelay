@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { ChatEntry } from "@/agent/logic/chats";
 import { SlotStore } from "@/agent/store/slot-store";
 import { SlotReader } from "@/lib/slotdb";
+import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
+import { STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
 const chat = (name: string, extra: Partial<ChatEntry> = {}): ChatEntry => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av: "", ...extra });
@@ -125,6 +127,31 @@ describe("agent store", () => {
     expect(reader((r) => r.activity().items.map((a) => [a.id, a.channel, a.unread]))).toEqual([
       ["101", 0, 1],
       ["x1", 1, 1],
+    ]);
+  });
+
+  it("keeps the calls it saw ring, the last ones, newest first for the web app", () => {
+    expect(reader((r) => r.callLog())).toEqual([]);
+    for (let i = 0; i < CALL_LOG_SIZE + 2; i++) store.addCall(`Caller ${i}`, 1_790_000_000_000 + i * 60_000, i);
+    const log = reader((r) => r.callLog());
+    expect(log).toHaveLength(CALL_LOG_SIZE);
+    expect(log[0]).toEqual({ caller: `Caller ${CALL_LOG_SIZE + 1}`, since: 1_790_000_000_000 + (CALL_LOG_SIZE + 1) * 60_000, seconds: CALL_LOG_SIZE + 1 });
+    expect(log[CALL_LOG_SIZE - 1].caller).toBe("Caller 2");
+  });
+
+  it("lists every missed call of the Activity feed, bold or not (Teams shows them as read), once the feed was read", () => {
+    const item = { actor: "Anna Rossi", title: "", emoji: "", preview: "", tm: "1:15 PM", chat: "Anna Rossi", channel: false, av: "" };
+    store.saveActivity([
+      { id: "c1", kind: "call", unread: true, ...item },
+      { id: "m1", kind: "mention", unread: true, ...item },
+      { id: "c2", kind: "call", unread: false, ...item },
+    ]);
+    expect(reader((r) => r.missedCalls())).toBeNull();
+    store.setState(STATE.activityTs, "1790000000");
+    expect(reader((r) => [r.unreadActivity(), r.missedCalls(), r.activityIds()])).toEqual([["c1", "m1"], ["c1", "c2"], ["c1", "m1", "c2"]]);
+    expect(store.missedCalls()).toEqual([
+      { id: "c1", caller: "Anna Rossi", time: "1:15 PM" },
+      { id: "c2", caller: "Anna Rossi", time: "1:15 PM" },
     ]);
   });
 

@@ -14,8 +14,12 @@ export type AccountSummary = {
   stopped: boolean;
   unread: number;
   // ids of the unread items of the Teams Activity feed, null until the agent has saved the feed once: the app counts
-  // the ones its device has not shown yet
+  // the ones its device has not shown yet; missedCalls: the ids of every missed call of the feed (Teams shows them
+  // as read, new or not), those its device has not shown yet count as missed
   unreadActivity: string[] | null;
+  missedCalls: string[] | null;
+  // ids of every item of the feed, newest first, null likewise
+  activityIds: string[] | null;
   // Unix seconds the account took its slot: a slot freed and taken by another account gets a new value
   added: number;
   desktop: string;
@@ -45,12 +49,16 @@ export function accountSummary(s: Slot): AccountSummary {
   let health: Health;
   let unread = 0;
   let unreadActivity: string[] | null = null;
+  let missedCalls: string[] | null = null;
+  let activityIds: string[] | null = null;
   try {
-    ({ me, health, unread, unreadActivity } = withSlot(s.slot, (r) => ({
+    ({ me, health, unread, unreadActivity, missedCalls, activityIds } = withSlot(s.slot, (r) => ({
       me: r.identity(),
       health: r.health(upSince(s)),
       unread: r.unreadCount(),
       unreadActivity: r.unreadActivity(),
+      missedCalls: r.missedCalls(),
+      activityIds: r.activityIds(),
     })));
   } catch (e) {
     if (!(e instanceof SlotNotReady)) throw e;
@@ -68,6 +76,8 @@ export function accountSummary(s: Slot): AccountSummary {
     stopped: !!s.stopped,
     unread,
     unreadActivity,
+    missedCalls,
+    activityIds,
     added: s.added,
     desktop: desktopUrlOf(s.slot),
     checkEvery: s.check_every,

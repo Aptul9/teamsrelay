@@ -8,6 +8,7 @@ import {
   MessageSquareIcon,
   MessagesSquareIcon,
   MonitorIcon,
+  PhoneIcon,
   PlusIcon,
   PowerIcon,
   PowerOffIcon,
@@ -19,6 +20,8 @@ import { toast } from "sonner";
 import { cn } from "cn";
 import { AccountMenu, accName, needsLogin } from "./AccountMenu";
 import { Activity } from "./Activity";
+import { CallBanner, RingHint } from "./CallAlert";
+import { Calls } from "./Calls";
 import { ChatList } from "./ChatList";
 import { Conversation } from "./Conversation";
 import { StatusPanel } from "./StatusPanel";
@@ -41,33 +44,38 @@ import { authClient } from "@/lib/auth-client";
 import {
   accountUnread,
   ApiError,
+  appBadgeCount,
   call,
+  callsSnapshot,
   checkLine,
   clock,
   hours,
   idleChecked,
+  isMissedCall,
   isSelf,
   loadSeen,
-  markActivitySeen,
-  parseSeen,
+  noteShown,
   post,
   readStorage,
   runCmd,
-  seenKey,
   toLogin,
   unreadInOthers,
   unseenActivity,
+  unseenCalls,
   writeStorage,
   type Account,
   type ActivityItem,
+  type CallLogEntry,
   type Chat,
   type Health,
   type Message,
+  type RingingCall,
   type Unread,
 } from "@/lib/client";
 import { enablePush, pushState } from "@/lib/push";
+import { Ringer } from "@/lib/ring";
 
-type ListTab = "chats" | "activity";
+type ListTab = "chats" | "activity" | "calls";
 type User = { name: string; email: string; role: string };
 
 // On a PC (mouse, no touch) the remote desktop opens in a browser tab; elsewhere it has a view of its own
@@ -82,10 +90,23 @@ const onVisibility = (cb: () => void) => {
 };
 const visibleNow = () => document.visibilityState === "visible";
 
-function CountBadge({ n }: { n: number }) {
+// red: the count of missed calls, the only red one
+function CountBadge({ n, red }: { n: number; red?: boolean }) {
   if (!n) return null;
-  return <span className="ml-1 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-primary px-1 text-[0.6875rem] font-semibold text-primary-foreground tabular-nums">{n > 99 ? "99+" : n}</span>;
+  return (
+    <span
+      className={cn(
+        "ml-1 inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1 text-[0.6875rem] font-semibold tabular-nums",
+        red ? "bg-destructive text-white" : "bg-primary text-primary-foreground",
+      )}
+    >
+      {n > 99 ? "99+" : n}
+    </span>
+  );
 }
+
+// The number of what waits on the icon of the installed app (Badging API, Chrome and Edge)
+type BadgeNavigator = Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
 
 export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [acc, setAcc] = useState(0);
@@ -97,7 +118,15 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [chats, setChats] = useState<Chat[] | null>(null);
   const [messages, setMessages] = useState<{ chat: string; rows: Message[] } | null>(null);
   const [activity, setActivity] = useState<{ ts: number; items: ActivityItem[] } | null>(null);
+  const [callLog, setCallLog] = useState<CallLogEntry[] | null>(null);
+  // the calls ringing now in every account of the user, whichever is on screen
+  const [calls, setCalls] = useState<RingingCall[]>([]);
   const [seenAct, setSeenAct] = useState<Record<number, string[]>>({});
+  // the notifications of the account seen here when the Calls list opened: its missed calls not seen then keep their
+  // dot while it stays open, and the ones of the new account when the account changes under it
+  const [callsSeen, setCallsSeen] = useState<{ acc: number; seen: string[] | null } | null>(null);
+  // streams opened again after the browser gave one up
+  const [reconnects, setReconnects] = useState(0);
   const [health, setHealth] = useState<Health | null>(null);
   const [pushOff, setPushOff] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -110,6 +139,14 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   const deskUrl = useCallback((n: number) => desktopUrl.replace("{n}", String(n)), [desktopUrl]);
 
+  // the ring of the calls: learns at once whether the page may play sound, else the first click allows it
+  const [ringer] = useState(() => (typeof window === "undefined" ? null : new Ringer()));
+  useEffect(() => {
+    if (!ringer) return;
+    ringer.attach(document);
+    return () => ringer.close();
+  }, [ringer]);
+
   // switching account drops everything that belonged to the previous one
   const accRef = useRef(0);
   const accountsRef = useRef<Account[]>([]);
@@ -121,25 +158,25 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setChats(null);
     setMessages(null);
     setActivity(null);
+    setCallLog(null);
     setHealth(null);
     setDeskOpened(false);
     setPane("main");
   }, []);
 
-  // activity ids already seen in the Notifications list, per account and device: the first feed of an account
-  // counts as seen, later ones only while the list is on screen
+  // activity ids already seen, per account and device: the first feed of an account counts as seen, later ones only
+  // while their list is on screen (the Notifications list marks all but the missed calls, the Calls list those)
   const listRef = useRef<ListTab>("chats");
   useEffect(() => {
     listRef.current = listTab;
   }, [listTab]);
-  const noteActivity = useCallback((n: number, d: { ts: number; items: ActivityItem[] }, looking: boolean) => {
+  const noteActivity = useCallback((n: number, d: { ts: number; items: ActivityItem[] }, list: ListTab) => {
     setActivity(d);
     const a = accountsRef.current.find((x) => x.slot === n);
     if (!a || !d.ts) return; // account list not in yet (it comes first on the stream), or Teams feed not read yet
-    const key = seenKey(a);
-    const stored = parseSeen(readStorage(key));
-    const seen = stored && !looking ? stored : markActivitySeen(stored, d.items);
-    if (seen !== stored) writeStorage(key, JSON.stringify(seen));
+    const { stored, seen } = noteShown(a, d.items, list);
+    // the Calls list open while the account changes: its dots compare with what the new account had seen
+    if (list === "calls") setCallsSeen((s) => callsSnapshot(s, n, stored));
     setSeenAct((all) => ({ ...all, [n]: seen }));
   }, []);
 
@@ -197,18 +234,28 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       if (accRef.current === acc) fn(d);
     };
     on("accounts", applyAccounts);
+    on<RingingCall[]>("calls", setCalls);
     on<Health>("health", own(setHealth));
     on<Chat[]>("chats", own(setChats));
-    on<{ ts: number; items: ActivityItem[] }>("activity", own((d) => noteActivity(acc, d, listRef.current === "activity")));
+    on<{ ts: number; items: ActivityItem[] }>("activity", own((d) => noteActivity(acc, d, listRef.current)));
+    on<CallLogEntry[]>("calllog", own(setCallLog));
     on<{ chat: string; rows: Message[] }>("messages", own(setMessages));
+    let retry: ReturnType<typeof setTimeout> | undefined;
     es.onerror = () => {
+      // without the stream no call is known to ring: the ring stops until it is back
+      setCalls([]);
       // a stream refused with 401 means the session is over
       void fetch("/api/accounts", { credentials: "same-origin" }).then((r) => {
         if (r.status === 401) toLogin();
       });
+      // the browser gives up on a stream answered with an error (502 while the web app restarts): open it again
+      if (es.readyState === EventSource.CLOSED) retry = setTimeout(() => setReconnects((n) => n + 1), 5000);
     };
-    return () => es.close();
-  }, [acc, openChat, onScreen, applyAccounts, noteActivity]);
+    return () => {
+      clearTimeout(retry);
+      es.close();
+    };
+  }, [acc, openChat, onScreen, applyAccounts, noteActivity, reconnects]);
 
   // notification tapped while the app is open: switch to the account it comes from
   useEffect(() => {
@@ -246,11 +293,13 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     if (r.status !== "done") toast.error("Teams activity not updated");
   }
 
+  // the missed calls come from the Teams Activity feed too: both lists read it again when they open
   function showList(t: ListTab) {
     setPane("main");
     setListTab(t);
-    if (t === "activity") {
-      if (activity) noteActivity(acc, activity, true);
+    if (t !== "chats") {
+      if (t === "calls") setCallsSeen({ acc, seen: seenAct[acc] ?? null });
+      if (activity) noteActivity(acc, activity, t);
       void refreshActivity();
     }
   }
@@ -339,22 +388,37 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     return prefix.length === 1 ? prefix[0].name : null;
   }
 
+  // a call of the list opens the chat of the same name
+  const chatOf = (name: string) => (chats ?? []).find((c) => c.name === name)?.name ?? null;
+
   const current = accounts?.find((a) => a.slot === acc);
   const unreadChats = (chats ?? []).filter((c) => c.unread && !c.muted && !isSelf(c.name)).length;
   const unreadActivity = unseenActivity(activity?.items ?? [], seenAct[acc] ?? null);
+  const unreadCalls = unseenCalls(activity?.items ?? [], seenAct[acc] ?? null);
   // what waits in each account, for the account menu: the selected one counts what its tabs show
   const unreadOf = (a: Account): Unread =>
-    a.slot === acc && !a.stopped ? { chats: unreadChats, notifications: unreadActivity } : accountUnread(a, seenAct[a.slot] ?? null);
+    a.slot === acc && !a.stopped ? { chats: unreadChats, notifications: unreadActivity, calls: unreadCalls } : accountUnread(a, seenAct[a.slot] ?? null);
   const others = unreadInOthers(accounts ?? [], acc, unreadOf);
+  const otherCalls = (accounts ?? []).reduce((n, a) => (a.slot === acc ? n : n + unreadOf(a).calls), 0);
+
+  // what waits in every account on the icon of the installed app; set again when the app comes back on screen, where
+  // the service worker may have put a dot meanwhile
+  const badge = accounts ? appBadgeCount(accounts, unreadOf) : null;
+  useEffect(() => {
+    const nav = navigator as BadgeNavigator;
+    if (badge === null || !nav.setAppBadge) return;
+    void (badge ? nav.setAppBadge(badge) : nav.clearAppBadge?.())?.catch(() => undefined);
+  }, [badge, onScreen]);
   const canAdd = !!accounts && accounts.length < limits.max && limits.free > 0;
   const addLabel = canAdd ? "Add a Teams account" : accounts && accounts.length >= limits.max ? `At most ${limits.max} accounts` : "No free slot on this server";
   const noAccounts = !!accounts && !accounts.length;
   // on a phone the list and the chat (or the remote desktop) take the whole screen in turn
   const phoneShowsMain = pane === "desktop" || !!openChat;
 
-  const tabs: { id: ListTab | "desktop"; label: string; icon: React.ComponentType<{ className?: string }>; count: number }[] = [
+  const tabs: { id: ListTab | "desktop"; label: string; icon: React.ComponentType<{ className?: string }>; count: number; red?: boolean }[] = [
     { id: "chats", label: "Chats", icon: MessageSquareIcon, count: unreadChats },
     { id: "activity", label: "Notifications", icon: BellIcon, count: unreadActivity },
+    { id: "calls", label: "Calls", icon: PhoneIcon, count: unreadCalls, red: true },
     ...(!isPc ? [{ id: "desktop" as const, label: "Desktop", icon: MonitorIcon, count: 0 }] : []),
   ];
   const activeTab = pane === "desktop" ? "desktop" : listTab;
@@ -379,7 +443,12 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
           <span className="relative">
             <t.icon className="size-5" />
             {t.count > 0 && (
-              <span className="absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-primary px-1 text-center text-[0.625rem] leading-4 font-semibold text-primary-foreground tabular-nums">
+              <span
+                className={cn(
+                  "absolute -top-1.5 -right-2.5 min-w-4 rounded-full px-1 text-center text-[0.625rem] leading-4 font-semibold tabular-nums",
+                  t.red ? "bg-destructive text-white" : "bg-primary text-primary-foreground",
+                )}
+              >
                 {t.count > 99 ? "99+" : t.count}
               </span>
             )}
@@ -392,6 +461,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
+      <CallBanner calls={calls} accounts={accounts} ringer={ringer} onSelect={selectAccount} />
       <aside className={cn("flex w-full shrink-0 flex-col border-r bg-sidebar md:w-[22rem] xl:w-[25rem]", phoneShowsMain && "max-md:hidden")}>
         <div className="flex items-center gap-1 px-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 md:pt-2">
           <AccountMenu
@@ -426,7 +496,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
                 <TabsTrigger key={t.id} value={t.id} className="gap-1.5">
                   <t.icon />
                   {t.label}
-                  <CountBadge n={t.count} />
+                  <CountBadge n={t.count} red={t.red} />
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -518,6 +588,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             </div>
           </div>
         )}
+        <RingHint ringer={ringer} show={!!accounts?.some((a) => !a.stopped)} />
 
         {noAccounts ? (
           <Empty className="flex-1">
@@ -542,6 +613,19 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             refreshing={refreshing}
             onRefresh={() => void refreshActivity()}
             resolve={resolveActivity}
+            onOpenChat={(c) => {
+              setPane("main");
+              setOpenChat(c);
+            }}
+          />
+        ) : listTab === "calls" ? (
+          <Calls
+            acc={acc}
+            ringing={calls.find((c) => c.acc === acc)}
+            missed={acc ? (activity?.items ?? []).filter(isMissedCall) : []}
+            log={acc ? (callLog ?? []) : []}
+            seen={callsSeen?.acc === acc ? callsSeen.seen : (seenAct[acc] ?? null)}
+            chatOf={chatOf}
             onOpenChat={(c) => {
               setPane("main");
               setOpenChat(c);
@@ -583,6 +667,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               stopped={!!current && (current.stopped || current.checkEvery > 0)}
               stoppedText={current?.checkEvery && !current.stopped ? "Runs only during its checks: set it to always on in Settings to send" : undefined}
               others={others}
+              otherCalls={otherCalls}
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}
             />

@@ -93,6 +93,15 @@ export class Notifier {
     });
   }
 
+  // A missed call the check of an account checked every N hours found in its Teams Activity feed: its browser did not
+  // run while the call rang. A notification of its own, which alerts, and ntfy when enabled; time is the one Teams shows.
+  async missedCall(caller: string, time: string): Promise<number> {
+    const title = caller ? `Missed call from ${caller}` : "Missed call";
+    const body = `Teams call${time ? ` at ${time}` : ""}, found by the check`;
+    await this.ntfy(title, body);
+    return this.push(title, body, caller && this.o.store.isKnownChat(caller) ? caller : "");
+  }
+
   // Sends to every device, all at once, what `content` makes for the account (its slot, 0 for the local relay), the
   // title naming the account when the owner has more. Returns the devices the push service took on the first try;
   // the ones it reported as gone are removed, the ones it could not take now are tried again later when `retry`.

@@ -2,13 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   accountStatus,
   accountUnread,
+  appBadgeCount,
+  callsSnapshot,
   loadSeen,
   markActivitySeen,
+  markShown,
   parseSeen,
   seenKey,
   statusText,
   unreadInOthers,
   unseenActivity,
+  unseenCalls,
   unseenIds,
   untilText,
   type Account,
@@ -40,6 +44,8 @@ const account = (extra: Partial<Account> = {}): Account => ({
   stopped: false,
   unread: 2,
   unreadActivity: ["n2", "n1"],
+  missedCalls: [],
+  activityIds: [],
   added: 1790000000,
   desktop: "",
   checkEvery: 0,
@@ -70,6 +76,106 @@ describe("unseenActivity", () => {
   });
 });
 
+describe("missed calls", () => {
+  // Teams shows a missed call as read (font weight 400), new or not
+  const call = (id: string, unread = 0): ActivityItem => ({ ...item(id, unread), kind: "call" });
+
+  it("count apart from the other notifications: every missed call this device has not shown, whatever Teams shows", () => {
+    const seen = markActivitySeen(null, [item("a"), call("c0")]);
+    const items = [call("c1"), item("n1"), call("c2", 1), item("a"), call("c0")];
+    expect(unseenCalls(items, seen)).toBe(2);
+    expect(unseenActivity(items, seen)).toBe(1);
+    expect(unseenCalls(items, null)).toBe(0);
+  });
+
+  it("count in an account the app does not show, from the missed calls /api/accounts lists", () => {
+    const a = account({ unreadActivity: ["n2", "n1"], missedCalls: ["c1", "c0"] });
+    expect(accountUnread(a, ["n1", "c0"])).toEqual({ chats: 2, notifications: 1, calls: 1 });
+    expect(accountUnread(a, ["n1", "c1", "c0"])).toEqual({ chats: 2, notifications: 1, calls: 0 });
+    expect(accountUnread({ ...a, stopped: true }, ["n1"])).toEqual({ chats: 0, notifications: 0, calls: 0 });
+  });
+
+  it("leave a missed call Teams would show bold out of the notifications", () => {
+    expect(accountUnread(account({ unreadActivity: ["c1", "n1"], missedCalls: ["c1"] }), [])).toEqual({ chats: 2, notifications: 1, calls: 1 });
+  });
+
+  it("add to what waits in the other accounts", () => {
+    const accounts = [account({ slot: 1 }), account({ slot: 2, unread: 0, unreadActivity: [], missedCalls: ["c1"] })];
+    expect(unreadInOthers(accounts, 1, (a) => accountUnread(a, []))).toBe(1);
+  });
+
+  it("count every missed call this device has not shown, wherever it sits in the feed", () => {
+    expect(unseenCalls([call("c3"), call("c2"), item("n1"), call("c1")], ["c2"])).toBe(2);
+    expect(accountUnread(account({ unreadActivity: [], missedCalls: ["c3", "c2", "c1"], activityIds: ["c3", "c2", "c1"] }), ["c2"]).calls).toBe(2);
+  });
+
+  it("never count a missed call saved without its Teams id: its id is its place", () => {
+    expect(unseenCalls([call("x3"), call("c1")], [])).toBe(1);
+    expect(unseenActivity([item("x4"), item("n1")], [])).toBe(1);
+  });
+});
+
+describe("missed calls across reads of the feed", () => {
+  const call = (id: string): ActivityItem => ({ ...item(id, 0), kind: "call" });
+  const many = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => item(`${prefix}${i}`, 0));
+
+  it("counts the calls a shorter read had left out, above it, when a longer read shows them", () => {
+    // c1 shown; then c3, c2, twelve other items and c5 came, and the Calls list showed a read of 12 items: c5 only
+    const seen = ["c5", "c1", "o1"];
+    const items = [call("c5"), ...many("a", 12), call("c2"), call("c3"), call("c1"), item("o1", 0)];
+    expect(unseenCalls(items, seen)).toBe(2);
+  });
+
+  it("counts an older call that only a longer read shows, as new: feed items carry no time", () => {
+    const seen = many("m", 12).map((x) => x.id);
+    const items = [...many("m", 30), call("c-old"), ...many("o", 9)];
+    expect(unseenCalls(items, seen)).toBe(1);
+    const a = account({ unreadActivity: [], missedCalls: ["c-old"], activityIds: items.map((x) => x.id) });
+    expect(accountUnread(a, seen).calls).toBe(1);
+  });
+
+  it("counts a new call below an item Teams moved to the top", () => {
+    const items = [call("c0"), call("c-new"), item("m0", 0), item("m1", 0)];
+    expect(unseenCalls(items, ["c0", "m0", "m1"])).toBe(1);
+    expect(accountUnread(account({ unreadActivity: [], missedCalls: ["c0", "c-new"], activityIds: items.map((x) => x.id) }), ["c0", "m0", "m1"]).calls).toBe(1);
+  });
+});
+
+describe("markShown", () => {
+  const call = (id: string): ActivityItem => ({ ...item(id, 0), kind: "call" });
+
+  it("takes the first feed of an account as seen, missed calls included", () => {
+    expect(markShown(null, [item("n1"), call("c1")], "chats")).toEqual(["n1", "c1"]);
+  });
+
+  it("marks what the Notifications list shows but the missed calls, which only the Calls list marks", () => {
+    const items = [call("c2"), item("n2"), item("n1"), call("c1")];
+    const stored = ["n1", "c1"];
+    expect(unseenCalls(items, markShown(stored, items, "activity"))).toBe(1);
+    expect(unseenActivity(items, markShown(stored, items, "activity"))).toBe(0);
+    expect(unseenCalls(items, markShown(stored, items, "calls"))).toBe(0);
+    expect(markShown(stored, items, "chats")).toBe(stored);
+  });
+});
+
+describe("callsSnapshot", () => {
+  it("keeps the list the Calls list opened with, and takes the new account's when the account changes under it", () => {
+    const open = { acc: 1, seen: ["c1"] };
+    expect(callsSnapshot(open, 1, ["c1", "c2"])).toBe(open);
+    expect(callsSnapshot(open, 2, ["d1"])).toEqual({ acc: 2, seen: ["d1"] });
+    expect(callsSnapshot(null, 2, null)).toEqual({ acc: 2, seen: null });
+  });
+});
+
+describe("appBadgeCount", () => {
+  it("adds what waits in every account, the one on screen included, for the icon of the installed app", () => {
+    const accounts = [account({ slot: 1, unread: 1 }), account({ slot: 2, unread: 2, missedCalls: ["n1"] }), account({ slot: 3, unread: 4, stopped: true })];
+    const unreadOf = (a: Account) => accountUnread(a, a.slot === 1 ? ["n2", "n1"] : []);
+    expect(appBadgeCount(accounts, unreadOf)).toBe(1 + (2 + 1 + 1));
+    expect(appBadgeCount([], unreadOf)).toBe(0);
+  });
+});
+
 describe("markActivitySeen", () => {
   it("keeps the ids that left the feed, newest first, up to 200", () => {
     const seen = markActivitySeen(["x", "y"], [item("a"), item("x")]);
@@ -80,7 +186,7 @@ describe("markActivitySeen", () => {
 });
 
 describe("unseenIds", () => {
-  it("counts the unread ids not seen yet, nothing before the first look", () => {
+  it("counts the ids not seen yet, nothing before the first look", () => {
     expect(unseenIds(["a", "b"], null)).toBe(0);
     expect(unseenIds(["c", "a"], ["a", "b"])).toBe(1);
     expect(unseenIds([], ["a"])).toBe(0);
@@ -89,20 +195,20 @@ describe("unseenIds", () => {
 
 describe("accountUnread", () => {
   it("counts unread chats and the notifications this device has not shown", () => {
-    expect(accountUnread(account(), ["n1"])).toEqual({ chats: 2, notifications: 1 });
+    expect(accountUnread(account(), ["n1"])).toEqual({ chats: 2, notifications: 1, calls: 0 });
   });
 
   it("counts no notification before the feed was read or first seen here", () => {
-    expect(accountUnread(account({ unreadActivity: null }), ["n1"])).toEqual({ chats: 2, notifications: 0 });
-    expect(accountUnread(account(), null)).toEqual({ chats: 2, notifications: 0 });
+    expect(accountUnread(account({ unreadActivity: null }), ["n1"])).toEqual({ chats: 2, notifications: 0, calls: 0 });
+    expect(accountUnread(account(), null)).toEqual({ chats: 2, notifications: 0, calls: 0 });
   });
 
   it("counts what the last check found for an account checked every N hours, whose browser runs only then", () => {
-    expect(accountUnread(account({ checkEvery: 3600, checked: 1790000000 }), ["n1"])).toEqual({ chats: 2, notifications: 1 });
+    expect(accountUnread(account({ checkEvery: 3600, checked: 1790000000 }), ["n1"])).toEqual({ chats: 2, notifications: 1, calls: 0 });
   });
 
   it("counts nothing for a stopped account, whose numbers would stay until it starts", () => {
-    expect(accountUnread(account({ stopped: true }), [])).toEqual({ chats: 0, notifications: 0 });
+    expect(accountUnread(account({ stopped: true }), [])).toEqual({ chats: 0, notifications: 0, calls: 0 });
   });
 });
 
@@ -168,11 +274,37 @@ describe("loadSeen", () => {
     const later = account({ unreadActivity: ["n3", "n2", "n1"] });
     const seen = loadSeen([later]);
     expect(seen).toEqual({ 2: ["n2", "n1"] });
-    expect(accountUnread(later, seen[2])).toEqual({ chats: 2, notifications: 1 });
+    expect(accountUnread(later, seen[2])).toEqual({ chats: 2, notifications: 1, calls: 0 });
+  });
+
+  it("takes the missed calls of an account met for the first time as seen too, and counts the next one", () => {
+    const a = account({ unreadActivity: ["n1"], missedCalls: ["c2", "c1"] });
+    expect(loadSeen([a])).toEqual({ 2: ["n1", "c2", "c1"] });
+    const later = account({ unreadActivity: ["n1"], missedCalls: ["c3", "c2", "c1"] });
+    expect(accountUnread(later, loadSeen([later])[2])).toEqual({ chats: 2, notifications: 0, calls: 1 });
+  });
+
+  it("adds the missed calls to a list stored by an earlier release, once: Teams never shows them unread", () => {
+    const a = account({ unreadActivity: ["n1"], missedCalls: ["c2", "c1"] });
+    store.set(seenKey(a), JSON.stringify(["n1"]));
+    expect(accountUnread(a, loadSeen([a])[2]).calls).toBe(0);
+    const later = account({ unreadActivity: ["n1"], missedCalls: ["c3", "c2", "c1"] });
+    expect(accountUnread(later, loadSeen([later])[2]).calls).toBe(1);
+  });
+
+  it("takes every item of the feed of an account met for the first time as seen", () => {
+    expect(loadSeen([account({ unreadActivity: ["n2"], missedCalls: ["c1"], activityIds: ["n2", "r1", "c1"] })])).toEqual({ 2: ["n2", "r1", "c1"] });
+  });
+
+  it("keeps the missed calls a migration added when a later mark cuts the list at 200 ids", () => {
+    const a = account({ unreadActivity: [], missedCalls: ["c2", "c1"], activityIds: ["c2", "r1", "c1"] });
+    store.set(seenKey(a), JSON.stringify(Array.from({ length: 200 }, (_, i) => `old${i}`)));
+    const items = ["c2", "r1", "c1"].map((id): ActivityItem => ({ ...item(id, 0), kind: id.startsWith("c") ? "call" : "reaction" }));
+    expect(unseenCalls(items, markShown(loadSeen([a])[2], items, "activity"))).toBe(0);
   });
 
   it("stores nothing for an account whose feed the agent has not saved yet", () => {
-    expect(loadSeen([account({ unreadActivity: null })])).toEqual({});
+    expect(loadSeen([account({ unreadActivity: null, missedCalls: null, activityIds: null })])).toEqual({});
     expect(store.size).toBe(0);
   });
 
@@ -180,7 +312,7 @@ describe("loadSeen", () => {
     loadSeen([account({ added: 1790000000, unreadActivity: ["old"] })]);
     const next = account({ added: 1790003600, unreadActivity: ["b1", "b2"] });
     const seen = loadSeen([next]);
-    expect(accountUnread(next, seen[2])).toEqual({ chats: 2, notifications: 0 });
+    expect(accountUnread(next, seen[2])).toEqual({ chats: 2, notifications: 0, calls: 0 });
   });
 });
 

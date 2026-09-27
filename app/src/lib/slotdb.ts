@@ -2,8 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { CommandType } from "@/shared/slot-db/commands";
-import type { ActivityItem, Chat, Message, MessageExtra } from "@/shared/slot-db/rows";
-import { cmdResultKey, Members, membersKey, STATE, type SlotHealth } from "@/shared/slot-db/state";
+import { HAS_TEAMS_ID, type ActivityItem, type CallLogEntry, type Chat, type Message, type MessageExtra } from "@/shared/slot-db/rows";
+import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
+import { CallState, cmdResultKey, Members, membersKey, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
 
 // data/N/messages.db is created and written by the agent of slot N; the web app reads it and
@@ -125,7 +126,31 @@ export class SlotReader {
   // (it saves none while the feed is empty)
   unreadActivity(): string[] | null {
     if (!Number(this.state(STATE.activityTs, 0))) return null;
-    return this.all<{ id: string }>("SELECT id FROM activity WHERE unread=1 ORDER BY pos").map((r) => r.id);
+    return this.all<{ id: string }>(`SELECT id FROM activity WHERE unread=1 AND ${HAS_TEAMS_ID} ORDER BY pos`).map((r) => r.id);
+  }
+
+  // Ids of every missed call of the feed that has its Teams id, in feed order, null until the agent has saved the feed
+  // once. Teams shows a missed call as read (not bold), new or not: a device tells a new one by an id it has not shown.
+  missedCalls(): string[] | null {
+    if (!Number(this.state(STATE.activityTs, 0))) return null;
+    return this.all<{ id: string }>(`SELECT id FROM activity WHERE kind='call' AND ${HAS_TEAMS_ID} ORDER BY pos`).map((r) => r.id);
+  }
+
+  // Ids of every item of the feed, newest first, null likewise: what a device meeting the account takes as seen
+  activityIds(): string[] | null {
+    if (!Number(this.state(STATE.activityTs, 0))) return null;
+    return this.all<{ id: string }>("SELECT id FROM activity ORDER BY pos").map((r) => r.id);
+  }
+
+  // The incoming call as the agent keeps it, null before the first one
+  call(): CallState | null {
+    const v = this.all<{ v: string }>("SELECT v FROM state WHERE k=?", STATE.call)[0]?.v;
+    return v ? parseState(CallState, v, null) : null;
+  }
+
+  // The calls the agent saw ring, newest first
+  callLog(): CallLogEntry[] {
+    return this.all<CallLogEntry>(`SELECT caller, since, seconds FROM calls ORDER BY since DESC, id DESC LIMIT ${CALL_LOG_SIZE}`);
   }
 
   health(added: number): Health {
@@ -146,6 +171,12 @@ export class SlotReader {
       .prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?,?,?,?)")
       .run(Math.floor(Date.now() / 1000), type, arg1, arg2);
     return Number(r.lastInsertRowid);
+  }
+
+  // What the last check of the account found (checked every N hours): forgotten, the next check only records what it
+  // finds and pushes nothing from before
+  forgetLastCheck() {
+    this.db.prepare("DELETE FROM state WHERE k=?").run(STATE.checkSeen);
   }
 
   // The app shows this chat now. Teams keeps a visible page, which reads what is open: without a recent mark

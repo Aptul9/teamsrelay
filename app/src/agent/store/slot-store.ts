@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
-import type { Message, MessageExtra, ReadBy } from "@/shared/slot-db/rows";
-import { ensureSlotSchema } from "@/shared/slot-db/schema";
+import { HAS_TEAMS_ID, type Message, type MessageExtra, type ReadBy } from "@/shared/slot-db/rows";
+import { CALL_LOG_SIZE, ensureSlotSchema } from "@/shared/slot-db/schema";
 import { mergeChats, type ChatEntry } from "../logic/chats";
 
 // The agent side of data/N/messages.db (src/shared/slot-db), or of relay.db for the local relay, where the API
@@ -202,9 +202,32 @@ export class SlotStore {
     return this.db.prepare("UPDATE commands SET status='failed' WHERE status='pending' AND ts < ?").run(now - maxAge).changes;
   }
 
-  // Ids of the items the Activity feed shows unread (bold), in feed order
+  // A call that rang, for the call log of the web app: the last CALL_LOG_SIZE are kept
+  addCall(caller: string, since: number, seconds: number) {
+    this.db.transaction(() => {
+      this.db.prepare("INSERT INTO calls(since, caller, seconds) VALUES(?, ?, ?)").run(since, caller, seconds);
+      this.db.prepare("DELETE FROM calls WHERE id NOT IN (SELECT id FROM calls ORDER BY since DESC, id DESC LIMIT ?)").run(CALL_LOG_SIZE);
+    })();
+  }
+
+  // Ids of every item of the Activity feed, in feed order (newest first)
+  activityIds(): string[] {
+    return this.db.prepare("SELECT id FROM activity ORDER BY pos").pluck().all() as string[];
+  }
+
+  // Ids of the items with their Teams id the Activity feed shows unread (bold), in feed order
   unreadActivity(): string[] {
-    return this.db.prepare("SELECT id FROM activity WHERE unread=1 ORDER BY pos").pluck().all() as string[];
+    return this.db.prepare(`SELECT id FROM activity WHERE unread=1 AND ${HAS_TEAMS_ID} ORDER BY pos`).pluck().all() as string[];
+  }
+
+  // Every missed call of the feed that has its Teams id, in feed order: who called, and the time Teams shows. Teams
+  // shows them as read (not bold), new or not: the check tells a new one by its id (commands/check.ts).
+  missedCalls(): { id: string; caller: string; time: string }[] {
+    return this.db.prepare(`SELECT id, actor AS caller, tm AS time FROM activity WHERE kind='call' AND ${HAS_TEAMS_ID} ORDER BY pos`).all() as {
+      id: string;
+      caller: string;
+      time: string;
+    }[];
   }
 
   saveActivity(items: readonly ActivityEntry[]) {

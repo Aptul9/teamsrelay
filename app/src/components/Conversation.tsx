@@ -88,6 +88,7 @@ export function Conversation({
   stopped,
   stoppedText = "Account stopped: start it to send",
   others,
+  otherCalls = 0,
   onBack,
   onOpenDesktop,
 }: {
@@ -99,8 +100,10 @@ export function Conversation({
   // sent; stoppedText says why
   stopped: boolean;
   stoppedText?: string;
-  // unread in the other accounts: on a phone the account menu, which shows it, is hidden while a chat is open
+  // unread in the other accounts: on a phone the account menu, which shows it, is hidden while a chat is open; the missed
+  // calls among them have a red dot of their own
   others: number;
+  otherCalls?: number;
   onBack: () => void;
   onOpenDesktop: () => void;
 }) {
@@ -665,14 +668,15 @@ export function Conversation({
           size="icon"
           className="relative size-10 md:hidden"
           onClick={onBack}
-          aria-label={others ? `Back to the list, ${others} unread in other accounts` : "Back to the list"}
+          aria-label={others ? `Back to the list, ${others} unread in other accounts${otherCalls ? `, ${otherCalls} missed ${otherCalls === 1 ? "call" : "calls"}` : ""}` : "Back to the list"}
         >
           <ArrowLeftIcon className="size-5" />
-          {others > 0 && (
+          {others - otherCalls > 0 && (
             <span aria-hidden className="absolute top-0.5 left-5 min-w-4 rounded-full bg-primary px-1 text-center text-[0.625rem] leading-4 font-semibold text-primary-foreground tabular-nums">
-              {others > 99 ? "99+" : others}
+              {others - otherCalls > 99 ? "99+" : others - otherCalls}
             </span>
           )}
+          {otherCalls > 0 && <span aria-hidden className="absolute bottom-1 left-6 size-2.5 rounded-full bg-destructive ring-2 ring-background" />}
         </Button>
         <Avatar name={chat} av={entry?.av} acc={acc} muted={!!entry?.muted} className="size-9" />
         <div className="min-w-0 flex-1">

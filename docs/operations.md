@@ -83,7 +83,7 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 | `CMD` | a command of the web app starts (`id`, `arg`) |
 | `SESSION` | Teams signed out for a minute (push sent), signed in again |
 | `NEWMSG`, `MSG` | new message from the chat list, notification caught from Teams |
-| `call` | incoming call: `ringing` with the `caller`, `ended` with the `seconds` its toast showed; a page it could not read (at most once a minute) |
+| `call` | incoming call: `ringing` with the `caller`, `ended` with the `seconds` its toast showed; a page it could not read (at most once a minute); `not saved`: the slot database refused the call for the web app or the call log (the push went out anyway) |
 | `SELFCHECK` | outcome of the automatic check |
 | `show` | Teams goes back to the chat of the app or to the self chat |
 | `page`, `input`, `presence` | page made visible, hook installed, input errors, your Teams status changed |

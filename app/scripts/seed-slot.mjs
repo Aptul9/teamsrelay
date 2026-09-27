@@ -29,6 +29,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS state(k TEXT PRIMARY KEY, v TEXT);
   CREATE TABLE IF NOT EXISTS readby(mid TEXT PRIMARY KEY, chat TEXT, label TEXT, names TEXT, ts INTEGER);
   CREATE TABLE IF NOT EXISTS activity(id TEXT PRIMARY KEY, pos INTEGER, kind TEXT, actor TEXT, title TEXT, emoji TEXT, preview TEXT, tm TEXT, chat TEXT, unread INTEGER, ts INTEGER, channel INTEGER, av TEXT);
+  CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY AUTOINCREMENT, since INTEGER, caller TEXT, seconds INTEGER);
 `);
 
 const now = Math.floor(Date.now() / 1000);
@@ -58,7 +59,7 @@ const msgs = {
 };
 
 db.transaction(() => {
-  db.exec("DELETE FROM chats; DELETE FROM chat_messages; DELETE FROM activity;");
+  db.exec("DELETE FROM chats; DELETE FROM chat_messages; DELETE FROM activity; DELETE FROM calls;");
   chats.forEach(([name, preview, tm, unread, mention, muted], i) =>
     db.prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av) VALUES(?,?,?,?,?,?,?,?,?)").run(name, preview, i, now, tm, unread, mention, muted, ""),
   );
@@ -71,9 +72,15 @@ db.transaction(() => {
     ["a1", "reaction", "Luca Bianchi", "Luca Bianchi reacted to your message", "👍", "Yes, sending the summary now", "10:31", "Luca Bianchi", 1],
     ["a2", "mention", "Anna Rossi", "Anna Rossi mentioned you", "", "@you can you check the deploy?", "9:58", "Project Alpha", 1],
     ["a3", "reply", "Marco Neri", "Marco Neri replied to your message", "", "Looks good from here", "9:59", "Project Alpha", 0],
+    // Teams shows a missed call as read, new or not
+    ["a4", "call", "Luca Bianchi", "Missed call from Luca Bianchi", "", "Teams call", "9:40", "Luca Bianchi", 0],
   ].forEach(([id, kind, actor, title, emoji, preview, tm, chat, unread], i) =>
     db.prepare("INSERT INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,unread,ts,channel,av) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, i, kind, actor, title, emoji, preview, tm, chat, unread, now, 0, ""),
   );
+  [
+    ["Luca Bianchi", now - 3000, 7],
+    ["Anna Rossi", now - 90000, 12],
+  ].forEach(([caller, at, seconds]) => db.prepare("INSERT INTO calls(since,caller,seconds) VALUES(?,?,?)").run(at * 1000, caller, seconds));
   const set = db.prepare("INSERT OR REPLACE INTO state(k,v) VALUES(?,?)");
   set.run("me", JSON.stringify({ name: "Anna Rossi", email: "anna.rossi@contoso.example", tenant: "Contoso" }));
   set.run("activity_ts", String(now));
