@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import Database from "better-sqlite3";
 import type { Page } from "playwright-core";
 import { describe, expect, it } from "vitest";
 import type { Agent } from "@/agent/context";
@@ -58,6 +59,20 @@ describe("files the rows name", () => {
   it("are none in a new database", () => {
     expect(SlotStore.open(path.join(tempDir(), "messages.db")).mediaFiles()).toEqual(new Set());
   });
+
+  it("are read past rows no app shows: broken JSON, images that are not a list, an account that is not JSON", () => {
+    const file = path.join(tempDir(), "messages.db");
+    const store = SlotStore.open(file);
+    store.saveChats([chat("Anna Rossi", "aaaaaaaaaaaaaaa1.png")]);
+    const db = new Database(file);
+    const insert = db.prepare("INSERT INTO chat_messages(chat, idx, mid, author, text, mine, reacts, extra) VALUES(?,?,?,?,?,?,?,?)");
+    insert.run("A", 0, "m1", "", "", 0, "", "{broken");
+    insert.run("A", 1, "m2", "", "", 0, "", JSON.stringify({ images: 5, av: 7 }));
+    insert.run("A", 2, "m3", "", "", 0, "", JSON.stringify({ images: [null, { f: "ccccccccccccccc3.png" }] }));
+    db.close();
+    store.setState(STATE.me, "not json");
+    expect([...store.mediaFiles()].sort()).toEqual(["aaaaaaaaaaaaaaa1.png", "ccccccccccccccc3.png"]);
+  });
 });
 
 describe("pictures no row names", () => {
@@ -82,7 +97,7 @@ describe("pictures no row names", () => {
     const list = async (...people: string[]) =>
       store.saveChats(await media.avatars(page, people.map((p) => ({ ...chat(p, ""), avsrc: src(p) })), 40), true);
 
-    // first start: the list below the first screen shows B and C; second start: D and E instead (Everbright, 2026-09-27)
+    // first start: the list below the first screen shows B and C; second start: D and E instead (thousands of chats)
     await list("A", "B", "C");
     pruneMedia(a);
     await list("A", "D", "E");

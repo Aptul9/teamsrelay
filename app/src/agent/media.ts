@@ -9,8 +9,8 @@ import { copyImage, fetchImage } from "./teams/scripts/media";
 // Maximum size of an image fetched from a message
 const MAX_IMAGE = 8e6;
 
-// Images, profile pictures (data/N/media) and attachments (data/N/files), written once each. Images and pictures no row
-// names any more leave the media folder (prune).
+// Images, profile pictures (data/N/media) and attachments (data/N/files). A file is written once and kept while a row
+// names it: images and pictures no row names any more leave the media folder (prune).
 export class Media {
   // addresses the page could not fetch (Giphy GIFs without CORS...), per image: their public link stays, no new
   // attempt; another address of the same image (Teams loaded it meanwhile) is tried

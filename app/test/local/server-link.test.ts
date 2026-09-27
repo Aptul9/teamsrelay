@@ -495,6 +495,65 @@ describe("a sync whose files take a while", () => {
     await until("the picture at last", () => fs.existsSync(onServer));
     await j.stop();
   });
+
+  it("leaves out a picture the agent removed before its turn: no warning, nothing sent", async () => {
+    const warn = vi.spyOn(log, "warn");
+    let relay: Relay | null = null;
+    let removed = false;
+    let puts = 0;
+    // while the relay asks the server about its files, the agent lists other chats and its media job removes the
+    // picture no row names any more
+    const racing: typeof fetch = async (input, init) => {
+      if (!removed && relay && String(input).endsWith("/api/relay/have")) {
+        removed = true;
+        relay.store.saveChats([{ name: "Carla Verdi", preview: "", time: "", unread: false, mention: false, muted: false, av: "" }], true);
+        fs.rmSync(path.join(relay.dir, "media", "a7a7a7a7a7a7a7a7.png"));
+      }
+      if (init?.method === "PUT") puts++;
+      return fetch(input, init);
+    };
+    const j = await join("owner-pruned", { fetch: racing }, (r) => {
+      relay = r;
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      fs.writeFileSync(path.join(r.dir, "media", "a7a7a7a7a7a7a7a7.png"), PNG);
+      r.store.saveChats([{ name: "Leaving Soon", preview: "", time: "", unread: false, mention: false, muted: false, av: "a7a7a7a7a7a7a7a7.png" }]);
+    });
+    j.start();
+    await until("the list of now on the server", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Carla Verdi")));
+    await sleep(1500);
+    expect(removed).toBe(true);
+    expect(puts).toBe(0);
+    expect(warn.mock.calls.filter((c) => /file not sent/.test(String(c[1])))).toEqual([]);
+    await j.stop();
+  });
+
+  it("forgets a picture waiting to go again once the agent removed it: when it comes back and fails, that is news", async () => {
+    const warn = vi.spyOn(log, "warn");
+    const flaky: typeof fetch = async (input, init) => {
+      if (init?.method === "PUT" && String(input).endsWith("/b8b8b8b8b8b8b8b8.png")) throw new TypeError("fetch failed");
+      return fetch(input, init);
+    };
+    let relay!: Relay;
+    const picture = () => path.join(relay.dir, "media", "b8b8b8b8b8b8b8b8.png");
+    const list = (name: string, av: string) => relay.store.saveChats([{ name, preview: "", time: "", unread: false, mention: false, muted: false, av }], true);
+    const notSent = () => warn.mock.calls.filter((c) => /file not sent/.test(String(c[1])) && (c[2] as { file?: string } | undefined)?.file === "b8b8b8b8b8b8b8b8.png").length;
+    const j = await join("owner-forgotten", { fetch: flaky }, (r) => {
+      relay = r;
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      fs.writeFileSync(picture(), PNG);
+      list("Anna Rossi", "b8b8b8b8b8b8b8b8.png");
+    });
+    j.start();
+    await until("the first failure", () => notSent() === 1);
+    // the chat leaves the list and the media job removes its picture; later it is back, and the network fails again
+    list("Luca Bianchi", "");
+    fs.rmSync(picture());
+    await until("the list without it on the server", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Luca Bianchi")));
+    fs.writeFileSync(picture(), PNG);
+    list("Anna Rossi", "b8b8b8b8b8b8b8b8.png");
+    await until("the second failure, logged", () => notSent() === 2);
+    await j.stop();
+  });
 });
 
 describe("what a relay sends when it joins", () => {

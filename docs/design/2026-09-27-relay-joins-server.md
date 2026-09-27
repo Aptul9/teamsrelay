@@ -56,4 +56,4 @@ The token gives exactly what the agent of a slot has: the database, media and up
 
 ## Left as is
 
-The relay keeps its own API and app on loopback; joined, it has no devices of its own. Activity feed and "Read by" are read when joined, since the web app shows them. Presence, parking on the self chat, the automatic check at 8-11 and 17-20, the alerts about sign-in and browser: as in the relay alone, the alerts naming the relay window on `HOST_LABEL`.
+The files a joined relay uploaded stay on the server until the account is removed: the relay removes the pictures no row names from its own media folder, the server none from `data/N/media`, within `RELAY_QUOTA_MB`. The relay keeps its own API and app on loopback; joined, it has no devices of its own. Activity feed and "Read by" are read when joined, since the web app shows them. Presence, parking on the self chat, the automatic check at 8-11 and 17-20, the alerts about sign-in and browser: as in the relay alone, the alerts naming the relay window on `HOST_LABEL`.
