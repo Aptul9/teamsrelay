@@ -62,7 +62,7 @@ The account menu shows under each name its email and organization and, when ther
 TeamsRelay is a PWA: installed from the browser, it opens like an app, with icon and notifications.
 
 - **iPhone**: open `https://<DOMAIN>` in Safari, sign in, Share → **Add to Home Screen**. Open TeamsRelay from the Home Screen icon, tap **Enable notifications**, allow. Push notifications reach only the installed app.
-- **Android**: open the site in Chrome, menu → **Install app**, then **Enable notifications**. The Android app of `mobile/` shows the same web app but receives no notifications.
+- **Android**: open the site in Chrome, menu → **Install app**, then **Enable notifications**. Or the Android app of `mobile/`, which rings for calls with the phone locked: see [Android app](#android-app).
 - **PC**: any current browser, chats on the left and the open conversation on the right. The remote desktop opens in a browser tab. To hear incoming calls, install the app (the **Install** icon at the right of the address bar, Chrome or Edge): the installed app rings without a click, a tab only after a click or a key press in it since it loaded. In Chrome, **Settings** → **Performance** → **Always keep these sites active** → **Add** the address of TeamsRelay, so that Memory Saver never puts it to sleep.
 
 The status panel shows how many devices of the user receive notifications. A device receives the notifications of every Teams account of its user; with more than one account, the title of a notification ends with the organization of its account (its email when Teams shows none), and a tap opens the app on that account.
@@ -70,6 +70,20 @@ The status panel shows how many devices of the user receive notifications. A dev
 An incoming Teams call arrives as a notification that alerts again every 5 s while the call rings and turns quiet when it stops ("Call from Anna Rossi, ended after 9 s"); an iPhone gets one notification when the call starts and one when it ends. Its sound is the one of the device. On Android it can be told apart from other apps: long-press a TeamsRelay notification, open its settings and pick a sound (it applies to messages too). Only accounts whose browser runs can see a call (see [limitations](limitations.md)).
 
 While the app is open, a call also shows a banner on top ("Anna Rossi is calling (Contoso)") and the app rings until the call ends; **Mute** silences that call. The **Calls** tab lists the missed calls Teams shows in its activity feed (a red count for the ones not seen on this device yet) and the calls that rang while the account ran, with how long. An account checked every few hours sends a notification for each missed call its check finds.
+
+## Android app
+
+The Tauri app of `mobile/` shows the web app and gets its notifications through Firebase Cloud Messaging: calls ring with the ringtone of the phone until they end, messages and alerts arrive as in the PWA. It needs a Firebase project of your own; Firebase Cloud Messaging costs nothing and the project stays on the free Spark plan (no billing account).
+
+1. [Firebase console](https://console.firebase.google.com): **Create a project** (Google Analytics is not needed).
+2. In the project, **Add app** → **Android**, package name `io.github.aptul9.teamsrelay`, **Register app**, then **Download google-services.json**. The other steps of that page (Gradle, SDK) are not needed.
+3. The APK takes the file from a repository secret: GitHub → the repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**, name `GOOGLE_SERVICES_JSON`, value the content of the file (or `gh secret set GOOGLE_SERVICES_JSON < google-services.json`). The file carries an API key: it stays out of git.
+4. The server sends through a service account of the same project: [Google Cloud console](https://console.cloud.google.com) → the project → **IAM & Admin** → **Service accounts** → **Create service account**, role **Firebase Cloud Messaging API Admin** only; then its **Keys** → **Add key** → **Create new key** → JSON. Save the file as `fcm/service-account.json` next to `docker-compose.yml`, readable by the owner only, and restart the accounts so that their agents read it: `docker compose up -d --force-recreate browsers`. The agent log then shows `fcm=true`. An organization policy (`iam.disableServiceAccountKeyCreation`) can forbid keys: a project of a personal Google account has none.
+5. Build the APK: GitHub → **Actions** → **Android app** → **Run workflow**, then download the artifact `teamsrelay-android-debug` of the run and install `app-universal-debug.apk` on the phone (allow the install from that source). It is signed with a debug key made for the run: installing the APK of another run over it needs the app removed first.
+6. Open TeamsRelay on the phone, give the address of the server, sign in and allow notifications. The app registers the phone at each start and each return to it; the status panel of the web app counts it with the other devices.
+7. The ringtone and the other sounds are the ones of the channels of the app: Android **Settings** → **Apps** → **TeamsRelay** → **Notifications** (**Calls**, **Calls ended**, **Messages**, **TeamsRelay**).
+
+ntfy can ring as well, without the app: install the ntfy app on the phone and subscribe to a topic of your own (a long random name: anyone who knows the topic of ntfy.sh can read it), set `NTFY_ENABLED=1` and `NTFY_TOPIC=<topic>` in `.env` (`NTFY_URL` for a server of your own), turn on **Keep alerting for highest priority** in the settings of the ntfy app, and restart the accounts (`docker compose up -d browsers`). Messages go there too, and ntfy carries their text in clear.
 
 ## Upgrading from the single-user release
 

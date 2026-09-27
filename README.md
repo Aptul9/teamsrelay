@@ -36,7 +36,7 @@ flowchart LR
 - Web app, agent and supervisor are one TypeScript package (`app/`) with two images: `teamsrelay` runs the web app, `teamsrelay-browsers` Chromium, the agents and the supervisor.
 - AI clients (Claude Code, opencode) can read the chats through the MCP endpoint `/mcp`, read only, when `MCP_TOKEN` is set: [docs/mcp.md](docs/mcp.md).
 - **Local relay**: for one account there is a lighter way, with no server and no containers. A Node process on an always-on machine drives Chrome or Edge on a profile of its own, signed in once in its window, and relays the chats to a small app on the phone: [docs/setup.md](docs/setup.md#local-relay). Both use the same agent code.
-- **Android app**: a Tauri shell (`mobile/`) that opens the web app of a server; GitHub Actions builds a debug APK. It receives no notifications yet (push through Firebase deferred): [mobile/README.md](mobile/README.md).
+- **Android app**: a Tauri app (`mobile/`) that opens the web app of a server and gets its notifications through Firebase: calls ring with the phone locked; GitHub Actions builds a debug APK: [mobile/README.md](mobile/README.md).
 
 ## Quick start
 
@@ -64,7 +64,7 @@ Open `https://<DOMAIN>`, sign in as the administrator, add a Teams account and s
 | AI clients over MCP: setup, tools, limits | [docs/mcp.md](docs/mcp.md) |
 | Teams selectors used by the agent | [docs/teams-selectors.md](docs/teams-selectors.md) |
 | Known limitations | [docs/limitations.md](docs/limitations.md) |
-| Android app (Tauri shell, push deferred) | [mobile/README.md](mobile/README.md) |
+| Android app (Tauri, notifications through Firebase) | [mobile/README.md](mobile/README.md) |
 | Decisions and plans | [docs/decisions/](docs/decisions/), [docs/design/](docs/design/) |
 
 ## License

@@ -1,24 +1,35 @@
 # TeamsRelay for Android
 
-A Tauri 2 app that shows the TeamsRelay web app of a server in an app window. Status: app shell. Notifications through Firebase are specified in [2026-09-26-android-client.md](../docs/design/2026-09-26-android-client.md) and deferred (2026-09-27): the web app installed from Chrome stays the device that receives notifications.
+A Tauri 2 app that shows the TeamsRelay web app of a server in an app window and receives its notifications through Firebase Cloud Messaging: a Teams call rings with the ringtone of the phone, locked or not, until it ends. Design: [2026-09-26-android-client.md](../docs/design/2026-09-26-android-client.md). Setting up Firebase: [setup.md](../docs/setup.md#android-app).
 
 ## What it does
 
 - First start: a page bundled with the app asks for the address of the TeamsRelay server, keeps it (`localStorage` of the bundled page) and opens it. `https://` only; `http://` is accepted for `localhost` and `127.0.0.1`, to reach a local stack through `adb reverse tcp:8090 tcp:8090`, and works only in debug builds (the Tauri Android template allows clear text for the debug build type only).
 - Next starts: the saved server opens directly.
 - Changing the server: Android Settings, Apps, TeamsRelay, Storage, **Clear storage** (it also signs out). Back from the first server page right after typing the address shows the form again: tested in Chrome; in the app the Back button calls `webView.goBack()` while the WebView has history (Tauri 2.12 `AppPlugin.kt`), not tried on a device yet.
-- The server page runs in the app WebView with its own session cookie. No Tauri capability names a remote URL, so the server page cannot call Tauri.
-- No notifications inside the app: Android WebView has no Push API and no service worker notifications (MDN compatibility data), and the Settings page of the web app says the browser does not support push notifications.
+- The server page runs in the app WebView with its own session cookie. No Tauri capability names a remote URL, so the server page cannot call Tauri: only the bundled start page calls the push plugin (`src-tauri/capabilities/default.json`).
+- Android WebView has no Push API and no service worker notifications (MDN compatibility data): the notifications come from the push plugin (`plugin/`), not from the web page, whose Settings still say the browser does not support push notifications.
 - No downloads inside the app: Tauri 2.12 sets no download listener on the Android WebView, so attachment downloads of the web app do nothing. Open files in Teams or in the PWA.
+
+## Notifications
+
+- **Registration**: at each start of the app, each return to it and each new Firebase token, the plugin posts the token to `POST /api/push/fcm` of the server with the session cookie of the web page (Android `CookieManager`); the server answers the key of the phone. Signed out (no session cookie), it asks the server to forget the phone (`DELETE /api/push/fcm`).
+- **Messages**: FCM data messages at high priority, sealed by the server with the key of the phone (AES-256-GCM); the plugin opens them (`Seal.kt`) and draws the notification (`Notices.kt`), also with the app closed (`PushService.kt`, started by Firebase).
+- **Channels**: **Calls** (importance high, sound the ringtone of the phone, repeated with `FLAG_INSISTENT` until the call ends, the notification is tapped or the shade opened, cut after 65 s), **Calls ended** (quiet: who called, for how long), **Messages** (one notification per chat with its last 5 lines), **TeamsRelay** (sign-in needed, checks, missed calls a check found). The sound of each channel is changed in the Android settings of the app.
+- **Tap**: opens the web app on the account of the notification (`/?a=N`), from the start page when the tap started the app, in the window at once when it runs.
+- **Permission**: Android 13 and later ask for the notification permission at the first start.
+- **Firebase settings**: `scripts/firebase-values.mjs` writes the values of `google-services.json` (repository secret `GOOGLE_SERVICES_JSON` in CI) as string resources of the plugin, which the Firebase SDK reads at start; built without them, the app works and receives no notifications (logcat tag `TeamsRelay`: `Firebase is not configured in this build`).
 
 ## Layout
 
 | Path | Content |
 |---|---|
 | `start/` | The bundled start page: `index.html`, `start.js`, `relay.js` (address rules), `start.css`, `icon.png` |
-| `src-tauri/` | Tauri project: `tauri.conf.json` (identifier `io.github.aptul9.teamsrelay`, CSP of the start page), `src/lib.rs` (entry point), `icons/` (made by `npx tauri icon ../app/public/static/icon-512.png`) |
-| `src-tauri/gen/android` | Android project made by `npx tauri android init`; not in git yet. It gets committed once edited by hand (signing, Firebase) |
-| `test/` | `npm test`: address rules, and the start page in headless Google Chrome |
+| `src-tauri/` | Tauri project: `tauri.conf.json` (identifier `io.github.aptul9.teamsrelay`, CSP of the start page), `src/lib.rs` (entry point, push plugin), `capabilities/default.json` (the start page may call the plugin), `icons/` (made by `npx tauri icon ../app/public/static/icon-512.png`) |
+| `plugin/` | Tauri plugin `push`: Rust glue (`src/lib.rs`, commands `relay` and `opened`) and the Kotlin of Android (`android/`: Firebase service, channels, registration, decryption; JVM tests in `android/src/test`) |
+| `scripts/firebase-values.mjs` | `google-services.json` to the string resources of the plugin |
+| `src-tauri/gen/android` | Android project made by `npx tauri android init`, not in git: the plugin brings its Kotlin, manifest entries and Firebase settings, so the generated project needs no edit |
+| `test/` | `npm test`: address rules, Firebase values, and the start page in headless Google Chrome (with a stand-in for the plugin) |
 
 ## Build
 
@@ -28,7 +39,9 @@ Requirements, as in the [Tauri prerequisites](https://v2.tauri.app/start/prerequ
 npm ci
 npx tauri android init
 npx tauri icon ../app/public/static/icon-512.png
+node scripts/firebase-values.mjs <path of google-services.json> plugin/android/src/main/res/values/google-services.xml
 npx tauri android build --debug --apk --target aarch64
+(cd src-tauri/gen/android && ./gradlew :tauri-plugin-push:testDebugUnitTest)
 adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
 ```
 
@@ -36,4 +49,4 @@ adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-u
 
 ## CI
 
-[`.github/workflows/android.yml`](../.github/workflows/android.yml) runs the tests and builds the debug APK for arm64 on pull requests that touch `mobile/` and on demand (Actions, **Android app**, Run workflow), with the Android SDK and NDK of the GitHub runner. The APK is the artifact `teamsrelay-android-debug`, kept 14 days. It is signed with a debug key made on the runner for that run: installing the APK of another run over it needs the app removed first (`adb uninstall io.github.aptul9.teamsrelay`), which also clears the saved server and the session.
+[`.github/workflows/android.yml`](../.github/workflows/android.yml) runs the tests, writes the Firebase settings from the secret `GOOGLE_SERVICES_JSON` (a warning without it), builds the debug APK for arm64 and runs the JVM tests of the plugin, on pull requests that touch `mobile/` and on demand (Actions, **Android app**, Run workflow), with the Android SDK and NDK of the GitHub runner. The APK is the artifact `teamsrelay-android-debug`, kept 14 days. It is signed with a debug key made on the runner for that run: installing the APK of another run over it needs the app removed first (`adb uninstall io.github.aptul9.teamsrelay`), which also clears the saved server and the session.

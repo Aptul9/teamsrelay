@@ -57,6 +57,8 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 | Method | Path | Body |
 |---|---|---|
 | POST | `/api/push/subscribe` | Web Push subscription of the device, stored for the session user |
+| POST | `/api/push/fcm` | `{token, name}`: a phone of the Android app (`mobile/`), stored for the session user; answers `{key}`, 32 bytes base64url with which the relay seals its FCM messages (the same key while the phone stays with this user). 400 for what is not an FCM token |
+| DELETE | `/api/push/fcm` | *no session*. `{token}`: forgets that phone (the app calls it once its web page is signed out) |
 | GET | `/api/vapidkey` | *public*. VAPID public key |
 
 ## Administration

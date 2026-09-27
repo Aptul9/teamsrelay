@@ -17,7 +17,7 @@ Every setting is in `.env`, next to `docker-compose.yml`. Template: [.env.exampl
 | `VAPID_SUBJECT` | no | Contact required by the Web Push standard, `mailto:` or `https:` URL. |
 | `TZ` | no | Time zone of the automatic checks (8-11 and 17-20). Default `UTC`. |
 | `HTTPS_PORT`, `HTTPS_BIND` | no | Port and bind address of Caddy for HTTPS. Default `443` on `0.0.0.0`. |
-| `NTFY_ENABLED`, `NTFY_URL`, `NTFY_TOPIC` | no | Notifications through ntfy as well (`NTFY_ENABLED=1` and a topic). Every account of the server posts to the same topic. |
+| `NTFY_ENABLED`, `NTFY_URL`, `NTFY_TOPIC` | no | Notifications through ntfy as well (`NTFY_ENABLED=1` and a topic). Every account of the server posts to the same topic. A call rings there at priority 5 and turns quiet (priority 2) when it ends: with the ntfy setting *Keep alerting for highest priority* the phone rings until the notification is swiped or opened. |
 
 ## Agent environment
 
@@ -31,10 +31,11 @@ Set per account by the supervisor of the browsers container, not in `.env`. The 
 | `APP_DB` | `/data/app.db` | Shared database of the web app, read for the slot owner and their devices |
 | `VAPID_PRIVATE`, `VAPID_APPKEY` | `/vapid/private_key.pem`, `/vapid/appkey.txt` | Push keys. Without the private key push is off; a private key that does not match the public key stops the agent |
 | `VAPID_SUBJECT` | `mailto:admin@example.com` | From `.env`, `mailto:` or `https://` |
+| `FCM_CREDENTIALS` | `/fcm/service-account.json` | Service account key of the Firebase project, for the phones of the Android app (`mobile/`). A missing file leaves FCM off; a file that is not a service account key stops the agent |
 | `NTFY_ENABLED`, `NTFY_URL`, `NTFY_TOPIC` | `0`, `https://ntfy.sh`, empty | From `.env`; `NTFY_ENABLED` is `0` or `1` |
 | `TZ` | `UTC` | From `.env`: time zone of the automatic checks |
 
-The supervisor sets the paths under `/root`: `DB_PATH` `/root/data/N/messages.db`, `APP_DB` `/root/data/app.db`, the VAPID keys in `/root/vapid`.
+The supervisor sets the paths under `/root`: `DB_PATH` `/root/data/N/messages.db`, `APP_DB` `/root/data/app.db`, the VAPID keys in `/root/vapid`, `FCM_CREDENTIALS` `/root/fcm/service-account.json`.
 
 Push notifications are kept by the push service for up to 24 hours when a device is offline, then dropped.
 
@@ -48,7 +49,7 @@ Set by `docker-compose.yml` and the browsers image. The supervisor checks these 
 | `PUID`, `PGID` | `1000` | Owner of the profiles and of the desktop session; the browsers run as this user |
 | `CONTROL_SOCKET` | `/root/run/control.sock` | Socket of the control API, in the volume `control` |
 | `PROFILES_DIR` | `/profiles` | Profile directories, `config/` of the host |
-| `DATA_DIR`, `VAPID_DIR` | `/root/data`, `/root/vapid` | Passed to the agents |
+| `DATA_DIR`, `VAPID_DIR`, `FCM_DIR` | `/root/data`, `/root/vapid`, `/root/fcm` | Passed to the agents |
 | `TZ`, `LANG`, `LANGUAGE`, `LC_ALL` | | Passed to the browsers when set; `TZ`, `VAPID_SUBJECT` and `NTFY_*` to the agents |
 
 ## Files outside `.env`
@@ -56,6 +57,7 @@ Set by `docker-compose.yml` and the browsers image. The supervisor checks these 
 | Path | Content |
 |---|---|
 | `vapid/private_key.pem`, `vapid/appkey.txt` | Web Push keys, generated once ([setup.md](setup.md)). |
+| `fcm/service-account.json` | Service account key of the Firebase project, for the Android app ([setup.md](setup.md#android-app)). Not in git; mounted read-only in the browsers container. |
 | `config/N/` | Chromium profile of account N: the signed-in Microsoft session. |
 | `data/app.db` | Users, sessions, slot ownership, push subscriptions. |
 | `data/N/` | Database, images and files of slot N. |

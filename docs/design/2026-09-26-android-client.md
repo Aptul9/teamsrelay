@@ -1,6 +1,6 @@
 # Android client: Tauri app with Firebase push
 
-Status: app shell built 2026-09-27 ([mobile/README.md](../../mobile/README.md)): start page, remote web app, debug APK in CI; push deferred on 2026-09-27, the plan below unchanged. Web Push stays for browsers and the installed PWA; this app adds a second kind of device. Android WebView has no Push API, so inside the app the web page gets no notifications until the plugin below exists.
+Status: app shell built 2026-09-27; push built 2026-09-27 for calls (ringtone repeated until the call ends), messages and alerts, without Reply ([mobile/README.md](../../mobile/README.md)). Built differently from the plan below: the sender signs its OAuth token with `node:crypto` instead of `firebase-admin`; the Firebase settings reach the app as string resources of the plugin (`mobile/scripts/firebase-values.mjs`, from the repository secret `GOOGLE_SERVICES_JSON`) instead of the `google-services` Gradle plugin, so `gen/android` stays generated and out of git; the plugin registers the phone at each start, return to the app and new token (no page-load hook); a call has its own Calls channel with the ringtone and `FLAG_INSISTENT`; calls reach ntfy too. Web Push stays for browsers and the installed PWA; this app adds a second kind of device.
 
 ## Goal
 
