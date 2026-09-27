@@ -5,7 +5,7 @@ import Database from "better-sqlite3";
 import webpush from "web-push";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigError } from "@/agent/config";
-import { PUSH_TTL } from "@/agent/logic/notify";
+import { CALL_TTL, PUSH_TTL } from "@/agent/logic/notify";
 import { Notifier } from "@/agent/push/notifier";
 import { loadVapidKeys, type VapidKeys } from "@/agent/push/vapid";
 import { AppStore } from "@/agent/store/app-store";
@@ -146,6 +146,103 @@ describe("notifier", () => {
   it("gives alerts a notification of their own", async () => {
     await notifier().alert("Teams signed out", "Sign in again");
     expect(sent[0].payload).toEqual({ title: "Teams signed out", body: "Sign in again", chat: "", acc: 1 });
+  });
+
+  it("pushes an incoming call on a notification of its own per account, kept only while it can be answered", async () => {
+    const n = notifier();
+    expect(await n.call("Anna Rossi", "ringing", 1_790_000_000_000)).toBe(1);
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    expect(sent).toEqual([
+      {
+        endpoint: "https://push/u1-phone",
+        payload: { title: "Anna Rossi is calling", body: "Teams call, ringing now", chat: "", acc: 1, tag: "call-1", call: "ringing", ts: 1_790_000_000_000 },
+        ttl: CALL_TTL,
+        urgency: "high",
+      },
+      expect.objectContaining({ ttl: CALL_TTL }),
+    ]);
+    expect(CALL_TTL).toBe(60);
+  });
+
+  it("turns the call into a quiet one when it stops, kept a day, with the chat of the caller when known", async () => {
+    store.saveChats([{ name: "Anna Rossi", preview: "", time: "", unread: false, mention: false, muted: false, av: "" }]);
+    await notifier().call("Anna Rossi", "ended", 1_790_000_000_000, 9);
+    expect(sent).toEqual([
+      {
+        endpoint: "https://push/u1-phone",
+        payload: { title: "Call from Anna Rossi", body: "Ended after 9 s", chat: "Anna Rossi", acc: 1, tag: "call-1", call: "ended", ts: 1_790_000_000_000 },
+        ttl: PUSH_TTL,
+        urgency: "high",
+      },
+    ]);
+  });
+
+  it("says a call came when it could not read who calls, and names the account when the owner has more", async () => {
+    const db = new Database(appDbFile);
+    db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(3, 'u1', 0)").run();
+    db.close();
+    store.setState(STATE.me, JSON.stringify({ name: "Anna", email: "anna@contoso.example", tenant: "Contoso", av: "" }));
+    const n = notifier();
+    await n.call("", "ringing", 1_790_000_000_000);
+    await n.call("", "ended", 1_790_000_000_000, 0);
+    expect(sent.map((s) => [(s.payload as { title: string }).title, (s.payload as { body: string }).body])).toEqual([
+      ["Incoming call · Contoso", "Teams call, ringing now"],
+      ["Call ended · Contoso", "Ended"],
+    ]);
+  });
+
+  it("does not try a ringing push again (the next one follows in seconds), an ended one yes", async () => {
+    failures.push({ statusCode: 503 }, { statusCode: 503 });
+    const n = notifier();
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    expect(retries).toEqual([]);
+    await n.call("Anna Rossi", "ended", 1_790_000_000_000, 9);
+    expect(retries.map((r) => r.ms)).toEqual([5000]);
+  });
+
+  it("rings an iPhone when the call starts and when it ends only: Safari there shows every push apart", async () => {
+    appDbFile = seedAppDb([
+      ["https://push/u1-phone", "u1", sub("https://push/u1-phone")],
+      ["https://web.push.apple.com/QK1-iphone", "u1", sub("https://web.push.apple.com/QK1-iphone")],
+    ]);
+    const n = notifier();
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await n.call("Anna Rossi", "again", 1_790_000_000_000);
+    await n.call("Anna Rossi", "ended", 1_790_000_000_000, 9);
+    const calls = (endpoint: string) => sent.filter((s) => s.endpoint === endpoint).map((s) => (s.payload as { call: string }).call);
+    expect(calls("https://push/u1-phone")).toEqual(["ringing", "ringing", "ended"]);
+    expect(calls("https://web.push.apple.com/QK1-iphone")).toEqual(["ringing", "ended"]);
+  });
+
+  it("sends to every device at once: a push service that does not answer holds no other", async () => {
+    appDbFile = seedAppDb([
+      ["https://0-slow/u1", "u1", sub("https://0-slow/u1")],
+      ["https://push/u1-phone", "u1", sub("https://push/u1-phone")],
+    ]);
+    let release = () => {};
+    const got: string[] = [];
+    const n = new Notifier({
+      store,
+      devices: new AppStore(appDbFile, 1),
+      vapid,
+      subject: "mailto:admin@example.com",
+      ntfy: null,
+      send: async (s) => {
+        if (s.endpoint.includes("slow")) await new Promise<void>((resolve) => (release = resolve));
+        got.push(s.endpoint);
+      },
+    });
+    const done = n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(got).toEqual(["https://push/u1-phone"]);
+    release();
+    expect(await done).toBe(2);
+  });
+
+  it("keeps calls out of the history of notified messages", async () => {
+    await notifier().call("Anna Rossi", "ringing", 1_790_000_000_000);
+    const db = (store as unknown as { db: import("better-sqlite3").Database }).db;
+    expect(db.prepare("SELECT COUNT(*) FROM messages").pluck().get()).toBe(0);
   });
 
   it("names the chat of a new message and records it once within 150 s", async () => {

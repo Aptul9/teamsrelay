@@ -3,7 +3,8 @@ import type { Selectors, Texts } from "../selectors";
 
 type Point = { x: number; y: number };
 
-// Centre of the entry of exactly `name` in the list the @ opened, a person only; null while it is not listed
+// Centre of the entry of exactly `name` in the list the @ opened, a person only; null while it is not listed, or
+// while something covers it (the toast of an incoming call would take the click)
 export function mentionOptionPoint({ s, name }: { s: Selectors; name: string }): Point | null {
   const popup = document.querySelector(s.mentionPopup);
   if (!popup) return null;
@@ -13,7 +14,10 @@ export function mentionOptionPoint({ s, name }: { s: Selectors; name: string }):
   if (!option) return null;
   option.scrollIntoView({ block: "nearest" });
   const r = option.getBoundingClientRect();
-  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  const x = r.left + r.width / 2;
+  const y = r.top + r.height / 2;
+  const hit = document.elementFromPoint(x, y);
+  return hit && option.contains(hit) ? { x, y } : null;
 }
 
 // People tagged in the compose box, by name as Teams shows them (one element per word of the name)

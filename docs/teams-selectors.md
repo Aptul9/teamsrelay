@@ -61,6 +61,18 @@ Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-
 | Title | `[data-tid="activity-feed-item-title"]` |
 | Lines | preview, time, place; the time is recognized by its format |
 
+## Incoming call
+
+Seen on 2026-09-27 on slot 2 (behind Defender for Cloud Apps) with 1:1 audio calls from a person of another organization; a video call and a group call were not seen. The fixture `call-toast.html` was rebuilt from those probes (attributes, texts and nesting as seen, name invented), not captured with the script. Nothing of the toast is ever clicked.
+
+| Element | Selector |
+|---|---|
+| Toast | `[data-testid="calling-notification"]`, inside `[data-testid="notification-wrapper"]` (`role="group"`, title `role="alert"` *Microsoft Teams*) in `[data-tid="app-layout-area--in-app-notifications"]`, bottom right. It shows while the call rings and goes away when it stops: missed, cancelled, taken by voicemail or answered elsewhere look the same |
+| Caller | `[id^="cn-calling-main-content-"]`: *Anna Rossi is calling you*, badge, name and words in separate elements; a person of another organization has the badge *External* (`aria-label="External unfamiliar"`) before the name |
+| Buttons | `[data-testid="calling-actions"]`: `aria-label` *Accept with audio*, *Decline call*; in the header *More options* and `[data-testid="dismiss-toast-button"]` *Dismiss notification* |
+| Sound | Teams plays its ringtone (the content of `Teams_Call_Ringing.mp3`, 7.6 s) while the toast shows, then `Teams_Call_Ended.mp3`; with the page visible there is no browser notification |
+| Afterwards | the Activity feed lists *Missed call from Anna Rossi* for a missed call, nothing for one taken by voicemail |
+
 ## Expired session
 
 Texts `REDUCED_CAPABILITIES`, *Chats are temporarily unavailable*, *Sync engine is running in Reduced*, *We need you to sign in again*.

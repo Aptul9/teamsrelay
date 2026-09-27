@@ -4,6 +4,9 @@ import type { Identity } from "@/shared/slot-db/state";
 // after a night gets one notification per chat: the service worker groups them by tag.
 export const PUSH_TTL = 86_400;
 
+// How long the push service keeps a push of a call still ringing, in seconds: later it could not be answered
+export const CALL_TTL = 60;
+
 // The same text within this many seconds is pushed once (Teams list and Teams notification of one message)
 export const PUSH_DEDUP_SECONDS = 150;
 
@@ -33,6 +36,9 @@ function retryAfterSeconds(value: string | undefined, now: number): number | nul
 
 // The notifications of one chat share this tag on the device
 export const chatTag = (slot: number, chat: string) => `chat-${slot}-${chat}`;
+
+// A call has one notification per account on the device: ringing, then ended
+export const callTag = (slot: number) => `call-${slot}`;
 
 export class RecentPushes {
   private readonly seen = new Map<string, number>();

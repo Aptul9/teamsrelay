@@ -1,6 +1,6 @@
 // Page scripts on fixtures captured from Teams web (slot 2 of the local stack, 2026-09-26) with
 // scripts/capture-fixture.ts: the structure is Teams', every name and text is invented.
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ACTIONS, BAR_REACTIONS, SEL, TEXTS } from "@/agent/teams/selectors";
 import { readActivityFeed } from "@/agent/teams/scripts/activity";
 import { clickChatRow, openChatTitle, readChatList } from "@/agent/teams/scripts/chat-list";
@@ -122,6 +122,11 @@ describe("image message captured from Teams", () => {
 });
 
 describe("action bar captured from Teams", () => {
+  // the bar of your message was captured in a window 1534 px wide, right of the 1280 px of the test page: a point
+  // outside the window is one nothing can click
+  beforeEach(() => chrome.page.setViewportSize({ width: 1600, height: 900 }));
+  afterEach(() => chrome.page.setViewportSize({ width: 1280, height: 900 }));
+
   async function bar(file: string) {
     await chrome.page.setContent(fixture(file));
     const mid = await chrome.page.evaluate(() => document.querySelector('[data-fixture="hovered"] [data-tid="chat-pane-message"]')?.getAttribute("data-mid") ?? "");
