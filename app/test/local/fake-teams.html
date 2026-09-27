@@ -3,12 +3,18 @@
      agent relies on (a row click opens the chat, Enter sends, a new message of yours shows Sending... then Sent,
      the sign-out banner). window.fakeTeams lets the test play the other side; stall(true) keeps a new message of
      yours at Sending..., as when Teams never confirms it; sendButton(true) shows the Send button, coverSend(true)
-     puts a panel over it, which catches the click. -->
+     puts a panel over it, which catches the click. A message under the mouse shows its action bar; Reply puts the
+     quote in the compose box, above what the box holds, with the cursor at the end, and the message sent carries it. -->
 <html>
 <head>
   <meta charset="utf-8">
   <title>Chat | Microsoft Teams</title>
-  <style>body { font: 14px sans-serif; } #pane { margin-top: 12px; } [data-tid="ckeditor"] { border: 1px solid #999; min-height: 24px; }</style>
+  <style>
+    body { font: 14px sans-serif; } #pane { margin-top: 12px; } [data-tid="ckeditor"] { border: 1px solid #999; min-height: 24px; }
+    [data-tid="chat-pane-item"] { position: relative; padding: 4px 120px 4px 0; }
+    [data-tid="message-actions-container"] { display: none; position: absolute; right: 0; top: 0; }
+    [data-tid="chat-pane-item"]:hover [data-tid="message-actions-container"] { display: block; }
+  </style>
 </head>
 <body>
   <div data-tid="me-control-avatar"><span data-tid="me-control-avatar-presence" aria-label="Available"></span></div>
@@ -85,6 +91,11 @@
           const message = document.createElement("div");
           message.setAttribute("data-tid", "chat-pane-message");
           message.setAttribute("data-mid", m.mid);
+          if (m.quote) {
+            const card = div(m.quote);
+            card.setAttribute("data-tid", "quoted-reply-card");
+            message.append(card);
+          }
           const body = div(m.text);
           body.id = "content-" + m.mid;
           message.append(body);
@@ -101,6 +112,13 @@
             author.setAttribute("data-tid", "message-author-name");
             item.append(author, message);
           }
+          const bar = document.createElement("div");
+          bar.setAttribute("data-tid", "message-actions-container");
+          const reply = Object.assign(document.createElement("button"), { textContent: "Reply" });
+          reply.setAttribute("data-tid", "message-actions-quoted-reply");
+          reply.addEventListener("click", () => quoteInBox(m));
+          bar.append(reply);
+          item.append(bar);
           return item;
         }),
       );
@@ -112,11 +130,32 @@
       sendBox();
     });
 
+    // Reply: the quote goes above what the box holds, the cursor after all of it
+    function quoteInBox(m) {
+      const card = div(m.text);
+      card.setAttribute("data-tid", "quoted-reply-card");
+      card.setAttribute("contenteditable", "false");
+      const close = Object.assign(document.createElement("button"), { textContent: "x" });
+      close.setAttribute("data-tid", "close-quoted-reply");
+      close.addEventListener("click", () => card.remove());
+      card.append(close);
+      box.prepend(card);
+      box.focus();
+      const range = document.createRange();
+      range.selectNodeContents(box);
+      range.collapse(false);
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+    }
+
     function sendBox() {
+      const card = box.querySelector('[data-tid="quoted-reply-card"]');
+      const quote = card ? card.firstChild.textContent : "";
+      card?.remove();
       const text = box.innerText.trim();
       const c = chats[open];
       if (!text || !c) return;
-      const m = { mid: "tmp-" + next++, text, mine: true, status: "Sending..." };
+      const m = { mid: "tmp-" + next++, text, mine: true, status: "Sending...", quote };
       c.messages.push(m);
       c.preview = "You: " + text;
       c.time = "10:45";

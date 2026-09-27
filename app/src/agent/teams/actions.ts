@@ -122,12 +122,18 @@ export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, c
   return "unconfirmed";
 }
 
-// Reply with quote: on the bar for other people's messages, in More options for yours. Sent once Teams shows the
-// reply, unconfirmed when Enter went and Teams does not show it. `sent` runs as soon as the reply went.
+// Reply with quote: on the bar for other people's messages, in More options for yours. Refused when Teams shows
+// another chat or the compose box holds a draft: Teams puts the quote above it, and it would go out with the reply.
+// Sent once Teams shows the reply, unconfirmed when Enter went and Teams does not show it. `sent` runs as soon as
+// the reply went.
 export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, raw: string, sent?: AfterPress): Promise<SendResult> {
   const text = raw.trim();
-  if (!text || !(await tp.clearOverlays()) || !(await tp.openChat(chat))) return "failed";
+  if (!text || !(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return "failed";
   const page = tp.page;
+  if (await page.evaluate(composerLeft, SEL)) {
+    log.warn("reply", "compose box not empty", { chat });
+    return "failed";
+  }
   const before = await page.evaluate(messageCount, SEL);
   let pressed = false;
   try {

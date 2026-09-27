@@ -75,7 +75,7 @@ pm2 from `app/` (`ecosystem.config.cjs`): restart after a crash with growing del
 ## Tests
 
 - Page scripts on pages captured from live Teams and on hand-written pages, in Chrome (`test/agent/page-*.test.ts`), shared with the server product.
-- The send of the agent on a page that behaves like Teams: sent, unconfirmed, refused on a draft (`test/agent/send-outcome.test.ts`).
+- The send and the reply of the agent on a page that behaves like Teams: sent, unconfirmed, refused on a draft (`test/agent/send-outcome.test.ts`).
 - Web Push against a local push service that decrypts the message with the device keys (RFC 8291) and checks the VAPID signature (RFC 8292) (`test/local/webpush.test.ts`).
 - API: files, token and limits, validation, keys, command outcomes, subscriptions, images, bad request targets (`test/local/api.test.ts`).
 - The app in a headless Chrome against the API and an agent that stands in for the real one: lost answers, unconfirmed sends, drafts, subscriptions, sign-out (`test/local/app.test.ts`).

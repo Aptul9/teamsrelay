@@ -10,7 +10,7 @@ import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { Media } from "@/agent/media";
 import type { Notifier } from "@/agent/push/notifier";
 import { SlotStore } from "@/agent/store/slot-store";
-import { sendText } from "@/agent/teams/actions";
+import { replyWithQuote, sendText } from "@/agent/teams/actions";
 import { TeamsPage } from "@/agent/teams/page";
 import { tempDir } from "../helpers";
 import { withChrome } from "./chrome";
@@ -94,5 +94,30 @@ describe("send on a page that behaves like Teams", () => {
     expect(await sendText(tp, "Anna Rossi", "hello")).toBe("failed");
     expect(await box()).toBe("my own draft");
     expect(await mine()).toEqual([]);
+  });
+});
+
+describe("reply with quote on a page that behaves like Teams", () => {
+  const replies = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll(".fui-ChatMyMessage")].map((m) => ({
+        quote: m.querySelector('[data-tid="quoted-reply-card"]')?.textContent ?? "",
+        text: m.querySelector('[id^="content-"]')?.textContent ?? "",
+      })),
+    );
+
+  it("is sent with the quote of the message", async () => {
+    expect(await replyWithQuote(tp, "Anna Rossi", "1790000000001", "on it")).toBe("sent");
+    expect(await replies()).toEqual([{ quote: "see you later", text: "on it" }]);
+  });
+
+  // Reply puts the quote above what the box holds: the draft would go out with the reply
+  it("fails, and leaves alone a draft someone left in the compose box", async () => {
+    expect(await tp.openChat("Anna Rossi")).toBe(true);
+    await page.locator('[data-tid="ckeditor"]').click();
+    await page.keyboard.type("my own draft");
+    expect(await replyWithQuote(tp, "Anna Rossi", "1790000000001", "on it")).toBe("failed");
+    expect(await box()).toBe("my own draft");
+    expect(await replies()).toEqual([]);
   });
 });
