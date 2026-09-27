@@ -1,6 +1,6 @@
 # TeamsRelay for Android
 
-A Tauri 2 app that shows the TeamsRelay web app of a server in an app window. Status: app shell. Notifications through Firebase are specified in [2026-09-26-android-client.md](../docs/design/2026-09-26-android-client.md) and not built yet: until then the installed PWA stays the device that receives notifications.
+A Tauri 2 app that shows the TeamsRelay web app of a server in an app window. Status: app shell. Notifications through Firebase are specified in [2026-09-26-android-client.md](../docs/design/2026-09-26-android-client.md) and deferred (2026-09-27): the web app installed from Chrome stays the device that receives notifications.
 
 ## What it does
 

@@ -60,10 +60,10 @@ The account menu shows next to each account its unread chats plus the notificati
 TeamsRelay is a PWA: installed from the browser, it opens like an app, with icon and notifications.
 
 - **iPhone**: open `https://<DOMAIN>` in Safari, sign in, Share → **Add to Home Screen**. Open TeamsRelay from the Home Screen icon, tap **Enable notifications**, allow. Push notifications reach only the installed app.
-- **Android**: open the site in Chrome, menu → **Install app**, then **Enable notifications**.
+- **Android**: open the site in Chrome, menu → **Install app**, then **Enable notifications**. The Android app of `mobile/` shows the same web app but receives no notifications.
 - **PC**: any current browser, chats on the left and the open conversation on the right. The remote desktop opens in a browser tab.
 
-The status panel shows how many devices of the user receive notifications. A device receives the notifications of every Teams account of its user.
+The status panel shows how many devices of the user receive notifications. A device receives the notifications of every Teams account of its user; with more than one account, the title of a notification ends with the organization of its account (its email when Teams shows none), and a tap opens the app on that account.
 
 ## Upgrading from the single-user release
 

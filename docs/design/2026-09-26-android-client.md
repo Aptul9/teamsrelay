@@ -1,6 +1,6 @@
 # Android client: Tauri app with Firebase push
 
-Status: app shell built 2026-09-27 ([mobile/README.md](../../mobile/README.md)): start page, remote web app, debug APK in CI; push not built. Web Push stays for browsers and the installed PWA; this app adds a second kind of device. Android WebView has no Push API, so inside the app the web page gets no notifications until the plugin below exists.
+Status: app shell built 2026-09-27 ([mobile/README.md](../../mobile/README.md)): start page, remote web app, debug APK in CI; push deferred on 2026-09-27, the plan below unchanged. Web Push stays for browsers and the installed PWA; this app adds a second kind of device. Android WebView has no Push API, so inside the app the web page gets no notifications until the plugin below exists.
 
 ## Goal
 

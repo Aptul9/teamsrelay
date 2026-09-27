@@ -68,14 +68,14 @@ About one round per second. Each step is a job of a small scheduler (`app/src/ag
 | every round | notifications caught by the hook (secondary source), queued commands (the chat list is read after each one) |
 | every 300 rounds, Teams connected | full chat list, scrolled from top to bottom |
 | every 3 rounds | visible chat list: pictures, previews, unread, muted; new message detection and push |
-| every 150 rounds, Teams connected | Activity feed (switches to the Activity view and back); not in the local relay |
+| every 150 rounds, Teams connected | Activity feed (switches to the Activity view and back; the mouse goes first to a part of the side bar button nothing covers, such as the tooltip of the app launcher); not in the local relay |
 | every 300 rounds, or while unknown | identity: name, email, organization, picture |
 | every 5 rounds, sign-in page included | health; a push when Teams stays signed out for a minute, another when it is back |
 | every round | open conversation |
 | every 2 rounds, no commands | "Read by" of one of your recent messages in the open group chat; not in the local relay |
 | 8-11 and 17-20 | automatic check with a push of the outcome |
 
-A message is new when the preview or the time of a chat changes with an incoming text, or when the chat turns unread. Muted chats and the chat with yourself do not notify; identical notifications within 150 s are dropped.
+A message is new when the preview or the time of a chat changes with an incoming text, or when the chat turns unread. A time that turns into a date with the same preview is the same message getting older (the list shows the time of the last message for about a day). Muted chats and the chat with yourself do not notify; identical notifications within 150 s are dropped.
 
 A new message is saved in the history, posted to ntfy when enabled and pushed to every device of the account owner: urgency `high`, kept by the push service for 24 hours, tagged with account and chat. The service worker keeps one notification per chat with its last five lines and alerts again on each new line; the account alerts (session expired, checks, Recheck) get a notification each, and the automatic check that passed goes out with urgency `normal`. A push answered with 429, a 5xx or nothing is sent again after 5, 30 and 120 s (a 429 after its `Retry-After`, up to 15 minutes), on timers outside the round, to the device only while it still belongs to the owner; 404 and 410 remove the device. Why: [2026-09-26-push-delivery.md](decisions/2026-09-26-push-delivery.md).
 
