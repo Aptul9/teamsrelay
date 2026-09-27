@@ -16,9 +16,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import type { Account } from "@/lib/client";
+import type { Account, Unread } from "@/lib/client";
 
 export const accName = (a: Account) => a.name || a.email || `Account ${a.slot}`;
+
+const total = (u: Unread) => u.chats + u.notifications;
+const capped = (n: number) => (n > 99 ? "99+" : String(n));
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+const unreadText = (u: Unread) =>
+  [u.chats > 0 && plural(u.chats, "unread chat", "unread chats"), u.notifications > 0 && plural(u.notifications, "new notification", "new notifications")]
+    .filter(Boolean)
+    .join(", ");
 export const needsLogin = (a: Account) => !a.stopped && (a.teams === "login" || (a.teams !== "starting" && a.teams !== "ok" && !a.name));
 
 export function accSub(a: Account): { text: string; warn: boolean } {
@@ -30,11 +38,13 @@ export function accSub(a: Account): { text: string; warn: boolean } {
   return { text: [a.email, a.tenant].filter(Boolean).join(" · "), warn: false };
 }
 
-// Switch between the Teams accounts of the user, stop or start one, add or remove one, reach settings and sign out
+// Switch between the Teams accounts of the user, stop or start one, add or remove one, reach settings and sign out.
+// Every account shows its unread chats plus new notifications; the button shows the total of the other accounts.
 export function AccountMenu({
   user,
   accounts,
   current,
+  unreadOf,
   canAdd,
   addLabel,
   adding,
@@ -49,6 +59,7 @@ export function AccountMenu({
   user: { name: string; email: string; role: string };
   accounts: Account[] | null;
   current: Account | undefined;
+  unreadOf: (a: Account) => Unread;
   canAdd: boolean;
   addLabel: string;
   adding: boolean;
@@ -60,13 +71,14 @@ export function AccountMenu({
   onRemove: (a: Account) => void;
   onSignOut: () => void;
 }) {
-  const otherUnread = (accounts ?? []).some((a) => a.slot !== current?.slot && a.unread > 0);
+  // like Teams: the selected account has its numbers on its Chats and Notifications tabs already
+  const others = (accounts ?? []).reduce((n, a) => (a.slot === current?.slot ? n : n + total(unreadOf(a))), 0);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Accounts and settings"
+          aria-label={others ? `Accounts and settings, ${others} unread in other accounts` : "Accounts and settings"}
           className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-3 focus-visible:ring-ring/50 data-[state=open]:bg-sidebar-accent"
         >
           {current ? <Avatar name={accName(current)} av={current.av} acc={current.slot} className="size-9" /> : <LogoTile />}
@@ -74,7 +86,11 @@ export function AccountMenu({
             <div className="truncate text-sm font-semibold">{current ? current.tenant || accName(current) : "TeamsRelay"}</div>
             <div className="truncate text-xs text-muted-foreground">{current ? accSub(current).text : user.email}</div>
           </div>
-          {otherUnread && <span className="size-2 shrink-0 rounded-full bg-primary" aria-label="Unread messages in another account" />}
+          {others > 0 && (
+            <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums" title={`${others} unread in your other accounts`}>
+              {capped(others)}
+            </Badge>
+          )}
           <ChevronsUpDownIcon className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -84,6 +100,7 @@ export function AccountMenu({
           {(accounts ?? []).map((a) => {
             const sub = accSub(a);
             const busy = toggling === a.slot;
+            const unread = unreadOf(a);
             return (
               <div key={a.slot} className="flex items-center gap-1">
                 <DropdownMenuItem onSelect={() => onSelect(a.slot)} className="min-w-0 flex-1 gap-3 py-2">
@@ -92,7 +109,12 @@ export function AccountMenu({
                     <div className="truncate text-sm font-medium">{accName(a)}</div>
                     <div className={cn("truncate text-xs", sub.warn ? "text-destructive" : "text-muted-foreground")}>{sub.text}</div>
                   </div>
-                  {a.unread > 0 && <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums">{a.unread}</Badge>}
+                  {total(unread) > 0 && (
+                    <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums" title={unreadText(unread)}>
+                      {capped(total(unread))}
+                      <span className="sr-only"> ({unreadText(unread)})</span>
+                    </Badge>
+                  )}
                   {a.slot === current?.slot && <CheckIcon className="text-primary" />}
                 </DropdownMenuItem>
                 {/* on: green, off: grey. The menu stays open to show the switch move */}
