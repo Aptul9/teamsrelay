@@ -46,6 +46,7 @@ import {
   ApiError,
   appBadgeCount,
   call,
+  callsSnapshot,
   checkLine,
   clock,
   hours,
@@ -53,12 +54,10 @@ import {
   isMissedCall,
   isSelf,
   loadSeen,
-  markActivitySeen,
-  parseSeen,
+  noteShown,
   post,
   readStorage,
   runCmd,
-  seenKey,
   toLogin,
   unreadInOthers,
   unseenActivity,
@@ -165,8 +164,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setPane("main");
   }, []);
 
-  // activity ids already seen in the Notifications list, per account and device: the first feed of an account
-  // counts as seen, later ones only while the list is on screen; the Calls list shows the missed calls only
+  // activity ids already seen, per account and device: the first feed of an account counts as seen, later ones only
+  // while their list is on screen (the Notifications list marks all but the missed calls, the Calls list those)
   const listRef = useRef<ListTab>("chats");
   useEffect(() => {
     listRef.current = listTab;
@@ -175,11 +174,9 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setActivity(d);
     const a = accountsRef.current.find((x) => x.slot === n);
     if (!a || !d.ts) return; // account list not in yet (it comes first on the stream), or Teams feed not read yet
-    const key = seenKey(a);
-    const stored = parseSeen(readStorage(key));
-    const shown = list === "activity" ? d.items : list === "calls" ? d.items.filter(isMissedCall) : null;
-    const seen = !stored ? markActivitySeen(null, d.items) : shown ? markActivitySeen(stored, shown) : stored;
-    if (seen !== stored) writeStorage(key, JSON.stringify(seen));
+    const { stored, seen } = noteShown(a, d.items, list);
+    // the Calls list open while the account changes: its dots compare with what the new account had seen
+    if (list === "calls") setCallsSeen((s) => callsSnapshot(s, n, stored));
     setSeenAct((all) => ({ ...all, [n]: seen }));
   }, []);
 

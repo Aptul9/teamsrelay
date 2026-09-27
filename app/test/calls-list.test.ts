@@ -38,4 +38,8 @@ describe("Calls list", () => {
     expect(render(["c2", "c1"])).not.toContain('aria-label="New"');
     expect(render(null)).not.toContain('aria-label="New"');
   });
+
+  it("puts no dot on an older call below one already shown: a shorter read of the feed had left it out", () => {
+    expect(render(["c2"])).not.toContain('aria-label="New"');
+  });
 });

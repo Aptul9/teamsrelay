@@ -210,6 +210,11 @@ export class SlotStore {
     })();
   }
 
+  // Ids of every item of the Activity feed, in feed order (newest first)
+  activityIds(): string[] {
+    return this.db.prepare("SELECT id FROM activity ORDER BY pos").pluck().all() as string[];
+  }
+
   // Ids of the items the Activity feed shows unread (bold), in feed order
   unreadActivity(): string[] {
     return this.db.prepare("SELECT id FROM activity WHERE unread=1 ORDER BY pos").pluck().all() as string[];

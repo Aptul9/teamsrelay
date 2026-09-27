@@ -38,6 +38,13 @@ function feed(ids: [string, boolean][]) {
   store.saveActivity(ids.map(([id, unread]) => ({ id, kind: "mention", actor: "", title: "", emoji: "", preview: "", tm: "", chat: "", channel: false, unread, av: "" }) as ActivityEntry));
 }
 
+const mention = (id: string, unread = false) =>
+  ({ id, kind: "mention", actor: "", title: "", emoji: "", preview: "", tm: "", chat: "", channel: false, unread, av: "" }) as ActivityEntry;
+const missedCall = (id: string, caller: string, tm: string) =>
+  ({ id, kind: "call", actor: caller, title: `Missed call from ${caller}`, emoji: "", preview: "Teams call", tm, chat: caller, channel: false, unread: false, av: "" }) as ActivityEntry;
+// the first n items of the feed as a read shows them, newest first: m0, m1... with other items in place of some
+const feedTop = (n: number, put: Record<number, ActivityEntry> = {}) => Array.from({ length: n }, (_, i) => put[i] ?? mention(`m${i}`));
+
 // the feed with missed calls: [id, unread] for a mention, [id, unread, caller, time] for a missed call
 function feedWithCalls(items: ([string, boolean] | [string, boolean, string, string])[]) {
   store.saveActivity(
@@ -127,10 +134,60 @@ describe("check command", () => {
     expect(missed).toHaveLength(1);
   });
 
-  it("keeps every missed call of the feed it read in check_seen", async () => {
+  it("keeps every missed call and every item of the feed it read in check_seen", async () => {
     feedWithCalls([["c2", false, "Luca Bianchi", "1:15 PM"], ["a1", true], ["c1", true, "Anna Rossi", "9:02 AM"]]);
     await check(agent(), cmd);
-    expect(JSON.parse(store.getState(STATE.checkSeen))).toMatchObject({ calls: ["c2", "c1"], read: true });
+    expect(JSON.parse(store.getState(STATE.checkSeen))).toMatchObject({ calls: ["c2", "c1"], feed: ["c2", "a1", "c1"], read: true });
+  });
+
+  it("pushes no older missed call a shorter read of the feed had left out", async () => {
+    const old = { 37: missedCall("c-old", "Anna Rossi", "8/29") };
+    store.saveActivity(feedTop(40, old));
+    await check(agent(), cmd);
+    store.saveActivity(feedTop(30));
+    await check(agent(), cmd);
+    store.saveActivity(feedTop(40, old));
+    await check(agent(), cmd);
+    expect(missed).toEqual([]);
+  });
+
+  it("pushes no older missed call the first read, a shorter one, left out", async () => {
+    store.saveActivity(feedTop(30));
+    await check(agent(), cmd);
+    store.saveActivity(feedTop(40, { 35: missedCall("c-old", "Anna Rossi", "8/29") }));
+    await check(agent(), cmd);
+    expect(missed).toEqual([]);
+  });
+
+  it("pushes the missed call on top of the feed after a shorter read", async () => {
+    store.saveActivity(feedTop(40));
+    await check(agent(), cmd);
+    store.saveActivity(feedTop(30));
+    await check(agent(), cmd);
+    store.saveActivity([missedCall("c-new", "Luca Bianchi", "4:10 PM"), ...feedTop(39)]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([["Luca Bianchi", "4:10 PM"]]);
+  });
+
+  it("counts no older unread notification a shorter read left out as new", async () => {
+    const old = { 36: mention("n-old", true) };
+    store.saveActivity(feedTop(40, old));
+    await check(agent(), cmd);
+    store.saveActivity(feedTop(30));
+    await check(agent(), cmd);
+    store.saveActivity(feedTop(40, old));
+    await check(agent(), cmd);
+    expect(alerts).toEqual([]);
+  });
+
+  it("only records the missed calls after a check that kept no feed (earlier release)", async () => {
+    store.setState(STATE.checkSeen, JSON.stringify({ chats: [], activity: [], calls: ["c1"], read: true }));
+    store.saveActivity([missedCall("c2", "Luca Bianchi", "4:10 PM"), missedCall("c1", "Anna Rossi", "3:54 PM")]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([]);
+    store.saveActivity([missedCall("c3", "Marco Neri", "4:30 PM"), missedCall("c2", "Luca Bianchi", "4:10 PM"), missedCall("c1", "Anna Rossi", "3:54 PM")]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([["Marco Neri", "4:30 PM"]]);
   });
 
   it("only records the missed calls after a check of an earlier release, whose row has no calls", async () => {

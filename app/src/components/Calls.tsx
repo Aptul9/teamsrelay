@@ -4,7 +4,7 @@ import { PhoneIcon, PhoneIncomingIcon, PhoneMissedIcon } from "lucide-react";
 import { cn } from "cn";
 import { Avatar } from "./Avatar";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import type { ActivityItem, CallLogEntry, RingingCall } from "@/lib/client";
+import { newCalls, type ActivityItem, type CallLogEntry, type RingingCall } from "@/lib/client";
 
 // When a call rang: the time today, the day and the time before
 function when(ms: number, now = Date.now()): string {
@@ -39,13 +39,14 @@ export function Calls({
   const now: Row[] = ringing
     ? [{ key: "now", name: ringing.caller || "Incoming call", line: "Ringing now", icon: PhoneIncomingIcon, tone: "text-primary motion-safe:animate-pulse" }]
     : [];
+  const fresh = new Set(newCalls(missed.map((a) => a.id), seen));
   const missedRows: Row[] = missed.map((a) => ({
     key: a.id,
     name: a.actor || a.chat || "Unknown caller",
     line: `Missed call${a.tm ? ` · ${a.tm}` : ""}`,
     icon: PhoneMissedIcon,
     tone: "text-destructive",
-    dot: !!seen && !seen.includes(a.id),
+    dot: fresh.has(a.id),
   }));
   const logRows: Row[] = log.map((c) => ({
     key: `${c.since}`,
