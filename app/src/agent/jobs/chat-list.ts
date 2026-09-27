@@ -16,7 +16,7 @@ export const withoutPictures = (rows: readonly ListRow[]): ChatEntry[] =>
 export async function notifyNew(a: Agent, rows: readonly ListRow[]) {
   for (const { chat, body } of a.detector.scan(rows)) {
     log.info("NEWMSG", chat, { preview: body.slice(0, 50) });
-    await a.notifier.message(chat, body);
+    await a.notifier.message(chat, body, chat);
   }
 }
 

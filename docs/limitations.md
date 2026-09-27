@@ -4,7 +4,10 @@
 |---|---|
 | Presence | While TeamsRelay runs, Teams sees an active desktop: the page counts as visible and focused and the agent moves the mouse every minute, so the status stays *Available*. Busy, Do not disturb, meetings and calls set elsewhere still win. Teams mobile, set to notify only when you are not active on a desktop, may then stay silent: the push of TeamsRelay does not depend on it. |
 | Visible page | A visible page marks as read what arrives in the open chat. The agent keeps a chat open only while the app shows it (`viewing`), otherwise Teams stays on the self chat. Without a self chat in the list, the last chat opened stays open. |
-| Expiring session | Conditional access invalidates the tokens and Teams stops syncing. TeamsRelay detects it (red status and a push); the sign-in is repeated in the remote desktop. |
+| Expiring session | Conditional access invalidates the tokens and Teams stops syncing. TeamsRelay detects it (red status, a push after a minute signed out, another when Teams is back); the sign-in is repeated in the remote desktop, or in the window of the local relay. |
+| Unconfirmed sends | A message counts as sent once Teams shows it with its status icon. When Teams does not within 15 s after Enter, the command ends unconfirmed: the message may be out, and the app says to check the chat before sending again. The web app shows it as not sent. |
+| New messages at midnight | Unverified: when Teams redraws the times of the chat list from `HH:MM` to dates at midnight, the new message detection may read changed previews and push old messages again. Same logic in both products; to be watched on a first night. |
+| Notification of a group chat | A notification caught from Teams names a chat only when its title is a chat of the list. In a group chat the title may be the person who wrote: when that person also has a 1:1 chat, a tap opens the 1:1. The chat list detection names the right chat. |
 | Chats only | 1:1 and group chats, up to 40 in the list, last 40 messages of the open chat. Team channels appear in the Activity feed but do not open. |
 | Reading opens the chat | The agent reads the chat that is open in the remote Teams, so reading a chat from the app marks it as read in Teams. |
 | Read by | Collected only for the open chat, on your last 5 messages. |
@@ -22,3 +25,7 @@
 | iPhone | Push notifications reach only the app installed on the Home Screen. |
 | One owner | Every Teams account of a server belongs to one person: all of them show their browser window on the one remote desktop. `SLOT_COUNT` caps their number (default 4). |
 | One container | The browsers of every account run in one container: a new browsers image (Chromium update, agent release) restarts every account. |
+| Local relay: one account, text | The local relay serves one Teams account: chats, text from the phone, reply, reactions, edit, delete. No Activity feed, "Read by", @mentions, images to send or downloads. |
+| Local relay: restarts | A restart of the browser keeps the Microsoft session only when the tenant lets it persist ("Stay signed in"): otherwise every restart asks for a new sign-in in the relay window. Messages that arrive while the relay is down are not pushed afterwards; they show in the chat list. |
+| Local relay: reach | The phone needs HTTPS to the relay (service worker): Tailscale Serve, or the LAN with a certificate the phone trusts. The relay listens on loopback until the owner chooses. |
+| Local relay: desktop | The relay browser is a window of the desktop session: the machine must stay on, awake and logged in; a Windows service cannot show it. |

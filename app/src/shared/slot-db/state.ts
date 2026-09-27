@@ -7,6 +7,9 @@ export const STATE = {
   // Teams status last logged, and Teams state (ok, login...) at the previous health check
   presencePrev: "presence_prev",
   teamsStatusPrev: "teams_status_prev",
+  // JSON Watch of the Teams sign-in and of the browser: since when the problem lasts, whether it was pushed
+  loginWatch: "login_watch",
+  browserWatch: "browser_watch",
   // chat the agent keeps open in Teams for the app
   activeChat: "active_chat",
   // JSON Viewing: chat on screen in the app, written by the web app while it shows it and by the agent on commands
@@ -30,6 +33,9 @@ export const selfCheckKey = (day: string, half: "am" | "pm") => `hc_${day}_${hal
 export const Viewing = z.object({ chat: z.string().catch(""), ts: z.number().catch(0) });
 export type Viewing = z.infer<typeof Viewing>;
 
+export const Watch = z.object({ since: z.number().catch(0), alerted: z.boolean().catch(false) });
+export type Watch = z.infer<typeof Watch>;
+
 // People of a chat as Teams names them, for the @ of the app; ts: Unix seconds of the read
 export const Members = z.object({ ts: z.number().catch(0), names: z.array(z.string()).catch([]) });
 export type Members = z.infer<typeof Members>;
@@ -47,7 +53,10 @@ export const TEAMS_STATES = ["ok", "login", "loading", "err"] as const;
 export type TeamsState = (typeof TEAMS_STATES)[number];
 
 export const AgentHealth = z.object({
+  // cdp is always ok, kept for the readers of earlier releases. browser is down only in the rows of the local relay
+  // while it cannot start its browser: the agent of a slot writes nothing while it waits for its browser.
   cdp: z.literal("ok"),
+  browser: z.enum(["ok", "down"]).optional(),
   ts: z.number(),
   teams: z.enum(TEAMS_STATES),
   reduced: z.boolean().optional(),

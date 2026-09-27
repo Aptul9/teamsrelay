@@ -34,6 +34,6 @@ export async function scheduledSelfCheck(a: Agent) {
   const { ok, why } = await selfCheck(a);
   a.store.setState(key, "1");
   // a check that passed can wait for the phone to wake up; a problem cannot
-  await a.notifier.push(ok ? "Teams OK" : "Teams: problem", ok ? "Automatic check: the whole chain works." : why, ok ? "normal" : "high");
+  await a.notifier.alert(ok ? "Teams OK" : "Teams: problem", ok ? "Automatic check: the whole chain works." : why, ok ? "normal" : "high");
   log.info("SELFCHECK", ok ? "ok" : "problem", { why: why || undefined });
 }

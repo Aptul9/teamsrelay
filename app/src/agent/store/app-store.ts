@@ -1,13 +1,14 @@
 import fs from "node:fs";
 import Database from "better-sqlite3";
+import type { Identity } from "@/shared/slot-db/state";
+import { accountLabel } from "../logic/notify";
 import { errorText, log } from "../log";
-
-export type PushTarget = { endpoint: string; sub: string };
+import type { PushDevices, PushTarget } from "../push/notifier";
 
 // data/app.db belongs to the web app (users, teams_accounts, push_subscriptions). The agent reads the owner
 // of its slot and the owner's devices, and removes the subscriptions the push service reports as gone. It
 // never creates the file: until the web app has, there is nobody to notify.
-export class AppStore {
+export class AppStore implements PushDevices {
   constructor(
     private readonly file: string,
     private readonly slot: number,
@@ -29,7 +30,7 @@ export class AppStore {
   }
 
   // Devices of the user who owns this slot
-  pushTargets(): PushTarget[] {
+  targets(): PushTarget[] {
     return this.use(
       (db) =>
         db
@@ -50,7 +51,12 @@ export class AppStore {
     );
   }
 
-  deleteSubscription(endpoint: string) {
+  remove(endpoint: string) {
     this.use((db) => db.prepare("DELETE FROM push_subscriptions WHERE endpoint=?").run(endpoint), null);
+  }
+
+  // acc: the notification opens the app on this account
+  account(me: Identity) {
+    return { acc: this.slot, label: accountLabel(this.ownerHasManyAccounts(), me, this.slot) };
   }
 }

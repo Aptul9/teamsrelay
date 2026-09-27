@@ -22,8 +22,8 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
 
-      # web app, agent and supervisor; the page script tests (test/agent/page-*.test.ts) run in the Google Chrome
-      # of the runner
+      # web app, agent, supervisor and local relay; the page script tests (test/agent/page-*.test.ts) and the relay
+      # test (test/local/relay.test.ts) run in the Google Chrome of the runner
       - name: App
         working-directory: app
         env:
@@ -37,6 +37,7 @@ jobs:
           node --check public/sw.js
           node dist/agent.cjs --check
           node dist/supervisor.cjs --check
+          node dist/relay.cjs --check
 
       - name: Shell syntax
         run: bash -n deploy/remote-deploy.sh

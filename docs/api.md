@@ -92,3 +92,22 @@ Every field holds only when `agent` is `ok`.
 | `ts`, `last_scan_ts`, `last_msg_ts` | Unix timestamps |
 | `push_subs` | devices of the user |
 | `overall` | `green`, `yellow`, `red` |
+
+## Local relay
+
+The API of the [local relay](architecture.md#local-relay) (`app/src/local/server.ts`), one listener, default `127.0.0.1:8787`, optional TLS on it. Everything under `/api/` and `/media/` needs `Authorization: Bearer <token>` (`app/state/token`, 192 bits), except those marked *public*. Wrong tokens from one address: after ten within ten minutes the wrong ones get 429 until the window ends; the right token always gets in (behind `tailscale serve` every phone comes from `127.0.0.1`). No CORS headers, no cookies. The app page carries a Content Security Policy that loads nothing from outside; messages are inserted as text only. Errors are JSON, `{"detail": "..."}`; a request target that is not a URL gets 400.
+
+| Method | Path | Answer |
+|---|---|---|
+| GET | `/`, `/app.js`, `/app.css`, `/sw.js`, `/manifest.webmanifest`, `/static/icon-*.png` | *public*. The app |
+| GET | `/healthz` | *public*. `{ok}` |
+| GET | `/api/vapid` | *public*. `{key}`, the VAPID public key the devices subscribe with, `""` while push is off |
+| GET | `/api/state` | `{health, me, chats, active, devices, push}`: health as for the web app, plus `browser: "down"` while the browser does not start; account; chats with `name, preview, time, unread, mention, muted`; the chat Teams has open; number of devices; whether push is on |
+| GET | `/api/messages?chat=` | `{chat, open, messages}`, messages as text: `mid, author, text, mine, quote, images, files, reactions, status, edited, deleted, mentionsMe`. When Teams has the chat open (`open`), it stays open while the app keeps asking |
+| POST | `/api/cmd` | `{type, chat, mid?, text?, emoji?, pill?, key?}`, types `open`, `send`, `reply`, `react`, `edit`, `delete`, `undodelete`, `resync`, `recheck`. Waits up to 30 s and answers `{id, status}`. `key` (8 to 64 of `A-Z a-z 0-9 _ -`): a command with a key already queued is not queued again, its id and status come back. 409 while Teams is signed out, 503 while the relay does not read Teams or its browser does not start |
+| GET | `/api/cmd/{id}` | `{id, status}` |
+| POST | `/api/push` | Web Push subscription of the device (`PushSubscription.toJSON()`): `{ok, devices}` |
+| DELETE | `/api/push` | `{endpoint}`: the subscription removed, `{ok, devices}` |
+| GET | `/media/{16 hex}.{png,jpg,gif,webp}` | images saved from messages |
+
+Command status: `pending` (queued), `running` (on Teams now), `done` (Teams shows the change), `failed` (not applied on Teams; also a command that waited more than 2 minutes), `unconfirmed` (a message went out and Teams did not show it sent in time, or the relay stopped while running it: it may have reached Teams and is never run again). The web app answers with `pending`, `done` and `failed` only, as before.

@@ -30,14 +30,20 @@ async function show(d) {
   return self.registration.showNotification(title, { ...base, body: lines.join('\n'), tag: d.tag, renotify: !again, data: { ...d, lines } });
 }
 
-// the notification opens the app on the account it comes from (acc = slot)
+// the notification opens the app on the account it comes from (acc = slot, web app), or on its chat (local relay)
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const acc = (event.notification.data || {}).acc;
+  const d = event.notification.data || {};
+  const acc = d.acc;
+  const chat = acc ? '' : d.chat || '';
   event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cl => {
     for (const c of cl) {
-      if ('focus' in c) { if (acc) c.postMessage({ acc }); return c.focus(); }
+      if ('focus' in c) {
+        if (acc) c.postMessage({ acc });
+        else if (chat) c.postMessage({ chat });
+        return c.focus();
+      }
     }
-    if (clients.openWindow) return clients.openWindow(acc ? '/?a=' + acc : '/');
+    if (clients.openWindow) return clients.openWindow(acc ? '/?a=' + acc : chat ? '/#chat=' + encodeURIComponent(chat) : '/');
   }));
 });

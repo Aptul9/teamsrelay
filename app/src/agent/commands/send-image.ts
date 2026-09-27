@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { IMAGE_TYPES, ImageArgs, parseArgs, UPLOAD_NAME, type ImageExt } from "@/shared/slot-db/commands";
+import { saveOpenChat } from "../jobs/conversation";
 import { log } from "../log";
 import { sendImage } from "../teams/actions";
 import { afterMessageAction } from "./finish";
@@ -24,7 +25,7 @@ export const sendImageCommand: Handler = async (a, { arg1: chat, arg2 }) => {
   }
   try {
     const ext = path.extname(file).slice(1) as ImageExt;
-    const sent = await sendImage(a.tp, chat, { name: `image.${ext}`, type: IMAGE_TYPES[ext], data }, text);
+    const sent = await sendImage(a.tp, chat, { name: `image.${ext}`, type: IMAGE_TYPES[ext], data }, text, () => saveOpenChat(a, chat));
     return await afterMessageAction(a, chat, sent);
   } finally {
     fs.rmSync(upload, { force: true });

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#5b5fc7">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="TeamsRelay">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <link rel="icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/app.css">
+  <title>TeamsRelay</title>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main id="signin" class="signin" hidden>
+    <form id="token-form" class="card">
+      <h1>TeamsRelay</h1>
+      <p>Token of the relay: <code>npm run relay:setup</code> prints it on the relay machine.</p>
+      <label for="token">Token</label>
+      <input id="token" type="password" autocomplete="current-password" spellcheck="false" required>
+      <button type="submit" class="primary">Sign in</button>
+      <p id="signin-error" class="error" role="alert"></p>
+    </form>
+  </main>
+
+  <section id="list" class="view" hidden>
+    <header class="bar">
+      <span id="status-dot" class="dot" aria-hidden="true"></span>
+      <div class="title">
+        <strong id="me-name">TeamsRelay</strong>
+        <small id="status-text">Connecting...</small>
+      </div>
+      <button id="push-btn" type="button" class="chip">Notifications</button>
+      <button id="menu-btn" type="button" class="icon" aria-label="More actions" aria-haspopup="menu">&#8942;</button>
+    </header>
+    <ul id="chats" class="chats" aria-label="Chats"></ul>
+    <p id="chats-empty" class="empty" hidden>No chats yet: the relay reads them once Teams is signed in.</p>
+  </section>
+
+  <section id="chat" class="view" hidden>
+    <header class="bar">
+      <button id="back" type="button" class="icon" aria-label="Back to the chats">&#8249;</button>
+      <div class="title">
+        <strong id="chat-name"></strong>
+        <small id="chat-state"></small>
+      </div>
+    </header>
+    <ol id="messages" class="messages" aria-live="polite"></ol>
+    <form id="composer" class="composer">
+      <div id="compose-context" class="context" hidden>
+        <span id="compose-label"></span>
+        <button id="compose-cancel" type="button" class="link">Cancel</button>
+      </div>
+      <div class="compose-row">
+        <textarea id="text" rows="1" placeholder="Type a message" aria-label="Message" required></textarea>
+        <button id="send" type="submit" class="primary">Send</button>
+      </div>
+    </form>
+  </section>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheet-text">
+      <p id="sheet-text" class="sheet-text"></p>
+      <div id="sheet-reactions" class="reactions"></div>
+      <div id="sheet-actions" class="actions"></div>
+      <button id="sheet-cancel" type="button" class="secondary">Cancel</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

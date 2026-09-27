@@ -15,7 +15,7 @@ flowchart LR
   H -->|no| RB[previous code restored<br/>job failed]
 ```
 
-**Check**, on every push and pull request: lint, type check, tests and build of `app/` (web app and agent; the page scripts run in Chrome on pages captured from Teams, the agent bundle runs as a process against a local Chrome); `node dist/agent.cjs --check`; deploy script syntax; both Compose files; Caddyfile; both images, the browsers one failing its build when the agent or the supervisor does not load in it.
+**Check**, on every push and pull request: lint, type check, tests and build of `app/` (web app, agent and local relay; the page scripts run in Chrome on pages captured from Teams, the agent bundle runs as a process against a local Chrome, the local relay in one process against a page that behaves like Teams); `node dist/agent.cjs --check`, `node dist/supervisor.cjs --check`, `node dist/relay.cjs --check`; deploy script syntax; both Compose files; Caddyfile; both images, the browsers one failing its build when the agent or the supervisor does not load in it.
 
 **Deploy**, on every push to `main` or by hand (*Actions → CI/CD → Run workflow*):
 
@@ -78,9 +78,10 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 
 | Prefix | Event |
 |---|---|
-| `agent` | start with slot and push status, `check ok`, exit without a Teams tab, configuration error |
+| `agent` | start with slot and push status, `check ok`, `blank tab` or `not on Teams` (with the host), exit without a Teams tab, configuration error |
 | `cdp` | connection to the browser, waiting for it, connection lost |
 | `CMD` | a command of the web app starts (`id`, `arg`) |
+| `SESSION` | Teams signed out for a minute (push sent), signed in again |
 | `NEWMSG`, `MSG` | new message from the chat list, notification caught from Teams |
 | `SELFCHECK` | outcome of the automatic check |
 | `show` | Teams goes back to the chat of the app or to the self chat |
@@ -89,7 +90,7 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 | `open`, `send`, `reply`, `react`, `pill`, `edit`, `delete`, `readby` | an action that did not apply on Teams, and why |
 | `chats`, `messages`, `activity`, `media`, `download`, `health` | reads that failed |
 | `push`, `ntfy`, `appdb` | notification delivery and `app.db` errors; a failed push names its `status`, `attempt` and the `retry` wait in seconds (`none` when it is not sent again) |
-| `job`, `loop`, `cmd` | a step or a command that threw, with its name |
+| `job`, `loop`, `cmd` | a step or a command that threw, with its name; `cmd` also counts the commands that waited too long and were not run, and those a stopped agent left running (unconfirmed) |
 
 ## Troubleshooting
 
@@ -127,3 +128,33 @@ Muted chats never notify, like in Teams. On iPhone the app must be opened from t
 cd /opt/teamsrelay && docker compose down -v
 sudo rm -rf /opt/teamsrelay
 ```
+
+## Local relay
+
+From `app/` on the relay machine. Setup: [setup.md](setup.md#local-relay).
+
+```bash
+npx pm2 ls                     # teamsrelay online, restarts
+npx pm2 logs teamsrelay        # log, one line per event
+npx pm2 restart teamsrelay     # the relay closes its browser, starts again, reopens it
+npx pm2 stop teamsrelay
+npm run relay:setup            # prints the API token again
+```
+
+Log prefixes, besides those of the agent above:
+
+| Prefix | Event |
+|---|---|
+| `relay` | start (browser, API address, push, devices), `check ok`, stopping, waiting for the sign-in to finish, configuration errors, an error nothing caught (the relay then stops, exit code 1) |
+| `browser` | started, closed and started again, not started (the next launch waits longer, up to a minute) |
+| `lock` | a lock of the profile taken over, and why |
+| `api` | wrong token, request errors |
+
+Troubleshooting:
+
+- **The relay does not start, "the relay is running on this profile"**: another relay holds `state/relay.lock` and keeps it up to date. Stop it (`npx pm2 ls`, a relay started by hand). A lock left by a relay that is gone, or written before the machine started, is taken over by itself.
+- **"waiting for the sign-in to finish"**: `npm run relay:login` holds the profile. Finish the sign-in or close its window.
+- **Teams signed out**: the relay window shows the sign-in page; sign in there. The app shows it and commands answer 409.
+- **No notifications**: in the app, **Notifications** must read *Notifications on*: it does only once the relay has the subscription of that phone. **Test notification** runs a full check and answers with a push.
+
+Backup: `state/` holds the signed-in Microsoft session, the push private key and the API token: **sensitive**, encrypt the backup. `relay.env` holds no secret.

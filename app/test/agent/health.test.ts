@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeHealth, sessionExpired, type PageProbe } from "@/agent/logic/health";
+import { computeHealth, watchProblem, type PageProbe } from "@/agent/logic/health";
 import { AgentHealth } from "@/shared/slot-db/state";
 
 const NOW = 1_790_419_968;
@@ -53,11 +53,37 @@ describe("health row", () => {
   });
 });
 
-describe("expired session push", () => {
-  it("fires once, when the state turns to login, for an account signed in before", () => {
-    expect(sessionExpired("login", "ok", true)).toBe(true);
-    expect(sessionExpired("login", "login", true)).toBe(false);
-    expect(sessionExpired("login", "", false)).toBe(false);
-    expect(sessionExpired("ok", "login", true)).toBe(false);
+describe("problem alerts", () => {
+  const fresh = { since: 0, alerted: false };
+  const at = (now: number, armed = true) => ({ armed, after: 60, now });
+
+  it("push once a problem that lasts, and once more when it ends", () => {
+    let r = watchProblem("problem", fresh, at(1000));
+    expect(r).toEqual({ next: { since: 1000, alerted: false }, push: null });
+    r = watchProblem("problem", r.next, at(1059));
+    expect(r.push).toBeNull();
+    r = watchProblem("problem", r.next, at(1060));
+    expect(r).toEqual({ next: { since: 1000, alerted: true }, push: "problem" });
+    r = watchProblem("problem", r.next, at(5000));
+    expect(r.push).toBeNull();
+    r = watchProblem("fine", r.next, at(5001));
+    expect(r).toEqual({ next: fresh, push: "fine" });
+  });
+
+  it("push nothing for a problem shorter than the delay, like a redirect through the sign-in page", () => {
+    const r = watchProblem("problem", fresh, at(1000));
+    expect(watchProblem("fine", r.next, at(1010))).toEqual({ next: fresh, push: null });
+  });
+
+  it("keep counting while the page cannot be read", () => {
+    const r = watchProblem("problem", fresh, at(1000));
+    const unknown = watchProblem("unknown", r.next, at(1030));
+    expect(unknown).toEqual({ next: r.next, push: null });
+    expect(watchProblem("problem", unknown.next, at(1061)).push).toBe("problem");
+  });
+
+  it("stay silent for an account never signed in", () => {
+    const r = watchProblem("problem", fresh, at(1000, false));
+    expect(watchProblem("problem", r.next, at(99_999, false)).push).toBeNull();
   });
 });

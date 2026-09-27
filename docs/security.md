@@ -52,3 +52,11 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 
 - Dedicated SSH key for a user without password, host key pinned in the repository secrets, no `StrictHostKeyChecking=no`.
 - Dependabot keeps images, Actions and packages current. Keep the Chromium image up to date: it renders untrusted web content.
+
+## Local relay
+
+- The relay holds the live Microsoft session of its account in `app/state/profile`, unencrypted as in any browser profile, next to the push private key and the API token. `app/state/` and `app/relay.env` are in `.gitignore` and in `app/.dockerignore`: they never reach git or an image.
+- The profile is its own, never the everyday browser profile. The browser runs with its sandbox, driven over a pipe: no DevTools port is opened.
+- One API, on loopback unless the owner binds it elsewhere. Everything but the app page, its files, `/healthz` and the VAPID public key needs the bearer token (192 bits, compared in constant time). Wrong tokens are limited per address; the right one never is. No CORS headers and no cookies: a web page cannot use the API from the phone's browser.
+- The app page carries a Content Security Policy that loads nothing from outside, and inserts every message as text, never as HTML. Images are served by name only (16 hex characters and an image extension).
+- The token stays in the browser of the phone (`localStorage`). Signing out of the app forgets it and removes the push subscription of that phone from the relay and from the browser; a new token (delete `state/token`, run `npm run relay:setup`, restart the relay) signs every phone out.

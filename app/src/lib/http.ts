@@ -1,14 +1,7 @@
+import { HttpError } from "@/shared/http-error";
 import { SlotNotReady } from "./slotdb";
 
-export class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public headers?: Record<string, string>,
-  ) {
-    super(message);
-  }
-}
+export { HttpError };
 
 type Handler<C> = (req: Request, ctx: C) => Promise<Response> | Response;
 

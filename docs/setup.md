@@ -87,14 +87,14 @@ docker compose --env-file compose.local.env -f docker-compose.yml -f compose.loc
 - Named volumes replace `data/` and `config/`: `tr_data`, and `tr_profiles` with one directory per account as in `config/`. On the Windows filesystem SQLite locking and the symlinks of the Chromium profile are unreliable.
 - Sample chats without a signed-in Teams: `docker compose cp app/scripts/seed-slot.mjs webapp:/app/seed-slot.mjs`, then `docker compose exec webapp node /app/seed-slot.mjs /data 1` (slot 1 must belong to your user).
 
-Code: `app/`, one package for the web app (Next.js), the agent (`src/agent`) and the supervisor of the browsers container (`src/supervisor`). Checks, from `app/`:
+Code: `app/`, one package for the web app (Next.js), the agent (`src/agent`), the supervisor of the browsers container (`src/supervisor`) and the [local relay](#local-relay) (`src/local`). Checks, from `app/`:
 
 ```bash
 npm ci
 npm run lint && npm run typecheck && npm test && npm run build
 ```
 
-`npm test` covers the web app and the agent: unit tests, the page scripts in the local Google Chrome on pages captured from Teams, and the agent bundle run as a process against a local Chrome (about two minutes: it waits for the real 60 s exit). The tests of the supervisor that need process groups, user ids and unix sockets run on Linux and macOS only. `npm run build` builds the web app, the agent (`dist/agent.cjs`) and the supervisor (`dist/supervisor.cjs`).
+`npm test` covers the web app and the agent: unit tests, the page scripts in the local Google Chrome on pages captured from Teams, and the agent bundle run as a process against a local Chrome (about two minutes: it waits for the real 60 s exit). The tests of the supervisor that need process groups, user ids and unix sockets run on Linux and macOS only. `npm run build` builds the web app, the agent (`dist/agent.cjs`), the supervisor (`dist/supervisor.cjs`) and the local relay (`dist/relay.cjs`).
 
 After a change, `docker compose ... up -d --build` rebuilds both images and recreates what changed; a new browsers image restarts every account. The code of agent and supervisor is inside the image, nothing is mounted.
 
@@ -116,3 +116,54 @@ docker compose --env-file compose.local.env -f docker-compose.yml -f compose.loc
 ```
 
 Once the accounts are green again, delete the old volumes mounted above: `docker volume rm teamsrelay_tr_config teamsrelay_tr_config_2`.
+
+## Local relay
+
+One Teams account on a machine that stays on (workstation, mini-PC), without Docker: a browser window signed in to Teams, one Node process, notifications on the phone. What it is and what it leaves out: [architecture.md](architecture.md#local-relay).
+
+Requirements:
+
+- Node 24 or later (checked on 26), Google Chrome or Microsoft Edge installed.
+- A desktop session on the machine: the relay browser is a normal window, where the sign-in happens. The machine must not sleep.
+- Teams web allowed for the account in a browser, set to English.
+
+First run, from `app/`:
+
+```bash
+npm ci --ignore-scripts
+npm run relay:setup
+npm run build:relay
+npm run relay:login
+```
+
+- `npm ci --ignore-scripts`: better-sqlite3 ships prebuilt binaries; without the flag npm tries to compile it (Visual Studio on Windows).
+- `npm run relay:setup` writes `relay.env` from `relay.env.example`, the push keys (`state/vapid`) and the API token (`state/token`), and prints the token. Run it again to see the token; it never replaces what exists.
+- `npm run relay:login` opens the relay browser on Teams. Sign in there, MFA included, and answer "Yes" to "Stay signed in?". The window closes once Teams shows the chats.
+
+Running:
+
+```bash
+npx pm2 start ecosystem.config.cjs
+npx pm2 save
+```
+
+The relay opens its browser window on Teams. The window can stay behind other windows, on another virtual desktop or minimized; closing it only makes the relay open it again. Stop: `npx pm2 stop teamsrelay`. Log: `npx pm2 logs teamsrelay`.
+
+Start at logon on Windows, once, after `pm2 save` (a Windows service would run in session 0, where the browser window cannot be shown):
+
+```bash
+powershell -File scripts/relay-autostart.ps1
+```
+
+It registers the scheduled task `TeamsRelay` (`pm2 resurrect` at logon, normal priority); `-DryRun` prints the task without registering it. On Linux: `npx pm2 startup` for the user of the desktop session.
+
+Phone: the relay listens on `127.0.0.1:8787` and the phone needs a way in over HTTPS, since a service worker needs a secure context. Two ways, chosen by the owner of the machine:
+
+- **Tailscale Serve**: phone and machine in one tailnet with HTTPS certificates enabled, then `tailscale serve --bg --https=443 http://127.0.0.1:8787`. The relay stays on loopback; the phone reaches it wherever it has a connection.
+- **LAN**: `RELAY_BIND` on the LAN address and `RELAY_TLS_CERT`, `RELAY_TLS_KEY` from a CA the phone trusts. Home network only.
+
+The phone opens the relay address, enters the token once and taps **Notifications**. On iPhone, notifications reach only the app added to the Home Screen. Tapping a notification opens its chat; tapping a message offers reply, reactions, edit, delete, undo. **Test notification** in the menu runs a full check and answers with a push.
+
+When Teams signs out, the relay pushes "Teams signed out" after a minute and its window shows the sign-in page: sign in there, the relay pushes "Teams back". Commands meanwhile answer 409.
+
+Checks of the relay are part of `npm test`; `node dist/relay.cjs --check` loads the packages, the page scripts and the files of the app.

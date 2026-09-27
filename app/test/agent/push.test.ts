@@ -88,9 +88,8 @@ describe("notifier", () => {
 
   const notifier = (clock = () => 1_000_000) =>
     new Notifier({
-      slot: 1,
       store,
-      app: new AppStore(appDbFile, 1),
+      devices: new AppStore(appDbFile, 1),
       vapid,
       subject: "mailto:admin@example.com",
       ntfy: null,
@@ -112,7 +111,7 @@ describe("notifier", () => {
 
   it("pushes to the devices of the owner, urgent, kept a day, and forgets the gone ones", async () => {
     expect(await notifier().push("Anna Rossi", "ciao")).toBe(1);
-    expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "ciao", acc: 1 }, ttl: PUSH_TTL, urgency: "high" }]);
+    expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "ciao", chat: "", acc: 1 }, ttl: PUSH_TTL, urgency: "high" }]);
     expect(PUSH_TTL).toBe(86_400);
     expect(retries).toEqual([]);
     const db = new Database(appDbFile, { readonly: true });
@@ -126,27 +125,45 @@ describe("notifier", () => {
     db.close();
     store.setState(STATE.me, JSON.stringify({ name: "Anna", email: "anna@contoso.example", tenant: "Contoso", av: "" }));
     await notifier().push("Anna Rossi", "ciao");
-    expect(sent[0].payload).toEqual({ title: "Anna Rossi · Contoso", body: "ciao", acc: 1 });
+    expect(sent[0].payload).toEqual({ title: "Anna Rossi · Contoso", body: "ciao", chat: "", acc: 1 });
   });
 
   it("tags a message with its chat, so the device keeps one notification per chat", async () => {
-    await notifier().message("Anna Rossi", "are you there?");
-    expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "are you there?", acc: 1, tag: "chat-1-Anna Rossi" }, ttl: PUSH_TTL, urgency: "high" }]);
+    await notifier().message("Anna Rossi", "are you there?", "Anna Rossi");
+    expect(sent).toEqual([
+      { endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" }, ttl: PUSH_TTL, urgency: "high" },
+    ]);
   });
 
-  it("lets a push wait for the phone when the caller says it can", async () => {
-    await notifier().push("Teams OK", "Automatic check: the whole chain works.", "normal");
-    expect(sent[0].urgency).toBe("normal");
+  it("gives alerts a notification of their own", async () => {
+    await notifier().alert("Teams signed out", "Sign in again");
+    expect(sent[0].payload).toEqual({ title: "Teams signed out", body: "Sign in again", chat: "", acc: 1 });
   });
 
-  it("records a new message once within 150 s", async () => {
+  it("names the chat of a new message and records it once within 150 s", async () => {
     let now = 1_000_000;
     const n = notifier(() => now);
-    await n.message("Anna Rossi", "are you there?");
+    await n.message("Anna Rossi", "are you there?", "Anna Rossi");
     now += 60_000;
-    await n.message("Anna Rossi", "Are you there?");
-    expect(sent).toHaveLength(1);
+    await n.message("Anna Rossi", "Are you there?", "Anna Rossi");
+    expect(sent.map((s) => s.payload)).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" }]);
     expect(store.lastNotificationTs()).toBeGreaterThan(0);
+  });
+
+  it("sends messages and alerts at high urgency, a check that passed at normal", async () => {
+    const n = notifier();
+    await n.message("Anna Rossi", "urgent?", "Anna Rossi");
+    await n.alert("Teams signed out", "Sign in again");
+    await n.alert("Teams OK", "Automatic check: the whole chain works.", "normal");
+    expect(sent.map((s) => [(s.payload as { title: string }).title, s.urgency])).toEqual([
+      ["Anna Rossi", "high"],
+      ["Teams signed out", "high"],
+      ["Teams OK", "normal"],
+    ]);
+    // alerts are about the relay, not messages: not in the history
+    expect(store.lastNotificationTs()).toBeGreaterThan(0);
+    const db = (store as unknown as { db: import("better-sqlite3").Database }).db;
+    expect(db.prepare("SELECT title FROM messages").pluck().all()).toEqual(["Anna Rossi"]);
   });
 
   it("tries a push again when the push service fails or does not answer", async () => {
@@ -158,7 +175,7 @@ describe("notifier", () => {
     await retryNow();
     expect(retries.map((r) => r.ms)).toEqual([120_000]);
     await retryNow();
-    expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "ciao", acc: 1 }, ttl: PUSH_TTL, urgency: "high" }]);
+    expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "ciao", chat: "", acc: 1 }, ttl: PUSH_TTL, urgency: "high" }]);
     expect(retries).toEqual([]);
   });
 
@@ -209,7 +226,7 @@ describe("notifier", () => {
   });
 
   it("sends nothing without keys", async () => {
-    const n = new Notifier({ slot: 1, store, app: new AppStore(appDbFile, 1), vapid: null, subject: "mailto:a@b.c", ntfy: null });
+    const n = new Notifier({ store, devices: new AppStore(appDbFile, 1), vapid: null, subject: "mailto:a@b.c", ntfy: null });
     expect(await n.push("x", "y")).toBe(0);
   });
 });
@@ -230,13 +247,13 @@ describe("notifier through web-push to a push service", () => {
   afterEach(() => service.close());
 
   const notifier = (later?: (ms: number, run: () => void) => void) =>
-    new Notifier({ slot: 1, store, app: new AppStore(appDbFile, 1), vapid: keys, subject: "mailto:admin@example.com", ntfy: null, send: service.send, later });
+    new Notifier({ store, devices: new AppStore(appDbFile, 1), vapid: keys, subject: "mailto:admin@example.com", ntfy: null, send: service.send, later });
 
   it("sends a message urgent, kept a day, without a topic, readable by the device only", async () => {
-    await notifier().message("Anna Rossi", "ciao");
+    await notifier().message("Anna Rossi", "ciao", "Anna Rossi");
     expect(service.received).toEqual([
       {
-        payload: { title: "Anna Rossi", body: "ciao", acc: 1, tag: "chat-1-Anna Rossi" },
+        payload: { title: "Anna Rossi", body: "ciao", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" },
         ttl: "86400",
         urgency: "high",
         topic: undefined,
@@ -256,6 +273,6 @@ describe("notifier through web-push to a push service", () => {
     retries[1].run();
     await vi.waitFor(() => expect(service.received).toHaveLength(3));
     expect(retries.map((r) => r.ms)).toEqual([7000, 30_000]);
-    expect(service.received.map((r) => r.payload)).toEqual(Array(3).fill({ title: "TeamsRelay", body: "Teams session expired", acc: 1 }));
+    expect(service.received.map((r) => r.payload)).toEqual(Array(3).fill({ title: "TeamsRelay", body: "Teams session expired", chat: "", acc: 1 }));
   });
 });

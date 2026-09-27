@@ -59,3 +59,20 @@ Set by `docker-compose.yml` and the browsers image. The supervisor checks these 
 | `config/N/` | Chromium profile of account N: the signed-in Microsoft session. |
 | `data/app.db` | Users, sessions, slot ownership, push subscriptions. |
 | `data/N/` | Database, images and files of slot N. |
+
+## Local relay environment
+
+`app/relay.env`, written from [relay.env.example](../app/relay.env.example) by `npm run relay:setup`, or the environment of the process (which wins). Not `.env`: Next.js would load that one into the web app. Checked at start (`app/src/local/config.ts`): a wrong value stops the relay with the name of the variable.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `STATE_DIR` | `state` | Browser profile, database, images, push keys, API token, lock; relative to `app/` |
+| `BROWSER_CHANNEL` | `chrome` | Installed browser the relay drives on its own profile: `chrome` or `msedge` |
+| `TEAMS_URL` | `https://teams.cloud.microsoft/` | Page opened in the relay browser |
+| `RELAY_BIND`, `RELAY_PORT` | `127.0.0.1`, `8787` | Address of the API and the app; an IP address, not a name |
+| `RELAY_TLS_CERT`, `RELAY_TLS_KEY` | empty | PEM files for HTTPS on the API itself, both or neither, relative to `app/` |
+| `VAPID_SUBJECT` | `mailto:admin@example.com` | Contact for the push services, `mailto:` or `https://` |
+| `NTFY_URL`, `NTFY_TOPIC` | `https://ntfy.sh`, empty | ntfy as a second channel, on when the topic is set |
+| `HOST_LABEL` | host name | Name of the machine in the alerts ("sign in again in the relay window on ...") |
+
+Files under `STATE_DIR`: `profile/` (the signed-in Microsoft session), `relay.db`, `media/`, `vapid/private_key.pem` and `vapid/appkey.txt`, `token`, `relay.lock`. None is in git or in the Docker build context.

@@ -1,13 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runCommand, runPendingCommands } from "@/agent/commands";
+import { COMMAND_MAX_AGE, runCommand, runPendingCommands } from "@/agent/commands";
 import type { Agent } from "@/agent/context";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { agentJobs } from "@/agent/loop";
 import type { Media } from "@/agent/media";
 import type { Notifier } from "@/agent/push/notifier";
-import type { AppStore } from "@/agent/store/app-store";
 import { SlotStore } from "@/agent/store/slot-store";
 import * as actions from "@/agent/teams/actions";
 import * as mentionActions from "@/agent/teams/mentions";
@@ -17,19 +16,19 @@ import { membersKey, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
 vi.mock("@/agent/teams/actions", () => ({
-  sendText: vi.fn(async () => true),
-  replyWithQuote: vi.fn(async () => true),
+  sendText: vi.fn(async () => "sent" as const),
+  replyWithQuote: vi.fn(async () => "sent" as const),
   react: vi.fn(async () => true),
   togglePill: vi.fn(async () => true),
   editMessage: vi.fn(async () => true),
   deleteMessage: vi.fn(async () => true),
   undoDelete: vi.fn(async () => true),
   readReceipts: vi.fn(async () => null),
-  sendImage: vi.fn(async () => true),
+  sendImage: vi.fn(async () => "sent" as const),
 }));
 vi.mock("@/agent/teams/mentions", () => ({
   readMembers: vi.fn(async () => ["ROSSI Anna", "BIANCHI Luca"]),
-  sendWithMentions: vi.fn(async () => true),
+  sendWithMentions: vi.fn(async () => "sent" as const),
 }));
 
 const message = (mid: string, text: string): PageMessage => ({
@@ -56,6 +55,7 @@ let evaluated: string[];
 let opens: boolean;
 let downloaded: string | null;
 let uploads: string;
+let alerts: string[];
 
 function agent(): Agent {
   const page = {
@@ -64,6 +64,7 @@ function agent(): Agent {
       evaluated.push(fn.name);
       if (fn.name === "readMessages") return [message("m1", "ciao")];
       if (fn.name === "readChatList") return [];
+      if (fn.name === "probePage") return { reduced: false, domReady: true, hookInstalled: true, presence: "available" };
       return null;
     },
   };
@@ -76,10 +77,14 @@ function agent(): Agent {
     isOpen: async () => opens,
   } as unknown as TeamsPage;
   return {
-    config: { slot: 1, uploadsDir: uploads } as Agent["config"],
+    config: { uploadsDir: uploads, activity: true, readBy: true, alerts: { signInAfter: 60, browserAfter: 300, signIn: "Sign in again", browserDown: "The browser does not start" } },
     store,
-    app: { pushTargets: () => [] } as unknown as AppStore,
-    notifier: { push: async () => 0, message: async () => undefined } as unknown as Notifier,
+    notifier: {
+      push: async () => 0,
+      alert: async (title: string, body: string) => alerts.push(`${title}: ${body}`),
+      message: async () => undefined,
+      deviceCount: () => 0,
+    } as unknown as Notifier,
     media: { download: async () => downloaded, avatar: async () => "", avatars: async (_: unknown, rows: unknown[]) => rows, image: async () => null } as unknown as Media,
     detector: new NewMessageDetector(),
     tp,
@@ -88,6 +93,7 @@ function agent(): Agent {
 }
 
 const cmd = (type: string, arg1 = "Anna Rossi", arg2 = "") => ({ id: 7, type, arg1, arg2 });
+const db = () => (store as unknown as { db: import("better-sqlite3").Database }).db;
 
 beforeEach(() => {
   store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
@@ -97,6 +103,7 @@ beforeEach(() => {
   opens = true;
   downloaded = null;
   uploads = tempDir();
+  alerts = [];
   vi.clearAllMocks();
 });
 
@@ -107,8 +114,7 @@ describe("command handlers", () => {
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
     expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("Anna Rossi");
     expect(evaluated).toContain("readMessages");
-    const db = (store as unknown as { db: import("better-sqlite3").Database }).db;
-    expect(db.prepare("SELECT mid, text FROM chat_messages WHERE chat=?").all("Anna Rossi")).toEqual([{ mid: "m1", text: "ciao" }]);
+    expect(db().prepare("SELECT mid, text FROM chat_messages WHERE chat=?").all("Anna Rossi")).toEqual([{ mid: "m1", text: "ciao" }]);
   });
 
   it("open: done even when the chat did not open, like the Python agent", async () => {
@@ -117,17 +123,31 @@ describe("command handlers", () => {
     expect(store.getState(STATE.activeChat)).toBe("");
   });
 
-  it("send: done whatever happened, with the conversation saved", async () => {
-    vi.mocked(actions.sendText).mockResolvedValueOnce(false);
+  it("send: done once Teams shows the message, failed when it does not, the conversation saved either way", async () => {
     expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello"))).toBe("done");
-    expect(actions.sendText).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "hello");
+    expect(actions.sendText).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "hello", expect.any(Function));
+    vi.mocked(actions.sendText).mockResolvedValueOnce("failed");
+    evaluated = [];
+    expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello again"))).toBe("failed");
+    expect(evaluated).toContain("readMessages");
+    expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
+  });
+
+  it("send and reply: unconfirmed when the message went out but Teams did not show it sent in time", async () => {
+    vi.mocked(actions.sendText).mockResolvedValueOnce("unconfirmed");
+    expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello"))).toBe("unconfirmed");
+    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce("unconfirmed");
+    expect(await runCommand(agent(), cmd("reply", "Anna Rossi", '{"mid":"m1","text":"On it"}'))).toBe("unconfirmed");
+    vi.mocked(mentionActions.sendWithMentions).mockResolvedValueOnce("unconfirmed");
+    const parts = [{ text: "Hi " }, { mention: "ROSSI Anna" }];
+    expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("unconfirmed");
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
   });
 
   it("reply, edit, delete, undo: failed when Teams did not change, after saving the conversation", async () => {
-    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce(false);
+    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce("failed");
     expect(await runCommand(agent(), cmd("reply", "Anna Rossi", '{"mid":"m1","text":"On it"}'))).toBe("failed");
-    expect(actions.replyWithQuote).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "m1", "On it");
+    expect(actions.replyWithQuote).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "m1", "On it", expect.any(Function));
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
     expect(await runCommand(agent(), cmd("edit", "Anna Rossi", '{"mid":"m1","text":"fixed"}'))).toBe("done");
     expect(await runCommand(agent(), cmd("delete", "Anna Rossi", '{"mid":"m1"}'))).toBe("done");
@@ -155,7 +175,7 @@ describe("command handlers", () => {
     const png = Buffer.from("89504e470d0a1a0a0102", "hex");
     fs.writeFileSync(path.join(uploads, "0123456789abcdef.png"), png);
     expect(await runCommand(agent(), cmd("sendimage", "Anna Rossi", '{"file":"0123456789abcdef.png","text":"For you"}'))).toBe("done");
-    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.png", type: "image/png", data: png }, "For you");
+    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.png", type: "image/png", data: png }, "For you", expect.any(Function));
     expect(fs.readdirSync(uploads)).toEqual([]);
     expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
     expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("Anna Rossi");
@@ -163,10 +183,10 @@ describe("command handlers", () => {
   });
 
   it("sendimage: failed when Teams did not show the image, the upload deleted all the same", async () => {
-    vi.mocked(actions.sendImage).mockResolvedValueOnce(false);
+    vi.mocked(actions.sendImage).mockResolvedValueOnce("failed");
     fs.writeFileSync(path.join(uploads, "0123456789abcdef.jpg"), Buffer.from("ffd8ffe0", "hex"));
     expect(await runCommand(agent(), cmd("sendimage", "Anna Rossi", '{"file":"0123456789abcdef.jpg"}'))).toBe("failed");
-    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.jpg", type: "image/jpeg", data: expect.any(Buffer) }, "");
+    expect(actions.sendImage).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", { name: "image.jpg", type: "image/jpeg", data: expect.any(Buffer) }, "", expect.any(Function));
     expect(fs.readdirSync(uploads)).toEqual([]);
   });
 
@@ -196,15 +216,20 @@ describe("command handlers", () => {
   it("sendmentions: hands the parts to Teams, saves the conversation, done only when sent", async () => {
     const parts = [{ text: "Hi " }, { mention: "ROSSI Anna" }, { text: ", can you check?" }];
     expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("done");
-    expect(mentionActions.sendWithMentions).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", parts);
+    expect(mentionActions.sendWithMentions).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", parts, expect.any(Function));
     expect(evaluated).toContain("readMessages");
-    vi.mocked(mentionActions.sendWithMentions).mockResolvedValueOnce(false);
+    vi.mocked(mentionActions.sendWithMentions).mockResolvedValueOnce("failed");
     expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", JSON.stringify({ parts })))).toBe("failed");
   });
 
   it("sendmentions: nothing to send, nothing typed", async () => {
     expect(await runCommand(agent(), cmd("sendmentions", "Anna Rossi", "{"))).toBe("failed");
     expect(mentionActions.sendWithMentions).not.toHaveBeenCalled();
+  });
+
+  it("recheck: pushes the outcome of the check", async () => {
+    expect(await runCommand(agent(), cmd("recheck", ""))).toBe("done");
+    expect(alerts).toEqual(["Teams: Problem: Chat list not readable"]);
   });
 
   it("an unknown type is done, a handler that throws is failed", async () => {
@@ -214,18 +239,64 @@ describe("command handlers", () => {
   });
 
   it("runs the pending commands in order, records each outcome and reads the chat list after each", async () => {
-    const a = agent();
-    const db = (store as unknown as { db: import("better-sqlite3").Database }).db;
-    const insert = db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(0, ?, ?, ?)");
-    insert.run("open", "Anna Rossi", "");
-    insert.run("reply", "Anna Rossi", '{"mid":"m1","text":"x"}');
-    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce(false);
-    await runPendingCommands(a);
-    expect(db.prepare("SELECT type, status FROM commands ORDER BY id").all()).toEqual([
+    const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
+    const now = Math.floor(Date.now() / 1000);
+    insert.run(now, "open", "Anna Rossi", "");
+    insert.run(now, "reply", "Anna Rossi", '{"mid":"m1","text":"x"}');
+    vi.mocked(actions.replyWithQuote).mockResolvedValueOnce("failed");
+    await runPendingCommands(agent());
+    expect(db().prepare("SELECT type, status FROM commands ORDER BY id").all()).toEqual([
       { type: "open", status: "done" },
       { type: "reply", status: "failed" },
     ]);
     expect(evaluated.filter((n) => n === "readChatList")).toHaveLength(2);
+  });
+
+  it("never runs again a command the agent was running when it stopped: it ends unconfirmed", async () => {
+    const id = store.enqueue("send", "Anna Rossi", "hello");
+    // the agent is stopped (pm2 restart, crash) while Teams has not confirmed the message yet
+    vi.mocked(actions.sendText).mockImplementationOnce(() => new Promise(() => undefined));
+    void runPendingCommands(agent());
+    await vi.waitFor(() => expect(actions.sendText).toHaveBeenCalledTimes(1));
+    // the agent started again on the same database, well within two minutes
+    await runPendingCommands(agent());
+    expect(actions.sendText).toHaveBeenCalledTimes(1);
+    expect(store.commandStatus(id)).toBe("unconfirmed");
+    // a command queued after the restart runs as usual
+    const next = store.enqueue("send", "Anna Rossi", "hello again");
+    await runPendingCommands(agent());
+    expect(store.commandStatus(next)).toBe("done");
+  });
+
+  it("checks the age of each command when its turn comes: one queued behind slow ones does not run late", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
+      const now = Math.floor(Date.now() / 1000);
+      insert.run(now, "send", "Anna Rossi", "first");
+      // young enough when the round starts, too old once the first send took its time
+      insert.run(now - 100, "send", "Anna Rossi", "second");
+      vi.mocked(actions.sendText).mockImplementationOnce(async () => {
+        vi.setSystemTime(Date.now() + 30_000);
+        return "sent";
+      });
+      await runPendingCommands(agent());
+      expect(actions.sendText).toHaveBeenCalledTimes(1);
+      expect(db().prepare("SELECT arg2, status FROM commands ORDER BY id").all()).toEqual([
+        { arg2: "first", status: "done" },
+        { arg2: "second", status: "failed" },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never runs a command that waited too long: a send queued while Teams was down stays unsent", async () => {
+    const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
+    insert.run(Math.floor(Date.now() / 1000) - COMMAND_MAX_AGE - 5, "send", "Anna Rossi", "from an hour ago");
+    await runPendingCommands(agent());
+    expect(actions.sendText).not.toHaveBeenCalled();
+    expect(db().prepare("SELECT status FROM commands").pluck().all()).toEqual(["failed"]);
   });
 });
 
@@ -247,5 +318,11 @@ describe("agent loop", () => {
       ["read-by", "2+0", false],
       ["self-check", "1+0", false],
     ]);
+  });
+
+  it("leaves out the Activity feed and Read by for an app that does not show them", () => {
+    const a = agent();
+    a.config = { ...a.config, activity: false, readBy: false };
+    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "input", "parking", "hook", "commands", "chats-full", "chats", "identity", "health", "conversation", "self-check"]);
   });
 });

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { z } from "zod";
+import type { AgentSettings } from "./context";
 
 // Environment of the agent of one slot, set by docker-compose.yml. Checked once at start: a wrong value stops
 // the agent with the reason, instead of a failure later on the Teams page.
@@ -17,7 +18,7 @@ const Env = z.object({
   NTFY_TOPIC: z.string().default(""),
 });
 
-export type Config = {
+export type Config = AgentSettings & {
   cdp: string;
   slot: number;
   dbPath: string;
@@ -26,7 +27,6 @@ export type Config = {
   // database
   mediaDir: string;
   filesDir: string;
-  uploadsDir: string;
   vapid: { privateKeyFile: string; appKeyFile: string; subject: string };
   ntfy: { url: string; topic: string } | null;
 };
@@ -52,5 +52,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     uploadsDir: path.join(dataDir, "uploads"),
     vapid: { privateKeyFile: e.VAPID_PRIVATE, appKeyFile: e.VAPID_APPKEY, subject: e.VAPID_SUBJECT },
     ntfy: e.NTFY_ENABLED === "1" && e.NTFY_TOPIC ? { url: e.NTFY_URL, topic: e.NTFY_TOPIC } : null,
+    // the web app shows both
+    activity: true,
+    readBy: true,
+    alerts: {
+      signInAfter: 60,
+      browserAfter: 300,
+      signIn: "Open the remote desktop of the account and sign in again",
+      browserDown: `The browser of account ${e.ACCOUNT} does not start`,
+    },
   };
 }

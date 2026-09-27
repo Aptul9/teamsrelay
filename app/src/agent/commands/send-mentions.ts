@@ -1,4 +1,5 @@
 import { MentionArgs, parseArgs } from "@/shared/slot-db/commands";
+import { saveOpenChat } from "../jobs/conversation";
 import { sendWithMentions } from "../teams/mentions";
 import { afterMessageAction } from "./finish";
 import type { Handler } from "./index";
@@ -7,5 +8,5 @@ import type { Handler } from "./index";
 export const sendMentions: Handler = async (a, { arg1: chat, arg2 }) => {
   const { parts } = parseArgs(MentionArgs, arg2);
   if (!parts.length) return "failed";
-  return afterMessageAction(a, chat, await sendWithMentions(a.tp, chat, parts));
+  return afterMessageAction(a, chat, await sendWithMentions(a.tp, chat, parts, () => saveOpenChat(a, chat)));
 };

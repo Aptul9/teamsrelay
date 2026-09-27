@@ -6,3 +6,6 @@ test
 next-env.d.ts
 Dockerfile
 .dockerignore
+# the local relay's profile, keys and token never reach an image
+state
+relay.env

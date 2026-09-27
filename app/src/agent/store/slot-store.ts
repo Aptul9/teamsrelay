@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { CommandStatus } from "@/shared/slot-db/commands";
-import type { MessageExtra, ReadBy } from "@/shared/slot-db/rows";
+import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
+import type { Message, MessageExtra, ReadBy } from "@/shared/slot-db/rows";
 import { ensureSlotSchema } from "@/shared/slot-db/schema";
 import { mergeChats, type ChatEntry } from "../logic/chats";
 
-// The agent side of data/N/messages.db (src/shared/slot-db): one connection for the life of the agent.
+// The agent side of data/N/messages.db (src/shared/slot-db), or of relay.db for the local relay, where the API
+// reads it and queues commands through the same connection: one connection for the life of the process.
 
 export type PendingCommand = { id: number; type: string; arg1: string; arg2: string };
 export type SavedMessage = { mid: string; author: string; text: string; mine: boolean; reacts: string; extra: MessageExtra | null };
@@ -118,6 +119,14 @@ export class SlotStore {
     })();
   }
 
+  // Messages of a chat as saved the last time it was open in Teams
+  messages(chat: string): Message[] {
+    const rows = this.db.prepare("SELECT mid, author, text, mine, reacts, extra FROM chat_messages WHERE chat=? ORDER BY idx").all(chat) as (Message & {
+      extra: string | null;
+    })[];
+    return rows.map(({ extra, ...m }) => ({ ...m, ...parseExtra(extra) }));
+  }
+
   ownRecentMessageIds(chat: string, limit: number): string[] {
     return this.db
       .prepare("SELECT mid FROM chat_messages WHERE chat=? AND mine=1 AND mid<>'' ORDER BY idx DESC LIMIT ?")
@@ -144,6 +153,24 @@ export class SlotStore {
       .run(mid, chat, readBy.label, JSON.stringify(readBy.names), nowSeconds());
   }
 
+  // A command with a key already queued is not queued again: the id of the first one comes back
+  enqueue(type: CommandType, arg1 = "", arg2 = "", key: string | null = null): number {
+    const known = key ? this.commandIdByKey(key) : null;
+    if (known) return known;
+    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2, key) VALUES(?,?,?,?,?)").run(nowSeconds(), type, arg1, arg2, key);
+    return Number(r.lastInsertRowid);
+  }
+
+  commandIdByKey(key: string): number | null {
+    const r = this.db.prepare("SELECT id FROM commands WHERE key=?").get(key) as { id: number } | undefined;
+    return r?.id ?? null;
+  }
+
+  commandStatus(id: number): CommandStatus | null {
+    const r = this.db.prepare("SELECT status FROM commands WHERE id=?").get(id) as { status: CommandStatus } | undefined;
+    return r?.status ?? null;
+  }
+
   pendingCommands(): PendingCommand[] {
     return this.db
       .prepare("SELECT id, type, COALESCE(arg1, '') AS arg1, COALESCE(arg2, '') AS arg2 FROM commands WHERE status='pending' ORDER BY id")
@@ -154,8 +181,25 @@ export class SlotStore {
     return !!this.db.prepare("SELECT 1 FROM commands WHERE status='pending' LIMIT 1").get();
   }
 
-  finishCommand(id: number, status: Exclude<CommandStatus, "pending">) {
+  // The agent takes the command: from here on a stop of the agent leaves it running, never pending again
+  startCommand(id: number) {
+    this.db.prepare("UPDATE commands SET status='running' WHERE id=? AND status='pending'").run(id);
+  }
+
+  finishCommand(id: number, status: Exclude<CommandStatus, "pending" | "running">) {
     this.db.prepare("UPDATE commands SET status=? WHERE id=?").run(status, id);
+  }
+
+  // Commands left running by an agent that stopped (restart, crash) may have reached Teams: a send may be out, a
+  // reaction set. They end as unconfirmed, never run again. Number of commands.
+  interruptedCommands(): number {
+    return this.db.prepare("UPDATE commands SET status='unconfirmed' WHERE status='running'").run().changes;
+  }
+
+  // Commands still waiting after `maxAge` seconds end as failed: a message queued while Teams was signed out or the
+  // agent was down must not go out minutes later, when nobody expects it any more. Number of commands expired.
+  expirePendingCommands(maxAge: number, now = nowSeconds()): number {
+    return this.db.prepare("UPDATE commands SET status='failed' WHERE status='pending' AND ts < ?").run(now - maxAge).changes;
   }
 
   saveActivity(items: readonly ActivityEntry[]) {
@@ -169,6 +213,16 @@ export class SlotStore {
         insert.run(a.id || `x${i}`, i, a.kind, a.actor, a.title, a.emoji, a.preview, a.tm, a.chat, bit(a.channel), bit(a.unread), ts, a.av),
       );
     })();
+  }
+}
+
+function parseExtra(v: string | null): MessageExtra {
+  if (!v) return {};
+  try {
+    const extra: unknown = JSON.parse(v);
+    return extra && typeof extra === "object" ? (extra as MessageExtra) : {};
+  } catch {
+    return {};
   }
 }
 

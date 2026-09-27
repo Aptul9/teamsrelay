@@ -6,6 +6,9 @@ config/
 data/
 # Web Push private key
 vapid/
+# Local relay: browser profile, database, images, push keys and API token (app/state), and its settings
+/app/state/
+/app/relay.env
 caddy_data/
 caddy_config/
 

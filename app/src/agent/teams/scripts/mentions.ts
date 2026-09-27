@@ -23,7 +23,8 @@ export function composerMentionNames(s: Selectors): string[] {
   return [...box.querySelectorAll(s.composerMention)].map((m) => (m.textContent || "").replace(/[\s ]+/g, " ").trim()).filter(Boolean);
 }
 
-// A new message of yours (not among `before`), no longer sending, that tags every one of `names`
+// A new message of yours (not among `before`), whose status icon says Teams has it (see ownMessageSent in
+// compose.ts), that tags every one of `names`
 export function mentionMessageSent({ s, t, before, names }: { s: Selectors; t: Texts; before: string[]; names: string[] }): boolean {
   const known = new Set(before);
   return [...document.querySelectorAll(s.message)].some((m) => {
@@ -31,7 +32,8 @@ export function mentionMessageSent({ s, t, before, names }: { s: Selectors; t: T
     const mine = m.closest(s.mine) || m.querySelector(s.mine);
     if (!mid || known.has(mid) || !mine) return false;
     const icon = mine.querySelector(s.statusIcon);
-    if (t.sending.test((icon && icon.getAttribute("aria-label")) || "")) return false;
+    const status = ((icon && icon.getAttribute("aria-label")) || "").trim();
+    if (!status || t.sending.test(status) || t.sendFailed.test(status)) return false;
     const tagged = [...m.querySelectorAll("[itemtype]")]
       .filter((e) => s.mentionType.test(e.getAttribute("itemtype") || ""))
       .map((e) => (e.textContent || "").replace(/[\s ]+/g, " ").trim());

@@ -21,8 +21,15 @@ export const COMMAND_TYPES = [
 ] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 
-export const COMMAND_STATUSES = ["pending", "done", "failed"] as const;
+// pending: queued; done: Teams shows the change; failed: not applied on Teams. Later additions, written by the agent
+// only: running, on Teams now; unconfirmed, the agent stopped while it ran and does not run it again, as it may
+// have reached Teams already. The web app reports them as pending and failed (src/lib/slotdb.ts).
+export const COMMAND_STATUSES = ["pending", "done", "failed", "running", "unconfirmed"] as const;
 export type CommandStatus = (typeof COMMAND_STATUSES)[number];
+
+// Key an app may give a command (commands.key): the same key queues it once, so an app that sends a command again
+// because the answer got lost on the way does not queue it twice
+export const COMMAND_KEY = /^[A-Za-z0-9_-]{8,64}$/;
 
 export const REACTIONS = ["like", "heart", "laugh", "surprised", "cry", "angry"] as const;
 export type ReactionName = (typeof REACTIONS)[number];

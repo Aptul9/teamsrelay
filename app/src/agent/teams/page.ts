@@ -1,6 +1,6 @@
 import type { Page } from "playwright-core";
 import { sameChat } from "../logic/chats";
-import { log } from "../log";
+import { errorText, log } from "../log";
 import type { SlotStore } from "../store/slot-store";
 import { openChatTitle, clickChatRow } from "./scripts/chat-list";
 import { composerLeft } from "./scripts/compose";
@@ -8,6 +8,22 @@ import { barButtonPoint, centerElement, openOverlays } from "./scripts/message-a
 import { SEL, TEXTS } from "./selectors";
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// What became of a message the agent sent: sent (Teams shows it sent), failed (it never left the compose box), or
+// unconfirmed (Enter went, Teams did not show it sent in time: it may be out, sending it again may make two)
+export type SendResult = "sent" | "failed" | "unconfirmed";
+
+// What a send runs as soon as the message went, while Teams still shows it sending: the handlers save the chat, so
+// that the web app, which waits for the message in the saved chat, sees it at once
+export type AfterPress = () => Promise<unknown>;
+
+export async function afterPress(fn?: AfterPress) {
+  try {
+    await fn?.();
+  } catch (e) {
+    log.warn("send", `after the send: ${errorText(e)}`);
+  }
+}
 
 // A message by id, for Node-side locators
 export const messageSelector = (mid: string) => `${SEL.message}[data-mid="${mid.replace(/["\\]/g, "\\$&")}"]`;
