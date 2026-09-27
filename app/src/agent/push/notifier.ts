@@ -112,11 +112,17 @@ export class Notifier {
   }
 
   // A retry goes to the device only while it is still one of the devices: a subscription can pass to another user
-  // of the same browser, or be removed, while the retry waits
+  // of the same browser, or be removed, while the retry waits. It runs on a timer, where an error of the device
+  // store would be uncaught (the local relay stops on one): logged instead.
   private retry(endpoint: string, payload: string, options: webpush.RequestOptions, attempt: number) {
-    const t = this.o.devices.targets().find((x) => x.endpoint === endpoint);
-    if (!t) return log.info("push", "device gone before the retry", { attempt });
-    void this.sendTo(t, payload, options, attempt);
+    const failed = (e: unknown) => log.warn("push", `retry: ${errorText(e)}`, { attempt });
+    try {
+      const t = this.o.devices.targets().find((x) => x.endpoint === endpoint);
+      if (!t) return log.info("push", "device gone before the retry", { attempt });
+      this.sendTo(t, payload, options, attempt).catch(failed);
+    } catch (e) {
+      failed(e);
+    }
   }
 
   private async ntfy(title: string, body: string) {
