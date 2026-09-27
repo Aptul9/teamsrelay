@@ -26,14 +26,17 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth-client";
 import {
+  accountUnread,
   ApiError,
   call,
   isSelf,
+  loadSeen,
   markActivitySeen,
   parseSeen,
   post,
   readStorage,
   runCmd,
+  seenKey,
   toLogin,
   unseenActivity,
   writeStorage,
@@ -42,6 +45,7 @@ import {
   type Chat,
   type Health,
   type Message,
+  type Unread,
 } from "@/lib/client";
 import { enablePush, pushState } from "@/lib/push";
 
@@ -75,7 +79,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [chats, setChats] = useState<Chat[] | null>(null);
   const [messages, setMessages] = useState<{ chat: string; rows: Message[] } | null>(null);
   const [activity, setActivity] = useState<{ ts: number; items: ActivityItem[] } | null>(null);
-  const [seenAct, setSeenAct] = useState<string[] | null>(null);
+  const [seenAct, setSeenAct] = useState<Record<number, string[]>>({});
   const [health, setHealth] = useState<Health | null>(null);
   const [pushOff, setPushOff] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -90,6 +94,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   // switching account drops everything that belonged to the previous one
   const accRef = useRef(0);
+  const accountsRef = useRef<Account[]>([]);
   const switchTo = useCallback((n: number) => {
     if (accRef.current === n) return;
     accRef.current = n;
@@ -98,7 +103,6 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setChats(null);
     setMessages(null);
     setActivity(null);
-    setSeenAct(null);
     setHealth(null);
     setDeskOpened(false);
     setPane("main");
@@ -112,12 +116,13 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   }, [listTab]);
   const noteActivity = useCallback((n: number, d: { ts: number; items: ActivityItem[] }, looking: boolean) => {
     setActivity(d);
-    if (!n || !d.ts) return; // the agent has not read the Teams feed yet
-    const key = `actseen:${n}`;
+    const a = accountsRef.current.find((x) => x.slot === n);
+    if (!a || !d.ts) return; // account list not in yet (it comes first on the stream), or Teams feed not read yet
+    const key = seenKey(a);
     const stored = parseSeen(readStorage(key));
     const seen = stored && !looking ? stored : markActivitySeen(stored, d.items);
     if (seen !== stored) writeStorage(key, JSON.stringify(seen));
-    setSeenAct(seen);
+    setSeenAct((all) => ({ ...all, [n]: seen }));
   }, []);
 
   const selectAccount = useCallback(
@@ -130,8 +135,11 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   const applyAccounts = useCallback(
     (d: { accounts: Account[]; max: number; free: number }) => {
+      accountsRef.current = d.accounts;
       setAccounts(d.accounts);
       setLimits({ max: d.max, free: d.free });
+      // the account menu counts the notifications of every account, not only of the selected one
+      setSeenAct(loadSeen(d.accounts));
       if (d.accounts.some((a) => a.slot === accRef.current)) return;
       const saved = Number(readStorage("acc")) || 0;
       const pick = d.accounts.find((a) => a.slot === saved) ?? d.accounts[0];
@@ -293,7 +301,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   const current = accounts?.find((a) => a.slot === acc);
   const unreadChats = (chats ?? []).filter((c) => c.unread && !c.muted && !isSelf(c.name)).length;
-  const unreadActivity = unseenActivity(activity?.items ?? [], seenAct);
+  const unreadActivity = unseenActivity(activity?.items ?? [], seenAct[acc] ?? null);
+  // what waits in each account, for the account menu: the selected one counts what its tabs show
+  const unreadOf = (a: Account): Unread =>
+    a.slot === acc && !a.stopped ? { chats: unreadChats, notifications: unreadActivity } : accountUnread(a, seenAct[a.slot] ?? null);
   const canAdd = !!accounts && accounts.length < limits.max && limits.free > 0;
   const addLabel = canAdd ? "Add a Teams account" : accounts && accounts.length >= limits.max ? `At most ${limits.max} accounts` : "No free slot on this server";
   const noAccounts = !!accounts && !accounts.length;
@@ -346,6 +357,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             user={user}
             accounts={accounts}
             current={current}
+            unreadOf={unreadOf}
             canAdd={canAdd}
             addLabel={addLabel}
             adding={adding}

@@ -14,7 +14,7 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 
 | Method | Path | Answer |
 |---|---|---|
-| GET | `/api/accounts` | `{accounts: [{slot, name, email, tenant, av, teams, overall, stopped, unread, desktop}], max, free}`: accounts of the user, per-user cap, free slots on the server. A stopped account has `teams` `stopped` and `overall` `grey` |
+| GET | `/api/accounts` | `{accounts: [{slot, name, email, tenant, av, teams, overall, stopped, unread, unreadActivity, added, desktop}], max, free}`: accounts of the user, per-user cap, free slots on the server. A stopped account has `teams` `stopped` and `overall` `grey`. `unread` counts the unread chats (muted ones and the chat with yourself left out); `unreadActivity` lists the ids of the unread items of the Teams Activity feed, `null` until the agent has saved the feed once (an empty feed is not saved); `added` is when the account took its slot (Unix seconds), new for every account added on a freed slot |
 | POST | `/api/accounts` | `{ok, slot, desktop}`. Takes the first free slot for the user and starts its browser and agent (409 when no slot is free or the cap is reached, 502/503 when the browsers container does not answer) |
 | PATCH | `/api/accounts/{n}` | `{running: false}` stops browser and agent of slot N and keeps its Teams session and data, `{running: true}` starts them again; answers `{ok, running}`. While stopped: no sync, no notifications, commands answer 409. Owner, or an administrator |
 | DELETE | `/api/accounts/{n}` | `{ok}`. Stops slot N and deletes its Teams session and data. Owner, or an administrator |

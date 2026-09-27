@@ -99,4 +99,16 @@ describe("SlotReader", () => {
     expect(r.unreadCount()).toBe(1);
     r.close();
   });
+
+  it("gives the ids of the unread notifications in feed order, none before the agent read the feed", () => {
+    const ins = raw.prepare("INSERT INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,unread,ts,channel,av) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    ins.run("b", 1, "mention", "", "", "", "", "", "", 1, 0, 0, "");
+    ins.run("a", 0, "reaction", "", "", "", "", "", "", 1, 0, 0, "");
+    ins.run("c", 2, "reply", "", "", "", "", "", "", 0, 0, 0, "");
+    const r = SlotReader.open(file);
+    expect(r.unreadActivity()).toBeNull();
+    raw.prepare("INSERT INTO state(k,v) VALUES('activity_ts', ?)").run(String(Math.floor(Date.now() / 1000)));
+    expect(r.unreadActivity()).toEqual(["a", "b"]);
+    r.close();
+  });
 });

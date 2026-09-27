@@ -35,13 +35,13 @@ beforeEach(() => {
 describe("notifications caught from Teams", () => {
   it("name the chat when the title of the notification is a chat of the list", async () => {
     await drainHook(agent([{ title: "Anna Rossi", body: "are you there?" }]));
-    expect(payloads).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi" }]);
+    expect(payloads).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", tag: "chat-0-Anna Rossi" }]);
   });
 
   // in a group chat the title may be the person who wrote: a tap would open a chat that is not the one
   it("name no chat when the title is not a chat of the list", async () => {
     await drainHook(agent([{ title: "Luca Bianchi", body: "deploy is green" }]));
-    expect(payloads).toEqual([{ title: "Luca Bianchi", body: "deploy is green", chat: "" }]);
+    expect(payloads).toEqual([{ title: "Luca Bianchi", body: "deploy is green", chat: "", tag: "chat-0-Luca Bianchi" }]);
     expect(store.lastNotificationTs()).toBeGreaterThan(0);
   });
 

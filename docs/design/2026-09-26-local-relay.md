@@ -44,7 +44,7 @@ The session lives in the profile as in a browser used every day. Whether it surv
 
 ## Notifications
 
-Web Push with the VAPID keys of `app/state/vapid` (same generator as the server). The relay sends; the push service of the phone's browser (Google, Apple, Mozilla, Microsoft) delivers. Nothing connects to the relay for it. TTL one hour; urgency `high` for messages and alerts, `normal` for a check that passed (a phone on low battery asks its push service for `high` only, RFC 8030 section 5.3). A push names the chat of the message, and the service worker opens the app on it; a notification caught from Teams names a chat only when its title is a chat of the list.
+Web Push with the VAPID keys of `app/state/vapid` (same generator as the server). The relay sends; the push service of the phone's browser (Google, Apple, Mozilla, Microsoft) delivers. Nothing connects to the relay for it. TTL 24 hours; urgency `high` for messages and alerts, `normal` for a check that passed (a phone on low battery asks its push service for `high` only, RFC 8030 section 5.3); a push the push service could not take is sent again after 5, 30 and 120 s, as on the server. A push names the chat of the message, and the service worker opens the app on it and keeps one notification per chat with its last lines; a notification caught from Teams names a chat only when its title is a chat of the list.
 
 Alerts about the relay itself: Teams signed out for a minute (a redirect through the sign-in page stays silent) and back; the browser not starting for 5 minutes, and back; the automatic check twice a day. ntfy stays available as a second channel.
 

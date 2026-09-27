@@ -121,6 +121,13 @@ export class SlotReader {
     return r?.c ?? 0;
   }
 
+  // Ids of the items Teams shows bold in the Activity feed, in feed order; null until the agent has saved the feed once
+  // (it saves none while the feed is empty)
+  unreadActivity(): string[] | null {
+    if (!Number(this.state(STATE.activityTs, 0))) return null;
+    return this.all<{ id: string }>("SELECT id FROM activity WHERE unread=1 ORDER BY pos").map((r) => r.id);
+  }
+
   health(added: number): Health {
     return healthOf(this.state(STATE.health, {}), added);
   }

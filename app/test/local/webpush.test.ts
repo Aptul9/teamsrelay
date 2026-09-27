@@ -32,12 +32,12 @@ afterEach(() => fake.close());
 const notifier = () => new Notifier({ store, devices, vapid, subject: "mailto:relay@example.com", ntfy: null, send: fake.send });
 
 describe("Web Push as the push service receives it", () => {
-  it("is encrypted for the device, signed with the relay's key for that service, kept an hour, urgent", async () => {
+  it("is encrypted for the device, signed with the relay's key for that service, kept a day, urgent", async () => {
     await notifier().message("Anna Rossi", "are you there?", "Anna Rossi");
     expect(fake.received).toHaveLength(1);
     const [r] = fake.received;
-    expect(r.payload).toEqual({ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi" });
-    expect(r.ttl).toBe("3600");
+    expect(r.payload).toEqual({ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", tag: "chat-0-Anna Rossi" });
+    expect(r.ttl).toBe("86400");
     // a phone on low battery takes only high from its push service
     expect(r.urgency).toBe("high");
     expect(r.vapid).toMatchObject({ aud: "https://push.test", sub: "mailto:relay@example.com", k: vapid.publicKey });

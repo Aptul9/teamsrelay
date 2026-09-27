@@ -89,7 +89,7 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 | `identity` | signed-in account found or changed |
 | `open`, `send`, `reply`, `react`, `pill`, `edit`, `delete`, `readby` | an action that did not apply on Teams, and why |
 | `chats`, `messages`, `activity`, `media`, `download`, `health` | reads that failed |
-| `push`, `ntfy`, `appdb` | notification delivery and `app.db` errors |
+| `push`, `ntfy`, `appdb` | notification delivery and `app.db` errors; a failed push names its `status`, `attempt` and the `retry` wait in seconds (`none` when it is not sent again) |
 | `job`, `loop`, `cmd` | a step or a command that threw, with its name; `cmd` also counts the commands that waited too long and were not run, and those a stopped agent left running (unconfirmed) |
 
 ## Troubleshooting

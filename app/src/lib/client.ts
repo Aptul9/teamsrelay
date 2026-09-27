@@ -12,6 +12,8 @@ export type Account = {
   overall: string;
   stopped: boolean;
   unread: number;
+  unreadActivity: string[] | null;
+  added: number;
   desktop: string;
 };
 export type { ActivityItem, Chat, Message, Reaction } from "@/shared/slot-db/rows";
@@ -110,9 +112,24 @@ export const isSelf = (name: string) => /\(you\)/i.test(name || "");
 // Teams keeps an activity bold until it is clicked in Teams itself, while its Activity badge counts only
 // what arrived after the feed was last opened. The tab badge does the same with the ids already seen here.
 export function unseenActivity(items: ActivityItem[], seen: string[] | null): number {
+  return unseenIds(items.filter((a) => a.unread).map((a) => a.id), seen);
+}
+
+// Same count from the ids of the unread items, as /api/accounts gives them for every account
+export function unseenIds(unread: string[], seen: string[] | null): number {
   if (!seen) return 0;
   const known = new Set(seen);
-  return items.filter((a) => a.unread && !known.has(a.id)).length;
+  return unread.filter((id) => !known.has(id)).length;
+}
+
+export type Unread = { chats: number; notifications: number };
+
+// What waits in an account the app does not show: unread chats and the notifications this device has not shown yet,
+// the numbers its Chats and Notifications tabs would have. A stopped account reads nothing new from Teams and would
+// keep its last numbers until started again: it counts nothing.
+export function accountUnread(a: Account, seen: string[] | null): Unread {
+  if (a.stopped) return { chats: 0, notifications: 0 };
+  return { chats: a.unread, notifications: unseenIds(a.unreadActivity ?? [], seen) };
 }
 
 export function markActivitySeen(seen: string[] | null, items: ActivityItem[]): string[] {
@@ -128,6 +145,25 @@ export function parseSeen(raw: string | null): string[] | null {
   } catch {
     return null;
   }
+}
+
+// Per slot and per time the slot was taken: an account added on a freed slot does not get the list of the removed one
+export const seenKey = (a: Pick<Account, "slot" | "added">) => `actseen:${a.slot}:${a.added}`;
+
+// Notification ids already seen on this device, per slot. An account met here for the first time takes the unread
+// ones it has now as seen, like the first feed of the selected account: only what comes later counts. Nothing is
+// stored for an account whose feed the agent has not saved yet.
+export function loadSeen(accounts: Account[]): Record<number, string[]> {
+  const seen: Record<number, string[]> = {};
+  for (const a of accounts) {
+    const stored = parseSeen(readStorage(seenKey(a)));
+    if (stored) seen[a.slot] = stored;
+    else if (a.unreadActivity) {
+      seen[a.slot] = a.unreadActivity;
+      writeStorage(seenKey(a), JSON.stringify(a.unreadActivity));
+    }
+  }
+  return seen;
 }
 
 export function initials(s: string): string {

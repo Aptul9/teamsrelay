@@ -2,7 +2,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { beforeEach, describe, expect, it } from "vitest";
+import webpush from "web-push";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigError } from "@/agent/config";
 import { PUSH_TTL } from "@/agent/logic/notify";
 import { Notifier } from "@/agent/push/notifier";
@@ -12,6 +13,7 @@ import { SlotStore } from "@/agent/store/slot-store";
 import { migrateAppSchema, openAppDb } from "@/lib/appdb";
 import { STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
+import { fakePushService } from "./fake-push";
 
 const GEN = path.resolve(__dirname, "../../scripts/gen-vapid.mjs");
 
@@ -48,9 +50,25 @@ describe("VAPID keys", () => {
   });
 });
 
+// app.db with slots 1 (u1) and 2 (u2) and the given devices, as endpoint and subscription JSON
+function seedAppDb(devices: [string, string, string][]) {
+  const file = path.join(tempDir(), "app.db");
+  const db = openAppDb(file);
+  migrateAppSchema(db);
+  db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(1, 'u1', 0), (2, 'u2', 0)").run();
+  const add = db.prepare("INSERT INTO push_subscriptions VALUES(?, ?, ?, 0)");
+  for (const [endpoint, user, sub] of devices) add.run(endpoint, user, sub);
+  db.close();
+  return file;
+}
+
 describe("notifier", () => {
   type Sent = { endpoint: string; payload: unknown; ttl: unknown; urgency: unknown };
+  type Failure = { statusCode?: number; headers?: Record<string, string>; code?: string; message?: string };
   let sent: Sent[];
+  // what the push service answers to the next sends to the phone, in order; then it takes them
+  let failures: Failure[];
+  let retries: { ms: number; run: () => void }[];
   let store: SlotStore;
   let appDbFile: string;
   const vapid: VapidKeys = { publicKey: "BPublic", privateKey: "private" };
@@ -58,20 +76,14 @@ describe("notifier", () => {
 
   beforeEach(() => {
     sent = [];
+    failures = [];
+    retries = [];
     store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
-    appDbFile = path.join(tempDir(), "app.db");
-    const db = openAppDb(appDbFile);
-    migrateAppSchema(db);
-    db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(1, 'u1', 0), (2, 'u2', 0)").run();
-    db.prepare("INSERT INTO push_subscriptions VALUES(?, 'u1', ?, 0), (?, 'u1', ?, 0), (?, 'u2', ?, 0)").run(
-      "https://push/u1-phone",
-      sub("https://push/u1-phone"),
-      "https://push/u1-gone",
-      sub("https://push/u1-gone"),
-      "https://push/u2-phone",
-      sub("https://push/u2-phone"),
-    );
-    db.close();
+    appDbFile = seedAppDb([
+      ["https://push/u1-phone", "u1", sub("https://push/u1-phone")],
+      ["https://push/u1-gone", "u1", sub("https://push/u1-gone")],
+      ["https://push/u2-phone", "u2", sub("https://push/u2-phone")],
+    ]);
   });
 
   const notifier = (clock = () => 1_000_000) =>
@@ -82,16 +94,26 @@ describe("notifier", () => {
       subject: "mailto:admin@example.com",
       ntfy: null,
       clock,
+      later: (ms, run) => retries.push({ ms, run }),
       send: async (s, payload, options) => {
         if (s.endpoint.endsWith("gone")) throw Object.assign(new Error("Gone"), { statusCode: 410 });
+        const failure = failures.shift();
+        if (failure) throw Object.assign(new Error("Received unexpected response code"), failure);
         sent.push({ endpoint: s.endpoint, payload: JSON.parse(payload), ttl: options.TTL, urgency: options.urgency });
       },
     });
 
-  it("pushes to the devices of the owner with a TTL of one hour and forgets the gone ones", async () => {
+  // runs the first retry waiting, as its timer would, and lets it finish
+  const retryNow = async () => {
+    retries.shift()?.run();
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  it("pushes to the devices of the owner, urgent, kept a day, and forgets the gone ones", async () => {
     expect(await notifier().push("Anna Rossi", "ciao")).toBe(1);
     expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "ciao", chat: "", acc: 1 }, ttl: PUSH_TTL, urgency: "high" }]);
-    expect(PUSH_TTL).toBe(3600);
+    expect(PUSH_TTL).toBe(86_400);
+    expect(retries).toEqual([]);
     const db = new Database(appDbFile, { readonly: true });
     expect(db.prepare("SELECT endpoint FROM push_subscriptions ORDER BY endpoint").pluck().all()).toEqual(["https://push/u1-phone", "https://push/u2-phone"]);
     db.close();
@@ -106,13 +128,25 @@ describe("notifier", () => {
     expect(sent[0].payload).toEqual({ title: "Anna Rossi · Contoso", body: "ciao", chat: "", acc: 1 });
   });
 
+  it("tags a message with its chat, so the device keeps one notification per chat", async () => {
+    await notifier().message("Anna Rossi", "are you there?", "Anna Rossi");
+    expect(sent).toEqual([
+      { endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" }, ttl: PUSH_TTL, urgency: "high" },
+    ]);
+  });
+
+  it("gives alerts a notification of their own", async () => {
+    await notifier().alert("Teams signed out", "Sign in again");
+    expect(sent[0].payload).toEqual({ title: "Teams signed out", body: "Sign in again", chat: "", acc: 1 });
+  });
+
   it("names the chat of a new message and records it once within 150 s", async () => {
     let now = 1_000_000;
     const n = notifier(() => now);
     await n.message("Anna Rossi", "are you there?", "Anna Rossi");
     now += 60_000;
     await n.message("Anna Rossi", "Are you there?", "Anna Rossi");
-    expect(sent.map((s) => s.payload)).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1 }]);
+    expect(sent.map((s) => s.payload)).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" }]);
     expect(store.lastNotificationTs()).toBeGreaterThan(0);
   });
 
@@ -132,8 +166,113 @@ describe("notifier", () => {
     expect(db.prepare("SELECT title FROM messages").pluck().all()).toEqual(["Anna Rossi"]);
   });
 
+  it("tries a push again when the push service fails or does not answer", async () => {
+    failures.push({ statusCode: 503 }, { code: "ECONNRESET", message: "read ECONNRESET" }, { message: "Socket timeout" });
+    expect(await notifier().push("Anna Rossi", "ciao")).toBe(0);
+    expect(retries.map((r) => r.ms)).toEqual([5000]);
+    await retryNow();
+    expect(retries.map((r) => r.ms)).toEqual([30_000]);
+    await retryNow();
+    expect(retries.map((r) => r.ms)).toEqual([120_000]);
+    await retryNow();
+    expect(sent).toEqual([{ endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "ciao", chat: "", acc: 1 }, ttl: PUSH_TTL, urgency: "high" }]);
+    expect(retries).toEqual([]);
+  });
+
+  it("does not try again a push web-push refused before sending", async () => {
+    failures.push({ message: "You must pass in a subscription with at least an endpoint." });
+    expect(await notifier().push("Anna Rossi", "ciao")).toBe(0);
+    expect(retries).toEqual([]);
+  });
+
+  it("drops a retry when the device is no longer the owner's", async () => {
+    failures.push({ statusCode: 503 }, { statusCode: 503 });
+    await notifier().push("Anna Rossi", "ciao");
+    const db = new Database(appDbFile);
+    db.prepare("UPDATE push_subscriptions SET user_id='u2' WHERE endpoint='https://push/u1-phone'").run();
+    db.close();
+    await retryNow();
+    // the second answer is still waiting: nothing reached the push service
+    expect(failures).toHaveLength(1);
+    expect(sent).toEqual([]);
+    expect(retries).toEqual([]);
+  });
+
+  it("waits as long as a 429 asks, within 15 minutes", async () => {
+    failures.push({ statusCode: 429, headers: { "retry-after": "42" } }, { statusCode: 429, headers: { "retry-after": "86400" } });
+    await notifier().push("Anna Rossi", "ciao");
+    expect(retries.map((r) => r.ms)).toEqual([42_000]);
+    await retryNow();
+    expect(retries.map((r) => r.ms)).toEqual([900_000]);
+  });
+
+  it("gives up after three retries", async () => {
+    failures.push({ statusCode: 500 }, { statusCode: 502 }, { statusCode: 503 }, { statusCode: 504 });
+    await notifier().push("Anna Rossi", "ciao");
+    const waits: number[] = [];
+    while (retries.length) {
+      waits.push(retries[0].ms);
+      await retryNow();
+    }
+    expect(waits).toEqual([5000, 30_000, 120_000]);
+    expect(failures).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it.each([400, 401, 403, 413])("does not try again a push refused with %i", async (statusCode) => {
+    failures.push({ statusCode });
+    expect(await notifier().push("Anna Rossi", "ciao")).toBe(0);
+    expect(retries).toEqual([]);
+  });
+
   it("sends nothing without keys", async () => {
     const n = new Notifier({ store, devices: new AppStore(appDbFile, 1), vapid: null, subject: "mailto:a@b.c", ntfy: null });
     expect(await n.push("x", "y")).toBe(0);
+  });
+});
+
+describe("notifier through web-push to a push service", () => {
+  let service: Awaited<ReturnType<typeof fakePushService>>;
+  let store: SlotStore;
+  let appDbFile: string;
+  const keys = webpush.generateVAPIDKeys();
+
+  beforeEach(async () => {
+    service = await fakePushService();
+    store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
+    const device = service.subscription();
+    appDbFile = seedAppDb([[device.endpoint, "u1", JSON.stringify(device)]]);
+  });
+
+  afterEach(() => service.close());
+
+  const notifier = (later?: (ms: number, run: () => void) => void) =>
+    new Notifier({ store, devices: new AppStore(appDbFile, 1), vapid: keys, subject: "mailto:admin@example.com", ntfy: null, send: service.send, later });
+
+  it("sends a message urgent, kept a day, without a topic, readable by the device only", async () => {
+    await notifier().message("Anna Rossi", "ciao", "Anna Rossi");
+    expect(service.received).toEqual([
+      {
+        payload: { title: "Anna Rossi", body: "ciao", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" },
+        ttl: "86400",
+        urgency: "high",
+        topic: undefined,
+        vapid: expect.objectContaining({ sub: "mailto:admin@example.com", k: keys.publicKey }),
+      },
+    ]);
+  });
+
+  it("sends again after the Retry-After of a 429 and after a 503", async () => {
+    const retries: { ms: number; run: () => void }[] = [];
+    service.answer(429, { "Retry-After": "7" });
+    service.answer(503);
+    const n = notifier((ms, run) => retries.push({ ms, run }));
+    expect(await n.push("TeamsRelay", "Teams session expired")).toBe(0);
+    retries[0].run();
+    await vi.waitFor(() => expect(retries).toHaveLength(2));
+    retries[1].run();
+    await vi.waitFor(() => expect(service.received).toHaveLength(3));
+    expect(retries.map((r) => r.ms)).toEqual([7000, 30_000]);
+    expect(service.received.map((r) => r.payload)).toEqual(Array(3).fill({ title: "TeamsRelay", body: "Teams session expired", chat: "", acc: 1 }));
   });
 });
