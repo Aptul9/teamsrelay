@@ -55,8 +55,8 @@ const syncs: Record<string, unknown>[] = [];
 const syncsOf = new Map<string, Record<string, unknown>[]>();
 // notifications as the server took them, in that order
 const pushed: PushBody[] = [];
-// pictures a sync named while the server did not have them yet
-const unseen: string[] = [];
+// pictures a sync named while the server did not have them yet, by slot
+const unseen: { slot: number; file: string }[] = [];
 const refused: number[] = [];
 
 const bearerOf = (req: http.IncomingMessage) => /^Bearer (\S+)$/.exec(req.headers.authorization ?? "")?.[1] ?? "";
@@ -68,7 +68,7 @@ function taken(req: http.IncomingMessage, b: Record<string, unknown>) {
   syncsOf.set(bearer, [...(syncsOf.get(bearer) ?? []), b]);
   const account = relayAccount(appDb(), relayDigest(bearer));
   for (const c of (b.chats as { av?: string }[] | undefined) ?? []) {
-    if (account && c.av && !fs.existsSync(path.join(dataDir, String(account.slot), "media", c.av))) unseen.push(c.av);
+    if (account && c.av && !fs.existsSync(path.join(dataDir, String(account.slot), "media", c.av))) unseen.push({ slot: account.slot, file: c.av });
   }
 }
 
@@ -304,8 +304,8 @@ describe("relay joined to a server", () => {
 
   it("leaves out an image the server refuses, and goes on syncing", async () => {
     fs.writeFileSync(path.join(relayDir, "media", "fedcba9876543210.png"), "not an image");
+    store.saveChats([{ name: "Luca Bianchi", preview: "ok", time: "13:00", unread: false, mention: false, muted: false, av: "fedcba9876543210.png" }]);
     await until("the refusal", () => refused.includes(415));
-    store.saveChats([{ name: "Luca Bianchi", preview: "ok", time: "13:00", unread: false, mention: false, muted: false, av: "" }]);
     await until("the chat list after it", () => withSlot(slot, (r) => r.chats().some((c) => c.name === "Luca Bianchi")));
     expect(fs.existsSync(path.join(dataDir, String(slot), "media", "fedcba9876543210.png"))).toBe(false);
   });
@@ -436,7 +436,7 @@ describe("the pictures a chat shows", () => {
     j.start();
     await until("the new chat on the server", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Carla Verdi")));
     expect(wrote).toBe(true);
-    expect(unseen).toEqual([]);
+    expect(unseen.filter((u) => u.slot === j.slot)).toEqual([]);
     await j.stop();
   });
 });
@@ -485,7 +485,7 @@ describe("a sync whose files take a while", () => {
     const j = await join("owner-flaky", { fetch: flaky }, (r) => {
       fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
       fs.writeFileSync(path.join(r.dir, "media", "efefefefefefefef.png"), PNG);
-      r.store.saveChats([{ name: "Luca Bianchi", preview: "ok", time: "", unread: false, mention: false, muted: false, av: "" }]);
+      r.store.saveChats([{ name: "Luca Bianchi", preview: "ok", time: "", unread: false, mention: false, muted: false, av: "efefefefefefefef.png" }]);
     });
     j.start();
     await until("the chats on the server", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Luca Bianchi")));
@@ -493,6 +493,42 @@ describe("a sync whose files take a while", () => {
     expect(fs.existsSync(onServer)).toBe(false);
     failing = false;
     await until("the picture at last", () => fs.existsSync(onServer));
+    await j.stop();
+  });
+});
+
+describe("what a relay sends when it joins", () => {
+  it("only the files its rows name: the rest of its folders stays on its computer", async () => {
+    const j = await join("owner-named", {}, (r) => {
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      fs.mkdirSync(path.join(r.dir, "files"), { recursive: true });
+      for (const f of ["a1a1a1a1a1a1a1a1.png", "b2b2b2b2b2b2b2b2.png", "c3c3c3c3c3c3c3c3.png"]) fs.writeFileSync(path.join(r.dir, "media", f), PNG);
+      fs.writeFileSync(path.join(r.dir, "files", "d4d4d4d4d4d4d4d4.pdf"), "%PDF-1.7");
+      r.store.saveChats([{ name: "Anna Rossi", preview: "ciao", time: "12:19", unread: false, mention: false, muted: false, av: "a1a1a1a1a1a1a1a1.png" }]);
+    });
+    j.start();
+    await until("the chat on the server", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Anna Rossi")));
+    await sleep(1500);
+    const on = (kind: string) => (fs.existsSync(path.join(dataDir, String(j.slot), kind)) ? fs.readdirSync(path.join(dataDir, String(j.slot), kind)) : []);
+    expect({ media: on("media"), files: on("files") }).toEqual({ media: ["a1a1a1a1a1a1a1a1.png"], files: [] });
+    await j.stop();
+  });
+
+  it("only the messages of the chats in its list, with their pictures", async () => {
+    const j = await join("owner-listed", {}, (r) => {
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      for (const f of ["e5e5e5e5e5e5e5e5.png", "f6f6f6f6f6f6f6f6.png"]) fs.writeFileSync(path.join(r.dir, "media", f), PNG);
+      r.store.saveChats([{ name: "Anna Rossi", preview: "look", time: "12:19", unread: false, mention: false, muted: false, av: "" }]);
+      const image = (f: string) => ({ images: [{ f, w: 10, h: 10 }] });
+      r.store.saveChatMessages("Anna Rossi", [{ mid: "1790431664072", author: "Anna Rossi", text: "look", mine: false, reacts: "", extra: image("e5e5e5e5e5e5e5e5.png") }]);
+      // opened months ago, long gone from the list
+      r.store.saveChatMessages("Old project", [{ mid: "1780000000000", author: "Luca Bianchi", text: "old", mine: false, reacts: "", extra: image("f6f6f6f6f6f6f6f6.png") }]);
+    });
+    j.start();
+    await until("the messages on the server", () => withSlot(j.slot, (r) => r.messages("Anna Rossi").length === 1));
+    await sleep(1500);
+    expect(onServerAt(j.slot, (db) => db.prepare("SELECT DISTINCT chat FROM chat_messages").pluck().all())).toEqual(["Anna Rossi"]);
+    expect(fs.readdirSync(path.join(dataDir, String(j.slot), "media"))).toEqual(["e5e5e5e5e5e5e5e5.png"]);
     await j.stop();
   });
 });

@@ -26,9 +26,9 @@ import {
   type ServerCommand,
   type SyncBody,
 } from "@/shared/relay-sync";
-import { ImageArgs, parseArgs, UPLOAD_NAME, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
-import { FILE_NAME, MEDIA_NAME } from "@/shared/slot-db/rows";
-import { cmdResultKey, parseState, STATE, Viewing } from "@/shared/slot-db/state";
+import { DownloadResult, ImageArgs, parseArgs, UPLOAD_NAME, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
+import { FILE_NAME, MEDIA_NAME, type MessageExtra } from "@/shared/slot-db/rows";
+import { cmdResultKey, Identity, parseState, STATE, Viewing } from "@/shared/slot-db/state";
 
 // The relay of an account on another computer, joined to a TeamsRelay server (docs/design/2026-09-27-relay-joins-
 // server.md): relay.db mirrored into data/N/messages.db of the server, the commands the app queues there run here,
@@ -75,6 +75,10 @@ type Sent = {
   commands: Map<number, string>;
 };
 const nothingSent = (): Sent => ({ chats: "", activity: "", calls: "", messages: new Map(), state: new Map(), readby: new Map(), commands: new Map() });
+
+// Names of files of the media and files folders, as a sync names them
+type Named = { media: Set<string>; files: Set<string> };
+const nothingNamed = (): Named => ({ media: new Set(), files: new Set() });
 
 // Room left in one sync for one part: so many rows or keys, and about so many bytes of JSON; the first always fits
 class Room {
@@ -133,8 +137,9 @@ export class ServerLink {
   private readonly errors = new Map<string, string>();
   // rows the server would refuse, logged once each
   private readonly leftOut = new Set<string>();
-  // files that did not go for a failure of the server or of the network, logged once each until they go
-  private readonly failed = new Set<string>();
+  // files a sync named that did not go for a failure of the server or of the network: they go at the next sync, logged
+  // once each
+  private readonly retry = nothingNamed();
   // notifications, one after the other in the order they came
   private pushes: Promise<unknown> = Promise.resolve();
   // the stop of the relay: every request ends with it
@@ -202,14 +207,14 @@ export class ServerLink {
     return r;
   }
 
-  // One sync: what changed in relay.db is read first, then the files go, then the rows. The agent writes a file before
-  // the row that names it (src/agent/media.ts), so the files the rows name are on the server before the rows. The
-  // health and the call are read last, as they are when the rows go. True when part of what changed is left for the
-  // next sync.
+  // One sync: what changed in relay.db is read first, then the files those rows name go, then the rows. The agent writes
+  // a file before the row that names it (src/agent/media.ts), so the files the rows name are on the server before the
+  // rows; no other file of the folders goes. The health and the call are read last, as they are when the rows go. True
+  // when part of what changed is left for the next sync.
   async syncOnce(): Promise<boolean> {
     const version = this.db.pragma("data_version", { simple: true }) as number;
     const changes = version === this.version ? null : this.changes();
-    await this.uploadFiles();
+    await this.uploadFiles(changes?.named ?? nothingNamed());
     if (!changes) return false;
     const { body, complete, commit } = changes;
     const live = this.live();
@@ -233,8 +238,13 @@ export class ServerLink {
     return false;
   }
 
-  private changes(): { body: Omit<SyncBody, "now">; complete: boolean; commit: () => void } {
+  private changes(): { body: Omit<SyncBody, "now">; named: Named; complete: boolean; commit: () => void } {
     const body: Omit<SyncBody, "now"> = { host: this.o.host.slice(0, HOST_LENGTH) };
+    // the files the rows of this sync name: those go to the server before the rows, and no other
+    const named = nothingNamed();
+    const picture = (name: string | null | undefined) => {
+      if (name) named.media.add(name);
+    };
     const next: Partial<Omit<Sent, "messages" | "state" | "readby" | "commands">> = {};
     const all = <T>(sql: string, ...args: unknown[]) => this.db.prepare(sql).all(...args) as T[];
     let complete = true;
@@ -246,10 +256,15 @@ export class ServerLink {
     if (chatsDigest !== this.sent.chats) {
       body.chats = chats;
       next.chats = chatsDigest;
+      for (const c of chats) picture(c.av);
     }
 
+    // the messages of the chats the app lists, and only those: what is kept of a chat that left the list shows nowhere,
+    // and a chat that leaves it has its rows removed there
+    const listed = new Set(chats.map((c) => c.name));
     const byChat = new Map<string, MessageRow[]>();
     for (const { chat, ...m } of all<MessageRow & { chat: string }>("SELECT chat, idx, mid, author, text, mine, reacts, extra FROM chat_messages ORDER BY chat, idx")) {
+      if (!listed.has(chat)) continue;
       const rows = byChat.get(chat);
       if (rows) rows.push(m);
       else byChat.set(chat, [m]);
@@ -269,6 +284,16 @@ export class ServerLink {
       }
       messages[chat] = fitting;
       messageDigests.set(chat, d);
+      for (const m of fitting) {
+        let extra: MessageExtra | null = null;
+        try {
+          extra = m.extra ? (JSON.parse(m.extra) as MessageExtra) : null;
+        } catch {
+          // not JSON: it names nothing
+        }
+        for (const im of extra?.images ?? []) picture(im.f);
+        picture(extra?.av);
+      }
     }
     for (const chat of this.sent.messages.keys()) {
       if (byChat.has(chat)) continue;
@@ -329,6 +354,13 @@ export class ServerLink {
     }
     if (viewing) stateOut[STATE.viewing] = viewing.raw;
     if (Object.keys(stateOut).length) body.state = stateOut;
+    for (const [k, v] of Object.entries(stateOut)) {
+      if (k === STATE.me) picture(parseState(Identity, v, Identity.parse({})).av);
+      else if (/^cmd_result:\d+$/.test(k)) {
+        const f = parseState(DownloadResult, v, null)?.f;
+        if (f) named.files.add(f);
+      }
+    }
 
     const activity = all<ActivityRow>("SELECT id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av FROM activity ORDER BY pos")
       .filter((a) => this.fits(ActivityRow, a, `activity ${a.id}`))
@@ -337,6 +369,7 @@ export class ServerLink {
     if (activityDigest !== this.sent.activity) {
       body.activity = activity;
       next.activity = activityDigest;
+      for (const a of activity) picture(a.av);
     }
     const calls = all<CallRow>("SELECT since, caller, seconds FROM calls ORDER BY id")
       .filter((c) => this.fits(CallRow, c, `call ${c.since}`))
@@ -386,7 +419,7 @@ export class ServerLink {
       for (const c of statuses) this.sent.commands.set(c.id, c.status);
       if (viewing) this.viewingTs = Math.max(this.viewingTs, viewing.ts);
     };
-    return { body, complete, commit };
+    return { body, named, complete, commit };
   }
 
   // The health and the call as they are now, when they changed since the server took them
@@ -435,45 +468,41 @@ export class ServerLink {
     return out;
   }
 
-  // New images and attachments: the server says which it lacks, those go up one by one. Names are written once each
-  // (src/agent/media.ts), so a name the server has is the same file. A file the server refuses (not the image its name
-  // says, too large, no room left for the account) is left out, logged: it must not hold up the sync of everything else.
-  private async uploadFiles() {
-    const fresh = { media: this.fresh("media", this.o.mediaDir, MEDIA_NAME), files: this.fresh("files", this.o.filesDir, FILE_NAME) };
-    if (!fresh.media.length && !fresh.files.length) return;
-    const missing = (await (await this.call("POST", "/api/relay/have", { json: fresh satisfies HaveBody })).json()) as HaveBody;
+  // The files a sync names, and those that failed before: the server says which it lacks, those go up one by one.
+  // Names are written once each (src/agent/media.ts), so a name the server has is the same file. A file the server
+  // refuses (not the image its name says, too large, no room left for the account) is left out, logged; one that fails
+  // for the server or the network goes again at the next sync. Neither holds up the sync of everything else.
+  private async uploadFiles(named: Named) {
+    const dirOf = { media: this.o.mediaDir, files: this.o.filesDir };
+    const pattern = { media: MEDIA_NAME, files: FILE_NAME };
+    const want: HaveBody = { media: [], files: [] };
+    for (const kind of ["media", "files"] as const) {
+      for (const name of new Set([...named[kind], ...this.retry[kind]])) {
+        if (pattern[kind].test(name) && !this.uploaded[kind].has(name) && fs.existsSync(path.join(dirOf[kind], name))) want[kind].push(name);
+      }
+    }
+    if (!want.media.length && !want.files.length) return;
+    const missing = (await (await this.call("POST", "/api/relay/have", { json: want })).json()) as HaveBody;
     for (const kind of ["media", "files"] as const) {
       const need = new Set(missing[kind]);
-      const dir = kind === "media" ? this.o.mediaDir : this.o.filesDir;
-      for (const name of fresh[kind]) {
+      for (const name of want[kind]) {
         if (need.has(name)) {
           try {
-            await this.call("PUT", `/api/relay/${kind}/${name}`, { body: new Uint8Array(fs.readFileSync(path.join(dir, name))), timeout: 300_000 });
-            this.failed.delete(`${kind}/${name}`);
+            await this.call("PUT", `/api/relay/${kind}/${name}`, { body: new Uint8Array(fs.readFileSync(path.join(dirOf[kind], name))), timeout: 300_000 });
           } catch (e) {
             if (this.signal?.aborted || (e instanceof ServerError && e.status === 401)) throw e;
             if (!(e instanceof ServerError) || e.status >= 500) {
-              // the server or the network failed on this one: it goes again at the next sync, the rest goes on
-              if (!this.failed.has(`${kind}/${name}`)) log.warn("server", `${kind} file not sent: ${errorText(e)}`, { file: name });
-              this.failed.add(`${kind}/${name}`);
+              if (!this.retry[kind].has(name)) log.warn("server", `${kind} file not sent: ${errorText(e)}`, { file: name });
+              this.retry[kind].add(name);
               continue;
             }
             log.warn("server", `${kind} file refused: ${e.message}`, { file: name });
           }
         }
+        this.retry[kind].delete(name);
         this.uploaded[kind].add(name);
       }
     }
-  }
-
-  private fresh(kind: "media" | "files", dir: string, name: RegExp): string[] {
-    let names: string[];
-    try {
-      names = fs.readdirSync(dir);
-    } catch {
-      return [];
-    }
-    return names.filter((n) => name.test(n) && !this.uploaded[kind].has(n)).slice(0, 500);
   }
 
   // The clock of the server against the one of this computer, from the Date of an answer: the times of the commands
