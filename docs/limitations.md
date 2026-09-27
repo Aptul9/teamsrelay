@@ -15,7 +15,7 @@
 | Language | Teams web must stay in English: some texts read by the agent (message status, feed titles, expired session) are English. |
 | Teams interface | When Microsoft changes the [selectors](teams-selectors.md), the affected functions stop working until they are updated. |
 | Same display name | Chats are identified by the name shown in the list. With two chats of identical name, only the first one in the list is reachable. |
-| Group chats named "Name, +2" | Teams lists an unnamed group chat as its first members plus a count, and titles it with the full names once open: the agent does not recognize the title and the chat does not open from the app. |
+| Activity feed items | Reactions, mentions in channels, missed calls and the other Activity items show in the Notifications tab and in the unread counts of the account menu. The agent pushes chat messages; an Activity item reaches the phone only when Teams itself shows a notification for it. |
 | Offline phones | The push service keeps a notification for 24 hours; a device offline longer misses it (the chat list still shows the message). Back online, the phone shows one notification per chat with its last five messages. |
 | Delivery | The push service confirms that it took a push, not that the device showed it. TeamsRelay sends again only what the push service refused for now (429, 5xx) or did not answer. |
 | Bots without preview | New message detection relies on the preview: bots that show none can be missed. |
@@ -23,6 +23,7 @@
 | Tagging people | `@` in the app tags the people Teams lists for that chat (in a group chat its members, you excluded; in the self chat nobody), in a new message only: not in a reply, an edit or the caption of an image. The list of members is read from Teams on the first `@` of a chat and again after an hour. |
 | AI clients (MCP) | Read only, one token acting as the administrator of `.env`, no OAuth: clients that connect only through OAuth (claude.ai connectors) cannot use it. `read_chat` gives the messages saved the last time the chat was open; `refresh_chat` opens it in Teams, which marks it read. Details: [mcp.md](mcp.md). |
 | iPhone | Push notifications reach only the app installed on the Home Screen. |
+| Android app | The Tauri app (`mobile/`) shows the web app in a WebView, which has no Web Push: it receives no notifications. They reach the web app installed from Chrome. Push in the app through Firebase is designed ([android-client](design/2026-09-26-android-client.md)) and deferred. |
 | One owner | Every Teams account of a server belongs to one person: all of them show their browser window on the one remote desktop. `SLOT_COUNT` caps their number (default 4). |
 | One container | The browsers of every account run in one container: a new browsers image (Chromium update, agent release) restarts every account. |
 | Local relay: one account, text | The local relay serves one Teams account: chats, text from the phone, reply, reactions, edit, delete. No Activity feed, "Read by", @mentions, images to send or downloads. |
