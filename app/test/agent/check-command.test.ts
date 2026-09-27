@@ -134,10 +134,12 @@ describe("check command", () => {
     expect(missed).toHaveLength(1);
   });
 
-  it("keeps every missed call and every item of the feed it read in check_seen", async () => {
+  it("keeps the missed calls and the unread items of the recent reads in check_seen", async () => {
     feedWithCalls([["c2", false, "Luca Bianchi", "1:15 PM"], ["a1", true], ["c1", true, "Anna Rossi", "9:02 AM"]]);
     await check(agent(), cmd);
-    expect(JSON.parse(store.getState(STATE.checkSeen))).toMatchObject({ calls: ["c2", "c1"], feed: ["c2", "a1", "c1"], read: true });
+    feedWithCalls([["a2", true]]);
+    await check(agent(), cmd);
+    expect(JSON.parse(store.getState(STATE.checkSeen))).toMatchObject({ calls: ["c2", "c1"], activity: ["a2", "a1", "c1"], read: true });
   });
 
   it("pushes no older missed call a shorter read of the feed had left out", async () => {
@@ -151,10 +153,34 @@ describe("check command", () => {
     expect(missed).toEqual([]);
   });
 
-  it("pushes no older missed call the first read, a shorter one, left out", async () => {
+  it("pushes an older missed call that only a longer read shows, as new: feed items carry no time", async () => {
     store.saveActivity(feedTop(30));
     await check(agent(), cmd);
     store.saveActivity(feedTop(40, { 35: missedCall("c-old", "Anna Rossi", "8/29") }));
+    await check(agent(), cmd);
+    expect(missed).toEqual([["Anna Rossi", "8/29"]]);
+  });
+
+  it("counts an item that is unread again after a read as a new notification", async () => {
+    store.saveActivity(feedTop(5));
+    await check(agent(), cmd);
+    store.saveActivity([mention("m3", true), ...feedTop(5).filter((e) => e.id !== "m3")]);
+    await check(agent(), cmd);
+    expect(alerts).toEqual(["1 new notification: Found by the check: open TeamsRelay to read them."]);
+  });
+
+  it("counts no unread item saved without its Teams id as a new notification: its id is its place", async () => {
+    store.saveActivity([mention("x0", true)]);
+    await check(agent(), cmd);
+    store.saveActivity([mention("m-new"), mention("x1", true)]);
+    await check(agent(), cmd);
+    expect(alerts).toEqual([]);
+  });
+
+  it("never pushes a missed call saved without its Teams id: its id is its place", async () => {
+    store.saveActivity([missedCall("x0", "Anna Rossi", "8/29")]);
+    await check(agent(), cmd);
+    store.saveActivity([mention("m-new"), missedCall("x1", "Anna Rossi", "8/29")]);
     await check(agent(), cmd);
     expect(missed).toEqual([]);
   });
@@ -201,14 +227,11 @@ describe("check command", () => {
     expect(alerts).toEqual([]);
   });
 
-  it("only records the missed calls after a check that kept no feed (earlier release)", async () => {
-    store.setState(STATE.checkSeen, JSON.stringify({ chats: [], activity: [], calls: ["c1"], read: true }));
+  it("compares with the missed calls a row of an earlier release kept", async () => {
+    store.setState(STATE.checkSeen, JSON.stringify({ chats: [], activity: [], calls: ["c1"], feed: ["c1"], read: true }));
     store.saveActivity([missedCall("c2", "Luca Bianchi", "4:10 PM"), missedCall("c1", "Anna Rossi", "3:54 PM")]);
     await check(agent(), cmd);
-    expect(missed).toEqual([]);
-    store.saveActivity([missedCall("c3", "Marco Neri", "4:30 PM"), missedCall("c2", "Luca Bianchi", "4:10 PM"), missedCall("c1", "Anna Rossi", "3:54 PM")]);
-    await check(agent(), cmd);
-    expect(missed).toEqual([["Marco Neri", "4:30 PM"]]);
+    expect(missed).toEqual([["Luca Bianchi", "4:10 PM"]]);
   });
 
   it("only records the missed calls after a check of an earlier release, whose row has no calls", async () => {

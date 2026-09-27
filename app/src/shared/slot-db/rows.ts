@@ -29,6 +29,12 @@ export const MEDIA_NAME = /^[0-9a-f]{16}\.(png|jpg|gif|webp)$/;
 export const ACTIVITY_KINDS = ["reaction", "mention", "reply", "task", "team", "call", "meeting", "message"] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
+// An Activity item saved without its Teams id gets its place as id (x0, x1...: src/agent/store/slot-store.ts): once
+// the feed moves the id names another item, so no count and no push goes by it
+export const hasTeamsId = (id: string) => !/^x\d+$/.test(id);
+// The same in SQL, for the id column of the activity table
+export const HAS_TEAMS_ID = "id NOT GLOB 'x[0-9]*'";
+
 // A call the agent saw ring (since: ms on the wall clock, seconds it rang), newest first
 export type CallLogEntry = { caller: string; since: number; seconds: number };
 

@@ -7,13 +7,13 @@ import {
   loadSeen,
   markActivitySeen,
   markShown,
-  newIds,
   parseSeen,
   seenKey,
   statusText,
   unreadInOthers,
   unseenActivity,
   unseenCalls,
+  unseenIds,
   untilText,
   type Account,
   type ActivityItem,
@@ -104,16 +104,18 @@ describe("missed calls", () => {
     expect(unreadInOthers(accounts, 1, (a) => accountUnread(a, []))).toBe(1);
   });
 
-  it("count none below the lowest item this device has shown: the feed lists newest first, a shorter read had left it out", () => {
-    expect(newIds(["c3", "c2", "c1"], ["c2"], ["c3", "c2", "c1"])).toEqual(["c3"]);
-    expect(newIds(["c3", "c2", "c1"], ["n1"], ["c3", "c2", "c1"])).toEqual(["c3", "c2", "c1"]);
-    expect(newIds(["c3"], null, ["c3"])).toEqual([]);
-    expect(unseenCalls([call("c3"), call("c2"), item("n1"), call("c1")], ["c2"])).toBe(1);
-    expect(accountUnread(account({ unreadActivity: [], missedCalls: ["c3", "c2", "c1"], activityIds: ["c3", "c2", "c1"] }), ["c2"]).calls).toBe(1);
+  it("count every missed call this device has not shown, wherever it sits in the feed", () => {
+    expect(unseenCalls([call("c3"), call("c2"), item("n1"), call("c1")], ["c2"])).toBe(2);
+    expect(accountUnread(account({ unreadActivity: [], missedCalls: ["c3", "c2", "c1"], activityIds: ["c3", "c2", "c1"] }), ["c2"]).calls).toBe(2);
+  });
+
+  it("never count a missed call saved without its Teams id: its id is its place", () => {
+    expect(unseenCalls([call("x3"), call("c1")], [])).toBe(1);
+    expect(unseenActivity([item("x4"), item("n1")], [])).toBe(1);
   });
 });
 
-describe("the lowest item this device has shown", () => {
+describe("missed calls across reads of the feed", () => {
   const call = (id: string): ActivityItem => ({ ...item(id, 0), kind: "call" });
   const many = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => item(`${prefix}${i}`, 0));
 
@@ -124,12 +126,12 @@ describe("the lowest item this device has shown", () => {
     expect(unseenCalls(items, seen)).toBe(2);
   });
 
-  it("counts no older call below it: a shorter read, the first one here, had left it out", () => {
+  it("counts an older call that only a longer read shows, as new: feed items carry no time", () => {
     const seen = many("m", 12).map((x) => x.id);
     const items = [...many("m", 30), call("c-old"), ...many("o", 9)];
-    expect(unseenCalls(items, seen)).toBe(0);
+    expect(unseenCalls(items, seen)).toBe(1);
     const a = account({ unreadActivity: [], missedCalls: ["c-old"], activityIds: items.map((x) => x.id) });
-    expect(accountUnread(a, seen).calls).toBe(0);
+    expect(accountUnread(a, seen).calls).toBe(1);
   });
 
   it("counts a new call below an item Teams moved to the top", () => {
@@ -183,11 +185,11 @@ describe("markActivitySeen", () => {
   });
 });
 
-describe("newIds", () => {
-  it("gives the ids not seen yet, nothing before the first look", () => {
-    expect(newIds(["a", "b"], null, ["a", "b"])).toEqual([]);
-    expect(newIds(["c", "a"], ["a", "b"], ["c", "a", "b"])).toEqual(["c"]);
-    expect(newIds([], ["a"], ["a"])).toEqual([]);
+describe("unseenIds", () => {
+  it("counts the ids not seen yet, nothing before the first look", () => {
+    expect(unseenIds(["a", "b"], null)).toBe(0);
+    expect(unseenIds(["c", "a"], ["a", "b"])).toBe(1);
+    expect(unseenIds([], ["a"])).toBe(0);
   });
 });
 

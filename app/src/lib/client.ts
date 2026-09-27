@@ -1,6 +1,6 @@
 // Browser-side helpers of the PWA: API calls, command follow-up, formatting.
 
-import type { ActivityItem } from "@/shared/slot-db/rows";
+import { hasTeamsId, type ActivityItem } from "@/shared/slot-db/rows";
 
 export type Account = {
   slot: number;
@@ -14,7 +14,7 @@ export type Account = {
   unread: number;
   unreadActivity: string[] | null;
   missedCalls: string[] | null;
-  // ids of every item of the feed, newest first: where a device tells new items from older ones a shorter read left out
+  // ids of every item of the feed, newest first: what an account met for the first time counts as seen
   activityIds: string[] | null;
   added: number;
   desktop: string;
@@ -121,28 +121,25 @@ export const mediaUrl = (file: string, acc: number) => `/media/${encodeURICompon
 export const isSelf = (name: string) => /\(you\)/i.test(name || "");
 
 // Teams keeps an activity bold until it is clicked in Teams itself, while its Activity badge counts only
-// what arrived after the feed was last opened. The tab badge does the same with the ids already seen here (newIds).
-// Missed calls count on the Calls tab instead: Teams shows them as read (not bold), new or not, so the calls this
-// device has not shown yet count.
+// what arrived after the feed was last opened. The tab badge does the same with the ids already seen here. Missed
+// calls count on the Calls tab instead: Teams shows them as read (not bold), new or not, so every call this device has
+// not shown yet counts. Feed items carry no time: an older item that only a longer read of the feed shows counts as
+// new too.
 export const isMissedCall = (a: Pick<ActivityItem, "kind">) => a.kind === "call";
 
 export function unseenActivity(items: ActivityItem[], seen: string[] | null): number {
-  return newIds(items.filter((a) => a.unread && !isMissedCall(a)).map((a) => a.id), seen, items.map((a) => a.id)).length;
+  return unseenIds(items.filter((a) => a.unread && !isMissedCall(a) && hasTeamsId(a.id)).map((a) => a.id), seen);
 }
 
 export function unseenCalls(items: ActivityItem[], seen: string[] | null): number {
-  return newIds(items.filter(isMissedCall).map((a) => a.id), seen, items.map((a) => a.id)).length;
+  return unseenIds(items.filter((a) => isMissedCall(a) && hasTeamsId(a.id)).map((a) => a.id), seen);
 }
 
-// Among ids of the feed (its ids in feed order), the ones this device has not shown yet and that sit above the lowest
-// item of the feed it has shown. The feed lists newest first: below that item, an id not shown is an older item an
-// earlier, shorter read left out. Nothing before the first look.
-export function newIds(ids: string[], seen: string[] | null, feed: string[]): string[] {
-  if (!seen) return [];
+// Same count from the ids of the unread items or of the missed calls, as /api/accounts gives them for every account
+export function unseenIds(ids: string[], seen: string[] | null): number {
+  if (!seen) return 0;
   const known = new Set(seen);
-  const lowest = feed.findLastIndex((id) => known.has(id));
-  const pos = new Map(feed.map((id, i) => [id, i]));
-  return ids.filter((id) => !known.has(id) && (lowest < 0 || (pos.get(id) ?? -1) < lowest));
+  return ids.filter((id) => !known.has(id)).length;
 }
 
 export type Unread = { chats: number; notifications: number; calls: number };
@@ -156,11 +153,10 @@ export function accountUnread(a: Account, seen: string[] | null): Unread {
   if (a.stopped) return { chats: 0, notifications: 0, calls: 0 };
   const calls = a.missedCalls ?? [];
   const isCall = new Set(calls);
-  const feed = a.activityIds ?? [];
   return {
     chats: a.unread,
-    notifications: newIds((a.unreadActivity ?? []).filter((id) => !isCall.has(id)), seen, feed).length,
-    calls: newIds(calls, seen, feed).length,
+    notifications: unseenIds((a.unreadActivity ?? []).filter((id) => !isCall.has(id)), seen),
+    calls: unseenIds(calls, seen),
   };
 }
 

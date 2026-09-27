@@ -4,7 +4,8 @@ import { PhoneIcon, PhoneIncomingIcon, PhoneMissedIcon } from "lucide-react";
 import { cn } from "cn";
 import { Avatar } from "./Avatar";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { newIds, type ActivityItem, type CallLogEntry, type RingingCall } from "@/lib/client";
+import type { ActivityItem, CallLogEntry, RingingCall } from "@/lib/client";
+import { hasTeamsId } from "@/shared/slot-db/rows";
 
 // When a call rang: the time today, the day and the time before
 function when(ms: number, now = Date.now()): string {
@@ -17,13 +18,12 @@ type Row = { key: string; name: string; line: string; icon: typeof PhoneIcon; to
 
 // The calls of the account: the one ringing now, the missed calls of the Teams Activity feed (those that rang while
 // no browser ran too, found by a check) and the calls the agent saw ring, with how long. A call whose caller has a chat
-// in the list opens it. A red dot marks a missed call this device has not shown yet, as the Calls tab counts it (newIds
-// over the ids of the whole feed, feed): Teams shows every missed call as read, new or not.
+// in the list opens it. A red dot marks a missed call this device has not shown yet, as the Calls tab counts it: Teams
+// shows every missed call as read, new or not.
 export function Calls({
   acc,
   ringing,
   missed,
-  feed,
   log,
   seen,
   chatOf,
@@ -32,7 +32,6 @@ export function Calls({
   acc: number;
   ringing: RingingCall | undefined;
   missed: ActivityItem[];
-  feed: string[];
   log: CallLogEntry[];
   seen: string[] | null;
   chatOf: (name: string) => string | null;
@@ -41,14 +40,14 @@ export function Calls({
   const now: Row[] = ringing
     ? [{ key: "now", name: ringing.caller || "Incoming call", line: "Ringing now", icon: PhoneIncomingIcon, tone: "text-primary motion-safe:animate-pulse" }]
     : [];
-  const fresh = new Set(newIds(missed.map((a) => a.id), seen, feed));
+  const shown = new Set(seen ?? []);
   const missedRows: Row[] = missed.map((a) => ({
     key: a.id,
     name: a.actor || a.chat || "Unknown caller",
     line: `Missed call${a.tm ? ` · ${a.tm}` : ""}`,
     icon: PhoneMissedIcon,
     tone: "text-destructive",
-    dot: fresh.has(a.id),
+    dot: !!seen && !shown.has(a.id) && hasTeamsId(a.id),
   }));
   const logRows: Row[] = log.map((c) => ({
     key: `${c.since}`,

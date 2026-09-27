@@ -6,16 +6,17 @@ import { errorText, log } from "../log";
 import { RAIL_WAIT } from "./activity";
 import type { Handler } from "./index";
 
-// What was unread at the end of a check: each unread chat with its preview (a new message changes it), the ids of the
-// unread Activity items as the last feed read showed them, the ids of the missed calls (Teams shows them as read, new
-// or not) and of the items of the recent reads (newest first, up to KEEP), and whether any feed was read (a row of an
-// earlier release, without it, was written after one). A row without calls or feed, from an earlier release, pushes
-// no missed call: the check only records them.
+// What was unread at the end of a check: each unread chat with its preview (a new message changes it) and, from the
+// recent reads of the feed (newest first, up to KEEP), the ids of the unread Activity items and of the missed calls
+// (Teams shows those as read, new or not), and whether any feed was read (a row of an earlier release, without it,
+// was written after one). New is an id the recent reads did not have; an item a read shows takes the state it has
+// there, one the read leaves out keeps the state of the reads before (a shorter read leaves out the older items). Feed
+// items carry no time: an older item that only a longer read shows counts as new too. A row without calls, from an earlier
+// release, pushes no missed call: the check only records them.
 const Seen = z.object({
   chats: z.array(z.string()).catch([]),
   activity: z.array(z.string()).catch([]),
   calls: z.array(z.string()).optional().catch(undefined),
-  feed: z.array(z.string()).optional().catch(undefined),
   read: z.boolean().catch(true),
 });
 
@@ -24,18 +25,11 @@ const KEEP = 200;
 // ids newest first: the ones of this read, then the ones of the earlier reads, up to KEEP
 const union = (now: string[], before: string[] | undefined) => [...new Set([...now, ...(before ?? [])])].slice(0, KEEP);
 
-// The ids of a read that the earlier reads did not have and that sit above the lowest item of this read they had: the
-// feed lists newest first, so below that item an unknown id is an older item the earlier, shorter reads left out
-function newer(read: string[], known: Set<string>): Set<string> {
-  const lowest = read.findLastIndex((id) => known.has(id));
-  return new Set((lowest < 0 ? read : read.slice(0, lowest)).filter((id) => !known.has(id)));
-}
-
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 // The check of an account the web app starts only to check it (checked every N hours, src/lib/checks.ts): the whole
-// chat list and the Activity feed, then a push for each missed call of the feed that is new (newer), and one more when
-// a chat or another notification is unread that was not. The browser did not run while those calls rang: the feed is
+// chat list and the Activity feed, then a push for each missed call of the feed that is new, and one more when a chat
+// or another notification is unread that was not. The browser did not run while those calls rang: the feed is
 // all that tells them. The messages that came meanwhile are not pushed one by one: the first chat list after a start
 // only primes the detector. The first check after the web app set the mode or started the account again primes too
 // (it forgets the last one, src/lib/slots.ts), and notifications and missed calls are compared only between two feeds
@@ -48,28 +42,24 @@ export const check: Handler = async (a) => {
   const was = before ? parseState(Seen, before, { chats: [], activity: [], read: true }) : null;
   const read = feed !== null;
   const calls = read ? a.store.missedCalls() : [];
-  const items = read ? a.store.activityIds() : [];
-  // a feed not read (an empty one reads the same) keeps the notifications, missed calls and items of the last read
+  const unreadNow = read ? a.store.unreadActivity() : [];
+  const inRead = new Set(read ? a.store.activityIds() : []);
+  // a feed not read (an empty one reads the same) keeps the notifications and missed calls of the last reads
   const now = {
     chats: unread.map((c) => `${c.name}\n${c.preview}`),
-    activity: read ? a.store.unreadActivity() : (was?.activity ?? []),
+    activity: read ? union(unreadNow, was?.activity.filter((id) => !inRead.has(id))) : (was?.activity ?? []),
     calls: read ? union(calls.map((c) => c.id), was?.calls) : was?.calls,
-    feed: read ? union(items, was?.feed) : was?.feed,
     read: read || !!was?.read,
   };
   // recorded before the pushes: a check cut short (its account stopped after the command wait) pushes none of it again
   a.store.setState(STATE.checkSeen, JSON.stringify(now));
   if (was) {
     const compare = read && was.read;
-    // what is new in this read: null for a row without the feed (earlier release)
-    const fresh = compare && was.feed ? newer(items, new Set(was.feed)) : null;
     const had = new Set(was.calls ?? []);
-    const missed = fresh && was.calls ? calls.filter((c) => fresh.has(c.id) && !had.has(c.id)) : [];
+    const missed = compare && was.calls ? calls.filter((c) => !had.has(c.id)) : [];
     const callIds = new Set(calls.map((c) => c.id));
     const newChats = now.chats.filter((c) => !was.chats.includes(c)).length;
-    const newItems = compare
-      ? now.activity.filter((id) => !was.activity.includes(id) && !callIds.has(id) && (!fresh || fresh.has(id))).length
-      : 0;
+    const newItems = compare ? unreadNow.filter((id) => !was.activity.includes(id) && !callIds.has(id)).length : 0;
     const pushes: Promise<unknown>[] = missed.map((c) => a.notifier.missedCall(c.caller, c.time));
     if (newChats || newItems) {
       const found = [unread.length > 0 && plural(unread.length, "unread chat", "unread chats"), newItems > 0 && plural(newItems, "new notification", "new notifications")];

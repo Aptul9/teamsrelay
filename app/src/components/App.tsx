@@ -628,7 +628,6 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             acc={acc}
             ringing={calls.find((c) => c.acc === acc)}
             missed={acc ? (activity?.items ?? []).filter(isMissedCall) : []}
-            feed={acc ? (activity?.items ?? []).map((a) => a.id) : []}
             log={acc ? (callLog ?? []) : []}
             seen={callsSeen?.acc === acc ? callsSeen.seen : (seenAct[acc] ?? null)}
             chatOf={chatOf}
