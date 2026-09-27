@@ -98,7 +98,7 @@ npm run lint && npm run typecheck && npm test && npm run build
 
 After a change, `docker compose ... up -d --build` rebuilds both images and recreates what changed; a new browsers image restarts every account. The code of agent and supervisor is inside the image, nothing is mounted.
 
-Stop everything with `docker compose -f docker-compose.yml -f compose.local.yml down`; `down -v` also deletes the volumes, Teams sessions included.
+Stop everything with `docker compose --env-file compose.local.env -f docker-compose.yml -f compose.local.yml down`; `down -v` also deletes the volumes, Teams sessions included.
 
 ### Profiles of an earlier local stack
 
