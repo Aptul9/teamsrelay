@@ -131,7 +131,7 @@ Requirements:
 
 - Node 24 or later (checked on 26), Google Chrome or Microsoft Edge installed.
 - A desktop session on the machine: the relay browser is a normal window, where the sign-in happens. The machine must not sleep.
-- Teams web allowed for the account in a browser. The relay opens it in English (`en-US`) whatever the language of the machine.
+- Teams web allowed for the account in a browser. The relay gives Teams `en-US` as the browser language, whatever the language of the machine.
 
 First run, from `app/`:
 

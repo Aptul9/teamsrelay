@@ -29,12 +29,12 @@ export async function launchBrowser(o: LaunchOptions): Promise<BrowserContext> {
     // the page takes the size of the window, as in a browser opened by hand
     viewport: null,
     // Teams answers in the language of the browser, which a new profile takes from the machine (Italian on an Italian
-    // Windows); the page scripts read English
+    // Windows); the page scripts read English. Playwright sets it for the pages only: --accept-lang for the workers too.
     locale: "en-US",
     // Playwright adds --no-sandbox otherwise; this browser renders whatever arrives in Teams
     chromiumSandbox: true,
     ignoreDefaultArgs: KEEP_UPDATING,
-    args: ["--window-size=1280,1000"],
+    args: ["--window-size=1280,1000", "--accept-lang=en-US"],
   });
   await context.grantPermissions(["notifications"]).catch(() => undefined);
   // The browser may restore tabs of its previous session: one is kept, the Teams one if there, else the blank one
