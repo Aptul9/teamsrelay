@@ -26,6 +26,8 @@ object Registration {
                 Log.w(TAG, "Firebase is not configured in this build: no notifications")
                 return
             }
+        // the token API, deprecated since firebase-messaging 25.1.0: see PushService.onNewToken
+        @Suppress("DEPRECATION")
         messaging.token.addOnSuccessListener { token -> thread { exchange(app, origin, token) } }
     }
 
