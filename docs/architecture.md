@@ -81,7 +81,7 @@ A new message is saved in the history, posted to ntfy when enabled and pushed to
 
 ### Resilience
 
-- **Virtualized lists**: Teams renders only the rows that fit the window, and the window depends on who looks at the remote desktop. Partial reads update the top of the list and keep the rest; the full read scrolls the list and rewrites it in one transaction.
+- **Virtualized lists**: Teams renders only the rows that fit the window, and the window depends on who looks at the remote desktop. Partial reads update the top of the list and keep the rest; the full read scrolls the list and rewrites it in one transaction. A chat further down is opened by scrolling the list from the top to the row of that exact name (a name that only starts the same is the last resort), then the list goes back to the top.
 - **Teams reloads**: the agent finds the Teams tab again at the next round and reopens the chat in use; if it cannot see the Teams tab for 60 s it exits and the supervisor starts it again. A lost CDP connection (browser restarted) is opened again every 3 s, without touching the browser. The local relay instead opens Teams again in a blank tab after 5 s, and after 10 minutes on any other page (a sign-in may be in progress), and launches its browser again when it closes.
 - **Errors**: a failing step is logged under its name and the round goes on; a command that throws ends as failed and is not run again.
 - **Commands**: a command is `running` while the agent works on it. One left running by an agent that stopped (restart, crash) ends as `unconfirmed` and is never run again: a message may be out already, a reaction set. A command that waited more than 2 minutes ends as failed without touching Teams.

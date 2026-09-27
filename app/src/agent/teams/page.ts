@@ -2,7 +2,7 @@ import type { Page } from "playwright-core";
 import { sameChat } from "../logic/chats";
 import { errorText, log } from "../log";
 import type { SlotStore } from "../store/slot-store";
-import { openChatTitle, clickChatRow } from "./scripts/chat-list";
+import { openChatTitle, clickChatRow, scrollChatList } from "./scripts/chat-list";
 import { composerLeft } from "./scripts/compose";
 import { barButtonPoint, centerElement, openOverlays } from "./scripts/message-actions";
 import { uncoveredPoint } from "./scripts/page-state";
@@ -32,6 +32,9 @@ export const messageSelector = (mid: string) => `${SEL.message}[data-mid="${mid.
 // The Teams page of the slot and the moves shared by every action: opening a chat, closing menus, the real
 // mouse hover that makes the action bar of a message appear.
 export class TeamsPage {
+  // chats a sweep of the whole list did not find, and when
+  private readonly missed = new Map<string, number>();
+
   constructor(
     readonly page: Page,
     private readonly store: SlotStore,
@@ -49,15 +52,19 @@ export class TeamsPage {
     return this.sameChat(await this.openTitle(), name);
   }
 
-  // Clicks the row of the chat and waits until Teams shows it: the messages of the previous chat are still in
-  // the page for a moment
+  // Opens the chat unless Teams shows it already: clicks its row and waits until Teams shows it (the messages of
+  // the previous chat are still in the page for a moment), then takes the list back to the top, where the chats
+  // with new messages are
   async openChat(name: string): Promise<boolean> {
-    if (!(await this.page.evaluate(clickChatRow, { s: SEL, t: TEXTS, name }))) return false;
+    if (await this.isOpen(name).catch(() => false)) return true;
+    const clicked = await this.clickRow(name);
     let open = false;
-    for (let i = 0; i < 24 && !open; i++) {
+    for (let i = 0; i < 24 && clicked && !open; i++) {
       open = await this.isOpen(name).catch(() => false);
       if (!open) await sleep(250);
     }
+    await this.page.evaluate(scrollChatList, { s: SEL, to: "top" as const }).catch(() => false);
+    if (!clicked) return false;
     if (!open) {
       log.warn("open", "chat did not open", { chat: name });
       return false;
@@ -65,6 +72,29 @@ export class TeamsPage {
     await this.page.waitForSelector(SEL.message, { timeout: 3000 }).catch(() => undefined);
     await sleep(400);
     return true;
+  }
+
+  // The list is virtualized: only the rows in view are in the page. The row of that exact name, the list scrolled
+  // down from the top to reach it; a name that only starts the same as a last resort. Parking and the Read by
+  // prefetch ask again every few rounds: a name a sweep missed is not swept for again within 30 s.
+  private async clickRow(name: string): Promise<boolean> {
+    const click = (exact: boolean) => this.page.evaluate(clickChatRow, { s: SEL, t: TEXTS, name, exact });
+    if (await click(true)) return true;
+    if (Date.now() - (this.missed.get(name) ?? 0) < 30_000) return false;
+    const scroll = (to: "top" | "down") => this.page.evaluate(scrollChatList, { s: SEL, to });
+    await scroll("top");
+    for (let i = 0; i < 9; i++) {
+      await sleep(400);
+      if (await click(true)) {
+        this.missed.delete(name);
+        return true;
+      }
+      if (!(await scroll("down"))) break;
+    }
+    this.missed.set(name, Date.now());
+    await scroll("top");
+    await sleep(400);
+    return click(false);
   }
 
   // Menus or dialogs left open over the chat would catch the mouse: Escape, up to three times
