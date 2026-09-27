@@ -58,7 +58,7 @@ async function main() {
   const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy });
   log.info("agent", "start", { slot: config.slot, cdp: config.cdp, push: !!vapid, ntfy: !!config.ntfy });
   const media = new Media(config.mediaDir, config.filesDir);
-  await runAgent({ config, store, notifier, media, detector: new NewMessageDetector() }, new CdpBrowser(config.cdp));
+  await runAgent({ config, store, notifier, media, detector: new NewMessageDetector(), checkedOnly: () => devices.checkedOnly() }, new CdpBrowser(config.cdp));
 }
 
 main().catch((e: unknown) => {

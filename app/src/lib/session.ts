@@ -1,4 +1,4 @@
-import { appDb, slotsOf } from "./appdb";
+import { appDb, slotOwner, slotsOf } from "./appdb";
 import { auth } from "./auth";
 import { pickSlot } from "./authz";
 import { HttpError } from "./http";
@@ -31,4 +31,13 @@ export async function requireSlot(req: Request): Promise<{ user: SessionUser; sl
     new URL(req.url).searchParams.get("a"),
   );
   return { user, slot, added: owned.find((s) => s.slot === slot)!.added };
+}
+
+// Requests on /api/accounts/N: the owner, or an administrator freeing or switching off a slot
+export async function requireAccount(req: Request, slotParam: string): Promise<number> {
+  const user = await requireUser(req);
+  const n = Number(slotParam);
+  const owner = Number.isInteger(n) ? slotOwner(appDb(), n) : null;
+  if (!owner || (owner !== user.id && user.role !== "admin")) throw new HttpError(404, "Account not found");
+  return n;
 }

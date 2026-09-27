@@ -51,10 +51,11 @@ export function StatusPanel({
 }) {
   const [busy, setBusy] = useState<"" | "resync" | "recheck">("");
   const overall = health?.overall || "yellow";
-  // grey: the owner stopped the account, which is not a problem
+  // grey: the owner stopped the account, or it runs only during its checks: neither is a problem
   const stopped = overall === "grey";
+  const checked = health?.teams === "checked";
   const tone: Tone = stopped ? "off" : overall === "green" ? "ok" : overall === "red" ? "bad" : "warn";
-  const label = !acc ? "No account" : stopped ? "Stopped" : overall === "green" ? "Connected" : overall === "red" ? "Problem" : "Connecting";
+  const label = !acc ? "No account" : checked ? "Checked" : stopped ? "Stopped" : overall === "green" ? "Connected" : overall === "red" ? "Problem" : "Connecting";
 
   const rows: [string, string, Tone][] = health
     ? [
@@ -66,7 +67,7 @@ export function StatusPanel({
         ["Push notifications", `${health.push_subs ?? 0} device${health.push_subs === 1 ? "" : "s"}`, (health.push_subs ?? 0) > 0 ? "ok" : "warn"],
       ]
     : [];
-  const shown: [string, string, Tone][] = stopped ? [["Teams", "Stopped, still signed in", "off"]] : rows;
+  const shown: [string, string, Tone][] = checked ? [["Teams", "Runs only during its checks", "off"]] : stopped ? [["Teams", "Stopped, still signed in", "off"]] : rows;
 
   async function run(kind: "resync" | "recheck") {
     setBusy(kind);

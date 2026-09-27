@@ -86,6 +86,7 @@ export function Conversation({
   entry,
   rows,
   stopped,
+  stoppedText = "Account stopped: start it to send",
   others,
   onBack,
   onOpenDesktop,
@@ -94,8 +95,10 @@ export function Conversation({
   chat: string;
   entry?: Chat;
   rows: Message[] | null;
-  // the account is switched off: the messages are the last ones read, nothing can be sent
+  // the account is switched off, or runs only during its checks: the messages are the last ones read, nothing can be
+  // sent; stoppedText says why
   stopped: boolean;
+  stoppedText?: string;
   // unread in the other accounts: on a phone the account menu, which shows it, is hidden while a chat is open
   others: number;
   onBack: () => void;
@@ -652,7 +655,7 @@ export function Conversation({
         const f = e.dataTransfer.files[0];
         if (!f) return;
         e.preventDefault();
-        if (stopped) toast.error("Account stopped: start it to send");
+        if (stopped) toast.error(stoppedText);
         else pickImage(f);
       }}
     >
@@ -848,7 +851,7 @@ export function Conversation({
             <textarea
               ref={taRef}
               rows={1}
-              placeholder={stopped ? "Account stopped: start it to send" : `Message ${chat}`}
+              placeholder={stopped ? stoppedText : `Message ${chat}`}
               disabled={stopped}
               aria-label="Message"
               enterKeyHint="send"

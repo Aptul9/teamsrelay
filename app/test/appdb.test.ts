@@ -3,17 +3,23 @@ import Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   adoptLegacyData,
+  askCheck,
+  beginCheck,
   claimSlot,
   countPushSubscriptions,
   deletePushSubscriptionsOf,
+  endCheck,
   isSlotStopped,
   listSlots,
   migrateAppSchema,
+  nextCheck,
   openAppDb,
   releaseSlot,
   savePushSubscription,
+  setCheckEvery,
   setSlotStopped,
   slotOwner,
+  slotRow,
   slotsOf,
 } from "@/lib/appdb";
 import { tempDir } from "./helpers";
@@ -32,14 +38,49 @@ describe("schema", () => {
     expect(tables).toEqual(expect.arrayContaining(["push_subscriptions", "teams_accounts"]));
   });
 
-  it("adds stopped and started to the accounts of the first multi-user release, running", () => {
+  it("adds stopped, started and the checks to the accounts of the first multi-user release, running and always on", () => {
     const old = openAppDb(path.join(tempDir(), "app.db"));
     old.exec("CREATE TABLE teams_accounts(slot INTEGER PRIMARY KEY, owner_id TEXT NOT NULL, added INTEGER NOT NULL)");
     old.prepare("INSERT INTO teams_accounts VALUES(2, 'u1', 100)").run();
 
     migrateAppSchema(old);
 
-    expect(listSlots(old)).toEqual([{ slot: 2, owner_id: "u1", added: 100, stopped: 0, started: 0 }]);
+    expect(listSlots(old)).toEqual([{ slot: 2, owner_id: "u1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0 }]);
+  });
+});
+
+describe("checked accounts", () => {
+  it("get their first check one interval after being switched to checks, none once back to always on", () => {
+    const n = claimSlot(db, "u1", { slotCount: 4, perUser: 4 });
+    setCheckEvery(db, n, 7200, 1000);
+    expect(slotRow(db, n)).toMatchObject({ check_every: 7200, check_due: 8200 });
+    setCheckEvery(db, n, 0, 2000);
+    expect(slotRow(db, n)).toMatchObject({ check_every: 0, check_due: 0 });
+    expect(slotRow(db, 4)).toBeNull();
+  });
+
+  it("record a check as it starts and as it ends: time, outcome and the next one; an interrupted check records nothing", () => {
+    const n = claimSlot(db, "u1", { slotCount: 4, perUser: 4 });
+    setCheckEvery(db, n, 3600, 1000);
+    beginCheck(db, n, 5000);
+    expect(slotRow(db, n)).toMatchObject({ checking: 5000 });
+    endCheck(db, n, { now: 5060, result: "login" });
+    expect(slotRow(db, n)).toMatchObject({ checking: 0, checked: 5060, check_result: "login", check_due: 8660 });
+    beginCheck(db, n, 9000);
+    endCheck(db, n, { now: 9010, result: null });
+    expect(slotRow(db, n)).toMatchObject({ checking: 0, checked: 5060, check_result: "login", check_due: 8660 });
+  });
+
+  it("are due in the order of their due time, one asked by its owner first; never stopped or always-on ones", () => {
+    for (let i = 0; i < 4; i++) claimSlot(db, "u1", { slotCount: 4, perUser: 4 });
+    setCheckEvery(db, 1, 3600, 0);
+    setCheckEvery(db, 2, 3600, -10);
+    setCheckEvery(db, 3, 3600, -20);
+    setSlotStopped(db, 3, true);
+    expect(nextCheck(db, 3500)).toBeNull();
+    expect(nextCheck(db, 3600)?.slot).toBe(2);
+    askCheck(db, 1);
+    expect(nextCheck(db, 3600)?.slot).toBe(1);
   });
 });
 
@@ -70,8 +111,8 @@ describe("legacy data", () => {
 
     expect(adoptLegacyData(db, "admin-1")).toEqual({ slots: 2, devices: 1 });
     expect(listSlots(db)).toEqual([
-      { slot: 1, owner_id: "admin-1", added: 100, stopped: 0, started: 0 },
-      { slot: 3, owner_id: "admin-1", added: 300, stopped: 0, started: 0 },
+      { slot: 1, owner_id: "admin-1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0 },
+      { slot: 3, owner_id: "admin-1", added: 300, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0 },
     ]);
     expect(countPushSubscriptions(db, "admin-1")).toBe(1);
 

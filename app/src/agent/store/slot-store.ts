@@ -202,6 +202,11 @@ export class SlotStore {
     return this.db.prepare("UPDATE commands SET status='failed' WHERE status='pending' AND ts < ?").run(now - maxAge).changes;
   }
 
+  // Ids of the items the Activity feed shows unread (bold), in feed order
+  unreadActivity(): string[] {
+    return this.db.prepare("SELECT id FROM activity WHERE unread=1 ORDER BY pos").pluck().all() as string[];
+  }
+
   saveActivity(items: readonly ActivityEntry[]) {
     this.db.transaction(() => {
       const ts = nowSeconds();

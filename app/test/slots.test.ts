@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import { beforeEach, describe, expect, it } from "vitest";
-import { isSlotStopped, listSlots, migrateAppSchema, openAppDb, slotOwner } from "@/lib/appdb";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { isSlotStopped, listSlots, migrateAppSchema, openAppDb, slotOwner, slotRow } from "@/lib/appdb";
 import type { ControlClient } from "@/lib/control";
 import { HttpError } from "@/lib/http";
-import { addAccount, exclusive, keepSlotsUp, removeAccount, setAccountRunning, wipeSlot } from "@/lib/slots";
+import { addAccount, exclusive, keepSlotsUp, removeAccount, setAccountRunning, setCheckMode, wipeSlot } from "@/lib/slots";
 import { tempDir } from "./helpers";
 
 let db: Database.Database;
@@ -52,7 +52,7 @@ describe("addAccount", () => {
     expect(slot).toBe(1);
     expect(calls).toEqual(["stop 1", "wipe 1", "start 1"]);
     expect(fs.existsSync(path.join(dataDir, "1"))).toBe(false);
-    expect(listSlots(db)).toEqual([{ slot: 1, owner_id: "u1", added: expect.any(Number), stopped: 0, started: 0 }]);
+    expect(listSlots(db)).toEqual([{ slot: 1, owner_id: "u1", added: expect.any(Number), stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0 }]);
   });
 
   it("releases the slot when it cannot be started", async () => {
@@ -91,7 +91,7 @@ describe("removeAccount", () => {
     await expect(removeAccount(1, control("wipe 1"), opts())).rejects.toThrow(/wipe 1 failed/);
 
     expect(fs.existsSync(path.join(dataDir, "1", "messages.db"))).toBe(true);
-    expect(listSlots(db)).toEqual([{ slot: 1, owner_id: "u1", added: expect.any(Number), stopped: 0, started: 0 }]);
+    expect(listSlots(db)).toEqual([{ slot: 1, owner_id: "u1", added: expect.any(Number), stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0 }]);
   });
 });
 
@@ -103,6 +103,66 @@ describe("wipeSlot", () => {
 
     await wipeSlot(control(), 2, { dataDir });
     expect(fs.existsSync(path.join(dataDir, "2"))).toBe(false);
+  });
+});
+
+describe("exclusive", () => {
+  it("is one queue for every copy of the module: the web app build has one for the keep-alive and one per route", async () => {
+    vi.resetModules();
+    const a = await import("@/lib/slots");
+    vi.resetModules();
+    const b = await import("@/lib/slots");
+    expect(a.exclusive).not.toBe(b.exclusive);
+    const order: string[] = [];
+    let release = () => {};
+    const first = a.exclusive(() => new Promise<void>((r) => (release = r)).then(() => void order.push("first")));
+    const second = b.exclusive(async () => void order.push("second"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(order).toEqual([]);
+    release();
+    await Promise.all([first, second]);
+    expect(order).toEqual(["first", "second"]);
+  });
+});
+
+describe("setCheckMode", () => {
+  it("stops the browser of an account switched to checks, starts it again when set back to always on", async () => {
+    await addAccount("u1", control(), opts());
+    calls = [];
+    await setCheckMode(1, 3600, control(), db);
+    expect(calls).toEqual(["stop 1"]);
+    expect(slotRow(db, 1)).toMatchObject({ check_every: 3600, stopped: 0 });
+    calls = [];
+    await setCheckMode(1, 0, control(), db);
+    expect(calls).toEqual(["start 1"]);
+    expect(slotRow(db, 1)).toMatchObject({ check_every: 0 });
+  });
+
+  it("changes only the mode of a stopped account, and refuses an interval not offered or an unknown account", async () => {
+    await addAccount("u1", control(), opts());
+    await setAccountRunning(1, false, control(), db);
+    calls = [];
+    await setCheckMode(1, 14400, control(), db);
+    await setCheckMode(1, 0, control(), db);
+    expect(calls).toEqual([]);
+    await expect(setCheckMode(1, 60, control(), db)).rejects.toMatchObject({ status: 400 });
+    await expect(setCheckMode(3, 3600, control(), db)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("keeps the mode it had when the browser cannot be stopped", async () => {
+    await addAccount("u1", control(), opts());
+    await expect(setCheckMode(1, 3600, control("stop 1"), db)).rejects.toThrow(/stop 1 failed/);
+    expect(slotRow(db, 1)).toMatchObject({ check_every: 0 });
+  });
+
+  it("starts a checked account again as in service, with a check asked, without starting its browser", async () => {
+    await addAccount("u1", control(), opts());
+    await setCheckMode(1, 3600, control(), db);
+    await setAccountRunning(1, false, control(), db);
+    calls = [];
+    await setAccountRunning(1, true, control(), db);
+    expect(calls).toEqual([]);
+    expect(slotRow(db, 1)).toMatchObject({ stopped: 0, check_due: 0 });
   });
 });
 

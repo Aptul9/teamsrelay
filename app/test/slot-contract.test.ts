@@ -3,8 +3,8 @@ import { COMMAND_TYPES, DownloadArgs, IMAGE_TYPES, ImageArgs, MentionArgs, Messa
 import { AgentHealth, cmdResultKey, Identity, Members, membersKey, oneToOneKey, parseState, selfCheckKey, Viewing } from "@/shared/slot-db/state";
 
 describe("command types", () => {
-  it("keeps the names of earlier releases and adds sendimage", () => {
-    expect(COMMAND_TYPES).toEqual(["open", "send", "reply", "react", "edit", "delete", "undodelete", "download", "activity", "resync", "recheck", "sendimage", "members", "sendmentions"]);
+  it("keeps the names of earlier releases, new ones at the end", () => {
+    expect(COMMAND_TYPES).toEqual(["open", "send", "reply", "react", "edit", "delete", "undodelete", "download", "activity", "resync", "recheck", "sendimage", "members", "sendmentions", "check"]);
   });
 });
 

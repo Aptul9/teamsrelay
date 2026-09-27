@@ -10,7 +10,26 @@ const SCHEMA_VERSION = 2;
 
 // stopped: 1 while the owner keeps the account switched off (browser and agent stopped, session kept).
 // started: last start from the app, 0 if never; the grace of a browser still starting counts from there.
-export type Slot = { slot: number; owner_id: string; added: number; stopped: number; started: number };
+// check_every: seconds between two checks of an account whose browser runs only while it is checked, 0 for an account
+// always on. check_due: when its next check is due, 0 once its owner asked for one. checked, check_result: end and
+// outcome (ok, login, failed) of its last check, 0 and "" before the first. checking: start of the check running now.
+export type Slot = {
+  slot: number;
+  owner_id: string;
+  added: number;
+  stopped: number;
+  started: number;
+  check_every: number;
+  check_due: number;
+  checked: number;
+  check_result: string;
+  checking: number;
+};
+
+export { CHECK_INTERVALS } from "@/shared/checks";
+export type CheckResult = "ok" | "login" | "failed";
+
+const SLOT_COLUMNS = "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking";
 
 let shared: Database.Database | null = null;
 
@@ -37,6 +56,15 @@ export function migrateAppSchema(db: Database.Database) {
   const columns = db.prepare("SELECT name FROM pragma_table_info('teams_accounts')").pluck().all();
   if (!columns.includes("stopped")) db.exec("ALTER TABLE teams_accounts ADD COLUMN stopped INTEGER NOT NULL DEFAULT 0");
   if (!columns.includes("started")) db.exec("ALTER TABLE teams_accounts ADD COLUMN started INTEGER NOT NULL DEFAULT 0");
+  for (const [column, decl] of [
+    ["check_every", "INTEGER NOT NULL DEFAULT 0"],
+    ["check_due", "INTEGER NOT NULL DEFAULT 0"],
+    ["checked", "INTEGER NOT NULL DEFAULT 0"],
+    ["check_result", "TEXT NOT NULL DEFAULT ''"],
+    ["checking", "INTEGER NOT NULL DEFAULT 0"],
+  ]) {
+    if (!columns.includes(column)) db.exec(`ALTER TABLE teams_accounts ADD COLUMN ${column} ${decl}`);
+  }
 }
 
 const hasTable = (db: Database.Database, name: string) =>
@@ -66,11 +94,48 @@ export function adoptLegacyData(db: Database.Database, userId: string): { slots:
 }
 
 export function listSlots(db: Database.Database): Slot[] {
-  return db.prepare("SELECT slot, owner_id, added, stopped, started FROM teams_accounts ORDER BY slot").all() as Slot[];
+  return db.prepare(`SELECT ${SLOT_COLUMNS} FROM teams_accounts ORDER BY slot`).all() as Slot[];
 }
 
 export function slotsOf(db: Database.Database, userId: string): Slot[] {
-  return db.prepare("SELECT slot, owner_id, added, stopped, started FROM teams_accounts WHERE owner_id=? ORDER BY slot").all(userId) as Slot[];
+  return db.prepare(`SELECT ${SLOT_COLUMNS} FROM teams_accounts WHERE owner_id=? ORDER BY slot`).all(userId) as Slot[];
+}
+
+export function slotRow(db: Database.Database, slot: number): Slot | null {
+  return (db.prepare(`SELECT ${SLOT_COLUMNS} FROM teams_accounts WHERE slot=?`).get(slot) as Slot | undefined) ?? null;
+}
+
+// Always on (0) or checked every `every` seconds, the first check one interval from now
+export function setCheckEvery(db: Database.Database, slot: number, every: number, now: number) {
+  db.prepare("UPDATE teams_accounts SET check_every=?, check_due=? WHERE slot=?").run(every, every ? now + every : 0, slot);
+}
+
+// A check asked by the owner: due at once, before the ones due by time
+export function askCheck(db: Database.Database, slot: number) {
+  db.prepare("UPDATE teams_accounts SET check_due=0 WHERE slot=?").run(slot);
+}
+
+export function beginCheck(db: Database.Database, slot: number, now: number) {
+  db.prepare("UPDATE teams_accounts SET checking=? WHERE slot=?").run(now, slot);
+}
+
+// A check that ended: its time and outcome, and the next one an interval later, unless its owner asked for one while
+// it ran (asked: this check was the one asked). result null: cut short (the account stopped, removed or set back to
+// always on meanwhile), nothing recorded.
+export function endCheck(db: Database.Database, slot: number, { now, result, asked = false }: { now: number; result: CheckResult | null; asked?: boolean }) {
+  if (!result) return db.prepare("UPDATE teams_accounts SET checking=0 WHERE slot=?").run(slot);
+  db.prepare(
+    "UPDATE teams_accounts SET checking=0, checked=?, check_result=?, check_due=CASE WHEN check_due = 0 AND NOT ? THEN 0 WHEN check_every > 0 THEN ? + check_every ELSE 0 END WHERE slot=?",
+  ).run(now, result, asked ? 1 : 0, now, slot);
+}
+
+// The checked account in service whose check is due first, asked ones before
+export function nextCheck(db: Database.Database, now: number): Slot | null {
+  return (
+    (db
+      .prepare(`SELECT ${SLOT_COLUMNS} FROM teams_accounts WHERE check_every > 0 AND stopped = 0 AND check_due <= ? ORDER BY check_due, slot LIMIT 1`)
+      .get(now) as Slot | undefined) ?? null
+  );
 }
 
 export function isSlotStopped(db: Database.Database, slot: number): boolean {

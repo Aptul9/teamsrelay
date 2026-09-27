@@ -18,6 +18,8 @@ export const COMMAND_TYPES = [
   "sendimage",
   "members",
   "sendmentions",
+  // an account checked every N hours: the whole chat list and the Activity feed, then one push if something is new
+  "check",
 ] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 

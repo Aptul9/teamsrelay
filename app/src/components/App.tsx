@@ -1,6 +1,19 @@
 "use client";
 
-import { BellIcon, BellRingIcon, ExternalLinkIcon, MessageSquareIcon, MessagesSquareIcon, MonitorIcon, PlusIcon, PowerIcon, PowerOffIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  BellIcon,
+  BellRingIcon,
+  ClockIcon,
+  ExternalLinkIcon,
+  MessageSquareIcon,
+  MessagesSquareIcon,
+  MonitorIcon,
+  PlusIcon,
+  PowerIcon,
+  PowerOffIcon,
+  RefreshCwIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
@@ -29,6 +42,10 @@ import {
   accountUnread,
   ApiError,
   call,
+  checkLine,
+  clock,
+  hours,
+  idleChecked,
   isSelf,
   loadSeen,
   markActivitySeen,
@@ -219,7 +236,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   }
 
   async function refreshActivity() {
-    if (!acc || refreshing) return;
+    // an account checked every N hours: its feed is the one of the last check
+    if (!acc || refreshing || (current && current.checkEvery > 0)) return;
     setRefreshing(true);
     // while Teams starts the agent keeps the refresh until its side bar can be clicked, up to the 2 minutes a command
     // may wait
@@ -239,8 +257,13 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   // Microsoft login (and MFA) in the remote browser of the account: new tab on a PC, a view of its own elsewhere
   function openDesktop(n: number) {
-    if (accounts?.find((a) => a.slot === n)?.stopped) {
+    const a = accounts?.find((x) => x.slot === n);
+    if (a?.stopped) {
       toast.info("This account is stopped", { description: "Start it from the account menu to open its remote Teams." });
+      return;
+    }
+    if (a && idleChecked(a)) {
+      toast.info("This account runs only during its checks", { description: "Check now starts its browser for a few minutes." });
       return;
     }
     if (isPc) {
@@ -278,6 +301,20 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       toast.error(e instanceof ApiError ? e.message : running ? "Account not started" : "Account not stopped");
     } finally {
       setToggling(0);
+    }
+  }
+
+  // The check of an account checked every N hours, now: within seconds, after the check running now if any. One that
+  // found a sign-in to do waits ten minutes for it, in the remote Teams.
+  async function checkNow(a: Account) {
+    try {
+      await post(`/api/accounts/${a.slot}/check`, undefined, 0);
+      await loadAccounts();
+      toast.success(`Checking ${accName(a)}`, {
+        description: needsLogin(a) ? "The browser starts: sign in to Microsoft in the remote Teams within ten minutes." : "The browser starts, reads Teams and stops again within a few minutes.",
+      });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Check not started");
     }
   }
 
@@ -413,9 +450,33 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             </Alert>
           </div>
         )}
-        {current && (needsLogin(current) || current.teams === "starting") && (
+        {current && idleChecked(current) && !needsLogin(current) && (
           <div className="px-3 pb-2">
-            {current.teams === "starting" ? (
+            <Alert>
+              <ClockIcon />
+              <AlertTitle>Checked every {hours(current.checkEvery)}</AlertTitle>
+              <AlertDescription>
+                <p>{checkLine(current)}. The chats and counts are those of the last check: the browser runs only during a check.</p>
+                <Button size="sm" className="mt-2 h-9 md:h-8" disabled={current.nextCheck === 0} onClick={() => void checkNow(current)}>
+                  <RefreshCwIcon />
+                  {current.nextCheck === 0 ? "Check asked" : "Check now"}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+        {current?.checking && current.teams !== "login" && (
+          <div className="px-3 pb-2">
+            <Alert>
+              <Spinner />
+              <AlertTitle>Checking now</AlertTitle>
+              <AlertDescription>The browser reads the chats and the notifications of Teams, then stops again.</AlertDescription>
+            </Alert>
+          </div>
+        )}
+        {current && (needsLogin(current) || (current.teams === "starting" && !current.checking)) && (
+          <div className="px-3 pb-2">
+            {current.teams === "starting" && !current.checking ? (
               <Alert>
                 <Spinner />
                 <AlertTitle>Starting the browser</AlertTitle>
@@ -426,10 +487,22 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
                 <TriangleAlertIcon className="text-warning" />
                 <AlertTitle>Microsoft sign-in needed</AlertTitle>
                 <AlertDescription>
-                  <p>Sign in with password and MFA in the remote browser of this account.</p>
-                  <Button size="sm" className="mt-2 h-9 md:h-8" onClick={() => openDesktop(current.slot)}>
-                    <ExternalLinkIcon />
-                    Sign in to Microsoft
+                  {idleChecked(current) ? (
+                    <p>
+                      Found by the check{current.checked ? ` of ${clock(current.checked)}` : ""}. Start a check: its browser waits ten minutes for the
+                      sign-in, with password and MFA in the remote Teams.
+                    </p>
+                  ) : (
+                    <p>Sign in with password and MFA in the remote browser of this account.</p>
+                  )}
+                  <Button
+                    size="sm"
+                    className="mt-2 h-9 md:h-8"
+                    disabled={idleChecked(current) && current.nextCheck === 0}
+                    onClick={() => (idleChecked(current) ? void checkNow(current) : openDesktop(current.slot))}
+                  >
+                    {idleChecked(current) ? <PowerIcon /> : <ExternalLinkIcon />}
+                    {idleChecked(current) ? (current.nextCheck === 0 ? "Check asked" : "Start to sign in") : "Sign in to Microsoft"}
                   </Button>
                 </AlertDescription>
               </Alert>
@@ -509,7 +582,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               chat={openChat}
               entry={(chats ?? []).find((c) => c.name === openChat)}
               rows={messages?.chat === openChat ? messages.rows : null}
-              stopped={!!current?.stopped}
+              stopped={!!current && (current.stopped || current.checkEvery > 0)}
+              stoppedText={current?.checkEvery ? "Runs only during its checks: set it to always on in Settings to send" : undefined}
               others={others}
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}

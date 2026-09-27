@@ -1,5 +1,4 @@
-import { appDb, isSlotStopped } from "@/lib/appdb";
-import { chatName, queue } from "@/lib/commands";
+import { chatName, idleReason, queue } from "@/lib/commands";
 import { body, route } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
 import { withSlot } from "@/lib/slotdb";
@@ -15,6 +14,6 @@ export const POST = route(async (req) => {
   const { ts, names: all, pending, me } = withSlot(slot, (r) => ({ ...r.members(name), pending: r.pendingCommand("members", name), me: r.identity().name }));
   // Teams never lists you among the people to tag
   const names = all.filter((n) => n !== me);
-  if (Date.now() / 1000 - ts < MEMBERS_MAX_AGE || isSlotStopped(appDb(), slot)) return Response.json({ names });
+  if (Date.now() / 1000 - ts < MEMBERS_MAX_AGE || idleReason(slot)) return Response.json({ names });
   return Response.json({ names, id: pending || queue(slot, "members", name) });
 });
