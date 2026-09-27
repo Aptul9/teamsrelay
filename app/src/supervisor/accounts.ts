@@ -131,10 +131,11 @@ export class Accounts {
   start(n: number) {
     return this.queued(n, async () => {
       const a = this.account(n);
+      const running = a.browser.active && a.agent.active;
       if (!a.browser.active) this.prepareProfile(n);
       a.browser.start();
       a.agent.start();
-      this.say(`account ${n} started`);
+      if (!running) this.say(`account ${n} started`);
     });
   }
 
