@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { CommandType } from "@/shared/slot-db/commands";
-import type { ActivityItem, CallLogEntry, Chat, Message, MessageExtra } from "@/shared/slot-db/rows";
+import { HAS_TEAMS_ID, type ActivityItem, type CallLogEntry, type Chat, type Message, type MessageExtra } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
 import { CallState, cmdResultKey, Members, membersKey, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
@@ -129,15 +129,14 @@ export class SlotReader {
     return this.all<{ id: string }>("SELECT id FROM activity WHERE unread=1 ORDER BY pos").map((r) => r.id);
   }
 
-  // Ids of every missed call of the feed, in feed order, null until the agent has saved the feed once. Teams shows a
-  // missed call as read (not bold), new or not: a device tells a new one by an id it has not shown yet.
+  // Ids of every missed call of the feed that has its Teams id, in feed order, null until the agent has saved the feed
+  // once. Teams shows a missed call as read (not bold), new or not: a device tells a new one by an id it has not shown.
   missedCalls(): string[] | null {
     if (!Number(this.state(STATE.activityTs, 0))) return null;
-    return this.all<{ id: string }>("SELECT id FROM activity WHERE kind='call' ORDER BY pos").map((r) => r.id);
+    return this.all<{ id: string }>(`SELECT id FROM activity WHERE kind='call' AND ${HAS_TEAMS_ID} ORDER BY pos`).map((r) => r.id);
   }
 
-  // Ids of every item of the feed, newest first, null likewise: below the lowest one a device has shown, an item it has
-  // not shown is older (newIds in lib/client.ts)
+  // Ids of every item of the feed, newest first, null likewise: what a device meeting the account takes as seen
   activityIds(): string[] | null {
     if (!Number(this.state(STATE.activityTs, 0))) return null;
     return this.all<{ id: string }>("SELECT id FROM activity ORDER BY pos").map((r) => r.id);
