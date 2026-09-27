@@ -221,7 +221,9 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   async function refreshActivity() {
     if (!acc || refreshing) return;
     setRefreshing(true);
-    const r = await runCmd("/api/activity/refresh", undefined, acc);
+    // while Teams starts the agent keeps the refresh until its side bar can be clicked, up to the 2 minutes a command
+    // may wait
+    const r = await runCmd("/api/activity/refresh", undefined, acc, 175);
     setRefreshing(false);
     if (r.status !== "done") toast.error("Teams activity not updated");
   }

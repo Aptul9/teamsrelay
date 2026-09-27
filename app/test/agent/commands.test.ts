@@ -292,6 +292,20 @@ describe("command handlers", () => {
     }
   });
 
+  it("keeps a refresh of the Activity feed pending while the side bar cannot be clicked, other commands go on", async () => {
+    const a = agent();
+    const refresh = store.enqueue("activity");
+    const resync = store.enqueue("resync");
+    a.railReady = false;
+    await runPendingCommands(a);
+    expect(store.commandStatus(refresh)).toBe("pending");
+    expect(store.commandStatus(resync)).toBe("done");
+    a.railReady = true;
+    Object.assign(a.tp, { clearOverlays: async () => true, clickRail: async () => undefined });
+    await runPendingCommands(a);
+    expect(store.commandStatus(refresh)).toBe("failed");
+  });
+
   it("never runs a command that waited too long: a send queued while Teams was down stays unsent", async () => {
     const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
     insert.run(Math.floor(Date.now() / 1000) - COMMAND_MAX_AGE - 5, "send", "Anna Rossi", "from an hour ago");

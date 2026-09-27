@@ -73,10 +73,10 @@ export async function followCmd(id: number, acc: number, tries = 45): Promise<Co
   return { status: "failed", result: null };
 }
 
-export async function runCmd(path: string, body: unknown, acc: number): Promise<CommandResult> {
+export async function runCmd(path: string, body: unknown, acc: number, tries?: number): Promise<CommandResult> {
   try {
     const { id } = await post<{ id: number }>(path, body, acc);
-    return await followCmd(id, acc);
+    return await followCmd(id, acc, tries);
   } catch {
     return { status: "failed", result: null };
   }
