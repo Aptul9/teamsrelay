@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Notifier } from "@/agent/push/notifier";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Notifier, type PushDevices } from "@/agent/push/notifier";
 import { loadVapidKeys, type VapidKeys } from "@/agent/push/vapid";
 import { SlotStore } from "@/agent/store/slot-store";
 import { RelayDevices } from "@/local/devices";
@@ -14,8 +14,11 @@ let fake: Awaited<ReturnType<typeof fakePushService>>;
 let store: SlotStore;
 let devices: RelayDevices;
 let vapid: VapidKeys;
+// retries wait here until a test runs them, as their timers would
+let retries: { ms: number; run: () => void }[];
 
 beforeEach(async () => {
+  retries = [];
   fake = await fakePushService();
   const dir = path.join(tempDir(), "vapid");
   execFileSync(process.execPath, [GEN, dir], { stdio: "pipe" });
@@ -29,7 +32,8 @@ beforeEach(async () => {
 
 afterEach(() => fake.close());
 
-const notifier = () => new Notifier({ store, devices, vapid, subject: "mailto:relay@example.com", ntfy: null, send: fake.send });
+const notifier = (on: PushDevices = devices) =>
+  new Notifier({ store, devices: on, vapid, subject: "mailto:relay@example.com", ntfy: null, send: fake.send, later: (ms, run) => void retries.push({ ms, run }) });
 
 describe("Web Push as the push service receives it", () => {
   it("is encrypted for the device, signed with the relay's key for that service, kept a day, urgent", async () => {
@@ -65,5 +69,42 @@ describe("Web Push as the push service receives it", () => {
     fake.answerWith(500);
     expect(await notifier().push("x", "y")).toBe(0);
     expect(devices.count()).toBe(1);
+  });
+
+  it("sends again to the phone a push the push service could not take", async () => {
+    fake.answerWith(503);
+    expect(await notifier().alert("Teams signed out", "Sign in again")).toBe(0);
+    expect(retries.map((r) => r.ms)).toEqual([5000]);
+    fake.answerWith(201);
+    retries.shift()?.run();
+    await vi.waitFor(() => expect(fake.received).toHaveLength(2));
+    expect(fake.received[1].payload).toEqual({ title: "Teams signed out", body: "Sign in again", chat: "" });
+    expect(retries).toEqual([]);
+  });
+
+  // a retry runs on a timer: an error there would be uncaught, and the relay stops on an uncaught error
+  it("stays up when the devices cannot be read at a retry", async () => {
+    fake.answerWith(503);
+    await notifier().alert("Teams signed out", "Sign in again");
+    devices.close();
+    expect(() => retries.shift()?.run()).not.toThrow();
+  });
+
+  it("stays up when a device gone at a retry cannot be removed", async () => {
+    const failing: PushDevices = { targets: () => devices.targets(), remove: () => { throw new Error("disk I/O error"); } };
+    const rejections: unknown[] = [];
+    const onRejection = (e: unknown) => rejections.push(e);
+    process.on("unhandledRejection", onRejection);
+    try {
+      fake.answerWith(503);
+      await notifier(failing).alert("Teams signed out", "Sign in again");
+      fake.answerWith(410);
+      retries.shift()?.run();
+      await vi.waitFor(() => expect(fake.received).toHaveLength(2));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+    }
   });
 });
