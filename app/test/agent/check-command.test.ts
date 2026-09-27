@@ -115,6 +115,32 @@ describe("check command", () => {
     expect(alerts).toEqual([]);
   });
 
+  it("pushes no missed call the previous check could not have seen, its feed not read, and keeps the last feed it read", async () => {
+    vi.mocked(readActivity).mockResolvedValue(null);
+    await check(agent(), cmd);
+    vi.mocked(readActivity).mockResolvedValue(1);
+    feedWithCalls([["c1", true, "Anna Rossi", "9:02 AM"]]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([]);
+    vi.mocked(readActivity).mockResolvedValue(null);
+    feedWithCalls([["c2", true, "Luca Bianchi", "1:15 PM"], ["c1", true, "Anna Rossi", "9:02 AM"]]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([]);
+    vi.mocked(readActivity).mockResolvedValue(1);
+    await check(agent(), cmd);
+    expect(missed).toEqual([["Luca Bianchi", "1:15 PM"]]);
+  });
+
+  it("records what it found before the pushes: a push that fails is not sent again by the next check", async () => {
+    feedWithCalls([["a1", true]]);
+    await check(agent(), cmd);
+    feedWithCalls([["c1", true, "Anna Rossi", "1:15 PM"], ["a1", true]]);
+    const failing = { ...agent(), notifier: { ...agent().notifier, missedCall: async () => Promise.reject(new Error("push service down")) } } as unknown as Agent;
+    await expect(check(failing, cmd)).resolves.toBe("done");
+    await check(agent(), cmd);
+    expect(missed).toEqual([]);
+  });
+
   it("never counts muted chats or the chat with yourself", async () => {
     await check(agent(), cmd);
     store.saveChats([{ name: "Noise", preview: "x", time: "", unread: true, mention: false, muted: true, av: "" }, { name: "Me (You)", preview: "x", time: "", unread: true, mention: false, muted: false, av: "" }], true);

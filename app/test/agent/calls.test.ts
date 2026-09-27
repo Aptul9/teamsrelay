@@ -133,8 +133,43 @@ describe("call watch", () => {
     let now = 1_790_000_000_000;
     const w = new CallWatch(a, () => now, () => now);
     const saved = () => JSON.parse(states.get(STATE.call) ?? "null");
-    return { w, calls, logged, evaluate, saved, tick: async (seconds = 1) => ((now += seconds * 1000), await w.tick()) };
+    // a look, then the pushes it started, done
+    const tick = async (seconds = 1) => {
+      now += seconds * 1000;
+      await w.tick();
+      await w.settled();
+    };
+    return { w, a, calls, logged, evaluate, saved, tick, look: async () => ((now += 1000), await w.tick()) };
   }
+
+  it("keeps looking, and seeing the call for the web app, while a push is slow; the pushes go out in order", async () => {
+    const { w, a, calls, saved, look } = watch([...Array<string>(12).fill("Anna Rossi"), null, null, null]);
+    let release = () => {};
+    vi.mocked(a.notifier.call).mockImplementationOnce(async (...args: unknown[]) => {
+      await new Promise<void>((r) => (release = r));
+      calls.push(args);
+      return 1;
+    });
+    await look();
+    for (let i = 0; i < 11; i++) await look();
+    // seen at 1 s, then every CALL_SEEN_EVERY (2) seconds: 11 s at the twelfth look
+    expect(CALL_SEEN_EVERY).toBe(2);
+    expect(saved().seen).toBe(1_790_000_011_000);
+    expect(calls).toEqual([]);
+    for (let i = 0; i < 3; i++) await look();
+    release();
+    await w.settled();
+    expect(calls.map((c) => c[1])).toEqual(["ringing", "again", "again", "ended"]);
+  });
+
+  it("records in the call log a call that another caller's call replaced", async () => {
+    const { logged, tick } = watch(["Anna Rossi", "Anna Rossi", "Luca Bianchi", null, null, null]);
+    for (let i = 0; i < 6; i++) await tick();
+    expect(logged).toEqual([
+      ["Anna Rossi", 1_790_000_001_000, 1],
+      ["Luca Bianchi", 1_790_000_003_000, 0],
+    ]);
+  });
 
   it("records each call that ended in the call log of the account, with how long it rang", async () => {
     const { logged, tick } = watch(["Anna Rossi", "Anna Rossi", "Anna Rossi", null, null, null, "Luca Bianchi", null, null, null]);

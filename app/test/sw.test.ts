@@ -161,3 +161,11 @@ describe("service worker app icon", () => {
     expect(closed.badges).toEqual([]);
   });
 });
+
+describe("service worker app icon of the local relay", () => {
+  it("puts no dot for a push without an account: the page of the local relay never takes it away", async () => {
+    const closed = serviceWorker();
+    await closed.push({ title: "Anna Rossi", body: "ciao", chat: "Anna Rossi", tag: "chat-0-Anna Rossi" });
+    expect(closed.badges).toEqual([]);
+  });
+});

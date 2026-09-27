@@ -123,6 +123,11 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   // the calls ringing now in every account of the user, whichever is on screen
   const [calls, setCalls] = useState<RingingCall[]>([]);
   const [seenAct, setSeenAct] = useState<Record<number, string[]>>({});
+  // the notifications of the account seen here when the Calls list opened: its missed calls not seen then keep their
+  // dot while it stays open
+  const [callsSeen, setCallsSeen] = useState<{ acc: number; seen: string[] | null } | null>(null);
+  // streams opened again after the browser gave one up
+  const [reconnects, setReconnects] = useState(0);
   const [health, setHealth] = useState<Health | null>(null);
   const [pushOff, setPushOff] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -238,14 +243,22 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     on<{ ts: number; items: ActivityItem[] }>("activity", own((d) => noteActivity(acc, d, listRef.current)));
     on<CallLogEntry[]>("calllog", own(setCallLog));
     on<{ chat: string; rows: Message[] }>("messages", own(setMessages));
+    let retry: ReturnType<typeof setTimeout> | undefined;
     es.onerror = () => {
+      // without the stream no call is known to ring: the ring stops until it is back
+      setCalls([]);
       // a stream refused with 401 means the session is over
       void fetch("/api/accounts", { credentials: "same-origin" }).then((r) => {
         if (r.status === 401) toLogin();
       });
+      // the browser gives up on a stream answered with an error (502 while the web app restarts): open it again
+      if (es.readyState === EventSource.CLOSED) retry = setTimeout(() => setReconnects((n) => n + 1), 5000);
     };
-    return () => es.close();
-  }, [acc, openChat, onScreen, applyAccounts, noteActivity]);
+    return () => {
+      clearTimeout(retry);
+      es.close();
+    };
+  }, [acc, openChat, onScreen, applyAccounts, noteActivity, reconnects]);
 
   // notification tapped while the app is open: switch to the account it comes from
   useEffect(() => {
@@ -288,6 +301,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setPane("main");
     setListTab(t);
     if (t !== "chats") {
+      if (t === "calls") setCallsSeen({ acc, seen: seenAct[acc] ?? null });
       if (activity) noteActivity(acc, activity, t);
       void refreshActivity();
     }
@@ -388,6 +402,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const unreadOf = (a: Account): Unread =>
     a.slot === acc && !a.stopped ? { chats: unreadChats, notifications: unreadActivity, calls: unreadCalls } : accountUnread(a, seenAct[a.slot] ?? null);
   const others = unreadInOthers(accounts ?? [], acc, unreadOf);
+  const otherCalls = (accounts ?? []).reduce((n, a) => (a.slot === acc ? n : n + unreadOf(a).calls), 0);
 
   // what waits in every account on the icon of the installed app; set again when the app comes back on screen, where
   // the service worker may have put a dot meanwhile
@@ -612,7 +627,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             ringing={calls.find((c) => c.acc === acc)}
             missed={acc ? (activity?.items ?? []).filter(isMissedCall) : []}
             log={acc ? (callLog ?? []) : []}
-            seen={seenAct[acc] ?? null}
+            seen={callsSeen?.acc === acc ? callsSeen.seen : (seenAct[acc] ?? null)}
             chatOf={chatOf}
             onOpenChat={(c) => {
               setPane("main");
@@ -655,6 +670,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               stopped={!!current && (current.stopped || current.checkEvery > 0)}
               stoppedText={current?.checkEvery && !current.stopped ? "Runs only during its checks: set it to always on in Settings to send" : undefined}
               others={others}
+              otherCalls={otherCalls}
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}
             />

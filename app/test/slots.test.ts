@@ -6,7 +6,7 @@ import { isSlotStopped, listSlots, migrateAppSchema, openAppDb, slotOwner, slotR
 import type { ControlClient } from "@/lib/control";
 import { HttpError } from "@/lib/http";
 import { addAccount, exclusive, keepSlotsUp, removeAccount, setAccountRunning, setCheckMode, wipeSlot } from "@/lib/slots";
-import { tempDir } from "./helpers";
+import { createSlotDb, tempDir } from "./helpers";
 
 let db: Database.Database;
 let dataDir: string;
@@ -186,6 +186,33 @@ describe("setCheckMode", () => {
     await addAccount("u1", control(), opts());
     await expect(setCheckMode(1, 3600, control("stop 1"), db)).rejects.toThrow(/stop 1 failed/);
     expect(slotRow(db, 1)).toMatchObject({ check_every: 0 });
+  });
+
+  it("lets the next check start from what it finds once the mode changes or the account starts again: nothing old is pushed", async () => {
+    process.env.APP_DB = path.join(dataDir, "app.db");
+    await addAccount("u1", control(), opts());
+    const file = path.join(dataDir, "1", "messages.db");
+    const found = () => {
+      const d = new Database(file);
+      try {
+        return d.prepare("SELECT v FROM state WHERE k='check_seen'").pluck().get() ?? null;
+      } finally {
+        d.close();
+      }
+    };
+    const checked = () => {
+      const d = createSlotDb(file);
+      d.prepare("INSERT OR REPLACE INTO state(k, v) VALUES('check_seen', ?)").run(JSON.stringify({ chats: [], activity: ["c0"] }));
+      d.close();
+    };
+    checked();
+    await setCheckMode(1, 3600, control(), db);
+    expect(found()).toBeNull();
+    checked();
+    await setAccountRunning(1, false, control(), db);
+    expect(found()).not.toBeNull();
+    await setAccountRunning(1, true, control(), db);
+    expect(found()).toBeNull();
   });
 
   it("starts a checked account again as in service, with a check asked, without starting its browser", async () => {

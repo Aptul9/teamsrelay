@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 import { askCheck, CHECK_INTERVALS, claimSlot, listSlots, releaseSlot, setCheckEvery, setSlotStopped, slotRow } from "./appdb";
 import type { ControlClient } from "./control";
 import { HttpError } from "./http";
+import { SlotNotReady, withSlot } from "./slotdb";
 
 export type SlotPaths = { dataDir: string };
 export type SlotOptions = SlotPaths & { db: Database.Database; slotCount: number; perUser: number };
@@ -21,6 +22,16 @@ async function startOrUndo(ctl: ControlClient, n: number) {
   } catch (e) {
     await slotDown(ctl, n).catch(() => undefined);
     throw e;
+  }
+}
+
+// The next check of the account starts from what it finds (src/agent/commands/check.ts): nothing it would compare with
+// is left from before a change of mode or a start. An account whose agent has not created its database has nothing.
+function forgetLastCheck(n: number) {
+  try {
+    withSlot(n, (r) => r.forgetLastCheck());
+  } catch (e) {
+    if (!(e instanceof SlotNotReady)) throw e;
   }
 }
 
@@ -75,6 +86,7 @@ export function setAccountRunning(n: number, running: boolean, ctl: ControlClien
     if (!running) await slotDown(ctl, n);
     else if (!s.check_every) await startOrUndo(ctl, n);
     setSlotStopped(db, n, !running);
+    if (running) forgetLastCheck(n);
     if (running && s.check_every) askCheck(db, n);
   });
 }
@@ -93,6 +105,7 @@ export function setCheckMode(n: number, every: number, ctl: ControlClient, db: D
     if (!every) await startOrUndo(ctl, n);
     else if (!s.stopped && !s.checking) await slotDown(ctl, n);
     setCheckEvery(db, n, every, now);
+    forgetLastCheck(n);
     // in service; a start from now on (the grace of a browser starting counts from it)
     if (!every || s.stopped) setSlotStopped(db, n, false);
     // stopped, its chats are old: checked at once

@@ -27,28 +27,36 @@ beforeAll(async () => {
   js = out.outputFiles[0].text;
 });
 
-// Chrome with the given --autoplay-policy, on the test page
-function chrome(policy: "no-user-gesture-required" | "document-user-activation-required") {
+// Chrome with the given --autoplay-policy, on the test page; touch: a touch screen, as a phone
+function chrome(policy: "no-user-gesture-required" | "document-user-activation-required", o: { touch?: boolean } = {}) {
   const c = {} as Chrome;
   beforeAll(async () => {
     c.browser = await chromium.launch({ channel: "chrome", headless: true, args: [`--autoplay-policy=${policy}`] });
-    c.page = await c.browser.newPage({ viewport: { width: 1280, height: 800 } });
+    c.page = await c.browser.newPage({ viewport: { width: 1280, height: 800 }, hasTouch: !!o.touch });
     c.errors = [];
     c.page.on("pageerror", (e) => c.errors.push(e.message));
     c.page.on("console", (m) => m.type() === "error" && c.errors.push(m.text()));
     await c.page.route("http://ring.test/**", (route) =>
       route.fulfill({ contentType: "text/html", body: `<!doctype html><html><body><div id="root"></div><script>${js}</script></body></html>` }),
     );
-    await c.page.goto("http://ring.test/");
     c.cdp = await c.page.context().newCDPSession(c.page);
-    // the page is rendered and takes calls
-    for (let i = 0; i < 100 && (await run(c, "typeof window.setCalls")) !== "function"; i++) await new Promise((r) => setTimeout(r, 50));
+    await load(c);
   });
   afterAll(async () => {
     await c.browser?.close();
   });
   return c;
 }
+
+// The test page, loaded again: a new document, which the user has not clicked yet
+async function load(c: Chrome) {
+  await c.page.goto("http://ring.test/");
+  for (let i = 0; i < 100 && (await run(c, "typeof window.setCalls")) !== "function"; i++) await new Promise((r) => setTimeout(r, 50));
+}
+
+// a point of the page with nothing on it
+const EMPTY = { x: 640, y: 700 };
+const contextState = (c: Chrome) => run<string>(c, "window.analyser.context.state");
 
 // An expression evaluated in the page as its own code would run: no user gesture
 async function run<T>(c: Chrome, expression: string): Promise<T> {
@@ -110,6 +118,8 @@ describe("call ring where the page may play sound (installed app)", () => {
     await setCalls(c, []);
     await until(c, "Anna Rossi is calling", false);
     expect(await loudest(c)).toBeLessThan(0.001);
+    // between two calls the audio context rests
+    expect(await contextState(c)).toBe("suspended");
   });
 
   it("goes quiet on Mute and keeps the banner; a new call rings again; the banner opens the account", async () => {
@@ -132,23 +142,48 @@ describe("call ring where the page may play sound (installed app)", () => {
 describe("call ring where sound needs a click in the page first (browser tab)", () => {
   const c = chrome("document-user-activation-required");
 
-  it("shows the hint, stays silent with the banner up, and rings from the first click on", async () => {
+  it("shows the hint, stays silent with the banner up, and rings from the first click anywhere in the page", async () => {
     await until(c, "Click to allow the call ring");
     await setCalls(c, [call("Anna Rossi")]);
     await until(c, "Anna Rossi is calling");
     expect(await shows(c, "Click to allow the ring")).toBe(true);
     expect(await loudest(c)).toBeLessThan(0.001);
-    await click(c, "button", "Click to allow the call ring");
+    await c.page.mouse.click(EMPTY.x, EMPTY.y);
     await until(c, "Click to allow the call ring", false);
     expect(await loudest(c)).toBeGreaterThan(0.05);
   });
 
-  it("rings a later call without another click, the page once allowed", async () => {
+  it("rings a later call without another click, the context resting in between", async () => {
     await setCalls(c, []);
     await until(c, "Anna Rossi is calling", false);
     expect(await loudest(c)).toBeLessThan(0.001);
+    expect(await contextState(c)).toBe("suspended");
     await setCalls(c, [call("Luca Bianchi")]);
     await until(c, "Luca Bianchi is calling");
+    expect(await loudest(c)).toBeGreaterThan(0.05);
+    await setCalls(c, []);
+    expect(c.errors).toEqual([]);
+  });
+
+  it("is allowed by a key press as well", async () => {
+    await load(c);
+    await until(c, "Click to allow the call ring");
+    await c.page.keyboard.press("a");
+    await until(c, "Click to allow the call ring", false);
+    await setCalls(c, [call("Anna Rossi")]);
+    expect(await loudest(c)).toBeGreaterThan(0.05);
+    await setCalls(c, []);
+  });
+});
+
+describe("call ring on a touch screen (phone)", () => {
+  const c = chrome("document-user-activation-required", { touch: true });
+
+  it("is allowed by the first tap anywhere in the page", async () => {
+    await until(c, "Click to allow the call ring");
+    await c.page.touchscreen.tap(EMPTY.x, EMPTY.y);
+    await until(c, "Click to allow the call ring", false);
+    await setCalls(c, [call("Anna Rossi")]);
     expect(await loudest(c)).toBeGreaterThan(0.05);
     await setCalls(c, []);
     expect(c.errors).toEqual([]);

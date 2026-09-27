@@ -17,9 +17,10 @@ self.addEventListener('push', event => {
 });
 
 // While a window of the installed app is on screen, the app keeps the number of what waits on its icon (App.tsx). With
-// none on screen a push puts a dot there, until the app shows the number again; a call that ended adds nothing.
+// none on screen a push puts a dot there, until the app shows the number again; a call that ended adds nothing. Pushes
+// of the local relay (no acc) put none: its page never takes a dot away.
 async function badge(d) {
-  if (d.call === 'ended' || !self.navigator || !self.navigator.setAppBadge) return;
+  if (!d.acc || d.call === 'ended' || !self.navigator || !self.navigator.setAppBadge) return;
   const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
   if (windows.some(w => w.visibilityState === 'visible')) return;
   try { await self.navigator.setAppBadge(); } catch (_) {}

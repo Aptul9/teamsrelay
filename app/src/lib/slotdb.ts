@@ -166,6 +166,12 @@ export class SlotReader {
     return Number(r.lastInsertRowid);
   }
 
+  // What the last check of the account found (checked every N hours): forgotten, the next check only records what it
+  // finds and pushes nothing from before
+  forgetLastCheck() {
+    this.db.prepare("DELETE FROM state WHERE k=?").run(STATE.checkSeen);
+  }
+
   // The app shows this chat now. Teams keeps a visible page, which reads what is open: without a recent mark
   // the agent goes back to the self chat (wantedChat in src/agent/logic/parking.ts).
   markViewing(chat: string) {

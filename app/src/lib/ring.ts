@@ -54,21 +54,24 @@ export class Ringer {
     return () => void this.listeners.delete(fn);
   };
 
+  // Listens for the first gesture that allows sound: a key press, a mouse button (pointerdown) or the end of a tap
+  // (pointerup: a touch counts only once the finger lifts). Once allowed, it stops listening.
   attach(doc: Document) {
     const ctx = this.context();
     if (!ctx) return;
     const allow = () => this.allow();
-    doc.addEventListener("pointerdown", allow, true);
-    doc.addEventListener("keydown", allow, true);
+    const events = ["pointerdown", "pointerup", "keydown"] as const;
+    for (const e of events) doc.addEventListener(e, allow, true);
     this.detach = () => {
-      doc.removeEventListener("pointerdown", allow, true);
-      doc.removeEventListener("keydown", allow, true);
+      for (const e of events) doc.removeEventListener(e, allow, true);
+      this.detach = () => {};
     };
     this.update();
   }
 
-  // From a click or a key press: the browser lets the context run from now on
+  // From a click, a tap or a key press: the browser lets the context run from now on
   allow() {
+    if (this.ok) return;
     void this.ctx?.resume().then(() => this.update(), () => undefined);
   }
 
@@ -101,6 +104,7 @@ export class Ringer {
     this.ctx = null;
     this.out = null;
     this.buffer = null;
+    this.ok = false;
   }
 
   private context(): AudioContext | null {
@@ -126,6 +130,7 @@ export class Ringer {
     if (ctx?.state !== "running") return;
     if (!this.ok) {
       this.ok = true;
+      this.detach();
       for (const fn of this.listeners) fn();
     }
     if (!this.src) void ctx.suspend().catch(() => undefined);
