@@ -13,7 +13,7 @@ export type Account = {
   stopped: boolean;
   unread: number;
   unreadActivity: string[] | null;
-  unreadCalls: string[] | null;
+  missedCalls: string[] | null;
   added: number;
   desktop: string;
   // checked every N hours (0: always on): seconds between two checks, end (0 before the first) and outcome of the
@@ -120,7 +120,8 @@ export const isSelf = (name: string) => /\(you\)/i.test(name || "");
 
 // Teams keeps an activity bold until it is clicked in Teams itself, while its Activity badge counts only
 // what arrived after the feed was last opened. The tab badge does the same with the ids already seen here. Missed
-// calls count on the Calls tab instead.
+// calls count on the Calls tab instead: Teams shows them as read (not bold), new or not, so every one this device has
+// not shown yet counts.
 export const isMissedCall = (a: Pick<ActivityItem, "kind">) => a.kind === "call";
 
 export function unseenActivity(items: ActivityItem[], seen: string[] | null): number {
@@ -128,10 +129,10 @@ export function unseenActivity(items: ActivityItem[], seen: string[] | null): nu
 }
 
 export function unseenCalls(items: ActivityItem[], seen: string[] | null): number {
-  return unseenIds(items.filter((a) => a.unread && isMissedCall(a)).map((a) => a.id), seen);
+  return unseenIds(items.filter(isMissedCall).map((a) => a.id), seen);
 }
 
-// Same count from the ids of the unread items, as /api/accounts gives them for every account
+// Same count from the ids of the unread items or of the missed calls, as /api/accounts gives them for every account
 export function unseenIds(unread: string[], seen: string[] | null): number {
   if (!seen) return 0;
   const known = new Set(seen);
@@ -147,7 +148,7 @@ export const unreadTotal = (u: Unread) => u.chats + u.notifications + u.calls;
 // from Teams and would keep its last numbers until started again: it counts nothing.
 export function accountUnread(a: Account, seen: string[] | null): Unread {
   if (a.stopped) return { chats: 0, notifications: 0, calls: 0 };
-  const calls = new Set(a.unreadCalls ?? []);
+  const calls = new Set(a.missedCalls ?? []);
   return {
     chats: a.unread,
     notifications: unseenIds((a.unreadActivity ?? []).filter((id) => !calls.has(id)), seen),
@@ -185,16 +186,16 @@ export function parseSeen(raw: string | null): string[] | null {
 export const seenKey = (a: Pick<Account, "slot" | "added">) => `actseen:${a.slot}:${a.added}`;
 
 // Notification ids already seen on this device, per slot. An account met here for the first time takes the unread
-// ones it has now as seen, like the first feed of the selected account: only what comes later counts. Nothing is
-// stored for an account whose feed the agent has not saved yet.
+// ones and the missed calls it has now as seen, like the first feed of the selected account: only what comes later
+// counts. Nothing is stored for an account whose feed the agent has not saved yet.
 export function loadSeen(accounts: Account[]): Record<number, string[]> {
   const seen: Record<number, string[]> = {};
   for (const a of accounts) {
     const stored = parseSeen(readStorage(seenKey(a)));
     if (stored) seen[a.slot] = stored;
     else if (a.unreadActivity) {
-      seen[a.slot] = a.unreadActivity;
-      writeStorage(seenKey(a), JSON.stringify(a.unreadActivity));
+      seen[a.slot] = [...a.unreadActivity, ...(a.missedCalls ?? [])];
+      writeStorage(seenKey(a), JSON.stringify(seen[a.slot]));
     }
   }
   return seen;

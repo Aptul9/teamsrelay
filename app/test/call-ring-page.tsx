@@ -21,7 +21,7 @@ const account: Account = {
   stopped: false,
   unread: 0,
   unreadActivity: [],
-  unreadCalls: [],
+  missedCalls: [],
   added: 1790000000,
   desktop: "",
   checkEvery: 0,

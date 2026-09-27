@@ -42,7 +42,7 @@ const account = (extra: Partial<Account> = {}): Account => ({
   stopped: false,
   unread: 2,
   unreadActivity: ["n2", "n1"],
-  unreadCalls: [],
+  missedCalls: [],
   added: 1790000000,
   desktop: "",
   checkEvery: 0,
@@ -74,32 +74,37 @@ describe("unseenActivity", () => {
 });
 
 describe("missed calls", () => {
-  const call = (id: string, unread = 1): ActivityItem => ({ ...item(id, unread), kind: "call" });
+  // Teams shows a missed call as read (font weight 400), new or not
+  const call = (id: string, unread = 0): ActivityItem => ({ ...item(id, unread), kind: "call" });
 
-  it("count apart from the other notifications: the unread missed calls this device has not shown", () => {
+  it("count apart from the other notifications: every missed call this device has not shown, whatever Teams shows", () => {
     const seen = markActivitySeen(null, [item("a"), call("c0")]);
-    const items = [call("c1"), item("n1"), call("c2", 0), item("a"), call("c0")];
-    expect(unseenCalls(items, seen)).toBe(1);
+    const items = [call("c1"), item("n1"), call("c2", 1), item("a"), call("c0")];
+    expect(unseenCalls(items, seen)).toBe(2);
     expect(unseenActivity(items, seen)).toBe(1);
     expect(unseenCalls(items, null)).toBe(0);
   });
 
-  it("count in an account the app does not show, from the ids /api/accounts gives", () => {
-    const a = account({ unreadActivity: ["c1", "n2", "n1"], unreadCalls: ["c1"] });
-    expect(accountUnread(a, ["n1"])).toEqual({ chats: 2, notifications: 1, calls: 1 });
-    expect(accountUnread(a, ["n1", "c1"])).toEqual({ chats: 2, notifications: 1, calls: 0 });
+  it("count in an account the app does not show, from the missed calls /api/accounts lists", () => {
+    const a = account({ unreadActivity: ["n2", "n1"], missedCalls: ["c1", "c0"] });
+    expect(accountUnread(a, ["n1", "c0"])).toEqual({ chats: 2, notifications: 1, calls: 1 });
+    expect(accountUnread(a, ["n1", "c1", "c0"])).toEqual({ chats: 2, notifications: 1, calls: 0 });
     expect(accountUnread({ ...a, stopped: true }, ["n1"])).toEqual({ chats: 0, notifications: 0, calls: 0 });
   });
 
+  it("leave a missed call Teams would show bold out of the notifications", () => {
+    expect(accountUnread(account({ unreadActivity: ["c1", "n1"], missedCalls: ["c1"] }), [])).toEqual({ chats: 2, notifications: 1, calls: 1 });
+  });
+
   it("add to what waits in the other accounts", () => {
-    const accounts = [account({ slot: 1 }), account({ slot: 2, unread: 0, unreadActivity: ["c1"], unreadCalls: ["c1"] })];
+    const accounts = [account({ slot: 1 }), account({ slot: 2, unread: 0, unreadActivity: [], missedCalls: ["c1"] })];
     expect(unreadInOthers(accounts, 1, (a) => accountUnread(a, []))).toBe(1);
   });
 });
 
 describe("appBadgeCount", () => {
   it("adds what waits in every account, the one on screen included, for the icon of the installed app", () => {
-    const accounts = [account({ slot: 1, unread: 1 }), account({ slot: 2, unread: 2, unreadCalls: ["n1"] }), account({ slot: 3, unread: 4, stopped: true })];
+    const accounts = [account({ slot: 1, unread: 1 }), account({ slot: 2, unread: 2, missedCalls: ["n1"] }), account({ slot: 3, unread: 4, stopped: true })];
     const unreadOf = (a: Account) => accountUnread(a, a.slot === 1 ? ["n2", "n1"] : []);
     expect(appBadgeCount(accounts, unreadOf)).toBe(1 + (2 + 1 + 1));
     expect(appBadgeCount([], unreadOf)).toBe(0);
@@ -207,8 +212,15 @@ describe("loadSeen", () => {
     expect(accountUnread(later, seen[2])).toEqual({ chats: 2, notifications: 1, calls: 0 });
   });
 
+  it("takes the missed calls of an account met for the first time as seen too, and counts the next one", () => {
+    const a = account({ unreadActivity: ["n1"], missedCalls: ["c2", "c1"] });
+    expect(loadSeen([a])).toEqual({ 2: ["n1", "c2", "c1"] });
+    const later = account({ unreadActivity: ["n1"], missedCalls: ["c3", "c2", "c1"] });
+    expect(accountUnread(later, loadSeen([later])[2])).toEqual({ chats: 2, notifications: 0, calls: 1 });
+  });
+
   it("stores nothing for an account whose feed the agent has not saved yet", () => {
-    expect(loadSeen([account({ unreadActivity: null })])).toEqual({});
+    expect(loadSeen([account({ unreadActivity: null, missedCalls: null })])).toEqual({});
     expect(store.size).toBe(0);
   });
 

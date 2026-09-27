@@ -139,16 +139,20 @@ describe("agent store", () => {
     expect(log[CALL_LOG_SIZE - 1].caller).toBe("Caller 2");
   });
 
-  it("tells the unread missed calls of the Activity feed apart, once the feed was read", () => {
+  it("lists every missed call of the Activity feed, bold or not (Teams shows them as read), once the feed was read", () => {
     const item = { actor: "Anna Rossi", title: "", emoji: "", preview: "", tm: "1:15 PM", chat: "Anna Rossi", channel: false, av: "" };
     store.saveActivity([
       { id: "c1", kind: "call", unread: true, ...item },
       { id: "m1", kind: "mention", unread: true, ...item },
       { id: "c2", kind: "call", unread: false, ...item },
     ]);
-    expect(reader((r) => r.unreadCalls())).toBeNull();
+    expect(reader((r) => r.missedCalls())).toBeNull();
     store.setState(STATE.activityTs, "1790000000");
-    expect(reader((r) => [r.unreadActivity(), r.unreadCalls()])).toEqual([["c1", "m1"], ["c1"]]);
+    expect(reader((r) => [r.unreadActivity(), r.missedCalls()])).toEqual([["c1", "m1"], ["c1", "c2"]]);
+    expect(store.missedCalls()).toEqual([
+      { id: "c1", caller: "Anna Rossi", time: "1:15 PM" },
+      { id: "c2", caller: "Anna Rossi", time: "1:15 PM" },
+    ]);
   });
 
   it("keeps state and the history of notifications", () => {

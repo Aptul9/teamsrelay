@@ -6,6 +6,7 @@ import { readActivity } from "@/agent/jobs/activity";
 import { scanChatsFull } from "@/agent/jobs/chat-list";
 import type { Notifier } from "@/agent/push/notifier";
 import { SlotStore, type ActivityEntry } from "@/agent/store/slot-store";
+import { STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
 // The reads themselves are the jobs of the loop, tested with their pages elsewhere: here they only report how they went
@@ -106,13 +107,40 @@ describe("check command", () => {
     expect(alerts).toEqual([]);
   });
 
-  it("pushes no missed call at the first check, nor one already unread at the previous check, nor one read elsewhere", async () => {
+  it("pushes no missed call at the first check, nor one the previous check already found", async () => {
     feedWithCalls([["c1", true, "Anna Rossi", "9:02 AM"]]);
     await check(agent(), cmd);
-    feedWithCalls([["c2", false, "Luca Bianchi", "1:15 PM"], ["c1", true, "Anna Rossi", "9:02 AM"]]);
+    feedWithCalls([["c1", false, "Anna Rossi", "9:02 AM"]]);
     await check(agent(), cmd);
     expect(missed).toEqual([]);
     expect(alerts).toEqual([]);
+  });
+
+  it("pushes a missed call Teams shows as read: it never shows one bold, new or not", async () => {
+    feedWithCalls([["c1", false, "Anna Rossi", "9:02 AM"]]);
+    await check(agent(), cmd);
+    feedWithCalls([["c2", false, "Luca Bianchi", "1:15 PM"], ["c1", false, "Anna Rossi", "9:02 AM"]]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([["Luca Bianchi", "1:15 PM"]]);
+    expect(alerts).toEqual([]);
+    await check(agent(), cmd);
+    expect(missed).toHaveLength(1);
+  });
+
+  it("keeps every missed call of the feed it read in check_seen", async () => {
+    feedWithCalls([["c2", false, "Luca Bianchi", "1:15 PM"], ["a1", true], ["c1", true, "Anna Rossi", "9:02 AM"]]);
+    await check(agent(), cmd);
+    expect(JSON.parse(store.getState(STATE.checkSeen))).toMatchObject({ calls: ["c2", "c1"], read: true });
+  });
+
+  it("only records the missed calls after a check of an earlier release, whose row has no calls", async () => {
+    store.setState(STATE.checkSeen, JSON.stringify({ chats: [], activity: [], read: true }));
+    feedWithCalls([["c1", false, "Anna Rossi", "3:54 PM"]]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([]);
+    feedWithCalls([["c2", false, "Luca Bianchi", "4:10 PM"], ["c1", false, "Anna Rossi", "3:54 PM"]]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([["Luca Bianchi", "4:10 PM"]]);
   });
 
   it("pushes no missed call the previous check could not have seen, its feed not read, and keeps the last feed it read", async () => {
