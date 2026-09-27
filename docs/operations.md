@@ -89,7 +89,7 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 | `page`, `input`, `presence` | page made visible, hook installed, input errors, your Teams status changed |
 | `identity` | signed-in account found or changed |
 | `open`, `send`, `reply`, `react`, `pill`, `edit`, `delete`, `readby` | an action that did not apply on Teams, and why |
-| `chats`, `messages`, `activity`, `media`, `download`, `health` | reads that failed |
+| `chats`, `messages`, `activity`, `media`, `download`, `health` | reads that failed; `media` also `removed files no row names` with their number (`files`), every 300 rounds |
 | `push`, `ntfy`, `appdb` | notification delivery and `app.db` errors; a failed push names its `status`, `attempt` and the `retry` wait in seconds (`none` when it is not sent again) |
 | `job`, `loop`, `cmd` | a step or a command that threw, with its name; `cmd` also counts the commands that waited too long and were not run, and those a stopped agent left running (unconfirmed) |
 | `server` | local relay joined to a server: `joining`, `joined` with the series of the account (`added`) and its devices, `sync:` or `commands:` failures (once per kind of error, then `back`), a file the server refused, `left out of the sync` for a row larger than the server takes, `the clock of the server differs` with the seconds; `token refused (401)` means the account was removed or got a new token. Notifications through the server log under `push`, `dropped: over two minutes old by its turn` when the server kept them waiting |

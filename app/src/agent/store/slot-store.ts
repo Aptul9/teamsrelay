@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
 import { HAS_TEAMS_ID, type Message, type MessageExtra, type ReadBy } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE, ensureSlotSchema } from "@/shared/slot-db/schema";
+import { Identity, parseState, STATE } from "@/shared/slot-db/state";
 import { mergeChats, type ChatEntry } from "../logic/chats";
 
 // The agent side of data/N/messages.db (src/shared/slot-db), or of relay.db for the local relay, where the API
@@ -107,6 +108,23 @@ export class SlotStore {
   selfChat(): string {
     const r = this.db.prepare("SELECT name FROM chats WHERE name LIKE '%(You)%' ORDER BY pos LIMIT 1").get() as { name: string } | undefined;
     return r?.name ?? "";
+  }
+
+  // Files of the media folder the rows name: pictures of the chats, of the feed and of the account, images and pictures
+  // of the messages kept (a chat that left the list keeps the last ones). No other file of the folder shows anywhere.
+  mediaFiles(): Set<string> {
+    const files = new Set<string>();
+    const add = (f: unknown) => {
+      if (typeof f === "string" && f) files.add(f);
+    };
+    for (const av of this.db.prepare("SELECT av FROM chats UNION SELECT av FROM activity").pluck().all()) add(av);
+    for (const v of this.db.prepare("SELECT extra FROM chat_messages").pluck().all() as (string | null)[]) {
+      const extra = parseExtra(v);
+      add(extra.av);
+      for (const im of Array.isArray(extra.images) ? extra.images : []) add(im?.f);
+    }
+    add(parseState(Identity, this.getState(STATE.me), null)?.av);
+    return files;
   }
 
   saveChatMessages(chat: string, messages: readonly SavedMessage[]) {

@@ -77,6 +77,7 @@ About one round per second. Each step is a job of a small scheduler (`app/src/ag
 | every 5 rounds, sign-in page included | health, and whether the Activity button of the side bar can be clicked (a menu or dialog over it counts as clickable: the Activity job closes it first); a push when Teams stays signed out for a minute, another when it is back |
 | every round | open conversation |
 | every 2 rounds, no commands | "Read by" of one of your recent messages in the open group chat; not in the local relay |
+| every 300 rounds, the first time 31 rounds after a start | files of the media folder no row names any more removed: pictures of chats that left the list, of items gone from the feed, images of messages no longer kept |
 | 8-11 and 17-20 | automatic check with a push of the outcome; not on an account checked every few hours |
 
 A message is new when the preview or the time of a chat changes with an incoming text, or when the chat turns unread. A time that turns into a date with the same preview is the same message getting older (the list shows the time of the last message for about a day). Muted chats and the chat with yourself do not notify; identical notifications within 150 s are dropped.
@@ -117,7 +118,7 @@ A call has one notification per account (tag `call-<slot>`, `call` in the payloa
 
 - **Text**: the message body is rebuilt from the DOM as reduced HTML: known tags only, validated colours, http(s) links, text always escaped. The browser sanitizes it again (DOMPurify) before rendering. Teams emoji are images with the emoji in `alt`.
 - **Images**: `blob:` or AMS URLs readable only inside the page, fetched by the page into `data/N/media` (8 MB cap). Giphy GIFs block CORS and stay public URLs. Until Teams has loaded an image it draws a 1x1 GIF in its place: the agent then fetches the address of `data-orig-src` and never saves that GIF (one saved by an earlier release is replaced).
-- **Profile pictures**: the Teams API wants its own token and refuses `fetch`; the pictures are already drawn in the page, same origin, so they are copied from a canvas.
+- **Profile pictures**: the Teams API wants its own token and refuses `fetch`; the pictures are already drawn in the page, same origin, so they are copied from a canvas. One file per address (`sha1(src)[:16].png`): Teams gives a person the same address at every start (`profilepicturev2/<user id>?displayname=...&size=HR64x64`). A list of thousands of chats shows other people below its first screen at every start; the files of those who left the list go with the next removal of the files no row names.
 - **Attachments**: SharePoint links downloaded with the browser session (`download=1`) into `data/N/files`, only for `*.sharepoint.com`, 100 MB cap.
 - **Sending an image**: the web app writes it to `data/N/uploads` and queues `sendimage`; the agent builds the file inside the page from its bytes and pastes it in the compose box, types the caption and presses Enter, then waits for the message with the image to be sent (up to 30 s) and deletes the upload. Design: [2026-09-26-send-images.md](design/2026-09-26-send-images.md).
 

@@ -8,6 +8,7 @@ import { scanChats, scanChatsFull } from "./jobs/chat-list";
 import { saveOpenChat } from "./jobs/conversation";
 import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
+import { pruneMedia } from "./jobs/media";
 import { drainHook, keepActive, park, preparePage, wanted } from "./jobs/page-setup";
 import { prefetchReadBy } from "./jobs/read-by";
 import { scheduledSelfCheck, selfCheckDue } from "./jobs/self-check";
@@ -70,6 +71,8 @@ export function agentJobs(a: Agent): Job<Round>[] {
       when: (r) => !!r.want && active() === r.want && teamsOk() && !a.store.hasPendingCommands(),
       run: (r) => prefetchReadBy(a, r.want),
     },
+    // the first time once a start has read the list, the feed and the account, off the rounds of the list and the health
+    { name: "media", every: { rounds: 300, offset: 31 }, run: () => pruneMedia(a) },
     // an account started only to be checked has its checks: its start would find Teams still loading
     { name: "self-check", every: { rounds: 1 }, when: () => !!selfCheckDue(a) && !a.checkedOnly?.(), run: () => scheduledSelfCheck(a) },
   ];
