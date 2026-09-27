@@ -1,13 +1,17 @@
 import webpush from "web-push";
 import { Identity, parseState, STATE } from "@/shared/slot-db/state";
-import { accountLabel, PUSH_TTL, pushTitle, RecentPushes } from "../logic/notify";
+import { accountLabel, chatTag, PUSH_TTL, pushRetryDelay, pushTitle, RecentPushes } from "../logic/notify";
 import { errorText, log } from "../log";
-import type { AppStore } from "../store/app-store";
+import type { AppStore, PushTarget } from "../store/app-store";
 import type { SlotStore } from "../store/slot-store";
 import type { VapidKeys } from "./vapid";
 
 type Send = (subscription: webpush.PushSubscription, payload: string, options: webpush.RequestOptions) => Promise<unknown>;
+type Later = (ms: number, fn: () => void) => void;
 export type Ntfy = { url: string; topic: string } | null;
+
+// Retries run on timers, so a push service that answers slowly or not at all never holds up the read loop
+const later: Later = (ms, fn) => void setTimeout(fn, ms).unref();
 
 // Notifications of the slot: Web Push to the devices of the slot owner, ntfy when enabled, and the history
 // of the messages notified (messages table).
@@ -23,45 +27,78 @@ export class Notifier {
       subject: string;
       ntfy: Ntfy;
       send?: Send;
+      later?: Later;
       clock?: () => number;
     },
   ) {
     this.recent = new RecentPushes(o.clock);
   }
 
-  // A new Teams message: the same text within 150 s is notified once
+  // A new Teams message: the same text within 150 s is notified once. On the device it replaces the notification
+  // of the same chat, which keeps the last lines (sw.js).
   async message(title: string, body: string) {
     if (!this.recent.allow(body)) return;
     this.o.store.addNotification(title, body);
     await this.ntfy(title, body);
-    await this.push(title, body);
+    await this.deliver(title, body, "high", chatTag(this.o.slot, title));
   }
 
-  // Push to every device of the owner; subscriptions the push service reports as gone are removed
-  async push(title: string, body: string): Promise<number> {
+  // About the account itself: session expired, check outcome. Urgency high unless the caller says it can wait: a
+  // phone on low battery asks its push service for high only (RFC 8030 section 5.3), and web-push sends normal.
+  async push(title: string, body: string, urgency: webpush.Urgency = "high"): Promise<number> {
+    return this.deliver(title, body, urgency, "");
+  }
+
+  // Push to every device of the owner. Returns the devices the push service took on the first try; the ones it
+  // reported as gone are removed, the ones it could not take now are tried again later.
+  private async deliver(title: string, body: string, urgency: webpush.Urgency, tag: string): Promise<number> {
     const { vapid, app, store, slot } = this.o;
     if (!vapid) return 0;
     const targets = app.pushTargets();
     if (!targets.length) return 0;
     const me = parseState(Identity, store.getState(STATE.me), Identity.parse({}));
-    // acc: the notification opens the app on this account
-    const payload = JSON.stringify({ title: pushTitle(title, accountLabel(app.ownerHasManyAccounts(), me, slot)), body: body || "", acc: slot });
-    const send: Send = this.o.send ?? webpush.sendNotification;
+    // acc: the notification opens the app on this account; tag: the chat it belongs to
+    const payload = JSON.stringify({ title: pushTitle(title, accountLabel(app.ownerHasManyAccounts(), me, slot)), body: body || "", acc: slot, ...(tag && { tag }) });
+    const options: webpush.RequestOptions = {
+      vapidDetails: { subject: this.o.subject, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
+      TTL: PUSH_TTL,
+      urgency,
+      timeout: 15_000,
+    };
     let sent = 0;
-    for (const t of targets) {
-      try {
-        await send(JSON.parse(t.sub) as webpush.PushSubscription, payload, {
-          vapidDetails: { subject: this.o.subject, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
-          TTL: PUSH_TTL,
-        });
-        sent++;
-      } catch (e) {
-        const status = (e as { statusCode?: number }).statusCode;
-        if (status === 404 || status === 410) app.deleteSubscription(t.endpoint);
-        else log.warn("push", errorText(e), { status });
-      }
-    }
+    for (const t of targets) if (await this.sendTo(t, payload, options, 0)) sent++;
     return sent;
+  }
+
+  private async sendTo(t: PushTarget, payload: string, options: webpush.RequestOptions, attempt: number): Promise<boolean> {
+    const send: Send = this.o.send ?? webpush.sendNotification;
+    try {
+      await send(JSON.parse(t.sub) as webpush.PushSubscription, payload, options);
+      if (attempt) log.info("push", "sent on retry", { attempt });
+      return true;
+    } catch (e) {
+      const { statusCode: status, headers, code } = e as { statusCode?: number; headers?: Record<string, string | string[] | undefined>; code?: unknown };
+      if (status === 404 || status === 410) {
+        this.o.app.deleteSubscription(t.endpoint);
+        return false;
+      }
+      // without a status, only a push service that did not answer (network error, timeout) is tried again: a
+      // subscription web-push refuses before sending fails the same way every time
+      const reached = status !== undefined || typeof code === "string" || errorText(e) === "Socket timeout";
+      const retryAfter = headers?.["retry-after"];
+      const wait = reached ? pushRetryDelay(status, Array.isArray(retryAfter) ? retryAfter[0] : retryAfter, attempt, (this.o.clock ?? Date.now)()) : null;
+      log.warn("push", errorText(e), { status, attempt, retry: wait ?? "none" });
+      if (wait !== null) (this.o.later ?? later)(wait * 1000, () => this.retry(t.endpoint, payload, options, attempt + 1));
+      return false;
+    }
+  }
+
+  // A retry goes to the device only while it is still one of the owner's: a subscription can pass to another user
+  // of the same browser, or be removed, while the retry waits
+  private retry(endpoint: string, payload: string, options: webpush.RequestOptions, attempt: number) {
+    const t = this.o.app.pushTargets().find((x) => x.endpoint === endpoint);
+    if (!t) return log.info("push", "device gone before the retry", { attempt });
+    void this.sendTo(t, payload, options, attempt);
   }
 
   private async ntfy(title: string, body: string) {
