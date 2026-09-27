@@ -12,7 +12,7 @@
 | Reading opens the chat | The agent reads the chat that is open in the remote Teams, so reading a chat from the app marks it as read in Teams. |
 | Read by | Collected only for the open chat, on your last 5 messages. |
 | Latency | New messages every 3-4 s, incoming calls within about 2 s, actions confirmed in 3-10 s, Activity feed every few minutes. |
-| Language | Teams web must stay in English: some texts read by the agent (message status, feed titles, expired session) are English. |
+| Language | Teams web must stay in English: some texts read by the agent (message status, feed titles, expired session) are English. The local relay runs its browser in English (`en-US`) whatever the language of the machine; Teams may still write dates and times in a local format (`25/09`, `12:19`), which the agent reads as well. |
 | Teams interface | When Microsoft changes the [selectors](teams-selectors.md), the affected functions stop working until they are updated. |
 | Same display name | Chats are identified by the name shown in the list. With two chats of identical name, only the first one in the list is reachable. |
 | Activity feed items | Reactions, mentions in channels and the other Activity items show in the Notifications tab, missed calls in the Calls tab too (red count), all in the unread counts of the account menu. The agent pushes chat messages; an Activity item reaches the phone only when Teams itself shows a notification for it, and a missed call when the check of an account checked every few hours finds it. Teams feed items carry no time: an older missed call that a longer read of the feed shows for the first time counts, and is pushed by a check, as new. |

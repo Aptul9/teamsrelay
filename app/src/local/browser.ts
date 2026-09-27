@@ -28,6 +28,9 @@ export async function launchBrowser(o: LaunchOptions): Promise<BrowserContext> {
     headless: o.headless ?? false,
     // the page takes the size of the window, as in a browser opened by hand
     viewport: null,
+    // Teams answers in the language of the browser, which a new profile takes from the machine (Italian on an Italian
+    // Windows); the page scripts read English
+    locale: "en-US",
     // Playwright adds --no-sandbox otherwise; this browser renders whatever arrives in Teams
     chromiumSandbox: true,
     ignoreDefaultArgs: KEEP_UPDATING,
