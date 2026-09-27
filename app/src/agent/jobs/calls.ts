@@ -1,3 +1,4 @@
+import { CALL_SEEN_EVERY, STATE, type CallState } from "@/shared/slot-db/state";
 import type { Agent } from "../context";
 import { CallTracker } from "../logic/calls";
 import { isTeamsUrl } from "../logic/hosts";
@@ -11,16 +12,18 @@ export const CALL_WATCH_EVERY = 1;
 // An incoming call, pushed as soon as its toast shows and followed until it stops (logic/calls.ts). Teams web rings
 // a few seconds only, so the watch runs on a timer of its own, beside the loop: a round can take many seconds (the
 // whole chat list, the Activity feed, a send). It only reads the page; a look that fails (the page navigating) says
-// nothing about the call.
+// nothing about the call. The call is also kept in the slot database, for the web app that rings while it is open,
+// and each call that ended goes to the call log of the account.
 export class CallWatch {
   private readonly tracker: CallTracker;
   private busy = false;
   private warned = 0;
+  private written = 0;
 
   constructor(
-    private readonly a: Pick<Agent, "notifier"> & { tp?: Agent["tp"] },
+    private readonly a: Pick<Agent, "notifier" | "store"> & { tp?: Agent["tp"] },
     private readonly clock: () => number = () => performance.now(),
-    wall: () => number = Date.now,
+    private readonly wall: () => number = Date.now,
   ) {
     this.tracker = new CallTracker(clock, wall);
   }
@@ -38,11 +41,20 @@ export class CallWatch {
     try {
       const event = this.tracker.update(await page.evaluate(readIncomingCall, { s: SEL, t: TEXTS }));
       if (event?.kind === "ringing") {
-        if (!event.again) log.info("call", "ringing", { caller: event.caller });
+        if (!event.again) {
+          log.info("call", "ringing", { caller: event.caller });
+          this.keep({ caller: event.caller, since: event.since, seen: this.wall(), ringing: true });
+        }
         await this.a.notifier.call(event.caller, event.again ? "again" : "ringing", event.since);
       } else if (event) {
         log.info("call", "ended", { caller: event.caller, seconds: event.seconds });
+        this.keep({ caller: event.caller, since: event.since, seen: this.wall(), ringing: false });
+        this.save(() => this.a.store.addCall(event.caller, event.since, event.seconds));
         await this.a.notifier.call(event.caller, "ended", event.since, event.seconds);
+      } else {
+        // still ringing: seen again, for the web app
+        const now = this.tracker.current();
+        if (now && this.clock() - this.written >= CALL_SEEN_EVERY * 1000) this.keep({ ...now, seen: this.wall(), ringing: true });
       }
     } catch (e) {
       // a page that navigates fails every look for a while: one line a minute
@@ -52,6 +64,20 @@ export class CallWatch {
       }
     } finally {
       this.busy = false;
+    }
+  }
+
+  private keep(call: CallState) {
+    this.written = this.clock();
+    this.save(() => this.a.store.setState(STATE.call, JSON.stringify(call)));
+  }
+
+  // A database that refuses a write (locked for longer than its wait) never holds up the push of the call
+  private save(write: () => void) {
+    try {
+      write();
+    } catch (e) {
+      log.warn("call", `not saved: ${errorText(e)}`);
     }
   }
 }

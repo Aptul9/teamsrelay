@@ -14,8 +14,16 @@ vi.mock("@/agent/jobs/activity", () => ({ readActivity: vi.fn(async () => 1) }))
 
 let store: SlotStore;
 let alerts: string[];
+let missed: string[][];
 
-const agent = () => ({ store, notifier: { alert: async (title: string, body: string) => void alerts.push(`${title}: ${body}`) } as unknown as Notifier }) as unknown as Agent;
+const agent = () =>
+  ({
+    store,
+    notifier: {
+      alert: async (title: string, body: string) => void alerts.push(`${title}: ${body}`),
+      missedCall: async (caller: string, time: string) => void missed.push([caller, time]),
+    } as unknown as Notifier,
+  }) as unknown as Agent;
 const cmd = { id: 1, type: "check", arg1: "", arg2: "" };
 
 function chats(list: [string, string, boolean][]) {
@@ -29,9 +37,21 @@ function feed(ids: [string, boolean][]) {
   store.saveActivity(ids.map(([id, unread]) => ({ id, kind: "mention", actor: "", title: "", emoji: "", preview: "", tm: "", chat: "", channel: false, unread, av: "" }) as ActivityEntry));
 }
 
+// the feed with missed calls: [id, unread] for a mention, [id, unread, caller, time] for a missed call
+function feedWithCalls(items: ([string, boolean] | [string, boolean, string, string])[]) {
+  store.saveActivity(
+    items.map(([id, unread, caller, tm]) =>
+      caller === undefined
+        ? ({ id, kind: "mention", actor: "", title: "", emoji: "", preview: "", tm: "", chat: "", channel: false, unread, av: "" } as ActivityEntry)
+        : ({ id, kind: "call", actor: caller, title: `Missed call from ${caller}`, emoji: "", preview: "Teams call", tm, chat: caller, channel: false, unread, av: "" } as ActivityEntry),
+    ),
+  );
+}
+
 beforeEach(() => {
   store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
   alerts = [];
+  missed = [];
   vi.mocked(scanChatsFull).mockResolvedValue(3);
   vi.mocked(readActivity).mockResolvedValue(1);
 });
@@ -63,6 +83,36 @@ describe("check command", () => {
     chats([["Anna Rossi", "are you there?", true], ["Luca Bianchi", "ping", true]]);
     await check(agent(), cmd);
     expect(alerts).toHaveLength(1);
+  });
+
+  it("pushes each missed call the check finds on its own, and leaves it out of the new notifications", async () => {
+    feedWithCalls([["a1", true]]);
+    await check(agent(), cmd);
+    feedWithCalls([["c1", true, "Anna Rossi", "1:15 PM"], ["a2", true], ["c2", true, "Luca Bianchi", "Yesterday"], ["a1", true]]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([
+      ["Anna Rossi", "1:15 PM"],
+      ["Luca Bianchi", "Yesterday"],
+    ]);
+    expect(alerts).toEqual(["1 new notification: Found by the check: open TeamsRelay to read them."]);
+  });
+
+  it("pushes only the missed call when nothing else is new", async () => {
+    feedWithCalls([["a1", true]]);
+    await check(agent(), cmd);
+    feedWithCalls([["c1", true, "Anna Rossi", "1:15 PM"], ["a1", true]]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([["Anna Rossi", "1:15 PM"]]);
+    expect(alerts).toEqual([]);
+  });
+
+  it("pushes no missed call at the first check, nor one already unread at the previous check, nor one read elsewhere", async () => {
+    feedWithCalls([["c1", true, "Anna Rossi", "9:02 AM"]]);
+    await check(agent(), cmd);
+    feedWithCalls([["c2", false, "Luca Bianchi", "1:15 PM"], ["c1", true, "Anna Rossi", "9:02 AM"]]);
+    await check(agent(), cmd);
+    expect(missed).toEqual([]);
+    expect(alerts).toEqual([]);
   });
 
   it("never counts muted chats or the chat with yourself", async () => {

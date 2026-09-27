@@ -13,9 +13,10 @@ const Seen = z.object({ chats: z.array(z.string()).catch([]), activity: z.array(
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 // The check of an account the web app starts only to check it (checked every N hours, src/lib/checks.ts): the whole
-// chat list and the Activity feed, then one push when a chat or a notification is unread that was not at the previous
-// check. The messages that came meanwhile are not pushed one by one: the first chat list after a start only primes
-// the detector.
+// chat list and the Activity feed, then a push for each missed call of the feed and one more when a chat or another
+// notification is unread that was not at the previous check. The browser did not run while those calls rang: the feed
+// is all that tells them. The messages that came meanwhile are not pushed one by one: the first chat list after a
+// start only primes the detector.
 export const check: Handler = async (a) => {
   const chats = await scanChatsFull(a);
   const feed = await readActivity(a, RAIL_WAIT);
@@ -24,8 +25,10 @@ export const check: Handler = async (a) => {
   const before = a.store.getState(STATE.checkSeen);
   if (before) {
     const was = parseState(Seen, before, { chats: [], activity: [] });
+    const missed = a.store.unreadMissedCalls().filter((c) => !was.activity.includes(c.id));
+    for (const c of missed) await a.notifier.missedCall(c.caller, c.time);
     const newChats = now.chats.filter((c) => !was.chats.includes(c)).length;
-    const newItems = now.activity.filter((id) => !was.activity.includes(id)).length;
+    const newItems = now.activity.filter((id) => !was.activity.includes(id) && !missed.some((c) => c.id === id)).length;
     if (newChats || newItems) {
       const found = [unread.length > 0 && plural(unread.length, "unread chat", "unread chats"), newItems > 0 && plural(newItems, "new notification", "new notifications")];
       await a.notifier.alert(found.filter(Boolean).join(", "), "Found by the check: open TeamsRelay to read them.");

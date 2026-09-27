@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   accountStatus,
   accountUnread,
+  appBadgeCount,
   loadSeen,
   markActivitySeen,
   parseSeen,
@@ -9,6 +10,7 @@ import {
   statusText,
   unreadInOthers,
   unseenActivity,
+  unseenCalls,
   unseenIds,
   untilText,
   type Account,
@@ -40,6 +42,7 @@ const account = (extra: Partial<Account> = {}): Account => ({
   stopped: false,
   unread: 2,
   unreadActivity: ["n2", "n1"],
+  unreadCalls: [],
   added: 1790000000,
   desktop: "",
   checkEvery: 0,
@@ -70,6 +73,39 @@ describe("unseenActivity", () => {
   });
 });
 
+describe("missed calls", () => {
+  const call = (id: string, unread = 1): ActivityItem => ({ ...item(id, unread), kind: "call" });
+
+  it("count apart from the other notifications: the unread missed calls this device has not shown", () => {
+    const seen = markActivitySeen(null, [item("a"), call("c0")]);
+    const items = [call("c1"), item("n1"), call("c2", 0), item("a"), call("c0")];
+    expect(unseenCalls(items, seen)).toBe(1);
+    expect(unseenActivity(items, seen)).toBe(1);
+    expect(unseenCalls(items, null)).toBe(0);
+  });
+
+  it("count in an account the app does not show, from the ids /api/accounts gives", () => {
+    const a = account({ unreadActivity: ["c1", "n2", "n1"], unreadCalls: ["c1"] });
+    expect(accountUnread(a, ["n1"])).toEqual({ chats: 2, notifications: 1, calls: 1 });
+    expect(accountUnread(a, ["n1", "c1"])).toEqual({ chats: 2, notifications: 1, calls: 0 });
+    expect(accountUnread({ ...a, stopped: true }, ["n1"])).toEqual({ chats: 0, notifications: 0, calls: 0 });
+  });
+
+  it("add to what waits in the other accounts", () => {
+    const accounts = [account({ slot: 1 }), account({ slot: 2, unread: 0, unreadActivity: ["c1"], unreadCalls: ["c1"] })];
+    expect(unreadInOthers(accounts, 1, (a) => accountUnread(a, []))).toBe(1);
+  });
+});
+
+describe("appBadgeCount", () => {
+  it("adds what waits in every account, the one on screen included, for the icon of the installed app", () => {
+    const accounts = [account({ slot: 1, unread: 1 }), account({ slot: 2, unread: 2, unreadCalls: ["n1"] }), account({ slot: 3, unread: 4, stopped: true })];
+    const unreadOf = (a: Account) => accountUnread(a, a.slot === 1 ? ["n2", "n1"] : []);
+    expect(appBadgeCount(accounts, unreadOf)).toBe(1 + (2 + 1 + 1));
+    expect(appBadgeCount([], unreadOf)).toBe(0);
+  });
+});
+
 describe("markActivitySeen", () => {
   it("keeps the ids that left the feed, newest first, up to 200", () => {
     const seen = markActivitySeen(["x", "y"], [item("a"), item("x")]);
@@ -89,20 +125,20 @@ describe("unseenIds", () => {
 
 describe("accountUnread", () => {
   it("counts unread chats and the notifications this device has not shown", () => {
-    expect(accountUnread(account(), ["n1"])).toEqual({ chats: 2, notifications: 1 });
+    expect(accountUnread(account(), ["n1"])).toEqual({ chats: 2, notifications: 1, calls: 0 });
   });
 
   it("counts no notification before the feed was read or first seen here", () => {
-    expect(accountUnread(account({ unreadActivity: null }), ["n1"])).toEqual({ chats: 2, notifications: 0 });
-    expect(accountUnread(account(), null)).toEqual({ chats: 2, notifications: 0 });
+    expect(accountUnread(account({ unreadActivity: null }), ["n1"])).toEqual({ chats: 2, notifications: 0, calls: 0 });
+    expect(accountUnread(account(), null)).toEqual({ chats: 2, notifications: 0, calls: 0 });
   });
 
   it("counts what the last check found for an account checked every N hours, whose browser runs only then", () => {
-    expect(accountUnread(account({ checkEvery: 3600, checked: 1790000000 }), ["n1"])).toEqual({ chats: 2, notifications: 1 });
+    expect(accountUnread(account({ checkEvery: 3600, checked: 1790000000 }), ["n1"])).toEqual({ chats: 2, notifications: 1, calls: 0 });
   });
 
   it("counts nothing for a stopped account, whose numbers would stay until it starts", () => {
-    expect(accountUnread(account({ stopped: true }), [])).toEqual({ chats: 0, notifications: 0 });
+    expect(accountUnread(account({ stopped: true }), [])).toEqual({ chats: 0, notifications: 0, calls: 0 });
   });
 });
 
@@ -168,7 +204,7 @@ describe("loadSeen", () => {
     const later = account({ unreadActivity: ["n3", "n2", "n1"] });
     const seen = loadSeen([later]);
     expect(seen).toEqual({ 2: ["n2", "n1"] });
-    expect(accountUnread(later, seen[2])).toEqual({ chats: 2, notifications: 1 });
+    expect(accountUnread(later, seen[2])).toEqual({ chats: 2, notifications: 1, calls: 0 });
   });
 
   it("stores nothing for an account whose feed the agent has not saved yet", () => {
@@ -180,7 +216,7 @@ describe("loadSeen", () => {
     loadSeen([account({ added: 1790000000, unreadActivity: ["old"] })]);
     const next = account({ added: 1790003600, unreadActivity: ["b1", "b2"] });
     const seen = loadSeen([next]);
-    expect(accountUnread(next, seen[2])).toEqual({ chats: 2, notifications: 0 });
+    expect(accountUnread(next, seen[2])).toEqual({ chats: 2, notifications: 0, calls: 0 });
   });
 });
 

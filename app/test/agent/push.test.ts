@@ -239,6 +239,17 @@ describe("notifier", () => {
     expect(await done).toBe(2);
   });
 
+  it("pushes a missed call found by a check on a notification of its own, alerting, with the chat of the caller when known", async () => {
+    store.saveChats([{ name: "Anna Rossi", preview: "", time: "", unread: false, mention: false, muted: false, av: "" }]);
+    const n = notifier();
+    expect(await n.missedCall("Anna Rossi", "1:15 PM")).toBe(1);
+    await n.missedCall("", "");
+    expect(sent).toEqual([
+      { endpoint: "https://push/u1-phone", payload: { title: "Missed call from Anna Rossi", body: "Teams call at 1:15 PM, found by the check", chat: "Anna Rossi", acc: 1 }, ttl: PUSH_TTL, urgency: "high" },
+      { endpoint: "https://push/u1-phone", payload: { title: "Missed call", body: "Teams call, found by the check", chat: "", acc: 1 }, ttl: PUSH_TTL, urgency: "high" },
+    ]);
+  });
+
   it("keeps calls out of the history of notified messages", async () => {
     await notifier().call("Anna Rossi", "ringing", 1_790_000_000_000);
     const db = (store as unknown as { db: import("better-sqlite3").Database }).db;

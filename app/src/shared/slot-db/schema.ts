@@ -15,6 +15,13 @@ const TABLES = `
   CREATE TABLE IF NOT EXISTS activity(id TEXT PRIMARY KEY, pos INTEGER, kind TEXT, actor TEXT, title TEXT, emoji TEXT, preview TEXT, tm TEXT, chat TEXT, unread INTEGER, ts INTEGER);
 `;
 
+// Tables added later: the calls the agent saw ring (since in ms on the wall clock, seconds it rang), the last
+// CALL_LOG_SIZE of them
+const ADDED_TABLES = `
+  CREATE TABLE IF NOT EXISTS calls(id INTEGER PRIMARY KEY AUTOINCREMENT, since INTEGER, caller TEXT, seconds INTEGER);
+`;
+export const CALL_LOG_SIZE = 50;
+
 // Columns added later, in the order they were added: an old database ends up with the same layout as a new one
 const ADDED_COLUMNS = [
   ["chats", "muted", "INTEGER DEFAULT 0"],
@@ -25,12 +32,13 @@ const ADDED_COLUMNS = [
   ["commands", "key", "TEXT"],
 ] as const;
 
-export const SLOT_TABLES = ["messages", "chats", "chat_messages", "commands", "state", "readby", "activity"] as const;
+export const SLOT_TABLES = ["messages", "chats", "chat_messages", "commands", "state", "readby", "activity", "calls"] as const;
 
 // Creates the missing tables and columns. Never drops anything: the web app keeps showing chats and messages
 // across restarts of the agent.
 export function ensureSlotSchema(db: Database.Database) {
   db.exec(TABLES);
+  db.exec(ADDED_TABLES);
   for (const [table, column, decl] of ADDED_COLUMNS) {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);

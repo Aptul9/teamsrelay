@@ -21,6 +21,8 @@ export const STATE = {
   lastScanTs: "last_scan_ts",
   // JSON {chats, activity}: what was unread at the end of the last check of an account checked every N hours
   checkSeen: "check_seen",
+  // JSON CallState: the incoming call Teams shows, written by the agent while it rings and once it ends
+  call: "call",
 } as const;
 
 // JSON result of command <id>, e.g. DownloadResult
@@ -49,6 +51,29 @@ export const Identity = z.object({
   av: z.string().catch(""),
 });
 export type Identity = z.infer<typeof Identity>;
+
+// The incoming call of the account (src/agent/jobs/calls.ts). since: when it started ringing, seen: the last time the
+// agent saw it ringing, ms on the wall clock. While it rings the agent writes it again every CALL_SEEN_EVERY seconds,
+// for as long as it pushes the call; the web app rings while the last write is at most CALL_FRESH_FOR seconds old, so
+// the ring stops soon after an agent that stopped or a page that went away.
+export const CallState = z.object({
+  caller: z.string().catch(""),
+  since: z.number().catch(0),
+  seen: z.number().catch(0),
+  ringing: z.boolean().catch(false),
+});
+export type CallState = z.infer<typeof CallState>;
+export const CALL_SEEN_EVERY = 2;
+export const CALL_FRESH_FOR = 10;
+
+// A call ringing now in an account of the user (acc: its slot), as the event stream sends it to the app
+export type RingingCall = { acc: number; caller: string; since: number };
+
+// The call the account is ringing with now, if any
+export function ringingCall(c: CallState | null, now: number): { caller: string; since: number } | null {
+  if (!c?.ringing || now - c.seen > CALL_FRESH_FOR * 1000) return null;
+  return { caller: c.caller, since: c.since };
+}
 
 // teams as the agent writes it; the web app adds "starting" and "unknown" when the agent is silent
 export const TEAMS_STATES = ["ok", "login", "loading", "err"] as const;

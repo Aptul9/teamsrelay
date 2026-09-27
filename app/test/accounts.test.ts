@@ -53,7 +53,10 @@ describe("the unread counts of an account", () => {
     expect(summary("u3", n)).toMatchObject({ unread: 1, unreadActivity: null });
 
     slotDb.prepare("INSERT INTO state(k, v) VALUES('activity_ts', ?)").run(String(Math.floor(Date.now() / 1000)));
-    expect(summary("u3", n)).toMatchObject({ unread: 1, unreadActivity: ["x1"] });
+    expect(summary("u3", n)).toMatchObject({ unread: 1, unreadActivity: ["x1"], unreadCalls: [] });
+
+    slotDb.prepare("INSERT INTO activity(id,pos,kind,actor,title,emoji,preview,tm,chat,unread,ts,channel,av) VALUES('c1',1,'call','Luca Bianchi','Missed call from Luca Bianchi','','','1:15 PM','Luca Bianchi',1,0,0,'')").run();
+    expect(summary("u3", n)).toMatchObject({ unreadActivity: ["x1", "c1"], unreadCalls: ["c1"] });
   });
 
   it("carry when the account took its slot, which changes when another account takes the slot", () => {

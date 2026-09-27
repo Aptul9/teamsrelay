@@ -3,7 +3,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
 import type { Message, MessageExtra, ReadBy } from "@/shared/slot-db/rows";
-import { ensureSlotSchema } from "@/shared/slot-db/schema";
+import { CALL_LOG_SIZE, ensureSlotSchema } from "@/shared/slot-db/schema";
 import { mergeChats, type ChatEntry } from "../logic/chats";
 
 // The agent side of data/N/messages.db (src/shared/slot-db), or of relay.db for the local relay, where the API
@@ -202,9 +202,26 @@ export class SlotStore {
     return this.db.prepare("UPDATE commands SET status='failed' WHERE status='pending' AND ts < ?").run(now - maxAge).changes;
   }
 
+  // A call that rang, for the call log of the web app: the last CALL_LOG_SIZE are kept
+  addCall(caller: string, since: number, seconds: number) {
+    this.db.transaction(() => {
+      this.db.prepare("INSERT INTO calls(since, caller, seconds) VALUES(?, ?, ?)").run(since, caller, seconds);
+      this.db.prepare("DELETE FROM calls WHERE id NOT IN (SELECT id FROM calls ORDER BY since DESC, id DESC LIMIT ?)").run(CALL_LOG_SIZE);
+    })();
+  }
+
   // Ids of the items the Activity feed shows unread (bold), in feed order
   unreadActivity(): string[] {
     return this.db.prepare("SELECT id FROM activity WHERE unread=1 ORDER BY pos").pluck().all() as string[];
+  }
+
+  // The missed calls among them: who called, and the time Teams shows
+  unreadMissedCalls(): { id: string; caller: string; time: string }[] {
+    return this.db.prepare("SELECT id, actor AS caller, tm AS time FROM activity WHERE unread=1 AND kind='call' ORDER BY pos").all() as {
+      id: string;
+      caller: string;
+      time: string;
+    }[];
   }
 
   saveActivity(items: readonly ActivityEntry[]) {

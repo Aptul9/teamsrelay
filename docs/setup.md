@@ -63,11 +63,13 @@ TeamsRelay is a PWA: installed from the browser, it opens like an app, with icon
 
 - **iPhone**: open `https://<DOMAIN>` in Safari, sign in, Share → **Add to Home Screen**. Open TeamsRelay from the Home Screen icon, tap **Enable notifications**, allow. Push notifications reach only the installed app.
 - **Android**: open the site in Chrome, menu → **Install app**, then **Enable notifications**. The Android app of `mobile/` shows the same web app but receives no notifications.
-- **PC**: any current browser, chats on the left and the open conversation on the right. The remote desktop opens in a browser tab.
+- **PC**: any current browser, chats on the left and the open conversation on the right. The remote desktop opens in a browser tab. To hear incoming calls, install the app (the **Install** icon at the right of the address bar, Chrome or Edge): the installed app rings without a click, a tab only after a click or a key press in it since it loaded. In Chrome, **Settings** → **Performance** → **Always keep these sites active** → **Add** the address of TeamsRelay, so that Memory Saver never puts it to sleep.
 
 The status panel shows how many devices of the user receive notifications. A device receives the notifications of every Teams account of its user; with more than one account, the title of a notification ends with the organization of its account (its email when Teams shows none), and a tap opens the app on that account.
 
 An incoming Teams call arrives as a notification that alerts again every 5 s while the call rings and turns quiet when it stops ("Call from Anna Rossi, ended after 9 s"); an iPhone gets one notification when the call starts and one when it ends. Its sound is the one of the device. On Android it can be told apart from other apps: long-press a TeamsRelay notification, open its settings and pick a sound (it applies to messages too). Only accounts whose browser runs can see a call (see [limitations](limitations.md)).
+
+While the app is open, a call also shows a banner on top ("Anna Rossi is calling (Contoso)") and the app rings until the call ends; **Mute** silences that call. The **Calls** tab lists the missed calls Teams shows in its activity feed (a red count for the ones not seen on this device yet) and the calls that rang while the account ran, with how long. An account checked every few hours sends a notification for each missed call its check finds.
 
 ## Upgrading from the single-user release
 

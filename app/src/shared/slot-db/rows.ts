@@ -29,6 +29,9 @@ export const MEDIA_NAME = /^[0-9a-f]{16}\.(png|jpg|gif|webp)$/;
 export const ACTIVITY_KINDS = ["reaction", "mention", "reply", "task", "team", "call", "meeting", "message"] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
+// A call the agent saw ring (since: ms on the wall clock, seconds it rang), newest first
+export type CallLogEntry = { caller: string; since: number; seconds: number };
+
 export type ActivityItem = {
   id: string;
   kind: string;

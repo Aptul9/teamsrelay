@@ -14,8 +14,9 @@ export type AccountSummary = {
   stopped: boolean;
   unread: number;
   // ids of the unread items of the Teams Activity feed, null until the agent has saved the feed once: the app counts
-  // the ones its device has not shown yet
+  // the ones its device has not shown yet; unreadCalls: those that are missed calls
   unreadActivity: string[] | null;
+  unreadCalls: string[] | null;
   // Unix seconds the account took its slot: a slot freed and taken by another account gets a new value
   added: number;
   desktop: string;
@@ -45,12 +46,14 @@ export function accountSummary(s: Slot): AccountSummary {
   let health: Health;
   let unread = 0;
   let unreadActivity: string[] | null = null;
+  let unreadCalls: string[] | null = null;
   try {
-    ({ me, health, unread, unreadActivity } = withSlot(s.slot, (r) => ({
+    ({ me, health, unread, unreadActivity, unreadCalls } = withSlot(s.slot, (r) => ({
       me: r.identity(),
       health: r.health(upSince(s)),
       unread: r.unreadCount(),
       unreadActivity: r.unreadActivity(),
+      unreadCalls: r.unreadCalls(),
     })));
   } catch (e) {
     if (!(e instanceof SlotNotReady)) throw e;
@@ -68,6 +71,7 @@ export function accountSummary(s: Slot): AccountSummary {
     stopped: !!s.stopped,
     unread,
     unreadActivity,
+    unreadCalls,
     added: s.added,
     desktop: desktopUrlOf(s.slot),
     checkEvery: s.check_every,

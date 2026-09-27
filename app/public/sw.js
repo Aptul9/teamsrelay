@@ -13,8 +13,17 @@ self.addEventListener('push', event => {
   try { d = event.data.json(); } catch (_) { try { d.body = event.data.text(); } catch (__) {} }
   const shown = queue.then(() => show(d));
   queue = shown.catch(() => undefined);
-  event.waitUntil(shown);
+  event.waitUntil(Promise.all([shown, badge(d)]));
 });
+
+// While a window of the installed app is on screen, the app keeps the number of what waits on its icon (App.tsx). With
+// none on screen a push puts a dot there, until the app shows the number again; a call that ended adds nothing.
+async function badge(d) {
+  if (d.call === 'ended' || !self.navigator || !self.navigator.setAppBadge) return;
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  if (windows.some(w => w.visibilityState === 'visible')) return;
+  try { await self.navigator.setAppBadge(); } catch (_) {}
+}
 
 // A chat has one notification: a new message replaces it, alerts again and keeps the last lines. A line it already
 // holds (the same push sent again) changes nothing. A push without a tag (checks, session expired) gets a

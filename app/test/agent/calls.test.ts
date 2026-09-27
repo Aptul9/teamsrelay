@@ -1,9 +1,11 @@
 // An incoming call as the agent follows it: pushed at once, again every few seconds while it rings, and once more,
-// quiet, when it stops. The watch looks on a timer of its own, whatever the loop is doing.
+// quiet, when it stops. The watch looks on a timer of its own, whatever the loop is doing, and keeps the call in the
+// slot database for the web app, which rings while it is open.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/agent/context";
 import { CallWatch } from "@/agent/jobs/calls";
 import { CALL_END_AFTER, CALL_RING_EVERY, CALL_RING_FOR, CallTracker } from "@/agent/logic/calls";
+import { CALL_SEEN_EVERY, STATE } from "@/shared/slot-db/state";
 
 describe("call tracker", () => {
   let now = 1_790_000_000_000;
@@ -82,14 +84,32 @@ describe("call tracker", () => {
   it("has nothing to say without a call", () => {
     expect(at(tracker(), 0, null)).toBeNull();
   });
+
+  it("names the call ringing now, until its toast goes or it has rung a minute", () => {
+    const t = tracker();
+    expect(t.current()).toBeNull();
+    at(t, 0, "");
+    expect(t.current()).toEqual({ caller: "", since: 1_790_000_000_000 });
+    at(t, 1, "Anna Rossi");
+    expect(t.current()).toEqual({ caller: "Anna Rossi", since: 1_790_000_000_000 });
+    at(t, 2, null);
+    expect(t.current()).toBeNull();
+    at(t, 3, "Anna Rossi");
+    expect(t.current()).toEqual({ caller: "Anna Rossi", since: 1_790_000_000_000 });
+    at(t, CALL_RING_FOR, "Anna Rossi");
+    expect(t.current()).toBeNull();
+  });
 });
 
 describe("call watch", () => {
   afterEach(() => vi.useRealTimers());
 
-  // what the page shows at each look: a caller, no toast (null), or an error of the page (navigating)
-  function watch(seen: (string | null | Error)[], url = "https://teams.microsoft.com/v2/") {
+  // what the page shows at each look: a caller, no toast (null), or an error of the page (navigating). saved: the
+  // call as the slot database holds it; failWrites: a database that refuses every write (locked)
+  function watch(seen: (string | null | Error)[], url = "https://teams.microsoft.com/v2/", o: { failWrites?: boolean } = {}) {
     const calls: unknown[][] = [];
+    const logged: unknown[][] = [];
+    const states = new Map<string, string>();
     let looks = 0;
     const evaluate = vi.fn(async () => {
       const v = seen[Math.min(looks++, seen.length - 1)];
@@ -99,11 +119,59 @@ describe("call watch", () => {
     const a = {
       tp: { page: { evaluate, url: () => url, isClosed: () => false } },
       notifier: { call: vi.fn(async (...args: unknown[]) => void calls.push(args)) },
+      store: {
+        setState: vi.fn((k: string, v: string) => {
+          if (o.failWrites) throw new Error("database is locked");
+          states.set(k, v);
+        }),
+        addCall: vi.fn((...args: unknown[]) => {
+          if (o.failWrites) throw new Error("database is locked");
+          logged.push(args);
+        }),
+      },
     } as unknown as Agent;
     let now = 1_790_000_000_000;
     const w = new CallWatch(a, () => now, () => now);
-    return { w, calls, evaluate, tick: async (seconds = 1) => ((now += seconds * 1000), await w.tick()) };
+    const saved = () => JSON.parse(states.get(STATE.call) ?? "null");
+    return { w, calls, logged, evaluate, saved, tick: async (seconds = 1) => ((now += seconds * 1000), await w.tick()) };
   }
+
+  it("records each call that ended in the call log of the account, with how long it rang", async () => {
+    const { logged, tick } = watch(["Anna Rossi", "Anna Rossi", "Anna Rossi", null, null, null, "Luca Bianchi", null, null, null]);
+    for (let i = 0; i < 10; i++) await tick();
+    expect(logged).toEqual([
+      ["Anna Rossi", 1_790_000_001_000, 2],
+      ["Luca Bianchi", 1_790_000_007_000, 0],
+    ]);
+  });
+
+  it("keeps the call in the slot database for the web app: at once, seen again every few seconds, not ringing once it ends", async () => {
+    const { saved, tick } = watch([...Array<string>(6).fill("Anna Rossi"), null, null, null]);
+    await tick();
+    expect(saved()).toEqual({ caller: "Anna Rossi", since: 1_790_000_001_000, seen: 1_790_000_001_000, ringing: true });
+    await tick();
+    expect(saved().seen).toBe(1_790_000_001_000);
+    await tick(CALL_SEEN_EVERY - 1);
+    expect(saved().seen).toBe(1_790_000_001_000 + CALL_SEEN_EVERY * 1000);
+    for (let i = 0; i < 6; i++) await tick();
+    expect(saved()).toMatchObject({ caller: "Anna Rossi", since: 1_790_000_001_000, ringing: false });
+  });
+
+  it("stops seeing a call whose toast stays on the page after a minute, as the pushes stop", async () => {
+    const { saved, tick } = watch(["Anna Rossi"]);
+    for (let s = 0; s < CALL_RING_FOR + 10; s++) await tick();
+    expect(saved().ringing).toBe(true);
+    expect(saved().seen).toBeLessThanOrEqual(1_790_000_001_000 + CALL_RING_FOR * 1000);
+  });
+
+  it("pushes the call even when the slot database refuses to keep it", async () => {
+    const { calls, tick } = watch(["Anna Rossi", "Anna Rossi", null, null, null], undefined, { failWrites: true });
+    for (let i = 0; i < 5; i++) await tick();
+    expect(calls).toEqual([
+      ["Anna Rossi", "ringing", 1_790_000_001_000],
+      ["Anna Rossi", "ended", 1_790_000_001_000, 1],
+    ]);
+  });
 
   it("pushes the call when it rings, again while it rings, and when it ends", async () => {
     const { calls, tick } = watch([...Array<string>(CALL_RING_EVERY + 1).fill("Anna Rossi"), null, null, null]);

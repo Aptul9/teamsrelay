@@ -43,4 +43,11 @@ export class CallTracker {
     this.call = null;
     return { kind: "ended", caller: c.caller, since: c.since, seconds: Math.round((c.seen - c.start) / 1000) };
   }
+
+  // The call whose toast shows now, for as long as it is pushed (CALL_RING_FOR)
+  current(): { caller: string; since: number } | null {
+    const c = this.call;
+    if (!c || c.gone >= 0 || this.clock() - c.start >= CALL_RING_FOR * 1000) return null;
+    return { caller: c.caller, since: c.since };
+  }
 }

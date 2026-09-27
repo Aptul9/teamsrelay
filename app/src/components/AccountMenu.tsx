@@ -20,6 +20,7 @@ import { checkLine, idleChecked, lastCheck, statusText, type Account, type Unrea
 
 export const accName = (a: Account) => a.name || a.email || `Account ${a.slot}`;
 
+// chats and notifications share the purple count; missed calls have a red one of their own
 const total = (u: Unread) => u.chats + u.notifications;
 const capped = (n: number) => (n > 99 ? "99+" : String(n));
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -27,6 +28,17 @@ const unreadText = (u: Unread) =>
   [u.chats > 0 && plural(u.chats, "unread chat", "unread chats"), u.notifications > 0 && plural(u.notifications, "new notification", "new notifications")]
     .filter(Boolean)
     .join(", ");
+const callsText = (n: number) => plural(n, "missed call", "missed calls");
+
+export function MissedBadge({ n, className }: { n: number; className?: string }) {
+  if (!n) return null;
+  return (
+    <Badge className={cn("h-5 min-w-5 rounded-full bg-destructive px-1.5 text-white tabular-nums", className)} title={callsText(n)}>
+      {capped(n)}
+      <span className="sr-only"> ({callsText(n)})</span>
+    </Badge>
+  );
+}
 // between two checks an account checked every N hours knows only what its last check found
 export const needsLogin = (a: Account) =>
   !a.stopped &&
@@ -130,6 +142,8 @@ export function AccountMenu({
   onRemove: (a: Account) => void;
   onSignOut: () => void;
 }) {
+  // the missed calls among what waits in the other accounts, on a red count of their own
+  const otherCalls = (accounts ?? []).reduce((n, a) => (a.slot === current?.slot ? n : n + unreadOf(a).calls), 0);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -143,11 +157,12 @@ export function AccountMenu({
             <div className="truncate text-sm font-semibold">{current ? current.tenant || accName(current) : "TeamsRelay"}</div>
             <div className="truncate text-xs text-muted-foreground">{current ? accSub(current).text : user.email}</div>
           </div>
-          {others > 0 && (
-            <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums" title={`${others} unread in your other accounts`}>
-              {capped(others)}
+          {others - otherCalls > 0 && (
+            <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums" title={`${others - otherCalls} unread in your other accounts`}>
+              {capped(others - otherCalls)}
             </Badge>
           )}
+          <MissedBadge n={otherCalls} />
           <ChevronsUpDownIcon className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -166,6 +181,7 @@ export function AccountMenu({
                     <span className="sr-only"> ({unreadText(unread)})</span>
                   </Badge>
                 )}
+                <MissedBadge n={unread.calls} />
                 {a.slot === current?.slot && <CheckIcon className="text-primary" />}
                 <AccountStatus a={a} />
               </DropdownMenuItem>

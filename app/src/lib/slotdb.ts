@@ -2,8 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { CommandType } from "@/shared/slot-db/commands";
-import type { ActivityItem, Chat, Message, MessageExtra } from "@/shared/slot-db/rows";
-import { cmdResultKey, Members, membersKey, STATE, type SlotHealth } from "@/shared/slot-db/state";
+import type { ActivityItem, CallLogEntry, Chat, Message, MessageExtra } from "@/shared/slot-db/rows";
+import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
+import { CallState, cmdResultKey, Members, membersKey, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
 
 // data/N/messages.db is created and written by the agent of slot N; the web app reads it and
@@ -126,6 +127,23 @@ export class SlotReader {
   unreadActivity(): string[] | null {
     if (!Number(this.state(STATE.activityTs, 0))) return null;
     return this.all<{ id: string }>("SELECT id FROM activity WHERE unread=1 ORDER BY pos").map((r) => r.id);
+  }
+
+  // The same for the missed calls of the feed only
+  unreadCalls(): string[] | null {
+    if (!Number(this.state(STATE.activityTs, 0))) return null;
+    return this.all<{ id: string }>("SELECT id FROM activity WHERE unread=1 AND kind='call' ORDER BY pos").map((r) => r.id);
+  }
+
+  // The incoming call as the agent keeps it, null before the first one
+  call(): CallState | null {
+    const v = this.all<{ v: string }>("SELECT v FROM state WHERE k=?", STATE.call)[0]?.v;
+    return v ? parseState(CallState, v, null) : null;
+  }
+
+  // The calls the agent saw ring, newest first
+  callLog(): CallLogEntry[] {
+    return this.all<CallLogEntry>(`SELECT caller, since, seconds FROM calls ORDER BY since DESC, id DESC LIMIT ${CALL_LOG_SIZE}`);
   }
 
   health(added: number): Health {

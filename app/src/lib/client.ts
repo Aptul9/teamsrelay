@@ -13,6 +13,7 @@ export type Account = {
   stopped: boolean;
   unread: number;
   unreadActivity: string[] | null;
+  unreadCalls: string[] | null;
   added: number;
   desktop: string;
   // checked every N hours (0: always on): seconds between two checks, end (0 before the first) and outcome of the
@@ -23,9 +24,9 @@ export type Account = {
   nextCheck: number;
   checking: boolean;
 };
-export type { ActivityItem, Chat, Message, Reaction } from "@/shared/slot-db/rows";
+export type { ActivityItem, CallLogEntry, Chat, Message, Reaction } from "@/shared/slot-db/rows";
 export { CHECK_INTERVALS } from "@/shared/checks";
-export type { SlotHealth as Health } from "@/shared/slot-db/state";
+export type { RingingCall, SlotHealth as Health } from "@/shared/slot-db/state";
 // detail: why the web app refused the command, when it did
 export type CommandResult = { status: string; result: { f?: string } | null; detail?: string };
 
@@ -118,9 +119,16 @@ export const mediaUrl = (file: string, acc: number) => `/media/${encodeURICompon
 export const isSelf = (name: string) => /\(you\)/i.test(name || "");
 
 // Teams keeps an activity bold until it is clicked in Teams itself, while its Activity badge counts only
-// what arrived after the feed was last opened. The tab badge does the same with the ids already seen here.
+// what arrived after the feed was last opened. The tab badge does the same with the ids already seen here. Missed
+// calls count on the Calls tab instead.
+export const isMissedCall = (a: Pick<ActivityItem, "kind">) => a.kind === "call";
+
 export function unseenActivity(items: ActivityItem[], seen: string[] | null): number {
-  return unseenIds(items.filter((a) => a.unread).map((a) => a.id), seen);
+  return unseenIds(items.filter((a) => a.unread && !isMissedCall(a)).map((a) => a.id), seen);
+}
+
+export function unseenCalls(items: ActivityItem[], seen: string[] | null): number {
+  return unseenIds(items.filter((a) => a.unread && isMissedCall(a)).map((a) => a.id), seen);
 }
 
 // Same count from the ids of the unread items, as /api/accounts gives them for every account
@@ -130,24 +138,32 @@ export function unseenIds(unread: string[], seen: string[] | null): number {
   return unread.filter((id) => !known.has(id)).length;
 }
 
-export type Unread = { chats: number; notifications: number };
+export type Unread = { chats: number; notifications: number; calls: number };
 
-// What waits in an account the app does not show: unread chats and the notifications this device has not shown yet,
-// the numbers its Chats and Notifications tabs would have. A stopped account reads nothing new from Teams and would
-// keep its last numbers until started again: it counts nothing.
+export const unreadTotal = (u: Unread) => u.chats + u.notifications + u.calls;
+
+// What waits in an account the app does not show: unread chats, the notifications and the missed calls this device has
+// not shown yet, the numbers its Chats, Notifications and Calls tabs would have. A stopped account reads nothing new
+// from Teams and would keep its last numbers until started again: it counts nothing.
 export function accountUnread(a: Account, seen: string[] | null): Unread {
-  if (a.stopped) return { chats: 0, notifications: 0 };
-  return { chats: a.unread, notifications: unseenIds(a.unreadActivity ?? [], seen) };
+  if (a.stopped) return { chats: 0, notifications: 0, calls: 0 };
+  const calls = new Set(a.unreadCalls ?? []);
+  return {
+    chats: a.unread,
+    notifications: unseenIds((a.unreadActivity ?? []).filter((id) => !calls.has(id)), seen),
+    calls: unseenIds([...calls], seen),
+  };
 }
 
 // What waits in the accounts not on screen: the account menu button shows it and, on a phone, the back arrow of an
 // open chat, where the menu is hidden. Like Teams, the account on screen has its numbers on its own tabs.
 export function unreadInOthers(accounts: Account[], shown: number, unreadOf: (a: Account) => Unread): number {
-  return accounts.reduce((n, a) => {
-    if (a.slot === shown) return n;
-    const u = unreadOf(a);
-    return n + u.chats + u.notifications;
-  }, 0);
+  return accounts.reduce((n, a) => (a.slot === shown ? n : n + unreadTotal(unreadOf(a))), 0);
+}
+
+// What waits in every account, the one on screen included: the number on the icon of the installed app
+export function appBadgeCount(accounts: Account[], unreadOf: (a: Account) => Unread): number {
+  return accounts.reduce((n, a) => n + unreadTotal(unreadOf(a)), 0);
 }
 
 export function markActivitySeen(seen: string[] | null, items: ActivityItem[]): string[] {
