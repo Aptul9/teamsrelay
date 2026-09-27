@@ -47,4 +47,18 @@ describe("new message detection", () => {
     expect(d.scan([row("Anna Rossi", "ciao", "10:30", false)])).toEqual([]);
     expect(d.scan([row("Anna Rossi", "ciao", "10:30", true)])).toEqual([]);
   });
+
+  // Teams shows the time of the last message for about a day (6:18 PM the next morning), then its date
+  it("does not notify a message again when its time turns into its date", () => {
+    const d = primed(row("Anna Rossi", "are you there?", "6:18 PM"), row("Luca Bianchi", "deploy is green", "18:05"));
+    expect(d.scan([row("Anna Rossi", "are you there?", "9/26"), row("Luca Bianchi", "deploy is green", "9/26")])).toEqual([]);
+  });
+
+  it("notifies the same text sent again, at a new time", () => {
+    const d = primed(row("Anna Rossi", "ok", "9/26"), row("Luca Bianchi", "ok", "10:02 AM"));
+    expect(d.scan([row("Anna Rossi", "ok", "10:05 AM"), row("Luca Bianchi", "ok", "10:07 AM")])).toEqual([
+      { chat: "Anna Rossi", body: "ok" },
+      { chat: "Luca Bianchi", body: "ok" },
+    ]);
+  });
 });
