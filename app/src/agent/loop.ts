@@ -47,7 +47,8 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
   const jobs: (Job<Round> | false)[] = [
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
     { name: "input", every: { seconds: ACTIVE_EVERY }, run: () => keepActive(a) },
-    { name: "parking", every: { rounds: 5, offset: 2 }, run: (r) => park(a, r.want) },
+    // no chat to open before Teams shows its list: right after a start, or with a sign-in to do
+    { name: "parking", every: { rounds: 5, offset: 2 }, when: teamsOk, run: (r) => park(a, r.want) },
     { name: "hook", every: { rounds: 1 }, run: () => drainHook(a) },
     { name: "commands", every: { rounds: 1 }, run: () => runPendingCommands(a) },
     // until Teams is connected (sign-in to do, session expired) there is nothing to scroll or read
