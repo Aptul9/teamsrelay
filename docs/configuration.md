@@ -64,7 +64,7 @@ Set by `docker-compose.yml` for Selkies, the remote desktop of the browsers cont
 | `SELKIES_MICROPHONE_ENABLED` | `true` | The microphone of the viewer can reach Teams, for a call answered from the app. The start of the browsers container then makes the virtual source `SelkiesVirtualMic` the default one: without a viewer Selkies has none, and Teams would record the sound of the desktop |
 | `SELKIES_MICROPHONE_ON_START` | `demand` | The viewer is asked for its microphone only while an application records from `SelkiesVirtualMic`, and released 10 s after |
 
-The browsers image also carries the Chromium policy `AudioCaptureAllowedUrls` (`app/docker/browsers/etc/chromium/policies/managed/teamsrelay.json`): the Teams origins get the microphone without a prompt.
+The browsers image also carries the Chromium policy `AudioCaptureAllowedUrls` (`app/docker/browsers/etc/chromium/policies/managed/teamsrelay.json`): the Teams origins get the microphone without a prompt. The agent grants its browser notifications alone, with the DevTools call `Browser.setPermission`: the `grantPermissions` of Playwright would deny every permission it does not list, the microphone included, over that policy.
 
 ## Files outside `.env`
 
