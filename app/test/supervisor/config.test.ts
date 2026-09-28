@@ -30,6 +30,11 @@ describe("loadConfig", () => {
     expect(c.accounts.agentEnv).toEqual({ TZ: "Europe/Rome", VAPID_SUBJECT: "mailto:a@b.example", NTFY_ENABLED: "1", NTFY_TOPIC: "t" });
   });
 
+  it("passes the sound server of the desktop to the browsers: without it Chromium finds no microphone and plays no sound", () => {
+    // the image sets PULSE_RUNTIME_PATH=/defaults, where PulseAudio has its socket; XDG_RUNTIME_DIR/pulse is empty
+    expect(loadConfig({ PULSE_RUNTIME_PATH: "/defaults" }).accounts.browserEnv).toEqual({ PULSE_RUNTIME_PATH: "/defaults" });
+  });
+
   it("takes the account count and the owner of the profiles from the environment", () => {
     expect(loadConfig({ SLOT_COUNT: "6", PUID: "1001", PGID: "1002" }).accounts).toMatchObject({ slotCount: 6, uid: 1001, gid: 1002 });
   });
