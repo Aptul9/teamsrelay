@@ -86,7 +86,7 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 | `call` | incoming call: `ringing` with the `caller`, `ended` with the `seconds` its toast showed; a page it could not read (at most once a minute); `not saved`: the slot database refused the call for the web app or the call log (the push went out anyway) |
 | `SELFCHECK` | outcome of the automatic check |
 | `show` | Teams goes back to the chat of the app or to the self chat |
-| `page`, `input`, `presence` | page made visible, hook installed, input errors, your Teams status changed |
+| `page`, `input`, `presence` | page made visible, hook installed, input errors, your Teams status changed; `page: overlay still open after Escape` names (role, label, `data-tid`) the menu or dialog that kept an action from running, which the web app shows as failed |
 | `identity` | signed-in account found or changed |
 | `open`, `send`, `reply`, `react`, `pill`, `edit`, `delete`, `readby` | an action that did not apply on Teams, and why |
 | `chats`, `messages`, `activity`, `media`, `download`, `health` | reads that failed; `media` also `removed files no row names` with their number (`files`), when the job of every 300 rounds removed some |

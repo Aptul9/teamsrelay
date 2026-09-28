@@ -62,6 +62,13 @@ export function openOverlays(s: Selectors): number {
   return [...document.querySelectorAll(s.overlays)].filter((e) => e.getClientRects().length).length;
 }
 
+// The same overlays as the log names them: role, label, data-tid
+export function openOverlayNames(s: Selectors): string[] {
+  return [...document.querySelectorAll(s.overlays)]
+    .filter((e) => e.getClientRects().length)
+    .map((e) => [e.getAttribute("role"), e.getAttribute("aria-label"), e.getAttribute("data-tid") || e.getAttribute("data-testid")].filter(Boolean).join(" "));
+}
+
 export function messageCount(s: Selectors): number {
   return document.querySelectorAll(s.message).length;
 }
