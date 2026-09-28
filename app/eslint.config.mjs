@@ -17,5 +17,6 @@ export default defineConfig([
       ],
     },
   },
-  globalIgnores([".next/**", "out/**", "build/**", "dist/**", "next-env.d.ts", "public/sw.js"]),
+  // state/: the files of the local relay, its browser profile with the scripts of Edge's own extensions included
+  globalIgnores([".next/**", "out/**", "build/**", "dist/**", "state/**", "next-env.d.ts", "public/sw.js"]),
 ]);
