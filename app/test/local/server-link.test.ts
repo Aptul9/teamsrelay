@@ -403,13 +403,15 @@ describe("a relay whose clock is not the server's", () => {
     });
     expect(Math.abs((shown.ts ?? 0) - local())).toBeLessThanOrEqual(2);
 
-    // the agent opens another chat, by the clock of this computer
-    j.store.setState(STATE.viewing, JSON.stringify({ chat: "Luca Bianchi", ts: local() + 1 }));
+    // the agent opens another chat, by the clock of this computer, 3 s after the app's: the offset read from the
+    // whole-second Date is a second or two off when an answer is read late (a busy machine)
+    const opened = local() + 3;
+    j.store.setState(STATE.viewing, JSON.stringify({ chat: "Luca Bianchi", ts: opened }));
     const sent = await until("the viewing on the server", () => {
       const v = JSON.parse(serverStateAt(j.slot, STATE.viewing) ?? "{}") as { chat?: string; ts?: number };
       return v.chat === "Luca Bianchi" && v;
     });
-    expect(Math.abs((sent.ts ?? 0) - (serverNow() + 1))).toBeLessThanOrEqual(2);
+    expect(Math.abs((sent.ts ?? 0) - (opened - behind))).toBeLessThanOrEqual(2);
     await j.stop();
   });
 });
