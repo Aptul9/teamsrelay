@@ -5,6 +5,7 @@ import {
   BellRingIcon,
   ClockIcon,
   ExternalLinkIcon,
+  LaptopIcon,
   MessageSquareIcon,
   MessagesSquareIcon,
   MonitorIcon,
@@ -24,6 +25,7 @@ import { CallBanner, RingHint } from "./CallAlert";
 import { Calls } from "./Calls";
 import { ChatList } from "./ChatList";
 import { Conversation } from "./Conversation";
+import { relayHost, RelayTokenDialog } from "./RelayToken";
 import { StatusPanel } from "./StatusPanel";
 import {
   AlertDialog,
@@ -57,6 +59,7 @@ import {
   noteShown,
   post,
   readStorage,
+  relayOffline,
   runCmd,
   toLogin,
   unreadInOthers,
@@ -132,6 +135,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [refreshing, setRefreshing] = useState(false);
   const [deskOpened, setDeskOpened] = useState(false);
   const [adding, setAdding] = useState(false);
+  // the token of an account on another computer just added, shown once, with the address of the server its relay joins
+  const [relayToken, setRelayToken] = useState<{ token: string; server: string } | null>(null);
   const [toggling, setToggling] = useState(0);
   const [removing, setRemoving] = useState<Account | null>(null);
   const isPc = useSyncExternalStore(noSubscribe, isPcNow, () => false);
@@ -307,6 +312,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   // Microsoft login (and MFA) in the remote browser of the account: new tab on a PC, a view of its own elsewhere
   function openDesktop(n: number) {
     const a = accounts?.find((x) => x.slot === n);
+    if (a?.relay) {
+      toast.info("This account runs on another computer", { description: `Its Teams window is on ${relayHost(a)}: sign in there.` });
+      return;
+    }
     if (a?.stopped) {
       toast.info("This account is stopped", { description: "Start it (Start on its page, or a status in Settings) to open its remote Teams." });
       return;
@@ -331,6 +340,21 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       await loadAccounts();
       selectAccount(r.slot);
       toast.success("Browser starting", { description: "Sign in to Microsoft as soon as the account shows the button, within two minutes." });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Account not added");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  // An account whose browser runs on another computer: its relay joins with the token shown once
+  async function addRelayAccount() {
+    setAdding(true);
+    try {
+      const r = await post<{ slot: number; token: string; server: string }>("/api/accounts", { relay: true }, 0);
+      await loadAccounts();
+      selectAccount(r.slot);
+      setRelayToken({ token: r.token, server: r.server });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Account not added");
     } finally {
@@ -419,7 +443,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     { id: "chats", label: "Chats", icon: MessageSquareIcon, count: unreadChats },
     { id: "activity", label: "Notifications", icon: BellIcon, count: unreadActivity },
     { id: "calls", label: "Calls", icon: PhoneIcon, count: unreadCalls, red: true },
-    ...(!isPc ? [{ id: "desktop" as const, label: "Desktop", icon: MonitorIcon, count: 0 }] : []),
+    // the Teams window of an account on another computer is there
+    ...(!isPc && !current?.relay ? [{ id: "desktop" as const, label: "Desktop", icon: MonitorIcon, count: 0 }] : []),
   ];
   const activeTab = pane === "desktop" ? "desktop" : listTab;
   const selectTab = (t: string) => (t === "desktop" ? acc && openDesktop(acc) : showList(t as ListTab));
@@ -475,6 +500,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             adding={adding}
             onSelect={selectAccount}
             onAdd={() => void addAccount()}
+            onAddRelay={() => void addRelayAccount()}
             onOpenDesktop={openDesktop}
             onRemove={setRemoving}
             onSignOut={() => void authClient.signOut().then(toLogin)}
@@ -542,7 +568,28 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             </Alert>
           </div>
         )}
-        {current && (needsLogin(current) || (current.teams === "starting" && !current.checking)) && (
+        {current?.relay && (needsLogin(current) || relayOffline(current)) && (
+          <div className="px-3 pb-2">
+            {needsLogin(current) ? (
+              <Alert className="border-warning/40 bg-warning/10">
+                <TriangleAlertIcon className="text-warning" />
+                <AlertTitle>Microsoft sign-in needed</AlertTitle>
+                <AlertDescription>Sign in with password and MFA in the TeamsRelay window on {relayHost(current)}.</AlertDescription>
+              </Alert>
+            ) : (
+              <Alert>
+                <LaptopIcon />
+                <AlertTitle>{current.relaySeen ? `Relay on ${relayHost(current)} not connected` : "Waiting for the relay of the other computer"}</AlertTitle>
+                <AlertDescription>
+                  {current.relaySeen
+                    ? `Last sync at ${clock(current.relaySeen)}: the chats are those it sent then. Start the relay again on that computer.`
+                    : "Start the relay on the other computer with the two lines of relay.env shown when the account was added."}
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
+        {current && !current.relay && (needsLogin(current) || (current.teams === "starting" && !current.checking)) && (
           <div className="px-3 pb-2">
             {current.teams === "starting" && !current.checking ? (
               <Alert>
@@ -604,6 +651,12 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
                 {adding ? <Spinner /> : <PlusIcon />}
                 {adding ? "Starting the browser…" : addLabel}
               </Button>
+              {canAdd && (
+                <Button variant="outline" className="h-10 md:h-9" disabled={adding} onClick={() => void addRelayAccount()}>
+                  <LaptopIcon />
+                  Add from another computer
+                </Button>
+              )}
             </EmptyContent>
           </Empty>
         ) : listTab === "activity" ? (
@@ -689,12 +742,15 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
         {pane === "desktop" && phoneNav}
       </main>
 
+      <RelayTokenDialog token={relayToken?.token ?? null} server={relayToken?.server ?? ""} onClose={() => setRelayToken(null)} />
       <AlertDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {removing ? accName(removing) : ""}?</AlertDialogTitle>
             <AlertDialogDescription>
-              The Teams session and the data of this account on TeamsRelay are deleted. The Microsoft account itself is not touched, and it can be added again later.
+              {removing?.relay
+                ? `The data of this account on this server is deleted and its relay token stops working. The relay on ${relayHost(removing)} keeps its own Teams session until it is stopped there.`
+                : "The Teams session and the data of this account on TeamsRelay are deleted. The Microsoft account itself is not touched, and it can be added again later."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

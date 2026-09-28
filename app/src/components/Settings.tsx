@@ -8,6 +8,7 @@ import { cn } from "cn";
 import { AccountLines, accName } from "./AccountMenu";
 import { Avatar } from "./Avatar";
 import { PageHeader } from "./PageHeader";
+import { relayHost, RelayTokenDialog } from "./RelayToken";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { authClient } from "@/lib/auth-client";
-import { accountStatus, ApiError, call, CHECK_INTERVALS, hours, toLogin, type Account } from "@/lib/client";
+import { accountStatus, ApiError, call, CHECK_INTERVALS, hours, post, toLogin, type Account } from "@/lib/client";
 import { enablePush, pushState, type PushState } from "@/lib/push";
 
 const noSubscribe = () => () => {};
@@ -54,6 +55,8 @@ const fetchAccounts = () =>
 function TeamsAccounts() {
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [saving, setSaving] = useState(0);
+  // a new token of an account on another computer, shown once, with the address of the server its relay joins
+  const [token, setToken] = useState<{ token: string; server: string } | null>(null);
 
   // read again every 10 s: checks start and end while the page is open
   useEffect(() => {
@@ -85,14 +88,27 @@ function TeamsAccounts() {
     }
   }
 
+  // the relay of an account on another computer joins with a new token from now on
+  async function renewToken(a: Account) {
+    setSaving(a.slot);
+    try {
+      setToken(await post<{ token: string; server: string }>(`/api/accounts/${a.slot}/token`, undefined, 0));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "No new token");
+    } finally {
+      setSaving(0);
+    }
+  }
+
   return (
     <Card>
+      <RelayTokenDialog token={token?.token ?? null} server={token?.server ?? ""} onClose={() => setToken(null)} />
       <CardHeader>
         <SectionTitle icon={MessagesSquareIcon}>Teams accounts</SectionTitle>
         <CardDescription>
           Always on: every message is relayed as it arrives. Checked every few hours: the account starts, reads its chats and notifications, and stops
           again, one account at a time; it saves memory, and what it finds arrives as one notification per check. Stopped: still signed in, nothing is
-          read.
+          read. An account on another computer runs there, as long as its relay does.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -106,20 +122,44 @@ function TeamsAccounts() {
               <div key={a.slot} className="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
                 <Avatar name={accName(a)} av={a.av} acc={a.slot} className={cn("size-9", a.stopped && "opacity-50 grayscale")} />
                 <AccountLines a={a} />
-                <Select value={String(accountStatus(a))} onValueChange={(v) => void setStatus(a, v)} disabled={saving === a.slot}>
-                  <SelectTrigger className="h-10 w-full sm:w-52 md:h-9" aria-label={`Status of ${accName(a)}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="stopped">Stopped</SelectItem>
-                    <SelectItem value="0">Always on</SelectItem>
-                    {CHECK_INTERVALS.map((s) => (
-                      <SelectItem key={s} value={String(s)}>
-                        Checked every {hours(s)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {a.relay ? (
+                  <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                    <span className="text-sm text-muted-foreground">Runs on {relayHost(a)}</span>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="outline" className="h-10 md:h-9" disabled={saving === a.slot}>
+                          <KeyRoundIcon />
+                          New token
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>New relay token for {accName(a)}?</AlertDialogTitle>
+                          <AlertDialogDescription>The relay on {relayHost(a)} stops syncing at once, until its relay.env gets the new token.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => void renewToken(a)}>Make a new token</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                ) : (
+                  <Select value={String(accountStatus(a))} onValueChange={(v) => void setStatus(a, v)} disabled={saving === a.slot}>
+                    <SelectTrigger className="h-10 w-full sm:w-52 md:h-9" aria-label={`Status of ${accName(a)}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="stopped">Stopped</SelectItem>
+                      <SelectItem value="0">Always on</SelectItem>
+                      {CHECK_INTERVALS.map((s) => (
+                        <SelectItem key={s} value={String(s)}>
+                          Checked every {hours(s)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             ))}
           </div>

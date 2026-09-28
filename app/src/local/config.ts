@@ -24,13 +24,21 @@ const Env = z.object({
   NTFY_TOPIC: z.string().default(""),
   // name of this machine in the alerts ("sign in again in the relay window on <HOST_LABEL>")
   HOST_LABEL: z.string().default(os.hostname()),
+  // a TeamsRelay server this relay joins, as an account on another computer: the address of its web app and the token
+  // the app showed when the account was added (docs/design/2026-09-27-relay-joins-server.md)
+  SERVER_URL: z.url({ protocol: /^https?$/ }).optional(),
+  SERVER_TOKEN: z.string().min(32, "must be the token the web app showed").optional(),
 });
+
+// The token goes in every request: plain HTTP only to a server on this machine
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 export type Config = AgentSettings & {
   stateDir: string;
   profileDir: string;
   dbPath: string;
   mediaDir: string;
+  filesDir: string;
   tokenFile: string;
   lockFile: string;
   channel: "chrome" | "msedge";
@@ -39,6 +47,8 @@ export type Config = AgentSettings & {
   vapid: { privateKeyFile: string; appKeyFile: string; subject: string };
   ntfy: { url: string; topic: string } | null;
   hostLabel: string;
+  // the server joined, null for a relay on its own
+  server: { url: string; token: string } | null;
 };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env, cwd = process.cwd()): Config {
@@ -50,6 +60,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
   const e = r.data;
   if (!!e.RELAY_TLS_CERT !== !!e.RELAY_TLS_KEY) throw new ConfigError("RELAY_TLS_CERT and RELAY_TLS_KEY go together");
+  if (!!e.SERVER_URL !== !!e.SERVER_TOKEN) throw new ConfigError("SERVER_URL and SERVER_TOKEN go together");
+  if (e.SERVER_URL && new URL(e.SERVER_URL).protocol === "http:" && !LOOPBACK.has(new URL(e.SERVER_URL).hostname)) {
+    throw new ConfigError("SERVER_URL: https:// needed, the token must not travel in clear (http:// only for localhost)");
+  }
+  const server = e.SERVER_URL && e.SERVER_TOKEN ? { url: e.SERVER_URL.replace(/\/+$/, ""), token: e.SERVER_TOKEN } : null;
   const stateDir = path.resolve(cwd, e.STATE_DIR);
   const vapidDir = path.join(stateDir, "vapid");
   return {
@@ -57,6 +72,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     profileDir: path.join(stateDir, "profile"),
     dbPath: path.join(stateDir, "relay.db"),
     mediaDir: path.join(stateDir, "media"),
+    filesDir: path.join(stateDir, "files"),
     tokenFile: path.join(stateDir, "token"),
     lockFile: path.join(stateDir, "relay.lock"),
     channel: e.BROWSER_CHANNEL,
@@ -69,10 +85,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     vapid: { privateKeyFile: path.join(vapidDir, "private_key.pem"), appKeyFile: path.join(vapidDir, "appkey.txt"), subject: e.VAPID_SUBJECT },
     ntfy: e.NTFY_TOPIC ? { url: e.NTFY_URL, topic: e.NTFY_TOPIC } : null,
     hostLabel: e.HOST_LABEL,
-    // the app sends text only, and shows neither the Activity feed nor "Read by"
+    server,
+    // the app of the relay sends text only, and shows neither the Activity feed nor "Read by"; the web app of a server
+    // joined does all three
     uploadsDir: path.join(stateDir, "uploads"),
-    activity: false,
-    readBy: false,
+    activity: !!server,
+    readBy: !!server,
     alerts: {
       signInAfter: 60,
       browserAfter: 300,

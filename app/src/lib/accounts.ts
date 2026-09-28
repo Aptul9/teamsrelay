@@ -1,3 +1,4 @@
+import { RelayLink, STATE } from "@/shared/slot-db/state";
 import { appDb, countPushSubscriptions, listSlots, slotsOf, type Slot } from "./appdb";
 import { config, desktopUrlOf } from "./config";
 import { HttpError } from "./http";
@@ -30,6 +31,11 @@ export type AccountSummary = {
   checkResult: string;
   nextCheck: number;
   checking: boolean;
+  // an account on another computer: its relay joined this server; host: the name of that computer ("" before the
+  // first sync), relaySeen: Unix seconds of its last sync
+  relay: boolean;
+  host: string;
+  relaySeen: number;
 };
 
 // The grace for a browser still starting runs from the last start, not from the day the account was added: a start
@@ -51,14 +57,16 @@ export function accountSummary(s: Slot): AccountSummary {
   let unreadActivity: string[] | null = null;
   let missedCalls: string[] | null = null;
   let activityIds: string[] | null = null;
+  let link: RelayLink = { host: "", seen: 0 };
   try {
-    ({ me, health, unread, unreadActivity, missedCalls, activityIds } = withSlot(s.slot, (r) => ({
+    ({ me, health, unread, unreadActivity, missedCalls, activityIds, link } = withSlot(s.slot, (r) => ({
       me: r.identity(),
       health: r.health(upSince(s)),
       unread: r.unreadCount(),
       unreadActivity: r.unreadActivity(),
       missedCalls: r.missedCalls(),
       activityIds: r.activityIds(),
+      link: RelayLink.catch({ host: "", seen: 0 }).parse(r.state<unknown>(STATE.relay, {})),
     })));
   } catch (e) {
     if (!(e instanceof SlotNotReady)) throw e;
@@ -79,12 +87,16 @@ export function accountSummary(s: Slot): AccountSummary {
     missedCalls,
     activityIds,
     added: s.added,
-    desktop: desktopUrlOf(s.slot),
+    // the Teams window of an account on another computer is there, not in the remote desktop
+    desktop: s.relay ? "" : desktopUrlOf(s.slot),
     checkEvery: s.check_every,
     checked: s.checked,
     checkResult: s.check_result,
     nextCheck: s.check_due,
     checking: !!s.checking,
+    relay: !!s.relay,
+    host: link.host,
+    relaySeen: link.seen,
   };
 }
 

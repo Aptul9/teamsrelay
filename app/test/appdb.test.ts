@@ -45,7 +45,7 @@ describe("schema", () => {
 
     migrateAppSchema(old);
 
-    expect(listSlots(old)).toEqual([{ slot: 2, owner_id: "u1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0 }]);
+    expect(listSlots(old)).toEqual([{ slot: 2, owner_id: "u1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0 }]);
   });
 });
 
@@ -111,8 +111,8 @@ describe("legacy data", () => {
 
     expect(adoptLegacyData(db, "admin-1")).toEqual({ slots: 2, devices: 1 });
     expect(listSlots(db)).toEqual([
-      { slot: 1, owner_id: "admin-1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0 },
-      { slot: 3, owner_id: "admin-1", added: 300, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0 },
+      { slot: 1, owner_id: "admin-1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0 },
+      { slot: 3, owner_id: "admin-1", added: 300, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0 },
     ]);
     expect(countPushSubscriptions(db, "admin-1")).toBe(1);
 

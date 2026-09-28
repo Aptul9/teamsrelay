@@ -25,6 +25,8 @@ export type Message = { mid: string; author: string; text: string; mine: number;
 
 // Names of the files in the media folder, the only ones the apps serve from it
 export const MEDIA_NAME = /^[0-9a-f]{16}\.(png|jpg|gif|webp)$/;
+// Names of the attachments the agent downloaded into the files folder
+export const FILE_NAME = /^[0-9a-f]{16}(\.[a-z0-9]{1,8})?$/;
 
 export const ACTIVITY_KINDS = ["reaction", "mention", "reply", "task", "team", "call", "meeting", "message"] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];

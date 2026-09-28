@@ -158,6 +158,8 @@ One Teams account on a machine with a desktop session, without the containers: `
 | Phone | web app (Next.js), users and sessions, event stream | one page, one token, polling ([api.md](api.md#local-relay)) |
 | Activity feed, "Read by", @, images, downloads | yes | no |
 
+A relay can also join a server as an **account on another computer** ([design](design/2026-09-27-relay-joins-server.md)): with `SERVER_URL` and `SERVER_TOKEN` it mirrors `relay.db` into `data/N/messages.db` of its slot on the server (`POST /api/relay/sync`), runs the commands the web app queues there (`GET /api/relay/commands`, a long wait), uploads its images and attachments, and hands its notifications to the web app, which sends them with the `Notifier` of the agents to the devices of the owner (`POST /api/relay/push`). The web app shows the account like the others; the supervisor never hears of that slot. Only the relay opens connections.
+
 ## Repository
 
 ```
