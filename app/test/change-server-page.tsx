@@ -26,6 +26,9 @@ const account: Account = {
   checkResult: "",
   nextCheck: 0,
   checking: false,
+  relay: false,
+  host: "",
+  relaySeen: 0,
 };
 
 const none = () => undefined;
@@ -44,6 +47,7 @@ function Menu() {
       adding={false}
       onSelect={none}
       onAdd={none}
+      onAddRelay={none}
       onOpenDesktop={none}
       onRemove={none}
       onSignOut={none}

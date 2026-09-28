@@ -31,6 +31,25 @@ export const config = {
   get vapidAppKeyFile() {
     return process.env.VAPID_APPKEY || "/vapid/appkey.txt";
   },
+  // The web app sends the notifications of the accounts on another computer itself (src/lib/relay.ts): the same
+  // keys, subject and ntfy settings as the agents
+  get vapidPrivateFile() {
+    return process.env.VAPID_PRIVATE || "/vapid/private_key.pem";
+  },
+  get vapidSubject() {
+    const s = process.env.VAPID_SUBJECT || "";
+    return /^(mailto:|https:\/\/)/.test(s) ? s : "mailto:admin@example.com";
+  },
+  get ntfy(): { url: string; topic: string } | null {
+    const topic = process.env.NTFY_TOPIC || "";
+    return process.env.NTFY_ENABLED === "1" && topic ? { url: process.env.NTFY_URL || "https://ntfy.sh", topic } : null;
+  },
+  // Room of an account on another computer for its images and attachments on this server: RELAY_QUOTA_MB, 2048 by
+  // default. Past it the server refuses its new files, and the app shows them missing.
+  get relayQuotaBytes() {
+    const mb = Number(process.env.RELAY_QUOTA_MB);
+    return (Number.isFinite(mb) && mb > 0 ? mb : 2048) * 2 ** 20;
+  },
   // Public URL of the app: APP_URL, otherwise https://DOMAIN (DOMAIN may already carry a scheme locally)
   get appUrl() {
     const explicit = process.env.APP_URL;

@@ -14,6 +14,8 @@ const SCHEMA_VERSION = 2;
 // check_every: seconds between two checks of an account whose browser runs only while it is checked, 0 for an account
 // always on. check_due: when its next check is due, 0 once its owner asked for one. checked, check_result: end and
 // outcome (ok, login, failed) of its last check, 0 and "" before the first. checking: start of the check running now.
+// relay: 1 for an account on another computer, whose local relay joined this server with a token (src/lib/relay.ts);
+// the supervisor has nothing of it.
 export type Slot = {
   slot: number;
   owner_id: string;
@@ -25,12 +27,14 @@ export type Slot = {
   checked: number;
   check_result: string;
   checking: number;
+  relay: number;
 };
 
 export { CHECK_INTERVALS } from "@/shared/checks";
 export type CheckResult = "ok" | "login" | "failed";
 
-const SLOT_COLUMNS = "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking";
+// relay_token, the digest of the token of the relay, never leaves the database: rows say only whether there is one
+const SLOT_COLUMNS = "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking, (relay_token <> '') AS relay";
 
 let shared: Database.Database | null = null;
 
@@ -63,6 +67,8 @@ export function migrateAppSchema(db: Database.Database) {
     ["checked", "INTEGER NOT NULL DEFAULT 0"],
     ["check_result", "TEXT NOT NULL DEFAULT ''"],
     ["checking", "INTEGER NOT NULL DEFAULT 0"],
+    // SHA-256 (hex) of the token of the relay of an account on another computer, "" for an account of the browsers container
+    ["relay_token", "TEXT NOT NULL DEFAULT ''"],
   ]) {
     if (!columns.includes(column)) db.exec(`ALTER TABLE teams_accounts ADD COLUMN ${column} ${decl}`);
   }
@@ -168,6 +174,16 @@ export function claimSlot(db: Database.Database, userId: string, limits: { slotC
 
 export function releaseSlot(db: Database.Database, slot: number) {
   db.prepare("DELETE FROM teams_accounts WHERE slot=?").run(slot);
+}
+
+// The account of the relay that holds the token of this digest
+export function setRelayToken(db: Database.Database, slot: number, digest: string) {
+  db.prepare("UPDATE teams_accounts SET relay_token=? WHERE slot=?").run(digest, slot);
+}
+
+export function relayAccount(db: Database.Database, digest: string): { slot: number; added: number; owner_id: string } | null {
+  if (!digest) return null;
+  return (db.prepare("SELECT slot, added, owner_id FROM teams_accounts WHERE relay_token=?").get(digest) as { slot: number; added: number; owner_id: string } | undefined) ?? null;
 }
 
 export function savePushSubscription(db: Database.Database, userId: string, sub: Record<string, unknown>) {

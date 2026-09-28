@@ -2,13 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   accountStatus,
   accountUnread,
+  addingTitle,
   appBadgeCount,
+  bellOn,
   callsSnapshot,
   loadSeen,
   markActivitySeen,
   markShown,
+  NEW_ACCOUNT,
+  pageTitle,
   parseSeen,
   seenKey,
+  setBellOn,
+  signedInOnce,
   statusText,
   unreadInOthers,
   unseenActivity,
@@ -53,6 +59,9 @@ const account = (extra: Partial<Account> = {}): Account => ({
   checkResult: "",
   nextCheck: 0,
   checking: false,
+  relay: false,
+  host: "",
+  relaySeen: 0,
   ...extra,
 });
 
@@ -322,5 +331,56 @@ describe("parseSeen", () => {
     expect(parseSeen(null)).toBeNull();
     expect(parseSeen("{")).toBeNull();
     expect(parseSeen('{"a":1}')).toBeNull();
+  });
+});
+
+describe("pageTitle", () => {
+  it("counts in the title of the page what waits in every account, like the icon of the installed app", () => {
+    expect(pageTitle(0)).toBe("TeamsRelay");
+    expect(pageTitle(5)).toBe("(5) TeamsRelay");
+    expect(pageTitle(150)).toBe("(99+) TeamsRelay");
+  });
+});
+
+describe("bell of new messages", () => {
+  let store: Map<string, string>;
+  beforeEach(() => {
+    store = new Map();
+    vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("rings on every device until turned off on it, and again once turned on", () => {
+    expect(bellOn()).toBe(true);
+    setBellOn(false);
+    expect(bellOn()).toBe(false);
+    setBellOn(true);
+    expect(bellOn()).toBe(true);
+  });
+
+  it("rings where the browser keeps no setting (private mode)", () => {
+    vi.stubGlobal("localStorage", undefined);
+    expect(bellOn()).toBe(true);
+  });
+});
+
+describe("first account", () => {
+  const fresh = account({ slot: 1, name: "", email: "", tenant: "", teams: "login", unread: 0, unreadActivity: null });
+
+  it("tells an account never signed in to Microsoft from one that was", () => {
+    expect(signedInOnce(fresh)).toBe(false);
+    expect(signedInOnce(account())).toBe(true);
+    // signed out since: it keeps who it was
+    expect(signedInOnce(account({ teams: "login" }))).toBe(true);
+    expect(signedInOnce(account({ name: "", email: "anna.rossi@contoso.example" }))).toBe(true);
+    expect(NEW_ACCOUNT).not.toMatch(/Account \d/);
+  });
+
+  it("asks for the first account while none was ever signed in, else to finish adding this one", () => {
+    expect(addingTitle([fresh])).toBe("Add your first Teams account");
+    expect(addingTitle([fresh, account({ slot: 3, name: "", email: "" })])).toBe("Add your first Teams account");
+    expect(addingTitle([account(), fresh])).toBe("Finish adding this Teams account");
   });
 });

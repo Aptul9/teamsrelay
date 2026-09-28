@@ -1,13 +1,14 @@
 // The call banner and the ring hint of the web app on a page of their own, for test/call-ring.test.ts: the ring plays
 // through an analyser the test reads (window.analyser), the calls come from window.setCalls as the event stream would
-// send them, and a click on the banner lands in window.selected.
+// send them, a click on the banner lands in window.selected, and window.bell rings the bell of a message as the page
+// does when the service worker asks it (App.tsx).
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CallBanner, RingHint } from "@/components/CallAlert";
 import type { Account, RingingCall } from "@/lib/client";
 import { Ringer } from "@/lib/ring";
 
-type TestWindow = Window & { analyser?: AnalyserNode; setCalls?: (c: RingingCall[]) => void; selected?: number };
+type TestWindow = Window & { analyser?: AnalyserNode; setCalls?: (c: RingingCall[]) => void; selected?: number; bell?: () => Promise<boolean> };
 const w = window as TestWindow;
 
 const account: Account = {
@@ -30,6 +31,9 @@ const account: Account = {
   checkResult: "",
   nextCheck: 0,
   checking: false,
+  relay: false,
+  host: "",
+  relaySeen: 0,
 };
 
 const ringer = new Ringer({
@@ -42,6 +46,7 @@ const ringer = new Ringer({
   },
 });
 ringer.attach(document);
+w.bell = () => ringer.bell();
 
 function Page() {
   const [calls, setCalls] = useState<RingingCall[]>([]);

@@ -14,7 +14,8 @@ export const CALL_WATCH_EVERY = 1;
 // whole chat list, the Activity feed, a send). It only reads the page; a look that fails (the page navigating) says
 // nothing about the call. The call is also kept in the slot database for the web app, which rings while it is open,
 // and each call that ended goes to the call log of the account. The pushes of a call go out one after the other, in
-// the background: a push service slow to answer (up to 15 s) holds up neither the looks nor the web app.
+// the background: a push service slow to answer (up to 15 s) holds up neither the looks nor the web app. ended: told
+// of each call that ended, gone or replaced by another; the Activity feed read soon after says whether it was missed.
 export class CallWatch {
   private readonly tracker: CallTracker;
   private busy = false;
@@ -26,6 +27,7 @@ export class CallWatch {
     private readonly a: Pick<Agent, "notifier" | "store"> & { tp?: Agent["tp"] },
     private readonly clock: () => number = () => performance.now(),
     private readonly wall: () => number = Date.now,
+    private readonly ended: () => void = () => {},
   ) {
     this.tracker = new CallTracker(clock, wall);
   }
@@ -48,7 +50,10 @@ export class CallWatch {
     try {
       const event = this.tracker.update(await page.evaluate(readIncomingCall, { s: SEL, t: TEXTS }));
       if (event?.kind === "ringing") {
-        if (event.replaced) this.logCall(event.replaced);
+        if (event.replaced) {
+          this.logCall(event.replaced);
+          this.ended();
+        }
         if (!event.again) {
           log.info("call", "ringing", { caller: event.caller });
           this.keep({ caller: event.caller, since: event.since, seen: this.wall(), ringing: true });
@@ -59,6 +64,7 @@ export class CallWatch {
         this.keep({ caller: event.caller, since: event.since, seen: this.wall(), ringing: false });
         this.logCall(event);
         this.push(event.caller, "ended", event.since, event.seconds);
+        this.ended();
       }
       // still ringing: seen again, for the web app
       const now = this.tracker.current();

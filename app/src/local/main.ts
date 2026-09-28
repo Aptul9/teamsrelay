@@ -33,6 +33,7 @@ import { loadConfig, readToken, type Config } from "./config";
 import { RelayDevices } from "./devices";
 import { acquireLock, LOGIN_TIMEOUT_MS, LockError } from "./lock";
 import { appFiles, startServer } from "./server";
+import { ServerLink, ServerNotifier } from "./server-link";
 import { onStop } from "./stop";
 
 // the bundle is dist/relay.cjs in app/: the page of the app is in src/local/web, the files it shares with the web app
@@ -93,18 +94,24 @@ async function run(config: Config) {
   const devices = RelayDevices.open(config.dbPath);
   const vapid = loadVapidKeys(config.vapid.privateKeyFile, config.vapid.appKeyFile);
   if (!vapid) log.warn("push", "no VAPID private key: push notifications off, run npm run relay:setup", { file: config.vapid.privateKeyFile });
-  const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy });
+  // joined to a server, the account shows in its web app, which sends the notifications to the devices of its owner
+  const link = config.server
+    ? new ServerLink({ ...config.server, host: config.hostLabel, dbPath: config.dbPath, store, mediaDir: config.mediaDir, filesDir: config.filesDir, uploadsDir: config.uploadsDir })
+    : null;
+  const notifier = link ? new ServerNotifier(link, store) : new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy });
   const keeper = new BrowserKeeper(() => launchBrowser({ profileDir: config.profileDir, channel: config.channel }), config.teamsUrl);
   const server = await startServer({ ...config.api, store, devices, token, vapidKey: vapid?.publicKey ?? "", webDir: WEB_DIR, publicDir: PUBLIC_DIR, mediaDir: config.mediaDir });
-  log.info("relay", "start", { browser: config.channel, api: server.url, push: !!vapid, ntfy: !!config.ntfy, devices: devices.count() });
+  log.info("relay", "start", { browser: config.channel, api: server.url, push: !!vapid, ntfy: !!config.ntfy, devices: devices.count(), server: config.server?.url });
   const stopped = new AbortController();
-  // the app sends no download command: files/ stays empty
-  const media = new Media(config.mediaDir, path.join(config.stateDir, "files"));
+  // files/: the attachments a server joined asks for (the app of the relay sends no download command)
+  const media = new Media(config.mediaDir, config.filesDir);
   const loop = runAgent({ config, store, notifier, media, detector: new NewMessageDetector() }, keeper, stopped.signal);
+  const linked = link?.run(stopped.signal);
   close = async () => {
     stopped.abort();
     await keeper.close();
     await loop;
+    await linked;
     await server.close();
     devices.close();
     store.close();

@@ -46,7 +46,7 @@ An administrator manages users and can free a slot. The chats and the desktop of
 
 ## 5. Teams accounts
 
-1. Account menu → **Add a Teams account**. The account gets its browser and agent; Teams takes up to two minutes to load.
+1. Account menu → **Add a Teams account**. The account gets its browser and agent; Teams takes up to two minutes to load. Until its first sign-in it shows as *New Teams account*, under **Add your first Teams account** (or **Finish adding this Teams account** next to accounts already signed in).
 2. **Sign in to Microsoft** (button of the banner, or account menu): the remote desktop opens with the window of the account in front, on the Microsoft login. On a PC it opens in a new tab, on a phone or tablet in the **Desktop** view. Sign in with password and MFA.
 3. Set the language of Teams web to **English**: the agent reads some English texts.
 4. Back in the app, the chat list appears and the status pill turns green within a minute.
@@ -66,6 +66,10 @@ TeamsRelay is a PWA: installed from the browser, it opens like an app, with icon
 - **PC**: any current browser, chats on the left and the open conversation on the right. The remote desktop opens in a browser tab. To hear incoming calls, install the app (the **Install** icon at the right of the address bar, Chrome or Edge): the installed app rings without a click, a tab only after a click or a key press in it since it loaded. In Chrome, **Settings** → **Performance** → **Always keep these sites active** → **Add** the address of TeamsRelay, so that Memory Saver never puts it to sleep.
 
 The status panel shows how many devices of the user receive notifications. A device receives the notifications of every Teams account of its user; with more than one account, the title of a notification ends with the organization of its account (its email when Teams shows none), and a tap opens the app on that account.
+
+While TeamsRelay is open, installed or in a tab, even in the background, a new message rings a bell of the app instead of the sound of the device, and its notification comes quiet; with the app closed the device plays its own sound. **Settings** → **Notifications on this device** → **Bell for new messages** turns it off on that device, **Play** tries it. A tab plays sound only after a click or a key press in it since it loaded: until then the device sound stays.
+
+The title of the page counts what waits in every account, as the icon of the installed app does: **(5) TeamsRelay**. A call missed on an account always on arrives as a notification of its own a few seconds after it ends (*Missed call from Anna Rossi*), and counts in red on the **Calls** tab.
 
 An incoming Teams call arrives as a notification that alerts again every 5 s while the call rings and turns quiet when it stops ("Call from Anna Rossi, ended after 9 s"); an iPhone gets one notification when the call starts and one when it ends. Its sound is the one of the device. On Android it can be told apart from other apps: long-press a TeamsRelay notification, open its settings and pick a sound (it applies to messages too). Only accounts whose browser runs can see a call (see [limitations](limitations.md)).
 
@@ -145,7 +149,7 @@ Requirements:
 
 - Node 24 or later (checked on 26), Google Chrome or Microsoft Edge installed.
 - A desktop session on the machine: the relay browser is a normal window, where the sign-in happens. The machine must not sleep.
-- Teams web allowed for the account in a browser, set to English.
+- Teams web allowed for the account in a browser. The relay gives Teams `en-US` as the browser language, whatever the language of the machine.
 
 First run, from `app/`:
 
@@ -187,3 +191,21 @@ The phone opens the relay address, enters the token once and taps **Notification
 When Teams signs out, the relay pushes "Teams signed out" after a minute and its window shows the sign-in page: sign in there, the relay pushes "Teams back". Commands meanwhile answer 409.
 
 Checks of the relay are part of `npm test`; `node dist/relay.cjs --check` loads the packages, the page scripts and the files of the app.
+
+## An account on another computer
+
+A Teams account whose browser runs on another computer (a laptop, a PC at the office) can show in the web app next to the accounts of the browsers container: the [local relay](#local-relay) on that computer reads it and joins this server ([design](design/2026-09-27-relay-joins-server.md)). Only the relay opens connections, to the web app over HTTPS: nothing on that computer has to be reachable, and the phone keeps using the web app of the server.
+
+1. In the web app: account menu → **Add from another computer…**. A dialog shows two lines, once: `SERVER_URL` (the public address of this web app, `APP_URL`) and `SERVER_TOKEN`. **Copy** copies them; where the browser allows no copy (a page on plain HTTP) it leaves them selected for Ctrl+C.
+2. On the other computer, set up the relay as above (`npm ci --ignore-scripts`, `npm run relay:setup`, `npm run build:relay`), add the two lines to `app/relay.env`, and sign in once with `npm run relay:login`.
+3. Start it (`npx pm2 start ecosystem.config.cjs`, `npx pm2 save`, and the logon task on Windows). Within a minute the account shows its chats in the web app.
+
+The account then works like the others in the app, with these differences:
+
+- No remote desktop: the sign-in happens in the relay window on that computer, and the app says so when Teams asks for one.
+- Its status is its relay's: **Active** while the relay syncs, **Not connected** a minute after it stopped; no **Stopped** or **Checked every N h** modes.
+- Notifications go from this server to the devices of its owner, with the push keys of the server (`vapid/`, mounted in the web app; `VAPID_SUBJECT` and `NTFY_*` of `.env` apply).
+- **Settings** → **Teams accounts** → **New token** replaces the token: the relay stops syncing until its `relay.env` gets the new one.
+- Removing the account deletes its data here and its token; the relay keeps its own Teams session until it is stopped there.
+
+Joined, the relay keeps its own app on loopback, without devices of its own.

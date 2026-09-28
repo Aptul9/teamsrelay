@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
-import { askCheck, CHECK_INTERVALS, claimSlot, listSlots, releaseSlot, setCheckEvery, setSlotStopped, slotRow } from "./appdb";
+import { askCheck, CHECK_INTERVALS, claimSlot, listSlots, releaseSlot, setCheckEvery, setRelayToken, setSlotStopped, slotRow } from "./appdb";
 import type { ControlClient } from "./control";
 import { HttpError } from "./http";
+import { createRelaySlot, forgetRelay, newRelayToken, ON_ANOTHER_COMPUTER, relayDigest } from "./relay";
 import { SlotNotReady, withSlot } from "./slotdb";
 
 export type SlotPaths = { dataDir: string };
@@ -67,10 +68,47 @@ export function addAccount(userId: string, ctl: ControlClient, o: SlotOptions): 
   });
 }
 
+// New account on another computer: first free slot, its empty database, and the token its relay joins with (shown
+// once: only its digest is kept). The supervisor has nothing to start.
+export function addRelayAccount(userId: string, o: SlotOptions): Promise<{ slot: number; token: string }> {
+  return exclusive(async () => {
+    const n = claimSlot(o.db, userId, { slotCount: o.slotCount, perUser: o.perUser });
+    try {
+      // a notifier left from an earlier account of the slot (a push that raced its removal) writes nowhere any more
+      forgetRelay(n);
+      createRelaySlot(path.join(o.dataDir, String(n)));
+      const token = newRelayToken();
+      setRelayToken(o.db, n, relayDigest(token));
+      return { slot: n, token };
+    } catch (e) {
+      releaseSlot(o.db, n);
+      throw e;
+    }
+  });
+}
+
+// A new token for the relay of an account on another computer: the previous one stops working at once
+export function renewRelayToken(n: number, db: Database.Database): Promise<string> {
+  return exclusive(async () => {
+    const s = slotRow(db, n);
+    if (!s) throw new HttpError(404, "Account not found");
+    if (!s.relay) throw new HttpError(409, "This Teams account runs on this server: it has no relay token");
+    const token = newRelayToken();
+    setRelayToken(db, n, relayDigest(token));
+    return token;
+  });
+}
+
+// An account on another computer loses its data here; its relay, refused from now on, keeps its own until stopped
 export function removeAccount(n: number, ctl: ControlClient, o: Omit<SlotOptions, "slotCount" | "perUser">): Promise<void> {
   return exclusive(async () => {
-    await slotDown(ctl, n);
-    await wipeSlot(ctl, n, o);
+    if (slotRow(o.db, n)?.relay) {
+      forgetRelay(n);
+      fs.rmSync(path.join(o.dataDir, String(n)), { recursive: true, force: true });
+    } else {
+      await slotDown(ctl, n);
+      await wipeSlot(ctl, n, o);
+    }
     releaseSlot(o.db, n);
   });
 }
@@ -83,6 +121,7 @@ export function setAccountRunning(n: number, running: boolean, ctl: ControlClien
     // removed while this request waited in the queue
     const s = slotRow(db, n);
     if (!s) throw new HttpError(404, "Account not found");
+    if (s.relay) throw new HttpError(409, ON_ANOTHER_COMPUTER);
     if (!running) await slotDown(ctl, n);
     else if (!s.check_every) await startOrUndo(ctl, n);
     setSlotStopped(db, n, !running);
@@ -101,6 +140,7 @@ export function setCheckMode(n: number, every: number, ctl: ControlClient, db: D
   return exclusive(async () => {
     const s = slotRow(db, n);
     if (!s) throw new HttpError(404, "Account not found");
+    if (s.relay) throw new HttpError(409, ON_ANOTHER_COMPUTER);
     // the browser first: a start or stop that fails leaves the mode as it was
     if (!every) await startOrUndo(ctl, n);
     else if (!s.stopped && !s.checking) await slotDown(ctl, n);
@@ -114,12 +154,12 @@ export function setCheckMode(n: number, every: number, ctl: ControlClient, db: D
 }
 
 // Owned slots must be running, unless their owner stopped them or they run only while checked: after a deploy
-// recreated a container, a reboot, or a stop outside the app.
+// recreated a container, a reboot, or a stop outside the app. An account on another computer runs there.
 export function keepSlotsUp(ctl: ControlClient, db: Database.Database, everyMs = 60_000) {
   const tick = () =>
     exclusive(async () => {
-      for (const { slot, stopped, check_every } of listSlots(db)) {
-        if (stopped || check_every) continue;
+      for (const { slot, stopped, check_every, relay } of listSlots(db)) {
+        if (stopped || check_every || relay) continue;
         await slotUp(ctl, slot).catch((e: Error) => console.error(`slot ${slot}: ${e.message}`));
       }
     });

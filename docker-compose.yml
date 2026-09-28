@@ -76,6 +76,12 @@ services:
       APP_DB: /data/app.db
       CONTROL_SOCKET: /run/teamsrelay/control.sock
       VAPID_APPKEY: /vapid/appkey.txt
+      # the web app sends the notifications of the accounts on another computer (their relay joined this server)
+      VAPID_PRIVATE: /vapid/private_key.pem
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
+      NTFY_ENABLED: ${NTFY_ENABLED:-0}
+      NTFY_URL: ${NTFY_URL:-https://ntfy.sh}
+      NTFY_TOPIC: ${NTFY_TOPIC:-}
     volumes:
       - ./vapid:/vapid:ro
       - ./data:/data

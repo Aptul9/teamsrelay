@@ -22,8 +22,13 @@ export const STATE = {
   // JSON {chats, activity, calls, feed, read}: what the last check of an account checked every N hours found
   // (src/agent/commands/check.ts)
   checkSeen: "check_seen",
+  // JSON string[]: ids of the missed calls of the feed an account always on already alerted, newest first
+  // (src/agent/jobs/missed-calls.ts)
+  callsTold: "calls_told",
   // JSON CallState: the incoming call Teams shows, written by the agent while it rings and once it ends
   call: "call",
+  // JSON RelayLink: an account on another computer, written by the web app at each sync of its relay (src/lib/relay.ts)
+  relay: "relay",
 } as const;
 
 // JSON result of command <id>, e.g. DownloadResult
@@ -66,6 +71,10 @@ export const CallState = z.object({
 export type CallState = z.infer<typeof CallState>;
 export const CALL_SEEN_EVERY = 2;
 export const CALL_FRESH_FOR = 10;
+
+// The relay of an account on another computer: the name of that computer (HOST_LABEL), Unix seconds of its last sync
+export const RelayLink = z.object({ host: z.string().catch(""), seen: z.number().catch(0) });
+export type RelayLink = z.infer<typeof RelayLink>;
 
 // A call ringing now in an account of the user (acc: its slot), as the event stream sends it to the app
 export type RingingCall = { acc: number; caller: string; since: number };

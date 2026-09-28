@@ -1,10 +1,11 @@
 "use client";
 
-import { CheckIcon, ChevronsUpDownIcon, ClockIcon, LogOutIcon, MonitorIcon, PlusIcon, ServerIcon, SettingsIcon, Trash2Icon, UsersIcon } from "lucide-react";
+import { CheckIcon, ChevronsUpDownIcon, ClockIcon, LaptopIcon, LogOutIcon, MonitorIcon, PlusIcon, ServerIcon, SettingsIcon, Trash2Icon, UsersIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { cn } from "cn";
 import { Avatar, LogoTile } from "./Avatar";
+import { relayHost } from "./RelayToken";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -16,9 +17,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { checkLine, idleChecked, lastCheck, statusText, type Account, type Unread } from "@/lib/client";
+import { checkLine, idleChecked, lastCheck, NEW_ACCOUNT, relayOffline, statusText, type Account, type Unread } from "@/lib/client";
 
-export const accName = (a: Account) => a.name || a.email || `Account ${a.slot}`;
+export const accName = (a: Account) => a.name || a.email || NEW_ACCOUNT;
 
 // chats and notifications share the purple count; missed calls have a red one of their own
 const total = (u: Unread) => u.chats + u.notifications;
@@ -39,13 +40,28 @@ export function MissedBadge({ n, className }: { n: number; className?: string })
     </Badge>
   );
 }
-// between two checks an account checked every N hours knows only what its last check found
+// between two checks an account checked every N hours knows only what its last check found; an account on another
+// computer needs a sign-in only when its relay says so
 export const needsLogin = (a: Account) =>
   !a.stopped &&
-  (idleChecked(a) ? a.checkResult === "login" || !a.name : a.teams === "login" || (a.teams !== "starting" && a.teams !== "ok" && !a.name));
+  (a.relay
+    ? a.teams === "login"
+    : idleChecked(a)
+      ? a.checkResult === "login" || !a.name
+      : a.teams === "login" || (a.teams !== "starting" && a.teams !== "ok" && !a.name));
+
+// What an account on another computer is doing, when it is not simply running: its relay not there yet, or gone
+function relayState(a: Account): { text: string; warn: boolean } | null {
+  if (a.teams === "starting") return { text: "Waiting for its relay…", warn: false };
+  if (a.teams === "unknown") return { text: `Relay on ${relayHost(a)} not connected`, warn: true };
+  if (a.teams === "login") return { text: `Microsoft sign-in needed on ${relayHost(a)}`, warn: true };
+  if (!a.name) return { text: `Waiting for the sign-in on ${relayHost(a)}`, warn: true };
+  return null;
+}
 
 // What the account is doing, when it is not simply running: stopped, checked, starting, a sign-in to do...
 export function accState(a: Account): { text: string; warn: boolean } | null {
+  if (a.relay) return relayState(a);
   if (a.stopped) return { text: "Stopped · still signed in", warn: false };
   if (idleChecked(a)) {
     if (needsLogin(a)) return { text: "Microsoft sign-in needed", warn: true };
@@ -89,7 +105,7 @@ function AccountStatus({ a }: { a: Account }) {
   return (
     <span className="flex shrink-0 flex-col items-end text-right text-xs leading-tight text-muted-foreground">
       <span className="flex items-center gap-1.5">
-        {checked ? <ClockIcon className="size-3" /> : <span className={cn("size-2 rounded-full", a.stopped ? "bg-muted-foreground/40" : "bg-success")} />}
+        {checked ? <ClockIcon className="size-3" /> : <span className={cn("size-2 rounded-full", a.stopped || relayOffline(a) ? "bg-muted-foreground/40" : "bg-success")} />}
         {head}
       </span>
       {rest && <span className="whitespace-nowrap">{rest}</span>}
@@ -123,6 +139,7 @@ export function AccountMenu({
   adding,
   onSelect,
   onAdd,
+  onAddRelay,
   onOpenDesktop,
   onRemove,
   onSignOut,
@@ -139,6 +156,8 @@ export function AccountMenu({
   adding: boolean;
   onSelect: (slot: number) => void;
   onAdd: () => void;
+  // an account whose browser runs on another computer, joined by the relay there
+  onAddRelay: () => void;
   onOpenDesktop: (slot: number) => void;
   onRemove: (a: Account) => void;
   onSignOut: () => void;
@@ -194,15 +213,28 @@ export function AccountMenu({
             {adding ? <Spinner /> : <PlusIcon />}
             {adding ? "Starting the browser…" : addLabel}
           </DropdownMenuItem>
+          {canAdd && (
+            <DropdownMenuItem disabled={adding} onSelect={onAddRelay}>
+              <LaptopIcon />
+              Add from another computer…
+            </DropdownMenuItem>
+          )}
         </DropdownMenuGroup>
         {current && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem disabled={current.stopped || idleChecked(current)} onSelect={() => onOpenDesktop(current.slot)}>
-                <MonitorIcon />
-                {needsLogin(current) ? "Sign in to Microsoft" : "Open the remote Teams"}
-              </DropdownMenuItem>
+              {current.relay ? (
+                <DropdownMenuItem disabled>
+                  <LaptopIcon />
+                  Runs on {relayHost(current)}
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem disabled={current.stopped || idleChecked(current)} onSelect={() => onOpenDesktop(current.slot)}>
+                  <MonitorIcon />
+                  {needsLogin(current) ? "Sign in to Microsoft" : "Open the remote Teams"}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem variant="destructive" onSelect={() => onRemove(current)}>
                 <Trash2Icon />
                 Remove this account…

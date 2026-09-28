@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
 import { HAS_TEAMS_ID, type Message, type MessageExtra, type ReadBy } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE, ensureSlotSchema } from "@/shared/slot-db/schema";
+import { Identity, parseState, STATE } from "@/shared/slot-db/state";
 import { mergeChats, type ChatEntry } from "../logic/chats";
 
 // The agent side of data/N/messages.db (src/shared/slot-db), or of relay.db for the local relay, where the API
@@ -109,6 +110,11 @@ export class SlotStore {
     return r?.name ?? "";
   }
 
+  // Files of the media folder the rows name (mediaFilesOf)
+  mediaFiles(): Set<string> {
+    return mediaFilesOf(this.db);
+  }
+
   saveChatMessages(chat: string, messages: readonly SavedMessage[]) {
     this.db.transaction(() => {
       this.db.prepare("DELETE FROM chat_messages WHERE chat=?").run(chat);
@@ -153,11 +159,12 @@ export class SlotStore {
       .run(mid, chat, readBy.label, JSON.stringify(readBy.names), nowSeconds());
   }
 
-  // A command with a key already queued is not queued again: the id of the first one comes back
-  enqueue(type: CommandType, arg1 = "", arg2 = "", key: string | null = null): number {
+  // A command with a key already queued is not queued again: the id of the first one comes back. ts: when it was
+  // queued, where the relay of an account on another computer takes it from the server
+  enqueue(type: CommandType, arg1 = "", arg2 = "", key: string | null = null, ts = nowSeconds()): number {
     const known = key ? this.commandIdByKey(key) : null;
     if (known) return known;
-    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2, key) VALUES(?,?,?,?,?)").run(nowSeconds(), type, arg1, arg2, key);
+    const r = this.db.prepare("INSERT INTO commands(ts, type, arg1, arg2, key) VALUES(?,?,?,?,?)").run(ts, type, arg1, arg2, key);
     return Number(r.lastInsertRowid);
   }
 
@@ -242,6 +249,24 @@ export class SlotStore {
       );
     })();
   }
+}
+
+// Files of the media folder the rows of a slot database name: pictures of the chats, of the feed and of the account,
+// images and pictures of the messages kept (a chat that left the list keeps the last ones). No other file of the folder
+// shows anywhere. The web app reads them in the database of an account on another computer (src/lib/relay.ts).
+export function mediaFilesOf(db: Database.Database): Set<string> {
+  const files = new Set<string>();
+  const add = (f: unknown) => {
+    if (typeof f === "string" && f) files.add(f);
+  };
+  for (const av of db.prepare("SELECT av FROM chats UNION SELECT av FROM activity").pluck().all()) add(av);
+  for (const v of db.prepare("SELECT extra FROM chat_messages").pluck().all() as (string | null)[]) {
+    const extra = parseExtra(v);
+    add(extra.av);
+    for (const im of Array.isArray(extra.images) ? extra.images : []) add(im?.f);
+  }
+  add(parseState(Identity, db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.me) as string | null | undefined, null)?.av);
+  return files;
 }
 
 function parseExtra(v: string | null): MessageExtra {

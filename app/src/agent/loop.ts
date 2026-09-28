@@ -8,6 +8,8 @@ import { scanChats, scanChatsFull } from "./jobs/chat-list";
 import { saveOpenChat } from "./jobs/conversation";
 import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
+import { pruneMedia } from "./jobs/media";
+import { FeedAfterCalls, pushMissedCalls } from "./jobs/missed-calls";
 import { drainHook, keepActive, park, preparePage, wanted } from "./jobs/page-setup";
 import { prefetchReadBy } from "./jobs/read-by";
 import { scheduledSelfCheck, selfCheckDue } from "./jobs/self-check";
@@ -25,8 +27,9 @@ const BLANK = /^(about:|chrome:|edge:|chrome-error:)/;
 type Round = { onTeams: boolean; want: string };
 
 // The agent loop of agent.py, one job per step, in the same order and at the same rounds. Activity feed and
-// "Read by" only for a product whose app shows them.
-export function agentJobs(a: Agent): Job<Round>[] {
+// "Read by" only for a product whose app shows them. afterCalls: the feed is read out of its turn soon after a call
+// ended, and each read alerts the missed calls it shows first (an account checked every N hours: its check does).
+export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Round>[] {
   const teamsOk = () => a.health?.teams === "ok";
   const active = () => a.store.getState(STATE.activeChat);
   // a feed read that failed is tried once more ACTIVITY_RETRY seconds later, not 150 rounds later
@@ -34,7 +37,12 @@ export function agentJobs(a: Agent): Job<Round>[] {
   const activity = async () => {
     const retry = retryAt > 0;
     retryAt = 0;
-    if ((await readActivity(a)) === null && !retry) retryAt = Date.now() + ACTIVITY_RETRY * 1000;
+    afterCalls.ran();
+    if ((await readActivity(a)) === null) {
+      if (!retry) retryAt = Date.now() + ACTIVITY_RETRY * 1000;
+      return;
+    }
+    if (!a.checkedOnly?.()) await pushMissedCalls(a);
   };
   const jobs: (Job<Round> | false)[] = [
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
@@ -49,7 +57,7 @@ export function agentJobs(a: Agent): Job<Round>[] {
     a.config.activity && {
       name: "activity",
       every: { rounds: 150, offset: 5 },
-      force: () => retryAt > 0 && Date.now() >= retryAt,
+      force: () => (retryAt > 0 && Date.now() >= retryAt) || afterCalls.due(),
       when: () => teamsOk() && !!a.railReady,
       catchUp: true,
       run: activity,
@@ -70,6 +78,9 @@ export function agentJobs(a: Agent): Job<Round>[] {
       when: (r) => !!r.want && active() === r.want && teamsOk() && !a.store.hasPendingCommands(),
       run: (r) => prefetchReadBy(a, r.want),
     },
+    // the first time 31 rounds after a start, which has usually read the list, the feed and the account by then (rows left
+    // from before keep their files anyway); off the rounds of the list and the health
+    { name: "media", every: { rounds: 300, offset: 31 }, run: () => pruneMedia(a) },
     // an account started only to be checked has its checks: its start would find Teams still loading
     { name: "self-check", every: { rounds: 1 }, when: () => !!selfCheckDue(a) && !a.checkedOnly?.(), run: () => scheduledSelfCheck(a) },
   ];
@@ -89,9 +100,10 @@ export type BrowserSource = {
 // About one round a second, until `signal` aborts (never, for the agent of a slot)
 export async function runAgent(a: Omit<Agent, "tp" | "health">, browser: BrowserSource, signal?: AbortSignal): Promise<void> {
   const agent = { ...a, health: null } as Agent;
-  const scheduler = new Scheduler<Round>(agentJobs(agent), (job, e) => log.warn("job", errorText(e), { job }));
+  const afterCalls = new FeedAfterCalls();
+  const scheduler = new Scheduler<Round>(agentJobs(agent, afterCalls), (job, e) => log.warn("job", errorText(e), { job }));
   // incoming calls on a timer of their own: a call rings a few seconds, a round can take longer
-  new CallWatch(agent).start(signal);
+  new CallWatch(agent, undefined, undefined, () => afterCalls.callEnded()).start(signal);
   const pages = new WeakMap<Page, TeamsPage>();
   let away: { since: number; url: string } | null = null;
   while (!signal?.aborted) {

@@ -2,7 +2,7 @@ import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as authcheck } from "@/app/api/authcheck/route";
 import { GET as desktop } from "@/app/api/desktop/[slot]/route";
-import { appDb, claimSlot, migrateAppSchema } from "@/lib/appdb";
+import { appDb, claimSlot, migrateAppSchema, setRelayToken } from "@/lib/appdb";
 import { controlClient } from "@/lib/control";
 import { currentUser } from "@/lib/session";
 import { tempDir } from "./helpers";
@@ -88,6 +88,17 @@ describe("GET /api/authcheck", () => {
   it("refuses users without an account", async () => {
     vi.mocked(currentUser).mockResolvedValue(u2);
     expect((await check("/desktop/")).status).toBe(403);
+  });
+
+  it("refuses users whose accounts all run on another computer: the desktop shows none of their windows", async () => {
+    const u3 = { id: "u3", email: "u3@contoso.example", name: "U3" };
+    setRelayToken(appDb(), claimSlot(appDb(), "u3", { slotCount: 4, perUser: 4 }), "0".repeat(64));
+    vi.mocked(currentUser).mockResolvedValue(u3);
+    expect((await check("/desktop/")).status).toBe(403);
+
+    // one account in the browsers container is enough
+    claimSlot(appDb(), "u3", { slotCount: 4, perUser: 4 });
+    expect((await check("/desktop/")).status).toBe(200);
   });
 
   it("sends a visitor without a session to the login, then back to the desktop", async () => {

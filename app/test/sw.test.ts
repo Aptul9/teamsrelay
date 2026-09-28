@@ -16,10 +16,25 @@ type Shown = {
   data: { lines?: string[] };
 };
 
+// A window of the app, as the service worker sees it. bell: what its page answers when asked to ring the bell of a
+// message (App.tsx): it plays it, it may not play sound (a tab not clicked yet), or it never answers (a page the
+// browser froze). asked: the messages it got.
+function appWindow(visibilityState: string, bell: "plays" | "quiet" | "no answer") {
+  const asked: unknown[] = [];
+  return {
+    visibilityState,
+    asked,
+    postMessage: (message: unknown, ports: MessagePort[] = []) => {
+      asked.push(message);
+      if (bell !== "no answer") ports[0]?.postMessage({ played: bell === "plays" });
+    },
+  };
+}
+
 // public/sw.js run with the service worker globals it uses. The fake registration keeps what a device shows: one
 // notification per tag, the last one shown with it, until the user dismisses it. windows: the windows of the app open
 // now; badges: what the service worker put on the icon of the installed app ("dot" without a number).
-function serviceWorker(o: { windows?: { visibilityState: string }[] } = {}) {
+function serviceWorker(o: { windows?: ({ visibilityState: string } | ReturnType<typeof appWindow>)[] } = {}) {
   const listeners = new Map<string, (event: unknown) => void>();
   const shown: Shown[] = [];
   const badges: (number | "dot")[] = [];
@@ -35,7 +50,7 @@ function serviceWorker(o: { windows?: { visibilityState: string }[] } = {}) {
   const clients = { claim: async () => undefined, matchAll: async () => o.windows ?? [] };
   const navigator = { setAppBadge: async (n?: number) => void badges.push(n ?? "dot") };
   const self = { addEventListener: (type: string, fn: (event: unknown) => void) => listeners.set(type, fn), registration, skipWaiting: () => undefined, clients, navigator };
-  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../public/sw.js"), "utf8"), { self, clients });
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../public/sw.js"), "utf8"), { self, clients, setTimeout, clearTimeout, MessageChannel });
   return {
     shown,
     badges,
@@ -167,5 +182,55 @@ describe("service worker app icon of the local relay", () => {
     const closed = serviceWorker();
     await closed.push({ title: "Anna Rossi", body: "ciao", chat: "Anna Rossi", tag: "chat-0-Anna Rossi" });
     expect(closed.badges).toEqual([]);
+  });
+});
+
+describe("service worker bell of the app", () => {
+  const message = { title: "Anna Rossi", body: "ciao", acc: 2, tag: "chat-2-Anna Rossi" };
+
+  it("lets an open window ring the bell of a message instead of the sound of the device: the notification is quiet", async () => {
+    const w = appWindow("visible", "plays");
+    const sw = serviceWorker({ windows: [w] });
+    const n = await sw.push(message);
+    expect(n).toMatchObject({ title: "Anna Rossi", body: "ciao", renotify: true, silent: true });
+    // no account in it: a message with one switches the account on screen (App.tsx)
+    expect(w.asked).toEqual([{ type: "bell" }]);
+  });
+
+  it("keeps the sound of the device with no window open, none that may play sound, or none that answers in time", async () => {
+    for (const windows of [[], [appWindow("visible", "quiet")], [appWindow("hidden", "no answer")], [{ visibilityState: "visible" }]]) {
+      const n = await serviceWorker({ windows }).push(message);
+      expect(n).toMatchObject({ body: "ciao", renotify: true });
+      expect(n.silent).toBeUndefined();
+    }
+  });
+
+  it("asks the windows on screen first, one at a time, until one plays it: a single bell", async () => {
+    const shown = appWindow("visible", "plays");
+    const behind = appWindow("hidden", "plays");
+    expect(await serviceWorker({ windows: [behind, shown] }).push(message)).toMatchObject({ silent: true });
+    expect([shown.asked.length, behind.asked.length]).toEqual([1, 0]);
+    const tab = appWindow("visible", "quiet");
+    const app = appWindow("hidden", "plays");
+    expect(await serviceWorker({ windows: [tab, app] }).push(message)).toMatchObject({ silent: true });
+    expect([tab.asked.length, app.asked.length]).toEqual([1, 1]);
+  });
+
+  it("rings it for a push of its own too (a check, a missed call, Teams signed out)", async () => {
+    const w = appWindow("hidden", "plays");
+    const n = await serviceWorker({ windows: [w] }).push({ title: "Missed call from Anna Rossi", body: "Teams call at 10:05, not answered", acc: 2 });
+    expect(n).toMatchObject({ title: "Missed call from Anna Rossi", silent: true });
+    expect(w.asked).toHaveLength(1);
+  });
+
+  it("rings nothing for a line sent again, nor for a call, which has the ring of its own", async () => {
+    const w = appWindow("visible", "plays");
+    const sw = serviceWorker({ windows: [w] });
+    await sw.push(message);
+    const again = await sw.push(message);
+    expect(again).toMatchObject({ renotify: false });
+    expect(again.silent).toBeUndefined();
+    await sw.push({ title: "Anna Rossi is calling", body: "Teams call, ringing now", acc: 2, tag: "call-2", call: "ringing", ts: 1000 });
+    expect(w.asked).toHaveLength(1);
   });
 });

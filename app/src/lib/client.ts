@@ -25,6 +25,11 @@ export type Account = {
   checkResult: string;
   nextCheck: number;
   checking: boolean;
+  // an account on another computer, whose relay joined the server: the name of that computer ("" before its first
+  // sync) and the time of its last sync
+  relay: boolean;
+  host: string;
+  relaySeen: number;
 };
 export type { ActivityItem, CallLogEntry, Chat, Message, Reaction } from "@/shared/slot-db/rows";
 export { CHECK_INTERVALS } from "@/shared/checks";
@@ -171,6 +176,16 @@ export function appBadgeCount(accounts: Account[], unreadOf: (a: Account) => Unr
   return accounts.reduce((n, a) => n + unreadTotal(unreadOf(a)), 0);
 }
 
+// The same number in the title of the page, for the tab and the taskbar: "(5) TeamsRelay"
+export const pageTitle = (n: number) => (n > 0 ? `(${n > 99 ? "99+" : n}) TeamsRelay` : "TeamsRelay");
+
+// An account never signed in to Microsoft has no name nor email yet: it shows as an account being added, not as a
+// numbered one, until its first sign-in. One signed out since keeps who it was.
+export const NEW_ACCOUNT = "New Teams account";
+export const signedInOnce = (a: Pick<Account, "name" | "email">) => !!(a.name || a.email);
+export const addingTitle = (accounts: Account[]) =>
+  accounts.some(signedInOnce) ? "Finish adding this Teams account" : "Add your first Teams account";
+
 export function markActivitySeen(seen: string[] | null, items: ActivityItem[]): string[] {
   const ids = items.map((a) => a.id);
   const now = new Set(ids);
@@ -268,6 +283,9 @@ export const accountStatus = (a: Pick<Account, "stopped" | "checkEvery">): "stop
 // An account checked every N hours, between two checks: no browser, no agent, the chats and numbers of its last check
 export const idleChecked = (a: Pick<Account, "checkEvery" | "checking" | "stopped">) => a.checkEvery > 0 && !a.checking && !a.stopped;
 
+// An account on another computer whose relay has not synced for a minute, or never did
+export const relayOffline = (a: Partial<Pick<Account, "relay" | "teams">>) => !!a.relay && (a.teams === "unknown" || a.teams === "starting");
+
 // Its last check: "Checked 14:05", "Check failed 14:05"
 export const lastCheck = (a: Pick<Account, "checked" | "checkResult">) => `${a.checkResult === "failed" ? "Check failed" : "Checked"} ${clock(a.checked)}`;
 
@@ -289,7 +307,8 @@ export function untilText(seconds: number): string {
 
 // The status of an account on its row of the account menu: stopped, active (always on), or when the next check
 // updates it. A check asked from the app has no time yet; a due one waits for the check of another account.
-export function statusText(a: Pick<Account, "stopped" | "checkEvery" | "checking" | "nextCheck">, now = Date.now() / 1000): string {
+export function statusText(a: Pick<Account, "stopped" | "checkEvery" | "checking" | "nextCheck"> & Partial<Pick<Account, "relay" | "teams">>, now = Date.now() / 1000): string {
+  if (a.relay) return relayOffline(a) ? "Not connected" : "Active";
   if (a.stopped) return "Stopped";
   if (!a.checkEvery) return "Active";
   if (a.checking) return "Updating now";
@@ -311,3 +330,8 @@ export function writeStorage(key: string, value: string) {
     // private mode: the choice is not remembered
   }
 }
+
+// The bell of new messages while the app is open (sw.js, App.tsx), per device: on unless turned off in Settings
+const BELL_KEY = "bell";
+export const bellOn = () => readStorage(BELL_KEY) !== "off";
+export const setBellOn = (on: boolean) => writeStorage(BELL_KEY, on ? "on" : "off");

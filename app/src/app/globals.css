@@ -149,6 +149,8 @@
   .msg-html {
     white-space: normal;
     overflow-wrap: anywhere;
+    /* whatever the HTML of a message says, it draws inside its bubble: a fixed or absolute element stays in it */
+    contain: paint;
   }
   .msg-html p {
     margin: 0;
