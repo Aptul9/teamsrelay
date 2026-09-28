@@ -1,6 +1,7 @@
 import { chromium, type Browser, type BrowserContext } from "playwright-core";
 import { errorText, log } from "./log";
 import type { BrowserSource } from "./loop";
+import { grantNotifications } from "./permissions";
 import { sleep } from "./teams/page";
 
 // Without a Teams tab for this long the agent exits and the supervisor starts it again
@@ -27,7 +28,7 @@ export class CdpBrowser implements BrowserSource {
           await browser.close();
           throw new Error("the browser has no context yet");
         }
-        await context.grantPermissions(["notifications"]).catch(() => undefined);
+        await grantNotifications(browser).catch(() => undefined);
         log.info("cdp", "connected", { cdp: this.cdp });
         [this.browser, this.current] = [browser, context];
         return context;
