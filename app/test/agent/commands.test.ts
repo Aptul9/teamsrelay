@@ -314,6 +314,23 @@ describe("command handlers", () => {
     expect(store.commandStatus(id)).toBe("pending");
   });
 
+  it("leaves answer and hangup to the call watch: the loop keeps them pending and never runs them", async () => {
+    const answer = store.enqueue("answer", "Anna Rossi", '{"since":1790000000000}');
+    const hangup = store.enqueue("hangup");
+    const open = store.enqueue("open");
+    await runPendingCommands(agent());
+    expect(store.commandStatus(answer)).toBe("pending");
+    expect(store.commandStatus(hangup)).toBe("pending");
+    expect(store.commandStatus(open)).toBe("done");
+    expect(evaluated.filter((n) => n === "readChatList")).toHaveLength(1);
+  });
+
+  it("answer and hangup handed to a handler end as failed with nothing done on Teams", async () => {
+    expect(await runCommand(agent(), cmd("answer", "Anna Rossi", '{"since":1790000000000}'))).toBe("failed");
+    expect(await runCommand(agent(), cmd("hangup", ""))).toBe("failed");
+    expect(evaluated).toEqual([]);
+  });
+
   it("never runs a command that waited too long: a send queued while Teams was down stays unsent", async () => {
     const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
     insert.run(Math.floor(Date.now() / 1000) - COMMAND_MAX_AGE - 5, "send", "Anna Rossi", "from an hour ago");

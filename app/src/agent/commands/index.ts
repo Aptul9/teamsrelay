@@ -1,4 +1,4 @@
-import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
+import { CALL_COMMANDS, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
 import type { Agent } from "../context";
 import { scanChats } from "../jobs/chat-list";
 import { errorText, log } from "../log";
@@ -25,6 +25,9 @@ export type Handler = (a: Agent, cmd: PendingCommand) => Promise<Outcome>;
 // Seconds a command may wait for the agent: older ones end as failed without touching Teams
 export const COMMAND_MAX_AGE = 120;
 
+// The call watch runs answer and hangup (src/agent/jobs/calls.ts): here they end as failed, with nothing done
+const byCallWatch: Handler = async () => "failed";
+
 // One handler per command type of the web app and of the local relay (src/shared/slot-db/commands.ts)
 export const HANDLERS: Record<CommandType, Handler> = {
   open,
@@ -42,6 +45,8 @@ export const HANDLERS: Record<CommandType, Handler> = {
   members,
   sendmentions: sendMentions,
   check,
+  answer: byCallWatch,
+  hangup: byCallWatch,
 };
 
 // open, resync and recheck end as done whatever happened on Teams, like in the Python agent; an unknown type ends
@@ -68,6 +73,8 @@ export async function runPendingCommands(a: Agent) {
     const expired = a.store.expirePendingCommands(COMMAND_MAX_AGE);
     if (expired) log.warn("cmd", "waited too long, not run", { commands: expired });
     if (a.store.commandStatus(cmd.id) !== "pending") continue;
+    // the call watch takes them at its next look, within a second: a call rings a few seconds only
+    if (CALL_COMMANDS.includes(cmd.type as CommandType)) continue;
     // a refresh of the Activity feed, or a check, stays pending until the health check finds the side bar clickable:
     // while Teams starts (sign-in redirects, then its loading bar) the clicks would time out
     if ((cmd.type === "activity" || cmd.type === "check") && !a.railReady) continue;
