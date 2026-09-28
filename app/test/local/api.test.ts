@@ -23,10 +23,12 @@ let mediaDir = "";
 const now = () => Math.floor(Date.now() / 1000);
 const setHealth = (h: object) => store.setState(STATE.health, JSON.stringify({ browser: "ok", overall: "green", ts: now(), ...h }));
 
-// the API on a free port; `failures` decides after how many wrong tokens an address gets 429
-async function serve(failures = new Failures(100)) {
+// the API on a free port; `failures` decides after how many wrong tokens an address gets 429. `commandWaitMs`, how long
+// POST /api/cmd waits for the outcome: long enough for the fake agents below on a loaded machine (with 1.5 s a CI
+// runner answered running); the test of a pending answer asks for a short one
+async function serve(failures = new Failures(100), commandWaitMs = 10_000) {
   if (server?.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
-  server = http.createServer(apiHandler({ store, devices, token: TOKEN, vapidKey: "BPublicKey", webDir: WEB, publicDir: PUBLIC, mediaDir, commandWaitMs: 1500 }, failures));
+  server = http.createServer(apiHandler({ store, devices, token: TOKEN, vapidKey: "BPublicKey", webDir: WEB, publicDir: PUBLIC, mediaDir, commandWaitMs }, failures));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
@@ -229,6 +231,7 @@ describe("commands", () => {
   });
 
   it("answers pending when Teams takes longer, and the outcome later", async () => {
+    await serve(undefined, 1500);
     const stop = agentFinishing("failed", 2500);
     try {
       const r = await call("/api/cmd", { method: "POST", body: { type: "send", chat: "Anna Rossi", text: "hi" } });
