@@ -55,4 +55,13 @@ describe("relay browser", () => {
     };
     expect(seen).toEqual({ page: "en-US", worker: "en-US", pageHeader: expect.stringMatching(/^en-US\b/), workerHeader: expect.stringMatching(/^en-US\b/) });
   }, 60_000);
+
+  it("grants notifications and leaves the microphone to the browser, for a call taken in its window", async () => {
+    const page = context.pages()[0] ?? (await context.newPage());
+    await page.goto(url);
+    const states = await page.evaluate(() =>
+      Promise.all(["notifications", "microphone"].map((name) => navigator.permissions.query({ name: name as PermissionName }).then((s) => s.state))),
+    );
+    expect(states).toEqual(["granted", "prompt"]);
+  }, 60_000);
 });

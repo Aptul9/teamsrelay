@@ -3,6 +3,7 @@ import { chromium, type BrowserContext } from "playwright-core";
 import { hostOf, isLoginUrl, isTeamsUrl } from "@/agent/logic/hosts";
 import { errorText, log } from "@/agent/log";
 import type { BrowserSource } from "@/agent/loop";
+import { grantNotifications } from "@/agent/permissions";
 import { sleep } from "@/agent/teams/page";
 
 // Defaults of Playwright that a browser kept open for months must not have: they stop Safe Browsing, certificate
@@ -36,7 +37,8 @@ export async function launchBrowser(o: LaunchOptions): Promise<BrowserContext> {
     ignoreDefaultArgs: KEEP_UPDATING,
     args: ["--window-size=1280,1000", "--accept-lang=en-US"],
   });
-  await context.grantPermissions(["notifications"]).catch(() => undefined);
+  const browser = context.browser();
+  if (browser) await grantNotifications(browser).catch(() => undefined);
   // The browser may restore tabs of its previous session: one is kept, the Teams one if there, else the blank one
   // the launch opens
   const pages = context.pages();
