@@ -388,11 +388,13 @@ describe("notifier through web-push to a push service", () => {
     service.answer(429, { "Retry-After": "7" });
     service.answer(503);
     const n = notifier((ms, run) => retries.push({ ms, run }));
+    // each retry goes to the push service over HTTP: on a loaded CI runner it came after the 1 s waitFor gives
+    const slow = { timeout: 10_000 };
     expect(await n.push("TeamsRelay", "Teams session expired")).toBe(0);
     retries[0].run();
-    await vi.waitFor(() => expect(retries).toHaveLength(2));
+    await vi.waitFor(() => expect(retries).toHaveLength(2), slow);
     retries[1].run();
-    await vi.waitFor(() => expect(service.received).toHaveLength(3));
+    await vi.waitFor(() => expect(service.received).toHaveLength(3), slow);
     expect(retries.map((r) => r.ms)).toEqual([7000, 30_000]);
     expect(service.received.map((r) => r.payload)).toEqual(Array(3).fill({ title: "TeamsRelay", body: "Teams session expired", chat: "", acc: 1 }));
   });
