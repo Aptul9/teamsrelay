@@ -34,13 +34,17 @@ object Registration {
             .addOnFailureListener { e -> Log.w(TAG, "no Firebase token: $e") }
     }
 
-    // Whether the web page of the relay has a session on this phone (its cookie)
-    fun signedIn(context: Context): Boolean {
+    // The session cookie of the web page of the relay on this phone, "" without one: a sign-in after the relay ended the
+    // session gets a new value under the same name
+    fun session(context: Context): String {
         val origin = Store(context.applicationContext).relay
-        return origin.isNotEmpty() && hasSession(CookieManager.getInstance().getCookie(origin) ?: "")
+        if (origin.isEmpty()) return ""
+        return (CookieManager.getInstance().getCookie(origin) ?: "").split(";").map { it.trim() }.firstOrNull { isSession(it) } ?: ""
     }
 
-    private fun hasSession(cookies: String) = cookies.split(";").any { it.trim().substringBefore("=").endsWith("session_token") }
+    private fun isSession(cookie: String) = cookie.substringBefore("=").endsWith("session_token")
+
+    private fun hasSession(cookies: String) = cookies.split(";").any { isSession(it.trim()) }
 
     // The app changes server: the previous one forgets this phone (DELETE /api/push/fcm, the token is the proof), and its
     // key goes, so nothing it still sends opens here. A server that does not answer keeps sending: Firebase delivers,
@@ -86,14 +90,15 @@ object Registration {
         }
     }
 
-    // The relay forgets this phone, and its key goes: what it may still send is not opened
+    // The relay forgets this phone, and its key goes: what it may still send is not opened. The app may have changed
+    // server during the call: the key and token are then the next server's, and stay.
     private fun forget(store: Store, origin: String, token: String) {
         val (status, _) = call("DELETE", "$origin/api/push/fcm", "", JSONObject().put("token", token))
-        if (status == 200) {
+        if (status != 200) {
+            Log.w(TAG, "the relay did not forget the phone: HTTP $status")
+        } else if (store.relay == origin) {
             store.token = ""
             store.key = ""
-        } else {
-            Log.w(TAG, "the relay did not forget the phone: HTTP $status")
         }
     }
 

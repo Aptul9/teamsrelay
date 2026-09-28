@@ -100,8 +100,9 @@ export class Notifier {
   // the push service keeps it only while the call could still be answered, with no retry: the next one follows in
   // seconds. Once it stops, the same notification turns quiet and stays a day. Safari devices get the start and the
   // end only: on an iPhone every push shows apart, the tag ignored (WebKit bug 258922); so do the phones of the
-  // Android app, which loop the ringtone themselves until the end, and ntfy, whose app keeps alerting for a message of
-  // priority 5 when its setting says so. Not in the history of notified messages.
+  // Android app, which loop the ringtone themselves until the end (a phone the first push did not reach gets the next
+  // one), and ntfy, whose app keeps alerting for a message of priority 5 when its setting says so. Not in the history
+  // of notified messages.
   async call(caller: string, state: "ringing" | "again" | "ended", since: number, seconds = 0): Promise<number> {
     const ringing = state !== "ended";
     const title = ringing ? (caller ? `${caller} is calling` : "Incoming call") : caller ? `Call from ${caller}` : "Call ended";
@@ -110,19 +111,19 @@ export class Notifier {
     // a phone that did not take the first push of the call gets the next one, until one reaches it
     if (state === "ringing") this.phonesRinging = { since, took: new Set() };
     const took = this.phonesRinging?.since === since ? this.phonesRinging.took : null;
-    const [n] = await Promise.all([
-      this.deliver((acc) => ({ title, body, chat, tag: callTag(acc), call: ringing ? "ringing" : "ended", ts: since }), {
-        urgency: "high",
-        ttl: ringing ? CALL_TTL : PUSH_TTL,
-        retry: !ringing,
-        skip: state === "again" ? (t) => APPLE_PUSH.test(t.endpoint) || (isPhone(t) && (!took || took.has(t.endpoint))) : undefined,
-        took: ringing && took ? (t) => void (isPhone(t) && took.add(t.endpoint)) : undefined,
-      }),
-      // ntfy beside the devices, not before them: a slow ntfy.sh holds no ring
-      state !== "again" ? this.ntfyCall(title, body, since, ringing) : undefined,
-    ]);
-    return n;
+    // ntfy beside the devices, one message after the other so that the end of the call comes after its start: a slow
+    // ntfy.sh holds no push of the call
+    if (state !== "again") this.ntfyCalls = this.ntfyCalls.then(() => this.ntfyCall(title, body, since, ringing));
+    return this.deliver((acc) => ({ title, body, chat, tag: callTag(acc), call: ringing ? "ringing" : "ended", ts: since }), {
+      urgency: "high",
+      ttl: ringing ? CALL_TTL : PUSH_TTL,
+      retry: !ringing,
+      skip: state === "again" ? (t) => APPLE_PUSH.test(t.endpoint) || (isPhone(t) && (!took || took.has(t.endpoint))) : undefined,
+      took: ringing && took ? (t) => void (isPhone(t) && took.add(t.endpoint)) : undefined,
+    });
   }
+
+  private ntfyCalls: Promise<void> = Promise.resolve();
 
   // The phones of the Android app the ringing call (since, when it started) reached: they ring on their own until it
   // ends, another push would start the ringtone again
@@ -194,7 +195,10 @@ export class Notifier {
       }
       if (r.gone) {
         this.o.devices.remove(t.endpoint);
-        log.info("push", "phone gone, removed", { status: r.status });
+        // 403: a token of another Firebase project, which every phone has when the service account key is not of the
+        // project the app was built with
+        if (r.status === 403) log.warn("push", "phone of another Firebase project (SENDER_ID_MISMATCH), removed: key and app build must share one project");
+        else log.info("push", "phone gone, removed", { status: r.status });
         return false;
       }
       ({ status, retryAfter } = r);

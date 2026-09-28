@@ -11,6 +11,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -44,13 +45,16 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
     private var change = false
     private var startPage = ""
     private val main = Handler(Looper.getMainLooper())
-    private var signedIn = false
+    // the activity on screen: Android may create it again (a change of font or display size), with a WebView of its own
+    private var shown: Activity? = null
+    // the session cookie of the web page as last seen: a new value is a sign-in, even under the same name
+    private var session = ""
 
     private val watch = object : Runnable {
         override fun run() {
-            val now = Registration.signedIn(activity)
-            if (now != signedIn) Registration.sync(activity)
-            signedIn = now
+            val now = Registration.session(activity)
+            if (now != session) Registration.sync(activity)
+            session = now
             main.postDelayed(this, WATCH_MS)
         }
     }
@@ -59,6 +63,8 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         this.webView = webView
         Notices.channels(activity)
         Shortcuts.publish(activity)
+        // Tauri registers the plugin once the activity has resumed, and calls no onResume for it then
+        if ((activity as? AppCompatActivity)?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true) startWatch()
         // a task Android brings back from the recent apps comes with the intent that first started it: not asked again
         val intent = activity.intent?.takeIf { (it.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0 }
         opened = accountOf(intent)
@@ -72,23 +78,21 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
     override fun onNewIntent(intent: Intent) {
         if (intent.action == ACTION_CHANGE_SERVER) {
             change = true
-            // a load of its own, not a jump to #change on the same page: an open still under way (a server that does
-            // not answer) stops, and the form shows
-            if (startPage.isNotEmpty()) webView?.post { webView?.loadUrl("$startPage?change=1#change") }
+            // a load of its own each time, not a jump to #change on the same page: an open still under way (a server
+            // that does not answer) stops, and the form shows
+            val page = "$startPage?change=${System.currentTimeMillis()}#change"
+            if (startPage.isNotEmpty()) liveWebView()?.let { w -> w.post { w.loadUrl(page) } }
             return
         }
         val acc = accountOf(intent)
         val origin = Store(activity).relay
-        if (acc > 0 && origin.isNotEmpty()) webView?.post { webView?.loadUrl("$origin/?a=$acc") }
+        if (acc > 0 && origin.isNotEmpty()) liveWebView()?.let { w -> w.post { w.loadUrl("$origin/?a=$acc") } }
     }
 
     override fun onResume(activity: AppCompatActivity) {
-        // an activity created again (a change of font or display size) has a WebView of its own
-        webViewIn(activity.window.decorView)?.let { webView = it }
+        shown = activity
         Registration.sync(activity)
-        signedIn = Registration.signedIn(activity)
-        main.removeCallbacks(watch)
-        main.postDelayed(watch, WATCH_MS)
+        startWatch()
     }
 
     override fun onPause(activity: AppCompatActivity) {
@@ -118,6 +122,16 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun accountOf(intent: Intent?): Int = intent?.getIntExtra(EXTRA_ACC, 0) ?: 0
+
+    private fun startWatch() {
+        session = Registration.session(activity)
+        main.removeCallbacks(watch)
+        main.postDelayed(watch, WATCH_MS)
+    }
+
+    // The WebView of the activity on screen, looked up when used: the one of an activity created again appears only
+    // after its first onResume
+    private fun liveWebView(): WebView? = shown?.window?.decorView?.let { webViewIn(it) } ?: webView
 
     private fun webViewIn(v: View): WebView? =
         when (v) {

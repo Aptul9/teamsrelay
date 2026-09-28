@@ -12,10 +12,11 @@ export function pickSlot(owned: number[], param: string | null): number {
   return n;
 }
 
-// A path of this site to go to after the sign-in; browsers read a backslash as a slash, so "/\\evil.example" would be
-// another site
+// A path of this site to go to after the sign-in. Browsers read a backslash as a slash and drop tab, CR and LF, so
+// "/\evil.example" or "/<tab>/evil.example" would be another site: such paths, and whatever resolves elsewhere, go to /
 export function safeNext(next: string | null): string {
-  return next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/";
+  if (!next || !next.startsWith("/") || next.startsWith("//") || /[\u0000-\u001f\\]/.test(next)) return "/";
+  return new URL(next, "http://relay.invalid").origin === "http://relay.invalid" ? next : "/";
 }
 
 // The sign-in page for a visit to the app without a session: the account asked by a tapped notification (a) and the

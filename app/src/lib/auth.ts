@@ -42,7 +42,12 @@ export function authOptions() {
       session: {
         delete: {
           after: async (session) => {
-            forgetFcmDevicesOfSession(appDb(), session.id);
+            // a failure here must not fail the sign-out or the password change that ended the session
+            try {
+              forgetFcmDevicesOfSession(appDb(), session.id);
+            } catch (e) {
+              console.error(`phones of session: ${e instanceof Error ? e.message : String(e)}`);
+            }
           },
         },
       },

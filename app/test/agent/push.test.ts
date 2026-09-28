@@ -60,6 +60,9 @@ function seedAppDb(devices: [string, string, string][]) {
   db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(1, 'u1', 0), (2, 'u2', 0)").run();
   const add = db.prepare("INSERT INTO push_subscriptions VALUES(?, ?, ?, 0)");
   for (const [endpoint, user, sub] of devices) add.run(endpoint, user, sub);
+  // better-auth's sessions, as the web app keeps them: the phones of the Android app go with theirs
+  db.exec('CREATE TABLE "session"(id TEXT PRIMARY KEY, expiresAt date)');
+  db.prepare('INSERT INTO "session" VALUES(?, ?), (?, ?)').run("s-live", "2099-01-01T00:00:00.000Z", "s-over", "2020-01-01T00:00:00.000Z");
   db.close();
   return file;
 }
@@ -410,7 +413,9 @@ describe("notifier to the phones of the Android app (FCM)", () => {
     store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
     appDbFile = seedAppDb([
       ["https://push/u1-phone", "u1", JSON.stringify({ endpoint: "https://push/u1-phone", keys: { p256dh: "k", auth: "a" } })],
-      [`fcm:${TOKEN}`, "u1", JSON.stringify({ fcm: { token: TOKEN, key, name: "Google Pixel 9" } })],
+      [`fcm:${TOKEN}`, "u1", JSON.stringify({ fcm: { token: TOKEN, key, name: "Google Pixel 9", session: "s-live" } })],
+      ["fcm:token-of-a-session-run-out-12345", "u1", JSON.stringify({ fcm: { token: "token-of-a-session-run-out-12345", key, name: "Old phone", session: "s-over" } })],
+      ["fcm:token-of-a-session-signed-out-1", "u1", JSON.stringify({ fcm: { token: "token-of-a-session-signed-out-1", key, name: "Lost phone", session: "s-gone" } })],
     ]);
     web = [];
     fcmSent = [];
@@ -499,8 +504,17 @@ describe("notifier to the phones of the Android app (FCM)", () => {
     answers.push({ ok: false, status: 404, gone: true });
     await n.message("Anna Rossi", "two", "Anna Rossi");
     const db = new Database(appDbFile, { readonly: true });
-    expect(db.prepare("SELECT endpoint FROM push_subscriptions").pluck().all()).toEqual(["https://push/u1-phone"]);
+    expect(db.prepare("SELECT endpoint FROM push_subscriptions ORDER BY endpoint").pluck().all()).toEqual([
+      "fcm:token-of-a-session-run-out-12345",
+      "fcm:token-of-a-session-signed-out-1",
+      "https://push/u1-phone",
+    ]);
     db.close();
+  });
+
+  it("reaches only the phones whose session still runs: one signed out or run out gets nothing", async () => {
+    await notifier().message("Anna Rossi", "are you there?", "Anna Rossi");
+    expect(fcmSent.map((s) => s.token)).toEqual([TOKEN]);
   });
 
   it("leaves the phones of the app out without the service account key, and still reaches the browsers", async () => {
@@ -525,6 +539,33 @@ describe("notifier on ntfy for calls", () => {
       { url: "https://ntfy.example", body: { topic: "relay-test", title: "Anna Rossi is calling", message: "Teams call, ringing now", priority: 5, tags: ["telephone_receiver"], sequence_id: "call-1-1790000000000" } },
       { url: "https://ntfy.example", body: { topic: "relay-test", title: "Call from Anna Rossi", message: "Ended after 7 s", priority: 2, tags: ["telephone_receiver"], sequence_id: "call-1-1790000000000" } },
     ]);
+  });
+
+  it("holds no push of a call while ntfy is slow, and keeps the ntfy messages of the call in order", async () => {
+    const answers: (() => void)[] = [];
+    const posted: number[] = [];
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+      posted.push((JSON.parse(String(init.body)) as { priority: number }).priority);
+      return new Promise<Response>((resolve) => answers.push(() => resolve(new Response("{}"))));
+    });
+    const store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
+    const web: string[] = [];
+    const endpoint = "https://push/u1-phone";
+    const n = new Notifier({
+      store,
+      devices: new AppStore(seedAppDb([[endpoint, "u1", JSON.stringify({ endpoint, keys: { p256dh: "k", auth: "a" } })]]), 1),
+      vapid: { publicKey: "BPublic", privateKey: "private" },
+      subject: "mailto:a@b.c",
+      ntfy: { url: "https://ntfy.example", topic: "relay-test" },
+      send: async (_s, payload) => void web.push((JSON.parse(payload) as { call: string }).call),
+    });
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await n.call("Anna Rossi", "ended", 1_790_000_000_000, 7);
+    expect(web).toEqual(["ringing", "ended"]);
+    expect(posted).toEqual([5]);
+    answers.shift()!();
+    await vi.waitFor(() => expect(posted).toEqual([5, 2]));
+    answers.shift()!();
   });
 
   it("does not hold the push of a ringing call while ntfy is slow to answer", async () => {
