@@ -209,3 +209,43 @@ The account then works like the others in the app, with these differences:
 - Removing the account deletes its data here and its token; the relay keeps its own Teams session until it is stopped there.
 
 Joined, the relay keeps its own app on loopback, without devices of its own.
+
+## The relay on a VDI or RDP host
+
+Everything under [Local relay](#local-relay) and [An account on another computer](#an-account-on-another-computer) holds on a machine reached over RDP (a VDI, an Azure Virtual Desktop session host, a remote workstation) as well as on a physical one. The relay browser is a window of the interactive desktop session: the relay runs as long as that session exists, whether or not an RDP client is connected to it.
+
+**A disconnect is not a sign-out.** Closing the RDP client or losing the connection leaves the session running: the relay, its browser and the Microsoft session keep going with no client connected. Only a sign-out (Start → the account → **Sign out**, labelled *Disconnetti* on an Italian Windows, which is where the confusion starts), a restart or a shutdown ends the session and stops the relay. Locking the screen does not stop it.
+
+**A session time limit ends it too.** A host can log a disconnected session off after a set time (`MaxDisconnectionTime`), and can disconnect a session once it has been idle (`MaxIdleTime`) or connected (`MaxConnectionTime`) for a set time; with the policy **End session when time limits are reached** on, those two end the session instead. The log-off stops the relay as a sign-out does. Policy wins over the RDP listener, machine policy over user policy; values in ms, absent or 0 = no limit. Read them on the host:
+
+```powershell
+# policy: machine, then user
+'HKLM', 'HKCU' | ForEach-Object {
+  $p = Get-ItemProperty "${_}:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" -ErrorAction SilentlyContinue
+  "${_}: disc=$($p.MaxDisconnectionTime) idle=$($p.MaxIdleTime) conn=$($p.MaxConnectionTime)" }
+# per RDP listener
+Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations' |
+  ForEach-Object { $p = Get-ItemProperty $_.PSPath
+    "$($_.PSChildName): disc=$($p.MaxDisconnectionTime) idle=$($p.MaxIdleTime) conn=$($p.MaxConnectionTime)" }
+```
+
+On Azure Virtual Desktop these limits come from Intune or Group Policy, so the check above shows them. An autoscale scaling plan on the host pool acts outside the registry: on a pooled host pool, ramp-down with **Force logoff of users** signs sessions out after a notice; on a personal host pool, **Disconnect settings** can deallocate or hibernate the desktop a set number of minutes after a disconnect. Either stops the relay until the next connection. Read the scaling plan in the Azure portal, or ask whoever runs the pool. A pooled host pool can also put the next sign-in on another session host, where the relay was never set up: the relay needs a personal desktop.
+
+**A reboot stops it until the next sign-in.** A managed host under automatic Windows Update restarts on its own, often in a weekly maintenance window, and that signs the session off. The logon task [relay-autostart.ps1](../app/scripts/relay-autostart.ps1) starts the relay again only at the next interactive sign-in: until someone connects, the account reads **Not connected** and nothing arrives. Connecting once, from any RDP client, a phone included, brings it back, and the client can disconnect straight after. The web app shows **Not connected** but sends no notification for it, so a stopped relay is noticed only by opening the app.
+
+**Do not try to run it without a session.** A scheduled task set to run whether the user is signed in or not, or a Windows service (NSSM), runs with no visible desktop: it suits a headless worker, not the relay, whose window is where the Microsoft sign-in and every later re-sign-in happen, and where the expired-session page shows. Keep the logon task, at the cost of one reconnect after a reboot.
+
+**A policy-managed browser can block the profile.** Where Edge is managed and forces a work sign-in on every new profile (`BrowserSignin`), the relay profile is caught by that policy: keep `BROWSER_CHANNEL=chrome`, the default. The relay never uses the everyday profile of either browser.
+
+Check a fresh host before setting up:
+
+```powershell
+qwinsta                       # whether this is an RDP session, and its id
+# what ends the session: logon (21), sign-out (23), disconnect (24), reconnect (25)
+Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TerminalServices-LocalSessionManager/Operational'; Id=21,23,24,25} -MaxEvents 20 |
+  Format-Table TimeCreated, Id
+# reboots and their cause: Windows Update logs 1074, an unexpected stop 6008
+Get-WinEvent -FilterHashtable @{LogName='System'; Id=1074,6008} -MaxEvents 20 | Format-Table TimeCreated, Id
+# never sleep while on (a VDI usually already does not): sleep after, on AC then on battery, 0x00000000 = never
+powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE | Select-String '0x' | Select-Object -Last 2
+```
