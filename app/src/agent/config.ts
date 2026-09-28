@@ -59,6 +59,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // the web app shows both
     activity: true,
     readBy: true,
+    // the sound of a call goes through the remote desktop of the browsers container
+    answerCalls: true,
     alerts: {
       signInAfter: 60,
       browserAfter: 300,

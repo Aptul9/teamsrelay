@@ -26,6 +26,7 @@ describe("relay configuration", () => {
       hostLabel: os.hostname(),
       activity: false,
       readBy: false,
+      answerCalls: false,
     });
     expect(c.vapid).toEqual({
       privateKeyFile: path.join(state, "vapid", "private_key.pem"),

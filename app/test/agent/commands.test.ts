@@ -78,7 +78,7 @@ function agent(): Agent {
     isOpen: async () => opens,
   } as unknown as TeamsPage;
   return {
-    config: { uploadsDir: uploads, activity: true, readBy: true, alerts: { signInAfter: 60, browserAfter: 300, signIn: "Sign in again", browserDown: "The browser does not start" } },
+    config: { uploadsDir: uploads, activity: true, readBy: true, answerCalls: false, alerts: { signInAfter: 60, browserAfter: 300, signIn: "Sign in again", browserDown: "The browser does not start" } },
     store,
     notifier: {
       push: async () => 0,
@@ -422,6 +422,25 @@ describe("agent loop", () => {
       vi.advanceTimersByTime(60_000);
       await round(10);
       expect(reads).toEqual([11, 15]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("moves Teams nowhere while a call is in progress: parking, the full list, the feed, Read by and the check of the day wait", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 8, 27, 9, 0));
+      const a = agent();
+      a.health = { cdp: "ok", teams: "ok", overall: "green", ts: 1 };
+      a.railReady = true;
+      store.setState(STATE.activeChat, "Anna Rossi");
+      const ctx = { onTeams: true, want: "Anna Rossi" };
+      const waiting = ["parking", "chats-full", "activity", "read-by", "self-check"];
+      const jobs = agentJobs(a).filter((j) => waiting.includes(j.name));
+      expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, true]));
+      a.inCall = true;
+      expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, false]));
     } finally {
       vi.useRealTimers();
     }

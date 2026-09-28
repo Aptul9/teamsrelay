@@ -60,7 +60,7 @@ async function main() {
   // phones of the Android app: FCM once the service account key of the Firebase project is there
   const sa = loadServiceAccount(config.fcmCredentials);
   const fcm = sa ? new FcmSender(sa) : null;
-  const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy, fcm });
+  const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy, fcm, answerable: config.answerCalls });
   log.info("agent", "start", { slot: config.slot, cdp: config.cdp, push: !!vapid, fcm: !!fcm, ntfy: !!config.ntfy });
   const media = new Media(config.mediaDir, config.filesDir);
   await runAgent({ config, store, notifier, media, detector: new NewMessageDetector(), checkedOnly: () => devices.checkedOnly() }, new CdpBrowser(config.cdp));

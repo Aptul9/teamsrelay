@@ -1,11 +1,15 @@
 // An incoming call as the agent follows it: pushed at once, again every few seconds while it rings, and once more,
 // quiet, when it stops. The watch looks on a timer of its own, whatever the loop is doing, and keeps the call in the
 // slot database for the web app, which rings while it is open.
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/agent/context";
 import { CallWatch } from "@/agent/jobs/calls";
+import { preparePage } from "@/agent/jobs/page-setup";
 import { CALL_END_AFTER, CALL_RING_EVERY, CALL_RING_FOR, CallTracker } from "@/agent/logic/calls";
+import * as callActions from "@/agent/teams/call-actions";
 import { CALL_SEEN_EVERY, STATE } from "@/shared/slot-db/state";
+
+vi.mock("@/agent/teams/call-actions", () => ({ acceptCall: vi.fn(), hangUp: vi.fn() }));
 
 describe("call tracker", () => {
   let now = 1_790_000_000_000;
@@ -257,5 +261,199 @@ describe("call watch", () => {
     stop.abort();
     await vi.advanceTimersByTimeAsync(5000);
     expect(evaluate).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("answer and hang-up asked from the app", () => {
+  beforeEach(() => {
+    vi.mocked(callActions.acceptCall).mockReset();
+    vi.mocked(callActions.hangUp).mockReset();
+  });
+
+  // The page shows the toast of the caller while toast.on and records from the microphone while mic.on; the store keeps
+  // the commands queued (pending until finished) and the state rows. Waits of the watch move the clock on.
+  function phone(o: { answerCalls?: boolean } = {}) {
+    const toast = { on: false, caller: "Anna Rossi" };
+    const mic = { on: false };
+    const commands: { id: number; type: string; arg1: string; arg2: string; status: string }[] = [];
+    const states = new Map<string, string>();
+    const frame = { evaluate: vi.fn(async (fn: { name: string }) => (fn.name === "micLive" ? mic.on : null)) };
+    const page = {
+      url: () => "https://teams.microsoft.com/v2/",
+      isClosed: () => false,
+      evaluate: vi.fn(async (fn: { name: string }) => (fn.name === "readIncomingCall" && toast.on ? { caller: toast.caller } : null)),
+      frames: () => [frame],
+      context: () => ({ pages: () => [page] }),
+    };
+    const pushes: unknown[][] = [];
+    const store = {
+      setState: vi.fn((k: string, v: string) => void states.set(k, v)),
+      addCall: vi.fn(),
+      pendingCommands: vi.fn(() => commands.filter((c) => c.status === "pending").map(({ id, type, arg1, arg2 }) => ({ id, type, arg1, arg2 }))),
+      finishCommand: vi.fn((id: number, status: string) => {
+        const c = commands.find((x) => x.id === id);
+        if (c) c.status = status;
+      }),
+    };
+    const a = {
+      config: { answerCalls: o.answerCalls ?? true },
+      tp: { page },
+      notifier: { call: vi.fn(async (...args: unknown[]) => void pushes.push(args)) },
+      store,
+    } as unknown as Agent;
+    let now = 1_790_000_000_000;
+    const w = new CallWatch(a, () => now, () => now, undefined, async (ms) => void (now += ms));
+    const tick = async () => {
+      now += 1000;
+      await w.tick();
+      await w.settled();
+    };
+    const queue = (type: string, arg2 = "") => {
+      commands.push({ id: commands.length + 1, type, arg1: toast.caller, arg2, status: "pending" });
+      return commands.length;
+    };
+    const status = (id: number) => commands.find((c) => c.id === id)?.status;
+    const inCall = () => JSON.parse(states.get(STATE.inCall) ?? "null");
+    const ringingSince = (): number => JSON.parse(states.get(STATE.call) ?? "null")?.since;
+    return { a, toast, mic, page, frame, pushes, store, tick, queue, status, inCall, ringingSince };
+  }
+
+  it("answers the call ringing now: one real click on Accept, done once the toast is gone, never running on the way", async () => {
+    const p = phone();
+    p.toast.on = true;
+    await p.tick();
+    vi.mocked(callActions.acceptCall).mockImplementationOnce(async () => {
+      p.toast.on = false;
+      return true;
+    });
+    const id = p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
+    await p.tick();
+    expect(callActions.acceptCall).toHaveBeenCalledTimes(1);
+    expect(callActions.acceptCall).toHaveBeenCalledWith(p.page);
+    expect(p.status(id)).toBe("done");
+  });
+
+  it("clicks nothing for another call, or once the call stopped ringing: failed", async () => {
+    const p = phone();
+    p.toast.on = true;
+    await p.tick();
+    const other = p.queue("answer", JSON.stringify({ since: p.ringingSince() - 60_000 }));
+    await p.tick();
+    p.toast.on = false;
+    for (let i = 0; i < CALL_END_AFTER + 1; i++) await p.tick();
+    const late = p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
+    await p.tick();
+    expect([p.status(other), p.status(late)]).toEqual(["failed", "failed"]);
+    expect(callActions.acceptCall).not.toHaveBeenCalled();
+  });
+
+  it("fails an answer whose click found no button, or whose toast stayed after the click", async () => {
+    const p = phone();
+    p.toast.on = true;
+    await p.tick();
+    const noButton = p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
+    await p.tick();
+    vi.mocked(callActions.acceptCall).mockResolvedValueOnce(true);
+    const stayed = p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
+    await p.tick();
+    expect([p.status(noButton), p.status(stayed)]).toEqual(["failed", "failed"]);
+  });
+
+  it("ends the notification of a call answered here as answered, not as missed", async () => {
+    const p = phone();
+    p.toast.on = true;
+    await p.tick();
+    const since = p.ringingSince();
+    vi.mocked(callActions.acceptCall).mockImplementationOnce(async () => {
+      p.toast.on = false;
+      return true;
+    });
+    p.queue("answer", JSON.stringify({ since }));
+    for (let i = 0; i < CALL_END_AFTER + 2; i++) await p.tick();
+    expect(p.pushes.at(-1)).toEqual(["Anna Rossi", "ended", since, expect.any(Number), true]);
+  });
+
+  it("keeps the call in progress for the web app while the page records, named after the call answered, and says when it is over", async () => {
+    const p = phone();
+    p.toast.on = true;
+    await p.tick();
+    const since = p.ringingSince();
+    p.toast.on = false;
+    p.mic.on = true;
+    await p.tick();
+    expect(p.inCall()).toMatchObject({ caller: "Anna Rossi", since, active: true });
+    expect(p.a.inCall).toBe(true);
+    p.mic.on = false;
+    await p.tick();
+    expect(p.inCall()).toMatchObject({ caller: "Anna Rossi", since, active: false });
+    expect(p.a.inCall).toBe(false);
+  });
+
+  it("hangs up with the shortcut on the page that records, done once the microphone stops", async () => {
+    const p = phone();
+    p.mic.on = true;
+    await p.tick();
+    vi.mocked(callActions.hangUp).mockImplementationOnce(async () => void (p.mic.on = false));
+    const id = p.queue("hangup");
+    await p.tick();
+    expect(callActions.hangUp).toHaveBeenCalledWith(p.page);
+    expect(p.status(id)).toBe("done");
+    expect(p.inCall()).toMatchObject({ active: false });
+  });
+
+  it("fails a hang-up with no call in progress without pressing anything, and one the microphone outlives", async () => {
+    const p = phone();
+    const none = p.queue("hangup");
+    await p.tick();
+    expect(p.status(none)).toBe("failed");
+    expect(callActions.hangUp).not.toHaveBeenCalled();
+    p.mic.on = true;
+    const stays = p.queue("hangup");
+    await p.tick();
+    expect(p.status(stays)).toBe("failed");
+  });
+
+  it("answers nothing and follows no call in progress for a relay: its calls ring on its own computer", async () => {
+    const p = phone({ answerCalls: false });
+    p.toast.on = true;
+    p.mic.on = true;
+    await p.tick();
+    p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
+    await p.tick();
+    expect(p.store.pendingCommands).not.toHaveBeenCalled();
+    expect(p.inCall()).toBeNull();
+    expect(p.frame.evaluate).not.toHaveBeenCalled();
+  });
+});
+
+describe("microphone hook of the pages", () => {
+  function tab() {
+    const added: string[] = [];
+    const inFrames: string[] = [];
+    const frame = {
+      evaluate: vi.fn(async (fn: { name: string }) => {
+        inFrames.push(fn.name);
+        return "installed";
+      }),
+    };
+    const context = { addInitScript: vi.fn(async (fn: { name: string }) => void added.push(fn.name)) };
+    const page = { addInitScript: vi.fn(async () => undefined), evaluate: vi.fn(async () => "already"), context: () => context, frames: () => [frame, frame] };
+    const agent = (answerCalls: boolean) => ({ config: { answerCalls }, tp: { page } }) as unknown as Agent;
+    return { added, inFrames, agent };
+  }
+
+  it("goes into every page and frame of the browser, once for the pages to come, where calls are answered", async () => {
+    const t = tab();
+    await preparePage(t.agent(true));
+    await preparePage(t.agent(true));
+    expect(t.added).toEqual(["installMicHook"]);
+    expect(t.inFrames).toEqual(Array(4).fill("installMicHook"));
+  });
+
+  it("stays out of the pages of a relay", async () => {
+    const t = tab();
+    await preparePage(t.agent(false));
+    expect(t.added).toEqual([]);
+    expect(t.inFrames).toEqual([]);
   });
 });

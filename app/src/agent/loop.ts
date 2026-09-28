@@ -31,6 +31,9 @@ type Round = { onTeams: boolean; want: string };
 // ended, and each read alerts the missed calls it shows first (an account checked every N hours: its check does).
 export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Round>[] {
   const teamsOk = () => a.health?.teams === "ok";
+  // during a call the call view stays on screen: the jobs that move Teams to a chat or the feed wait (commands of the
+  // app go on, asked by the owner)
+  const free = () => teamsOk() && !a.inCall;
   const active = () => a.store.getState(STATE.activeChat);
   // a feed read that failed is tried once more ACTIVITY_RETRY seconds later, not 150 rounds later
   let retryAt = 0;
@@ -48,18 +51,18 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
     { name: "input", every: { seconds: ACTIVE_EVERY }, run: () => keepActive(a) },
     // no chat to open before Teams shows its list: right after a start, or with a sign-in to do
-    { name: "parking", every: { rounds: 5, offset: 2 }, when: teamsOk, run: (r) => park(a, r.want) },
+    { name: "parking", every: { rounds: 5, offset: 2 }, when: free, run: (r) => park(a, r.want) },
     { name: "hook", every: { rounds: 1 }, run: () => drainHook(a) },
     { name: "commands", every: { rounds: 1 }, run: () => runPendingCommands(a) },
     // until Teams is connected (sign-in to do, session expired) there is nothing to scroll or read
-    { name: "chats-full", every: { rounds: 300, offset: 1 }, when: teamsOk, run: () => scanChatsFull(a) },
+    { name: "chats-full", every: { rounds: 300, offset: 1 }, when: free, run: () => scanChatsFull(a) },
     { name: "chats", every: { rounds: 3 }, run: () => scanChats(a) },
     // Teams is still loading at round 5 after a start: read once its side bar can be clicked, not 150 rounds later
     a.config.activity && {
       name: "activity",
       every: { rounds: 150, offset: 5 },
       force: () => (retryAt > 0 && Date.now() >= retryAt) || afterCalls.due(),
-      when: () => teamsOk() && !!a.railReady,
+      when: () => free() && !!a.railReady,
       catchUp: true,
       run: activity,
     },
@@ -76,14 +79,14 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     a.config.readBy && {
       name: "read-by",
       every: { rounds: 2 },
-      when: (r) => !!r.want && active() === r.want && teamsOk() && !a.store.hasPendingCommands(),
+      when: (r) => !!r.want && active() === r.want && free() && !a.store.hasPendingCommands(),
       run: (r) => prefetchReadBy(a, r.want),
     },
     // the first time 31 rounds after a start, which has usually read the list, the feed and the account by then (rows left
     // from before keep their files anyway); off the rounds of the list and the health
     { name: "media", every: { rounds: 300, offset: 31 }, run: () => pruneMedia(a) },
     // an account started only to be checked has its checks: its start would find Teams still loading
-    { name: "self-check", every: { rounds: 1 }, when: () => !!selfCheckDue(a) && !a.checkedOnly?.(), run: () => scheduledSelfCheck(a) },
+    { name: "self-check", every: { rounds: 1 }, when: () => !!selfCheckDue(a) && !a.checkedOnly?.() && !a.inCall, run: () => scheduledSelfCheck(a) },
   ];
   return jobs.filter((j): j is Job<Round> => !!j);
 }
