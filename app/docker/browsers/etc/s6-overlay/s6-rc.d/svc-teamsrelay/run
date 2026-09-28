@@ -1,3 +1,22 @@
 #!/usr/bin/with-contenv bash
 # Supervisor of the Teams accounts: the browser and the agent of each account (app/src/supervisor)
+
+# The microphone of a call answered from the app (docs/design/2026-09-28-answer-calls.md). Selkies forwards the one
+# of the viewer into the "input" sink and makes its virtual source SelkiesVirtualMic only once a viewer connects;
+# Teams, answered before that, would record from the default source, the sound of the desktop (output.monitor), and
+# the microphone on demand, which waits for an application recording from SelkiesVirtualMic, would never be asked for.
+# So the virtual source exists from the start and is the default one.
+if [ "${SELKIES_MICROPHONE_ENABLED:-}" = "true" ]; then
+  as_abc() { s6-setuidgid abc "$@"; }
+  for _ in $(seq 1 30); do
+    as_abc pactl list short sinks 2>/dev/null | grep -q "^[0-9]*[[:space:]]input[[:space:]]" && break
+    sleep 1
+  done
+  if ! as_abc pactl list short sources 2>/dev/null | grep -q "[[:space:]]SelkiesVirtualMic[[:space:]]"; then
+    as_abc pactl load-module module-virtual-source source_name=SelkiesVirtualMic master=input.monitor >/dev/null ||
+      echo "[teamsrelay] microphone: no virtual source, calls answered from the app have no microphone"
+  fi
+  as_abc pactl set-default-source SelkiesVirtualMic 2>/dev/null || true
+fi
+
 exec node /app/supervisor.cjs

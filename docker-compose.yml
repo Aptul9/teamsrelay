@@ -23,6 +23,10 @@ services:
       # Without a GPU (ARM VMs) Selkies encodes H.264 in software and the browser decoder gets no frame
       # ("decoder produced no output"): JPEG frames work in every browser and are enough for the login
       SELKIES_ENCODER: jpeg
+      # a call answered from the app: the microphone of the viewer of the desktop goes to Teams, asked for only
+      # while Teams records (docs/design/2026-09-28-answer-calls.md)
+      SELKIES_MICROPHONE_ENABLED: "true"
+      SELKIES_MICROPHONE_ON_START: demand
       SLOT_COUNT: ${SLOT_COUNT:-4}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
       NTFY_ENABLED: ${NTFY_ENABLED:-0}
