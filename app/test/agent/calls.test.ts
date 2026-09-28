@@ -3,7 +3,7 @@
 // slot database for the web app, which rings while it is open.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/agent/context";
-import { CallWatch } from "@/agent/jobs/calls";
+import { CallWatch, MIC_LOOK_EVERY } from "@/agent/jobs/calls";
 import { preparePage } from "@/agent/jobs/page-setup";
 import { CALL_END_AFTER, CALL_RING_EVERY, CALL_RING_FOR, CallTracker } from "@/agent/logic/calls";
 import * as callActions from "@/agent/teams/call-actions";
@@ -380,13 +380,45 @@ describe("answer and hang-up asked from the app", () => {
     const since = p.ringingSince();
     p.toast.on = false;
     p.mic.on = true;
-    await p.tick();
+    for (let i = 0; i < MIC_LOOK_EVERY; i++) await p.tick();
     expect(p.inCall()).toMatchObject({ caller: "Anna Rossi", since, active: true });
     expect(p.a.inCall).toBe(true);
     p.mic.on = false;
     await p.tick();
     expect(p.inCall()).toMatchObject({ caller: "Anna Rossi", since, active: false });
     expect(p.a.inCall).toBe(false);
+  });
+
+  it("reads the microphone of the frames at every look while a call rings, was just answered or is in progress, else every few seconds", async () => {
+    const p = phone();
+    const reads = () => p.frame.evaluate.mock.calls.length;
+    await p.tick();
+    expect(reads()).toBe(1);
+    for (let i = 1; i < MIC_LOOK_EVERY; i++) await p.tick();
+    expect(reads()).toBe(1);
+    await p.tick();
+    expect(reads()).toBe(2);
+    // ringing: every look
+    p.toast.on = true;
+    await p.tick();
+    await p.tick();
+    expect(reads()).toBe(4);
+    // answered here: every look for a while, before the call shows in progress
+    vi.mocked(callActions.acceptCall).mockImplementationOnce(async () => {
+      p.toast.on = false;
+      return true;
+    });
+    p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
+    await p.tick();
+    await p.tick();
+    await p.tick();
+    expect(reads()).toBe(7);
+    // in progress: every look
+    p.mic.on = true;
+    await p.tick();
+    await p.tick();
+    expect(reads()).toBe(9);
+    expect(p.a.inCall).toBe(true);
   });
 
   it("hangs up with the shortcut on the page that records, done once the microphone stops", async () => {

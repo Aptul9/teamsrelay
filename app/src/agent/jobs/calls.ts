@@ -15,6 +15,11 @@ export const CALL_WATCH_EVERY = 1;
 // An answer or a hang-up shows on the page within CONFIRM_TRIES looks CONFIRM_EVERY ms apart (5 s), or it failed
 export const CONFIRM_TRIES = 20;
 export const CONFIRM_EVERY = 250;
+// Seconds between two reads of the microphone of every frame while no call rings, was just answered here or is in
+// progress: a call answered in the desktop shows in progress within that time
+export const MIC_LOOK_EVERY = 5;
+// Seconds a call answered here keeps the microphone read at every look, until Teams records
+export const ANSWERED_WATCH = 60;
 
 type Outcome = "done" | "failed";
 type Watched = Pick<Agent, "notifier" | "store" | "inCall"> & { tp?: Agent["tp"]; config?: Pick<Agent["config"], "answerCalls"> };
@@ -37,6 +42,8 @@ export class CallWatch {
   // the call last seen ringing, which a call in progress is named after; answered: since of the call answered here
   private last: { caller: string; since: number } | null = null;
   private answered = 0;
+  private answeredAt = -Infinity;
+  private micLooked = -Infinity;
   private inCall: { caller: string; since: number; written: number } | null = null;
 
   constructor(
@@ -68,7 +75,7 @@ export class CallWatch {
       await this.lookAtToast(page);
       if (this.a.config?.answerCalls) {
         await this.runCallCommands(page);
-        await this.watchMicrophone(page);
+        if (this.microphoneDue()) await this.watchMicrophone(page);
       }
     } catch (e) {
       // a page that navigates fails every look for a while: one line a minute
@@ -137,6 +144,7 @@ export class CallWatch {
     for (let i = 0; i < CONFIRM_TRIES; i++) {
       if (!(await this.readToast(page))) {
         this.answered = since;
+        this.answeredAt = this.clock();
         log.info("call", "answered", { caller: ringing.caller });
         return "done";
       }
@@ -178,6 +186,16 @@ export class CallWatch {
       }
     }
     return null;
+  }
+
+  // Every frame of every Teams page is read at every look while a call rings, was just answered here or is in progress;
+  // otherwise every MIC_LOOK_EVERY seconds
+  private microphoneDue(): boolean {
+    const now = this.clock();
+    const watching = !!this.inCall || !!this.tracker.current() || now - this.answeredAt < ANSWERED_WATCH * 1000;
+    if (!watching && now - this.micLooked < MIC_LOOK_EVERY * 1000) return false;
+    this.micLooked = now;
+    return true;
   }
 
   // The call in progress for the web app: seen again every CALL_SEEN_EVERY seconds while the page records, once more
