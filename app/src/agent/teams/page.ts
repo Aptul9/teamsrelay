@@ -4,7 +4,7 @@ import { errorText, log } from "../log";
 import type { SlotStore } from "../store/slot-store";
 import { openChatTitle, clickChatRow, scrollChatList } from "./scripts/chat-list";
 import { composerLeft } from "./scripts/compose";
-import { barButtonPoint, centerElement, openOverlays } from "./scripts/message-actions";
+import { barButtonPoint, centerElement, openOverlayNames, openOverlays } from "./scripts/message-actions";
 import { uncoveredPoint } from "./scripts/page-state";
 import { SEL, TEXTS } from "./selectors";
 
@@ -94,16 +94,22 @@ export class TeamsPage {
     this.missed.set(name, Date.now());
     await scroll("top");
     await sleep(400);
-    return click(false);
+    if (await click(false)) return true;
+    log.warn("open", "chat not in the list", { chat: name });
+    return false;
   }
 
-  // Menus or dialogs left open over the chat would catch the mouse: Escape, up to three times
+  // Menus or dialogs left open over the chat would catch the mouse: Escape, up to three times. One still open is
+  // named in the log: the action that asked is not taken, and the web app only sees it failed.
   async clearOverlays(): Promise<boolean> {
     for (let i = 0; i < 3; i++) {
       if (!(await this.page.evaluate(openOverlays, SEL))) return true;
       await this.page.keyboard.press("Escape");
       await sleep(400);
     }
+    if (!(await this.page.evaluate(openOverlays, SEL))) return true;
+    const left = await this.page.evaluate(openOverlayNames, SEL).catch(() => []);
+    log.warn("page", "overlay still open after Escape", { overlays: left.join(", ") });
     return false;
   }
 
