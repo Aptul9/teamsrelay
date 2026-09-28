@@ -25,7 +25,7 @@ flowchart LR
 4. The web app must answer, and every agent the supervisor runs must keep its restart count and write a health row younger than a minute (an agent with a wrong environment or VAPID key stops at start and restarts in a loop); otherwise the previous code comes back and the job fails.
 5. `https://<DOMAIN>/healthz` is checked from the Internet.
 
-One deploy at a time: close pushes queue up. The deploy never touches `.env`, `config/`, `data/` or `vapid/`. The browsers container is recreated when its image or its configuration changes (a Chromium update, a release of the agent or of the supervisor): every account restarts and the web app starts them again within a minute. The Teams sessions stay in `config/` and survive deploys.
+One deploy at a time: close pushes queue up. The deploy never touches `.env`, `config/`, `data/`, `vapid/` or `fcm/`. The browsers container is recreated when its image or its configuration changes (a Chromium update, a release of the agent or of the supervisor): every account restarts and the web app starts them again within a minute. The Teams sessions stay in `config/` and survive deploys.
 
 The first deploy of the browsers container removes the containers of the releases before it (`chromium-N`, `agent-N`, `wipe-N`, `dockerproxy`) and starts `browsers` on the same `config/N`: the accounts stay signed in. The volume `wipe` of those releases is then unused: `docker volume rm teamsrelay_wipe`.
 
@@ -78,7 +78,7 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 
 | Prefix | Event |
 |---|---|
-| `agent` | start with slot and push status, `check ok`, `blank tab` or `not on Teams` (with the host), exit without a Teams tab, configuration error |
+| `agent` | start with slot and push status (`push`, `fcm`: phones of the Android app, `ntfy`), `check ok`, `blank tab` or `not on Teams` (with the host), exit without a Teams tab, configuration error |
 | `cdp` | connection to the browser, waiting for it, connection lost |
 | `CMD` | a command of the web app starts (`id`, `arg`) |
 | `SESSION` | Teams signed out for a minute (push sent), signed in again |
@@ -90,7 +90,7 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 | `identity` | signed-in account found or changed |
 | `open`, `send`, `reply`, `react`, `pill`, `edit`, `delete`, `readby` | an action that did not apply on Teams, and why |
 | `chats`, `messages`, `activity`, `media`, `download`, `health` | reads that failed; `media` also `removed files no row names` with their number (`files`), when the job of every 300 rounds removed some |
-| `push`, `ntfy`, `appdb` | notification delivery and `app.db` errors; a failed push names its `status`, `attempt` and the `retry` wait in seconds (`none` when it is not sent again) |
+| `push`, `ntfy`, `appdb` | notification delivery and `app.db` errors; a failed push names its `status`, `attempt` and the `retry` wait in seconds (`none` when it is not sent again). Phones of the Android app: `FCM answered N`, `phone gone, removed`, a warning `phone of another Firebase project (SENDER_ID_MISMATCH), removed` when the service account key and the app build are of two Firebase projects, and once `phones of the Android app registered, but no Firebase service account key` when `fcm/service-account.json` is missing |
 | `job`, `loop`, `cmd` | a step or a command that threw, with its name; `cmd` also counts the commands that waited too long and were not run, and those a stopped agent left running (unconfirmed) |
 | `server` | local relay joined to a server: `joining`, `joined` with the series of the account (`added`) and its devices, `sync:` or `commands:` failures (once per kind of error, then `back`), a file the server refused, `left out of the sync` for a row larger than the server takes, `the clock of the server differs` with the seconds; `token refused (401)` means the account was removed or got a new token. Notifications through the server log under `push`, `dropped: over two minutes old by its turn` when the server kept them waiting |
 
@@ -119,7 +119,7 @@ Muted chats never notify, like in Teams. On iPhone the app must be opened from t
 
 ## Backup
 
-- `.env` (secrets), `vapid/` (push keys).
+- `.env` (secrets), `vapid/` (push keys), `fcm/` (Firebase service account key, when the Android app is used).
 - `data/app.db` (users, slot ownership, devices).
 - `config/` (Microsoft sessions of every account: **sensitive**, encrypt the backup).
 - `data/N/` for each slot (messages, images, files): optional, the agent rebuilds the chat list from Teams.

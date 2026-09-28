@@ -10,6 +10,14 @@ export async function currentUser(headers: Headers): Promise<SessionUser | null>
   return s?.user ?? null;
 }
 
+// The user and the id of the session of a request: what lasts only as long as that session (a phone of the Android app,
+// src/lib/auth.ts) keeps the id
+export async function requireSession(req: Request): Promise<{ user: SessionUser; session: string }> {
+  const s = await auth().api.getSession({ headers: req.headers });
+  if (!s) throw new HttpError(401, "Not signed in");
+  return { user: s.user, session: s.session.id };
+}
+
 export async function requireUser(req: Request): Promise<SessionUser> {
   const user = await currentUser(req.headers);
   if (!user) throw new HttpError(401, "Not signed in");

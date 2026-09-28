@@ -8,6 +8,8 @@ export type AccountsConfig = {
   profilesDir: string;
   dataDir: string;
   vapidDir: string;
+  // service account key of the Firebase project, for the Android app
+  fcmDir: string;
   slotCount: number;
   // owner of the profiles and of the desktop session (PUID/PGID of the image)
   uid: number;
@@ -83,7 +85,7 @@ export function browserCommand(n: number, cfg: AccountsConfig): Command {
   };
 }
 
-// The agent runs as root: data/ and vapid/ are under /root, out of reach of the browsers
+// The agent runs as root: data/, vapid/ and fcm/ are under /root, out of reach of the browsers
 export function agentCommand(n: number, cfg: AccountsConfig): Command {
   const { join } = path.posix;
   return {
@@ -100,6 +102,7 @@ export function agentCommand(n: number, cfg: AccountsConfig): Command {
       APP_DB: join(cfg.dataDir, "app.db"),
       VAPID_PRIVATE: join(cfg.vapidDir, "private_key.pem"),
       VAPID_APPKEY: join(cfg.vapidDir, "appkey.txt"),
+      FCM_CREDENTIALS: join(cfg.fcmDir, "service-account.json"),
     },
   };
 }

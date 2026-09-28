@@ -14,7 +14,8 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 
 - Every Teams account (slot) has one owner. Every per-account endpoint (`?a=N`), `/media`, `/files`, `/api/cmd` and the event stream answer only for slots of the session user; another user's slot answers 404, like a slot that does not exist.
 - Administrators manage users and can free a slot. They do not read other users' chats; the remote desktop opens only for users with a Teams account.
-- A device receives the notifications of its user only: the agent of slot N pushes to the subscriptions of the owner of N.
+- A device receives the notifications of its user only: the agent of slot N pushes to the subscriptions of the owner of N. A phone of the Android app registered by another user gets a new key, so the messages sealed for the previous one stay closed to it.
+- FCM messages to the Android app carry ciphertext only (AES-256-GCM, one key per phone, answered to each registration over HTTPS with the session cookie), as Web Push payloads do. The service account key (`fcm/service-account.json`) has the role Firebase Cloud Messaging API Admin only: it sends messages to the phones of the app, nothing else in the Google project. `DELETE /api/push/fcm` needs no session: knowing the token of a phone is what lets it be forgotten. A phone gets pushes only as long as the session that registered it lasts: signed out, signed out by **Sign out every other device** or a password change, or run out (the 30-day session of the web app), it gets nothing more. ntfy, when enabled, carries titles and texts in clear to its server.
 
 ## MCP endpoint
 
@@ -32,7 +33,7 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 
 - The web app has no access to Docker, and no container mounts the Docker socket. The web app asks the supervisor of the browsers container, on a unix socket in the volume `control` (mode 600, owned by root), to start, stop, wipe or show an account.
 - Chromium runs as `abc` with its sandbox: renderers in a seccomp filter and in their own user and PID namespaces. `abc` is not in the `sudo` group of the image.
-- `data/`, `vapid/` and the control socket are mounted under `/root` (mode 700): the agents and the supervisor, running as root, reach them; the browsers do not.
+- `data/`, `vapid/`, `fcm/` and the control socket are mounted under `/root` (mode 700): the agents and the supervisor, running as root, reach them; the browsers do not.
 - DevTools of each browser listen on `127.0.0.1:(9221+N)` without authentication, so every process of the container reaches every browser. They refuse connections that carry a web origin: a web page cannot open them.
 - A browser that escapes its sandbox reaches every profile under `/profiles` and every DevTools port: every account has the same owner.
 
@@ -40,7 +41,7 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 
 - `config/N/` is the Microsoft session of account N, stored unencrypted by Chromium. Protect the server and encrypt the backups.
 - Only the browsers container mounts `config/`; the web app, the component exposed to the Internet, mounts no profile. The supervisor deletes `config/N/` only on a request of the web app and only while account N is stopped.
-- Never publish `.env`, `config/`, `data/`, `vapid/`: they are in `.gitignore` and the deploy neither copies nor touches them.
+- Never publish `.env`, `config/`, `data/`, `vapid/`, `fcm/`: they are in `.gitignore` and the deploy neither copies nor touches them. The `google-services.json` of the Android app lives in the repository secret `GOOGLE_SERVICES_JSON`, not in git.
 
 ## Content
 

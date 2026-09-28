@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -6,7 +7,8 @@ import webpush from "web-push";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConfigError } from "@/agent/config";
 import { CALL_TTL, PUSH_TTL } from "@/agent/logic/notify";
-import { Notifier } from "@/agent/push/notifier";
+import { FcmSender, newDeviceKey, type FcmResult } from "@/agent/push/fcm";
+import { Notifier, type Ntfy } from "@/agent/push/notifier";
 import { loadVapidKeys, type VapidKeys } from "@/agent/push/vapid";
 import { AppStore } from "@/agent/store/app-store";
 import { SlotStore } from "@/agent/store/slot-store";
@@ -58,6 +60,9 @@ function seedAppDb(devices: [string, string, string][]) {
   db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(1, 'u1', 0), (2, 'u2', 0)").run();
   const add = db.prepare("INSERT INTO push_subscriptions VALUES(?, ?, ?, 0)");
   for (const [endpoint, user, sub] of devices) add.run(endpoint, user, sub);
+  // better-auth's sessions, as the web app keeps them: the phones of the Android app go with theirs
+  db.exec('CREATE TABLE "session"(id TEXT PRIMARY KEY, expiresAt date)');
+  db.prepare('INSERT INTO "session" VALUES(?, ?), (?, ?)').run("s-live", "2099-01-01T00:00:00.000Z", "s-over", "2020-01-01T00:00:00.000Z");
   db.close();
   return file;
 }
@@ -390,5 +395,196 @@ describe("notifier through web-push to a push service", () => {
     await vi.waitFor(() => expect(service.received).toHaveLength(3));
     expect(retries.map((r) => r.ms)).toEqual([7000, 30_000]);
     expect(service.received.map((r) => r.payload)).toEqual(Array(3).fill({ title: "TeamsRelay", body: "Teams session expired", chat: "", acc: 1 }));
+  });
+});
+
+describe("notifier to the phones of the Android app (FCM)", () => {
+  type FcmSent = { token: string; data: Record<string, string>; ttl: number; high: boolean };
+  let store: SlotStore;
+  let appDbFile: string;
+  let web: { endpoint: string; payload: unknown }[];
+  let fcmSent: FcmSent[];
+  let answers: FcmResult[];
+  let retries: { ms: number; run: () => void }[];
+  const key = newDeviceKey();
+  const TOKEN = "android-token-1234567890";
+
+  beforeEach(() => {
+    store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
+    appDbFile = seedAppDb([
+      ["https://push/u1-phone", "u1", JSON.stringify({ endpoint: "https://push/u1-phone", keys: { p256dh: "k", auth: "a" } })],
+      [`fcm:${TOKEN}`, "u1", JSON.stringify({ fcm: { token: TOKEN, key, name: "Google Pixel 9", session: "s-live" } })],
+      ["fcm:token-of-a-session-run-out-12345", "u1", JSON.stringify({ fcm: { token: "token-of-a-session-run-out-12345", key, name: "Old phone", session: "s-over" } })],
+      ["fcm:token-of-a-session-signed-out-1", "u1", JSON.stringify({ fcm: { token: "token-of-a-session-signed-out-1", key, name: "Lost phone", session: "s-gone" } })],
+    ]);
+    web = [];
+    fcmSent = [];
+    answers = [];
+    retries = [];
+  });
+
+  const notifier = (o: { fcm?: boolean; ntfy?: Ntfy } = {}) =>
+    new Notifier({
+      store,
+      devices: new AppStore(appDbFile, 1),
+      vapid: { publicKey: "BPublic", privateKey: "private" },
+      subject: "mailto:admin@example.com",
+      ntfy: o.ntfy ?? null,
+      later: (ms, run) => retries.push({ ms, run }),
+      send: async (s, payload) => void web.push({ endpoint: s.endpoint, payload: JSON.parse(payload) }),
+      fcm:
+        o.fcm === false
+          ? null
+          : ({
+              send: async (token: string, data: Record<string, string>, opts: { ttl: number; high: boolean }) => {
+                fcmSent.push({ token, data, ...opts });
+                return answers.shift() ?? { ok: true };
+              },
+            } as unknown as FcmSender),
+    });
+
+  // what the phone reads, opened with its key
+  const opened = (i: number) => {
+    const d = fcmSent[i].data;
+    const ct = Buffer.from(d.ct, "base64url");
+    const dec = crypto.createDecipheriv("aes-256-gcm", Buffer.from(key, "base64url"), Buffer.from(d.iv, "base64url"));
+    dec.setAuthTag(ct.subarray(ct.length - 16));
+    return JSON.parse(Buffer.concat([dec.update(ct.subarray(0, ct.length - 16)), dec.final()]).toString());
+  };
+
+  it("sends a message to the phone sealed with its key: the content the browsers get, at high priority, kept a day", async () => {
+    await notifier().message("Anna Rossi", "are you there?", "Anna Rossi");
+    expect(web).toHaveLength(1);
+    expect(fcmSent).toMatchObject([{ token: TOKEN, ttl: PUSH_TTL, high: true, data: { v: "1" } }]);
+    expect(opened(0)).toEqual(web[0].payload);
+    expect(opened(0)).toEqual({ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" });
+  });
+
+  it("rings the phone when a call starts and turns it quiet when it ends, nothing in between: the phone loops the ringtone itself", async () => {
+    const n = notifier();
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await n.call("Anna Rossi", "again", 1_790_000_000_000);
+    await n.call("Anna Rossi", "ended", 1_790_000_000_000, 7);
+    expect(fcmSent.map((s) => [s.ttl, s.high])).toEqual([
+      [CALL_TTL, true],
+      [PUSH_TTL, true],
+    ]);
+    expect(opened(0)).toMatchObject({ title: "Anna Rossi is calling", call: "ringing", ts: 1_790_000_000_000, tag: "call-1", acc: 1 });
+    expect(opened(1)).toMatchObject({ title: "Call from Anna Rossi", body: "Ended after 7 s", call: "ended", ts: 1_790_000_000_000 });
+  });
+
+  it("rings a phone that did not take the first push of a call with the next one, and only that phone", async () => {
+    answers.push({ ok: false, status: 503, gone: false });
+    const n = notifier();
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await n.call("Anna Rossi", "again", 1_790_000_000_000);
+    await n.call("Anna Rossi", "again", 1_790_000_000_000);
+    expect(fcmSent).toHaveLength(2);
+    expect(opened(1)).toMatchObject({ title: "Anna Rossi is calling", call: "ringing", ts: 1_790_000_000_000 });
+    expect(retries).toEqual([]);
+  });
+
+  it("sends a check that passed at normal priority, and cuts a long message to fit the 4 KB of an FCM message", async () => {
+    const n = notifier();
+    await n.alert("Teams OK", "Automatic check: the whole chain works.", "normal");
+    expect(fcmSent[0].high).toBe(false);
+    await n.message("Anna Rossi", "é".repeat(5000), "Anna Rossi");
+    expect(opened(1).body).toBe("é".repeat(1000));
+    expect(JSON.stringify(fcmSent[1].data).length).toBeLessThan(4000);
+  });
+
+  it("removes a phone whose token is gone, and tries again later one the service could not take", async () => {
+    answers.push({ ok: false, status: 503, gone: false }, { ok: false, status: 429, gone: false, retryAfter: "90" });
+    const n = notifier();
+    await n.message("Anna Rossi", "one", "Anna Rossi");
+    expect(retries.map((r) => r.ms)).toEqual([5000]);
+    retries.shift()!.run();
+    await vi.waitFor(() => expect(fcmSent).toHaveLength(2));
+    await vi.waitFor(() => expect(retries.map((r) => r.ms)).toEqual([90_000]));
+    answers.push({ ok: false, status: 404, gone: true });
+    await n.message("Anna Rossi", "two", "Anna Rossi");
+    const db = new Database(appDbFile, { readonly: true });
+    expect(db.prepare("SELECT endpoint FROM push_subscriptions ORDER BY endpoint").pluck().all()).toEqual([
+      "fcm:token-of-a-session-run-out-12345",
+      "fcm:token-of-a-session-signed-out-1",
+      "https://push/u1-phone",
+    ]);
+    db.close();
+  });
+
+  it("reaches only the phones whose session still runs: one signed out or run out gets nothing", async () => {
+    await notifier().message("Anna Rossi", "are you there?", "Anna Rossi");
+    expect(fcmSent.map((s) => s.token)).toEqual([TOKEN]);
+  });
+
+  it("leaves the phones of the app out without the service account key, and still reaches the browsers", async () => {
+    expect(await notifier({ fcm: false }).push("Anna Rossi", "ciao")).toBe(1);
+    expect(fcmSent).toEqual([]);
+    expect(web).toHaveLength(1);
+  });
+});
+
+describe("notifier on ntfy for calls", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("rings when a call starts (priority 5) and turns the same notification quiet when it ends (priority 2), nothing in between", async () => {
+    const posted: { url: string; body: Record<string, unknown> }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => (posted.push({ url, body: JSON.parse(String(init.body)) }), new Response("{}")));
+    const store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
+    const n = new Notifier({ store, devices: new AppStore(seedAppDb([]), 1), vapid: null, subject: "mailto:a@b.c", ntfy: { url: "https://ntfy.example", topic: "relay-test" } });
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await n.call("Anna Rossi", "again", 1_790_000_000_000);
+    await n.call("Anna Rossi", "ended", 1_790_000_000_000, 7);
+    expect(posted).toEqual([
+      { url: "https://ntfy.example", body: { topic: "relay-test", title: "Anna Rossi is calling", message: "Teams call, ringing now", priority: 5, tags: ["telephone_receiver"], sequence_id: "call-1-1790000000000" } },
+      { url: "https://ntfy.example", body: { topic: "relay-test", title: "Call from Anna Rossi", message: "Ended after 7 s", priority: 2, tags: ["telephone_receiver"], sequence_id: "call-1-1790000000000" } },
+    ]);
+  });
+
+  it("holds no push of a call while ntfy is slow, and keeps the ntfy messages of the call in order", async () => {
+    const answers: (() => void)[] = [];
+    const posted: number[] = [];
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+      posted.push((JSON.parse(String(init.body)) as { priority: number }).priority);
+      return new Promise<Response>((resolve) => answers.push(() => resolve(new Response("{}"))));
+    });
+    const store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
+    const web: string[] = [];
+    const endpoint = "https://push/u1-phone";
+    const n = new Notifier({
+      store,
+      devices: new AppStore(seedAppDb([[endpoint, "u1", JSON.stringify({ endpoint, keys: { p256dh: "k", auth: "a" } })]]), 1),
+      vapid: { publicKey: "BPublic", privateKey: "private" },
+      subject: "mailto:a@b.c",
+      ntfy: { url: "https://ntfy.example", topic: "relay-test" },
+      send: async (_s, payload) => void web.push((JSON.parse(payload) as { call: string }).call),
+    });
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await n.call("Anna Rossi", "ended", 1_790_000_000_000, 7);
+    expect(web).toEqual(["ringing", "ended"]);
+    expect(posted).toEqual([5]);
+    answers.shift()!();
+    await vi.waitFor(() => expect(posted).toEqual([5, 2]));
+    answers.shift()!();
+  });
+
+  it("does not hold the push of a ringing call while ntfy is slow to answer", async () => {
+    let answer: () => void = () => undefined;
+    vi.stubGlobal("fetch", () => new Promise<Response>((resolve) => (answer = () => resolve(new Response("{}")))));
+    const store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
+    const web: string[] = [];
+    const endpoint = "https://push/u1-phone";
+    const n = new Notifier({
+      store,
+      devices: new AppStore(seedAppDb([[endpoint, "u1", JSON.stringify({ endpoint, keys: { p256dh: "k", auth: "a" } })]]), 1),
+      vapid: { publicKey: "BPublic", privateKey: "private" },
+      subject: "mailto:a@b.c",
+      ntfy: { url: "https://ntfy.example", topic: "relay-test" },
+      send: async (s) => void web.push(s.endpoint),
+    });
+    const ring = n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await vi.waitFor(() => expect(web).toEqual([endpoint]));
+    answer();
+    expect(await ring).toBe(1);
   });
 });

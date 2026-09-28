@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, ChevronsUpDownIcon, ClockIcon, LaptopIcon, LogOutIcon, MonitorIcon, PlusIcon, SettingsIcon, Trash2Icon, UsersIcon } from "lucide-react";
+import { CheckIcon, ChevronsUpDownIcon, ClockIcon, LaptopIcon, LogOutIcon, MonitorIcon, PlusIcon, ServerIcon, SettingsIcon, Trash2Icon, UsersIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { cn } from "cn";
@@ -143,6 +143,7 @@ export function AccountMenu({
   onOpenDesktop,
   onRemove,
   onSignOut,
+  appPage,
 }: {
   user: { name: string; email: string; role: string };
   accounts: Account[] | null;
@@ -160,6 +161,8 @@ export function AccountMenu({
   onOpenDesktop: (slot: number) => void;
   onRemove: (a: Account) => void;
   onSignOut: () => void;
+  // the start page of the Android app that opened this server (useAppStart): Change server goes back to its form
+  appPage?: string | null;
 }) {
   // the missed calls among what waits in the other accounts, on a red count of their own
   const otherCalls = (accounts ?? []).reduce((n, a) => (a.slot === current?.slot ? n : n + unreadOf(a).calls), 0);
@@ -253,6 +256,14 @@ export function AccountMenu({
                 <UsersIcon />
                 Users
               </Link>
+            </DropdownMenuItem>
+          )}
+          {appPage && (
+            <DropdownMenuItem asChild>
+              <a href={`${appPage}#change`}>
+                <ServerIcon />
+                Change server
+              </a>
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onSelect={onSignOut}>

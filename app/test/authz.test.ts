@@ -23,6 +23,12 @@ describe("safeNext", () => {
     expect(safeNext("/desktop/")).toBe("/desktop/");
     expect(safeNext("//evil.example")).toBe("/");
     expect(safeNext("https://evil.example")).toBe("/");
+    expect(safeNext("/\\evil.example/x")).toBe("/");
+    expect(safeNext("/a\\b")).toBe("/");
+    // browsers drop tab, CR and LF from a URL: "/<tab>/evil.example" is "//evil.example"
+    expect(safeNext("/\t/evil.example/x")).toBe("/");
+    expect(safeNext("/\n/evil.example/x")).toBe("/");
+    expect(safeNext("/?a=2&app=http%3A%2F%2Ftauri.localhost%2F")).toBe("/?a=2&app=http%3A%2F%2Ftauri.localhost%2F");
     expect(safeNext(null)).toBe("/");
   });
 });

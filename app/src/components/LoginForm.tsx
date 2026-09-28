@@ -1,18 +1,21 @@
 "use client";
 
-import { EyeIcon, EyeOffIcon, TriangleAlertIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, ServerIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { LogoTile } from "./Avatar";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
+import { useAppStart } from "@/lib/android-app";
 import { authClient } from "@/lib/auth-client";
 
 export function LoginForm({ next }: { next: string }) {
+  // the Android app opened this server: a wrong server, or another one, can be changed from here too
+  const appPage = useAppStart();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
@@ -92,6 +95,16 @@ export function LoginForm({ next }: { next: string }) {
             </FieldGroup>
           </form>
         </CardContent>
+        {appPage && (
+          <CardFooter className="justify-center">
+            <Button asChild variant="link" size="sm">
+              <a href={`${appPage}#change`}>
+                <ServerIcon />
+                Change server
+              </a>
+            </Button>
+          </CardFooter>
+        )}
       </Card>
     </div>
   );

@@ -91,10 +91,10 @@ jobs:
 
       - name: Upload code
         run: |
-          # runtime data (.env, Chromium profiles, databases, VAPID keys) stays on the server
+          # runtime data (.env, Chromium profiles, databases, VAPID keys, Firebase key) stays on the server
           rsync -az --delete \
             --exclude .git/ --exclude .github/ --exclude .env --exclude node_modules/ --exclude .next/ \
-            --exclude /config/ --exclude /data/ --exclude /vapid/ --exclude .deployed-sha --exclude .caddyfile-sum \
+            --exclude /config/ --exclude /data/ --exclude /vapid/ --exclude /fcm/ --exclude .deployed-sha --exclude .caddyfile-sum \
             ./ "$TARGET:$TR_DIR/"
 
       - name: Build and restart

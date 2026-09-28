@@ -15,6 +15,8 @@ tauri-build = { version = "2.7.0", features = [] }
 
 [dependencies]
 tauri = { version = "2.12.0", features = [] }
+# notifications through Firebase: calls that ring, messages, alerts (../plugin)
+tauri-plugin-push = { path = "../plugin" }
 
 # no debug info in debug builds: the Rust side only opens the window, and with it the debug APK weighed 129 MB
 [profile.dev]

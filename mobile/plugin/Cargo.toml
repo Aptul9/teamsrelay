@@ -1,0 +1,14 @@
+[package]
+name = "tauri-plugin-push"
+version = "0.1.0"
+description = "TeamsRelay for Android: the notifications the relay sends through Firebase (calls that ring, messages, alerts)"
+edition = "2021"
+publish = false
+# the Tauri build finds the Android project of the plugin through this name
+links = "tauri-plugin-push"
+
+[dependencies]
+tauri = { version = "2.12.0", features = [] }
+
+[build-dependencies]
+tauri-plugin = { version = "2.7.0", features = ["build"] }

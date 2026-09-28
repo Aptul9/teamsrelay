@@ -47,8 +47,26 @@ jobs:
           NDK_HOME="$ANDROID_NDK_HOME" npx tauri android init --ci --skip-targets-install
           npx tauri icon ../app/public/static/icon-512.png
 
+      # Firebase settings of the app, from the repository secret GOOGLE_SERVICES_JSON (the google-services.json of the
+      # Firebase console): string resources of the push plugin. Without the secret the APK receives no notifications.
+      - name: Firebase settings
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "::warning::secret GOOGLE_SERVICES_JSON not set: the APK receives no notifications"
+            exit 0
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON" > "$RUNNER_TEMP/google-services.json"
+          node scripts/firebase-values.mjs "$RUNNER_TEMP/google-services.json" plugin/android/src/main/res/values/google-services.xml
+
       - name: Build
         run: npx tauri android build --debug --apk --target aarch64
+
+      # unit tests of the Kotlin push plugin (it opens what the relay seals), in the Android project of the build
+      - name: Plugin tests
+        working-directory: mobile/src-tauri/gen/android
+        run: ./gradlew --no-daemon :tauri-plugin-push:testDebugUnitTest
 
       - uses: actions/upload-artifact@v7
         with:

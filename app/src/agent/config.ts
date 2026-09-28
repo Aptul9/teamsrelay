@@ -13,6 +13,8 @@ const Env = z.object({
   VAPID_PRIVATE: z.string().default("/vapid/private_key.pem"),
   VAPID_APPKEY: z.string().default("/vapid/appkey.txt"),
   VAPID_SUBJECT: z.string().regex(/^(mailto:|https:\/\/)/, "must be a mailto: or https:// URL").default("mailto:admin@example.com"),
+  // service account key of the Firebase project (push to the Android app of mobile/); a missing file leaves FCM off
+  FCM_CREDENTIALS: z.string().default("/fcm/service-account.json"),
   NTFY_ENABLED: z.enum(["0", "1"]).default("0"),
   NTFY_URL: z.url({ protocol: /^https?$/ }).default("https://ntfy.sh"),
   NTFY_TOPIC: z.string().default(""),
@@ -28,6 +30,7 @@ export type Config = AgentSettings & {
   mediaDir: string;
   filesDir: string;
   vapid: { privateKeyFile: string; appKeyFile: string; subject: string };
+  fcmCredentials: string;
   ntfy: { url: string; topic: string } | null;
 };
 
@@ -51,6 +54,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     filesDir: path.join(dataDir, "files"),
     uploadsDir: path.join(dataDir, "uploads"),
     vapid: { privateKeyFile: e.VAPID_PRIVATE, appKeyFile: e.VAPID_APPKEY, subject: e.VAPID_SUBJECT },
+    fcmCredentials: e.FCM_CREDENTIALS,
     ntfy: e.NTFY_ENABLED === "1" && e.NTFY_TOPIC ? { url: e.NTFY_URL, topic: e.NTFY_TOPIC } : null,
     // the web app shows both
     activity: true,

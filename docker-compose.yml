@@ -36,6 +36,8 @@ services:
       # under /root (mode 700): the agents and the supervisor (root) reach them, the browsers (abc) do not
       - ./data:/root/data
       - ./vapid:/root/vapid:ro
+      # service-account.json of the Firebase project, for the Android app; FCM is off while it is missing
+      - ./fcm:/root/fcm:ro
       - control:/root/run
     security_opt:
       - seccomp:unconfined

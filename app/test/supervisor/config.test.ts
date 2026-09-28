@@ -10,6 +10,7 @@ describe("loadConfig", () => {
       profilesDir: "/profiles",
       dataDir: "/root/data",
       vapidDir: "/root/vapid",
+      fcmDir: "/root/fcm",
       slotCount: 4,
       uid: 1000,
       gid: 1000,
