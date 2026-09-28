@@ -34,11 +34,15 @@ function appWindow(visibilityState: string, bell: "plays" | "quiet" | "no answer
 // public/sw.js run with the service worker globals it uses. The fake registration keeps what a device shows: one
 // notification per tag, the last one shown with it, until the user dismisses it. windows: the windows of the app open
 // now; badges: what the service worker put on the icon of the installed app ("dot" without a number).
-function serviceWorker(o: { windows?: ({ visibilityState: string } | ReturnType<typeof appWindow>)[] } = {}) {
+// fetch: what the server answers the requests of the service worker (a rejection is a network error); opened: the
+// windows it opened
+function serviceWorker(o: { windows?: ({ visibilityState: string } | ReturnType<typeof appWindow>)[]; fetch?: (url: string, init: RequestInit) => Promise<unknown> } = {}) {
   const listeners = new Map<string, (event: unknown) => void>();
   const shown: Shown[] = [];
   const badges: (number | "dot")[] = [];
   const displayed = new Map<string, Shown>();
+  const requests: { url: string; init: RequestInit }[] = [];
+  const opened: string[] = [];
   const registration = {
     showNotification: async (title: string, options: Omit<Shown, "title">) => {
       const n = JSON.parse(JSON.stringify({ title, ...options })) as Shown;
@@ -47,13 +51,25 @@ function serviceWorker(o: { windows?: ({ visibilityState: string } | ReturnType<
     },
     getNotifications: async ({ tag }: { tag: string }) => (displayed.has(tag) ? [displayed.get(tag)] : []),
   };
-  const clients = { claim: async () => undefined, matchAll: async () => o.windows ?? [] };
+  const clients = { claim: async () => undefined, matchAll: async () => o.windows ?? [], openWindow: async (url: string) => void opened.push(url) };
   const navigator = { setAppBadge: async (n?: number) => void badges.push(n ?? "dot") };
   const self = { addEventListener: (type: string, fn: (event: unknown) => void) => listeners.set(type, fn), registration, skipWaiting: () => undefined, clients, navigator };
-  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../public/sw.js"), "utf8"), { self, clients, setTimeout, clearTimeout, MessageChannel });
+  const fetch = async (url: string, init: RequestInit) => {
+    requests.push({ url, init });
+    return (o.fetch ?? (async () => ({ ok: false, status: 404, json: async () => ({}) })))(url, init);
+  };
+  vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../public/sw.js"), "utf8"), { self, clients, setTimeout, clearTimeout, MessageChannel, fetch });
   return {
     shown,
     badges,
+    requests,
+    opened,
+    // a tap on the notification, on its body or on one of its buttons (action)
+    click: async (data: unknown, action = "") => {
+      const pending: Promise<unknown>[] = [];
+      listeners.get("notificationclick")?.({ notification: { data, close: () => undefined }, action, waitUntil: (p: Promise<unknown>) => pending.push(p) });
+      await Promise.all(pending);
+    },
     dismiss: (tag: string) => displayed.delete(tag),
     push: async (data: unknown) => {
       const pending: Promise<unknown>[] = [];
@@ -146,6 +162,46 @@ describe("service worker call notifications", () => {
     await sw.push({ ...ringing, title: "Call from Anna Rossi", body: "Ended after 9 s", call: "ended" });
     const n = await sw.push(ringing);
     expect(n).toMatchObject({ title: "Call from Anna Rossi", silent: true, requireInteraction: false });
+  });
+
+  it("offers Answer beside Open while a call of an account that can answer from the app rings, nothing once it ended", async () => {
+    const sw = serviceWorker();
+    const n = await sw.push({ ...ringing, answer: true });
+    expect(n.actions).toEqual([
+      { action: "answer", title: "Answer" },
+      { action: "open", title: "Open" },
+    ]);
+    expect((await sw.push({ ...ringing, answer: true, title: "Call from Anna Rossi", body: "Ended after 9 s", call: "ended" })).actions).toBeUndefined();
+  });
+
+  it("Answer asks the server to answer that call, then opens the remote desktop it names", async () => {
+    const sw = serviceWorker({ fetch: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, id: 7, desktop: "/api/desktop/2" }) }) });
+    await sw.click({ ...ringing, answer: true }, "answer");
+    expect(sw.requests).toHaveLength(1);
+    expect(sw.requests[0].url).toBe("/api/call/answer?a=2");
+    expect(sw.requests[0].init).toMatchObject({ method: "POST", credentials: "same-origin" });
+    expect(JSON.parse(String(sw.requests[0].init.body))).toEqual({ since: 1_790_000_000_000 });
+    expect(sw.opened).toEqual(["/api/desktop/2"]);
+  });
+
+  it("opens the app on the account when the server refuses the answer or cannot be reached", async () => {
+    const refused = serviceWorker({ fetch: async () => ({ ok: false, status: 409, json: async () => ({ detail: "Call no longer ringing" }) }) });
+    await refused.click({ ...ringing, answer: true }, "answer");
+    const offline = serviceWorker({
+      fetch: async () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    await offline.click({ ...ringing, answer: true }, "answer");
+    expect([refused.opened, offline.opened]).toEqual([["/?a=2"], ["/?a=2"]]);
+  });
+
+  it("Open, or a tap on the notification, opens the app on the account and answers nothing", async () => {
+    const sw = serviceWorker();
+    await sw.click({ ...ringing, answer: true }, "open");
+    await sw.click({ ...ringing, answer: true });
+    expect(sw.requests).toEqual([]);
+    expect(sw.opened).toEqual(["/?a=2", "/?a=2"]);
   });
 
   it("keeps a call apart from the lines of a chat of the same person", async () => {

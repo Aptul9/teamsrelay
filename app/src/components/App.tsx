@@ -143,7 +143,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [messages, setMessages] = useState<{ chat: string; rows: Message[] } | null>(null);
   const [activity, setActivity] = useState<{ ts: number; items: ActivityItem[] } | null>(null);
   const [callLog, setCallLog] = useState<CallLogEntry[] | null>(null);
-  // the calls ringing now in every account of the user, whichever is on screen
+  // the calls ringing now in every account of the user, whichever is on screen, and the calls in progress (active)
   const [calls, setCalls] = useState<RingingCall[]>([]);
   const [seenAct, setSeenAct] = useState<Record<number, string[]>>({});
   // the notifications of the account seen here when the Calls list opened: its missed calls not seen then keep their
@@ -362,6 +362,20 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setDeskOpened(true);
   }
 
+  // Answer from the app: the remote desktop, which carries the sound, opens at once (a window opened after the request
+  // would count as a popup), and the agent clicks Accept with audio in Teams within a second
+  function answerCall(c: RingingCall) {
+    openDesktop(c.acc);
+    post("/api/call/answer", { since: c.since }, c.acc).catch((e: unknown) =>
+      toast.error("Call not answered", { description: e instanceof ApiError ? e.message : "The server could not be reached" }),
+    );
+  }
+
+  async function hangUpCall(c: RingingCall) {
+    const r = await runCmd("/api/call/hangup", {}, c.acc, 15);
+    if (r.status !== "done") toast.error("Call not ended", { description: "End it in Teams, in the remote desktop of the account." });
+  }
+
   async function addAccount() {
     setAdding(true);
     try {
@@ -521,7 +535,15 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
-      <CallBanner calls={calls} accounts={accounts} ringer={ringer} onSelect={selectAccount} />
+      <CallBanner
+        calls={calls}
+        accounts={accounts}
+        ringer={ringer}
+        onSelect={selectAccount}
+        onAnswer={answerCall}
+        onHangUp={(c) => void hangUpCall(c)}
+        onDesktop={openDesktop}
+      />
       <aside className={cn("flex w-full shrink-0 flex-col border-r bg-sidebar md:w-[22rem] xl:w-[25rem]", phoneShowsMain && "max-md:hidden")}>
         <div className="flex items-center gap-1 px-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 md:pt-2">
           <AccountMenu
@@ -704,7 +726,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
         ) : listTab === "calls" ? (
           <Calls
             acc={acc}
-            ringing={calls.find((c) => c.acc === acc)}
+            ringing={calls.find((c) => c.acc === acc && !c.active)}
             missed={acc ? (activity?.items ?? []).filter(isMissedCall) : []}
             log={acc ? (callLog ?? []) : []}
             seen={callsSeen?.acc === acc ? callsSeen.seen : (seenAct[acc] ?? null)}
@@ -736,7 +758,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
                 </a>
               </Button>
             </div>
-            <iframe src={deskUrl(acc)} title="Remote Teams desktop" className="min-h-0 w-full flex-1 border-0" />
+            {/* the microphone for a call answered here, also where DESKTOP_URL is another origin */}
+            <iframe src={deskUrl(acc)} title="Remote Teams desktop" allow="microphone; autoplay" className="min-h-0 w-full flex-1 border-0" />
           </div>
         )}
         {pane === "main" &&
