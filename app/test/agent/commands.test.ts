@@ -339,6 +339,7 @@ describe("agent loop", () => {
       ["health", "5+0", true],
       ["conversation", "1+0", false],
       ["read-by", "2+0", false],
+      ["media", "300+31", false],
       ["self-check", "1+0", false],
     ]);
   });
@@ -411,6 +412,6 @@ describe("agent loop", () => {
   it("leaves out the Activity feed and Read by for an app that does not show them", () => {
     const a = agent();
     a.config = { ...a.config, activity: false, readBy: false };
-    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "input", "parking", "hook", "commands", "chats-full", "chats", "identity", "health", "conversation", "self-check"]);
+    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "input", "parking", "hook", "commands", "chats-full", "chats", "identity", "health", "conversation", "media", "self-check"]);
   });
 });

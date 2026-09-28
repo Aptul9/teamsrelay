@@ -469,16 +469,19 @@ export class ServerLink {
   }
 
   // The files a sync names, and those that failed before: the server says which it lacks, those go up one by one.
-  // Names are written once each (src/agent/media.ts), so a name the server has is the same file. A file the server
-  // refuses (not the image its name says, too large, no room left for the account) is left out, logged; one that fails
-  // for the server or the network goes again at the next sync. Neither holds up the sync of everything else.
+  // A name stays with one picture or file (src/agent/media.ts), so a name the server has is the same one. A file the
+  // server refuses (not the image its name says, too large, no room left for the account) is left out, logged; one that
+  // fails for the server or the network goes again at the next sync. Neither holds up the sync of everything else. A
+  // file gone from its folder meanwhile (the agent removes the pictures no row names any more) goes nowhere.
   private async uploadFiles(named: Named) {
     const dirOf = { media: this.o.mediaDir, files: this.o.filesDir };
     const pattern = { media: MEDIA_NAME, files: FILE_NAME };
     const want: HaveBody = { media: [], files: [] };
     for (const kind of ["media", "files"] as const) {
       for (const name of new Set([...named[kind], ...this.retry[kind]])) {
-        if (pattern[kind].test(name) && !this.uploaded[kind].has(name) && fs.existsSync(path.join(dirOf[kind], name))) want[kind].push(name);
+        if (!pattern[kind].test(name) || this.uploaded[kind].has(name)) continue;
+        if (fs.existsSync(path.join(dirOf[kind], name))) want[kind].push(name);
+        else this.retry[kind].delete(name);
       }
     }
     if (!want.media.length && !want.files.length) return;
@@ -487,8 +490,13 @@ export class ServerLink {
       const need = new Set(missing[kind]);
       for (const name of want[kind]) {
         if (need.has(name)) {
+          const file = path.join(dirOf[kind], name);
+          if (!fs.existsSync(file)) {
+            this.retry[kind].delete(name);
+            continue;
+          }
           try {
-            await this.call("PUT", `/api/relay/${kind}/${name}`, { body: new Uint8Array(fs.readFileSync(path.join(dirOf[kind], name))), timeout: 300_000 });
+            await this.call("PUT", `/api/relay/${kind}/${name}`, { body: new Uint8Array(fs.readFileSync(file)), timeout: 300_000 });
           } catch (e) {
             if (this.signal?.aborted || (e instanceof ServerError && e.status === 401)) throw e;
             if (!(e instanceof ServerError) || e.status >= 500) {
