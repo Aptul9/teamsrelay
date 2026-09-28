@@ -9,7 +9,7 @@ import { MAX_DOWNLOAD } from "@/agent/logic/files";
 import { Notifier, type PushDevices } from "@/agent/push/notifier";
 import { loadVapidKeys } from "@/agent/push/vapid";
 import { AppStore } from "@/agent/store/app-store";
-import { SlotStore } from "@/agent/store/slot-store";
+import { mediaFilesOf, SlotStore } from "@/agent/store/slot-store";
 import type { CommandsAnswer, HaveBody, PushBody, ServerCommand, SyncBody } from "@/shared/relay-sync";
 import { FILE_NAME, MEDIA_NAME } from "@/shared/slot-db/rows";
 import { ensureSlotSchema } from "@/shared/slot-db/schema";
@@ -125,7 +125,8 @@ function onServerClock(k: string, v: string, at: (ms: number) => number): string
 }
 
 // What changed in relay.db since the last sync, into data/N/messages.db, in one transaction: the app never sees a
-// half-written sync. `viewing` only when newer than the one the app wrote; `relay` is the server's.
+// half-written sync. `viewing` only when newer than the one the app wrote; `relay` is the server's. Once rows that name
+// pictures changed, the pictures no row names any more leave the server (pruneRelayMedia).
 export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
   stillRelay(caller);
   const db = openSlotDb(caller.slot);
@@ -179,6 +180,8 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
       }
       db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.relay, JSON.stringify({ host: b.host, seen: Math.floor(now / 1000) }));
     })();
+    // a picture goes unnamed only when rows mediaFilesOf reads change
+    if (b.chats || b.messages || b.activity || (b.state && STATE.me in b.state)) pruneRelayMedia(caller, mediaFilesOf(db));
   } finally {
     db.close();
   }
@@ -295,6 +298,28 @@ const folderOf = (slot: number, kind: RelayFileKind) => (kind === "media" ? path
 export function missingRelayFiles(slot: number, have: HaveBody): HaveBody {
   const missing = (kind: RelayFileKind) => [...new Set(have[kind])].filter((n) => KINDS[kind].name.test(n) && !fs.existsSync(path.join(folderOf(slot, kind), n)));
   return { media: missing("media"), files: missing("files") };
+}
+
+// The pictures no row of the slot names any more leave its media folder, as the agent of a slot removes them from its
+// own (src/agent/media.ts): the picture of a chat that left the list, of an item gone from the feed, the images of
+// messages no longer kept. One that shows again goes again: the relay asks about the files of every sync that names
+// them. Their bytes go back to the room of the account. Attachments stay until the account is removed.
+function pruneRelayMedia(caller: RelayCaller, named: ReadonlySet<string>) {
+  const dir = folderOf(caller.slot, "media");
+  if (!fs.existsSync(dir)) return;
+  const room = rooms().get(caller.slot);
+  for (const name of fs.readdirSync(dir)) {
+    if (!MEDIA_NAME.test(name) || named.has(name)) continue;
+    const file = path.join(dir, name);
+    const size = fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
+    try {
+      fs.rmSync(file);
+    } catch (e) {
+      console.error(`relay ${caller.slot}: ${(e as Error).message}`);
+      continue;
+    }
+    if (room) room.used -= size;
+  }
 }
 
 // Bytes of the files of a folder, 0 without the folder

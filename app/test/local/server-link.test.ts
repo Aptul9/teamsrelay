@@ -592,6 +592,105 @@ describe("what a relay sends when it joins", () => {
   });
 });
 
+describe("a picture the server removed", () => {
+  it("leaves the server with the chat that showed it, and goes again before the chat when it is back", async () => {
+    const picture = "a8a8a8a8a8a8a8a8.png";
+    let relay!: Relay;
+    const onServer = () => fs.existsSync(path.join(dataDir, String(relay.slot), "media", picture));
+    const list = (name: string, av: string) => relay.store.saveChats([{ name, preview: "", time: "", unread: false, mention: false, muted: false, av }], true);
+    const j = await join("owner-back", {}, (r) => {
+      relay = r;
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      fs.writeFileSync(path.join(r.dir, "media", picture), PNG);
+      list("Anna Rossi", picture);
+    });
+    j.start();
+    await until("the picture on the server", () => onServer());
+    // the chat leaves the list; the relay keeps the picture (its media job has not run since)
+    list("Luca Bianchi", "");
+    await until("the picture gone from the server", () => !onServer());
+    list("Anna Rossi", picture);
+    await until("the chat back on the server", () => withSlot(j.slot, (r) => r.chats().some((c) => c.name === "Anna Rossi")));
+    expect(onServer()).toBe(true);
+    expect(unseen.filter((u) => u.slot === j.slot)).toEqual([]);
+    await j.stop();
+  });
+});
+
+describe("a picture the server has no room for", () => {
+  it("is logged once, and goes again when a later sync names it, once the server has room", async () => {
+    const warn = vi.spyOn(log, "warn");
+    const [first, second] = ["c9c9c9c9c9c9c9c9.png", "d0d0d0d0d0d0d0d0.png"];
+    // what the server answered to each upload of the second picture
+    const puts: number[] = [];
+    const counting: typeof fetch = async (input, init) => {
+      const r = await fetch(input, init);
+      if (init?.method === "PUT" && String(input).endsWith(`/${second}`)) puts.push(r.status);
+      return r;
+    };
+    let relay!: Relay;
+    const onServer = (f: string) => fs.existsSync(path.join(dataDir, String(relay.slot), "media", f));
+    const list = (...chats: [string, string][]) =>
+      relay.store.saveChats(
+        chats.map(([name, av]) => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av })),
+        true,
+      );
+    const refusals = () => warn.mock.calls.filter((c) => /file refused/.test(String(c[1])) && (c[2] as { file?: string } | undefined)?.file === second).length;
+    // room for one picture
+    process.env.RELAY_QUOTA_MB = String((PNG.length + 10) / 2 ** 20);
+    try {
+      const j = await join("owner-room", { fetch: counting }, (r) => {
+        relay = r;
+        fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+        for (const f of [first, second]) fs.writeFileSync(path.join(r.dir, "media", f), PNG);
+        list(["Anna Rossi", first], ["Luca Bianchi", second]);
+      });
+      j.start();
+      await until("the refusal", () => refusals() === 1);
+      expect([onServer(first), onServer(second)]).toEqual([true, false]);
+      // the chat of the first one leaves the list: the sync naming the second one finds no room yet, and the first one
+      // leaves the server once the rows are there
+      list(["Luca Bianchi", second]);
+      await until("the first picture gone from the server", () => !onServer(first));
+      list(["Luca Bianchi", second], ["Carla Verdi", ""]);
+      await until("the second picture at last", () => puts.at(-1) === 200);
+      expect(puts).toEqual([413, 413, 200]);
+      expect(onServer(second)).toBe(true);
+      expect(refusals()).toBe(1);
+      await j.stop();
+    } finally {
+      delete process.env.RELAY_QUOTA_MB;
+    }
+  });
+
+  it("refused after a failure of the network, waits for a later sync that names it", async () => {
+    const picture = "abcdabcdabcdabcd.png";
+    let failing = true;
+    const puts: number[] = [];
+    const flaky: typeof fetch = async (input, init) => {
+      if (init?.method !== "PUT" || !String(input).endsWith(`/${picture}`)) return fetch(input, init);
+      if (failing) {
+        failing = false;
+        throw new TypeError("fetch failed");
+      }
+      const r = await fetch(input, init);
+      puts.push(r.status);
+      return r;
+    };
+    const j = await join("owner-refused-late", { fetch: flaky }, (r) => {
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      fs.writeFileSync(path.join(r.dir, "media", picture), "not an image");
+      r.store.saveChats([{ name: "Anna Rossi", preview: "", time: "", unread: false, mention: false, muted: false, av: picture }]);
+    });
+    j.start();
+    await until("the refusal", () => puts.length === 1);
+    // the relay syncs every second: a file still waiting to go again would go at each one
+    await sleep(2500);
+    expect(puts).toEqual([415]);
+    await j.stop();
+  });
+});
+
 describe("a key longer than the server takes", () => {
   it("stays here, and once gone holds up nothing", async () => {
     const long = `members:${"x".repeat(1100)}`;
