@@ -27,6 +27,8 @@ export const STATE = {
   callsTold: "calls_told",
   // JSON CallState: the incoming call Teams shows, written by the agent while it rings and once it ends
   call: "call",
+  // JSON InCall: the call in progress, written by the agent while the Teams page records from the microphone
+  inCall: "in_call",
   // JSON RelayLink: an account on another computer, written by the web app at each sync of its relay (src/lib/relay.ts)
   relay: "relay",
 } as const;
@@ -76,12 +78,30 @@ export const CALL_FRESH_FOR = 10;
 export const RelayLink = z.object({ host: z.string().catch(""), seen: z.number().catch(0) });
 export type RelayLink = z.infer<typeof RelayLink>;
 
-// A call ringing now in an account of the user (acc: its slot), as the event stream sends it to the app
-export type RingingCall = { acc: number; caller: string; since: number };
+// The call in progress of the account (src/agent/jobs/calls.ts): caller and since of the call answered, seen: the last
+// time the agent saw the page record from the microphone (ms on the wall clock), rewritten every CALL_SEEN_EVERY
+// seconds while it does; active false once it stopped
+export const InCall = z.object({
+  caller: z.string().catch(""),
+  since: z.number().catch(0),
+  seen: z.number().catch(0),
+  active: z.boolean().catch(false),
+});
+export type InCall = z.infer<typeof InCall>;
+
+// A call of an account of the user (acc: its slot), as the event stream sends it to the app: ringing now, or in
+// progress (active)
+export type RingingCall = { acc: number; caller: string; since: number; active?: boolean };
 
 // The call the account is ringing with now, if any
 export function ringingCall(c: CallState | null, now: number): { caller: string; since: number } | null {
   if (!c?.ringing || now - c.seen > CALL_FRESH_FOR * 1000) return null;
+  return { caller: c.caller, since: c.since };
+}
+
+// The call in progress of the account, if any: the agent saw it a moment ago
+export function inCallOf(c: InCall | null, now: number): { caller: string; since: number } | null {
+  if (!c?.active || now - c.seen > CALL_FRESH_FOR * 1000) return null;
   return { caller: c.caller, since: c.since };
 }
 

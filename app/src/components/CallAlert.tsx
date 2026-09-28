@@ -1,12 +1,12 @@
 "use client";
 
-import { PhoneIncomingIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
+import { MonitorIcon, PhoneIcon, PhoneIncomingIcon, PhoneOffIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import type { Account, RingingCall } from "@/lib/client";
 import type { Ringer } from "@/lib/ring";
 
-const callKey = (c: RingingCall) => `${c.acc}:${c.since}`;
+const callKey = (c: RingingCall) => `${c.acc}:${c.since}${c.active ? ":in" : ""}`;
 
 // The account a call rings in, as its notifications name it: organization, otherwise email
 export const accountLabel = (a: Account | undefined, acc: number) => (a && (a.tenant || a.email || a.name)) || `Account ${acc}`;
@@ -19,21 +19,29 @@ function useRingAllowed(ringer: Ringer | null) {
 }
 
 // The calls ringing now in every account of the user, on top of the app, with the ring while one of them is not muted.
-// A tap on a call opens its account; Mute silences that call only, and the next one rings again.
+// A tap on a call opens its account; Mute silences that call only, and the next one rings again. Answer takes the call
+// on an account of the browsers container, whose sound goes through its remote desktop; a call in progress (active)
+// rings no more and offers the desktop and Hang up.
 export function CallBanner({
   calls,
   accounts,
   ringer,
   onSelect,
+  onAnswer,
+  onHangUp,
+  onDesktop,
 }: {
   calls: RingingCall[];
   accounts: Account[] | null;
   ringer: Ringer | null;
   onSelect: (acc: number) => void;
+  onAnswer?: (c: RingingCall) => void;
+  onHangUp?: (c: RingingCall) => void;
+  onDesktop?: (acc: number) => void;
 }) {
   const [muted, setMuted] = useState<string[]>([]);
   const allowed = useRingAllowed(ringer);
-  const loud = calls.some((c) => !muted.includes(callKey(c)));
+  const loud = calls.some((c) => !c.active && !muted.includes(callKey(c)));
 
   useEffect(() => {
     if (!ringer) return;
@@ -43,22 +51,55 @@ export function CallBanner({
   useEffect(() => () => ringer?.stop(), [ringer]);
 
   if (!calls.length) return null;
+  // an account on another computer: its calls ring there, where its sound is
+  const inContainer = (acc: number) => !accounts?.find((a) => a.slot === acc)?.relay;
+  const button = "h-9 shrink-0 md:h-8";
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-2 px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
       {calls.map((c) => {
         const key = callKey(c);
         const off = muted.includes(key);
+        const label = accountLabel(accounts?.find((a) => a.slot === c.acc), c.acc);
+        if (c.active) {
+          return (
+            <div key={key} role="alert" className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
+              <PhoneIcon className="size-5 shrink-0 text-success" />
+              <button type="button" onClick={() => onSelect(c.acc)} className="min-w-0 flex-1 text-left outline-none focus-visible:underline">
+                <span className="block truncate text-sm font-semibold">{c.caller ? `In call with ${c.caller}` : "Call in progress"}</span>
+                <span className="block truncate text-xs text-muted-foreground">({label})</span>
+              </button>
+              {onDesktop && (
+                <Button size="sm" variant="secondary" className={button} onClick={() => onDesktop(c.acc)}>
+                  <MonitorIcon />
+                  Desktop
+                </Button>
+              )}
+              {onHangUp && (
+                <Button size="sm" variant="destructive" className={button} onClick={() => onHangUp(c)}>
+                  <PhoneOffIcon />
+                  Hang up
+                </Button>
+              )}
+            </div>
+          );
+        }
         return (
-          <div key={key} role="alert" className="pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
+          <div key={key} role="alert" className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
             <PhoneIncomingIcon className="size-5 shrink-0 text-primary motion-safe:animate-pulse" />
             <button type="button" onClick={() => onSelect(c.acc)} className="min-w-0 flex-1 text-left outline-none focus-visible:underline">
               <span className="block truncate text-sm font-semibold">{c.caller ? `${c.caller} is calling` : "Incoming call"}</span>
               <span className="block truncate text-xs text-muted-foreground">
-                ({accountLabel(accounts?.find((a) => a.slot === c.acc), c.acc)})
+                ({label})
                 {!allowed && !off ? " · Click to allow the ring" : ""}
               </span>
             </button>
-            <Button size="sm" variant="secondary" className="h-9 shrink-0 md:h-8" onClick={() => setMuted((m) => (off ? m.filter((k) => k !== key) : [...m, key]))}>
+            {onAnswer && inContainer(c.acc) && (
+              <Button size="sm" className={button} onClick={() => onAnswer(c)}>
+                <PhoneIcon />
+                Answer
+              </Button>
+            )}
+            <Button size="sm" variant="secondary" className={button} onClick={() => setMuted((m) => (off ? m.filter((k) => k !== key) : [...m, key]))}>
               {off ? <Volume2Icon /> : <VolumeXIcon />}
               {off ? "Unmute" : "Mute"}
             </Button>

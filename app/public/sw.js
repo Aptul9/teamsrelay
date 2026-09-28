@@ -103,24 +103,44 @@ async function showCall(title, d, base) {
   return self.registration.showNotification(title, { ...base, ...callOptions(d, d.call === 'ringing'), body: d.body || '', tag });
 }
 
-// alert: sound, vibration and again when replaced; a call still ringing stays on screen with its button either way
+// alert: sound, vibration and again when replaced; a call still ringing stays on screen with its button either way,
+// Answer first where the account can answer from the app (answer)
 function callOptions(d, alert) {
   const ringing = d.call === 'ringing';
+  const open = { action: 'open', title: 'Open' };
   return {
     data: d,
     timestamp: d.ts || Date.now(),
     renotify: alert,
     requireInteraction: ringing,
     silent: !alert,
-    ...(ringing && { actions: [{ action: 'open', title: 'Open' }] }),
+    ...(ringing && { actions: d.answer ? [{ action: 'answer', title: 'Answer' }, open] : [open] }),
     ...(alert && { vibrate: [500, 250, 500, 250, 500] }),
   };
+}
+
+// Answer: the server queues the answer of that call (ts = since), then the remote desktop of the account opens for its
+// sound; a call that no longer rings, or a server out of reach, opens the app on the account
+function answerCall(d) {
+  return fetch('/api/call/answer?a=' + d.acc, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ since: d.ts }),
+  })
+    .then(r => (r.ok ? r.json() : null))
+    .catch(() => null)
+    .then(j => clients.openWindow(j && j.desktop ? j.desktop : '/?a=' + d.acc));
 }
 
 // the notification opens the app on the account it comes from (acc = slot, web app), or on its chat (local relay)
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const d = event.notification.data || {};
+  if (event.action === 'answer' && d.acc && d.call === 'ringing') {
+    event.waitUntil(answerCall(d));
+    return;
+  }
   const acc = d.acc;
   const chat = acc ? '' : d.chat || '';
   event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cl => {

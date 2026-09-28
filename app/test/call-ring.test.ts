@@ -159,6 +159,35 @@ describe("call ring where the page may play sound (installed app)", () => {
     expect(c.errors).toEqual([]);
   });
 
+  it("offers Answer on a ringing call of an account of the browsers container, which answers that call", async () => {
+    await setCalls(c, [call("Anna Rossi", 1_790_000_100_000)]);
+    await until(c, "Anna Rossi is calling");
+    await click(c, "[role=alert] button", "Answer");
+    expect(await run(c, "window.answered")).toEqual({ acc: 2, caller: "Anna Rossi", since: 1_790_000_100_000 });
+    await setCalls(c, []);
+  });
+
+  it("offers no Answer for a call of an account on another computer: it rings there", async () => {
+    await setCalls(c, [{ acc: 3, caller: "Luca Bianchi", since: 1_790_000_110_000 }]);
+    await until(c, "Luca Bianchi is calling");
+    expect(await run(c, `[...document.querySelectorAll("[role=alert] button")].some((b) => b.textContent.includes("Answer"))`)).toBe(false);
+    await setCalls(c, []);
+  });
+
+  it("shows a call in progress with Desktop and Hang up, without a ring", async () => {
+    const active = { acc: 2, caller: "Anna Rossi", since: 1_790_000_120_000, active: true };
+    await setCalls(c, [active]);
+    await until(c, "In call with Anna Rossi");
+    expect(await loudest(c)).toBeLessThan(0.001);
+    await click(c, "[role=alert] button", "Desktop");
+    expect(await run(c, "window.desktop")).toBe(2);
+    await click(c, "[role=alert] button", "Hang up");
+    expect(await run(c, "window.hungUp")).toEqual(active);
+    await setCalls(c, []);
+    await until(c, "In call with Anna Rossi", false);
+    expect(c.errors).toEqual([]);
+  });
+
   it("rings the bell of a message once, without a click, then rests again", async () => {
     await until(c, "Luca Bianchi is calling", false);
     const r = await bell(c);

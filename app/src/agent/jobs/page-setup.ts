@@ -1,15 +1,18 @@
-import type { Page } from "playwright-core";
+import type { BrowserContext, Page } from "playwright-core";
 import { STATE } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
 import { wantedChat } from "../logic/parking";
 import { errorText, log } from "../log";
+import { installMicHook } from "../teams/scripts/calls";
 import { drainNotifications, installNotificationHook, makeVisible } from "../teams/scripts/page-state";
 import { TEXTS } from "../teams/selectors";
 
 const initScripts = new WeakSet<Page>();
+const contextScripts = new WeakSet<BrowserContext>();
 
 // Teams keeps the user Available only while its page is visible, focused and in use: the page says so from its
-// first script on, and the notification hook captures what Teams shows
+// first script on, and the notification hook captures what Teams shows. Where calls are answered from the app, the
+// microphone hook of every page and frame of the browser tells the call in progress (jobs/calls.ts).
 export async function preparePage(a: Agent) {
   const page = a.tp.page;
   if (!initScripts.has(page)) {
@@ -18,6 +21,19 @@ export async function preparePage(a: Agent) {
   }
   if ((await page.evaluate(makeVisible)) === "installed") log.info("page", "visible");
   if ((await page.evaluate(installNotificationHook)) === "installed") log.info("page", "notification hook installed");
+  if (a.config.answerCalls) await hookMicrophone(page);
+}
+
+// In the pages and frames to come (a call window included) before Teams asks for the microphone, and in those open now
+async function hookMicrophone(page: Page) {
+  const context = page.context();
+  if (!contextScripts.has(context)) {
+    await context.addInitScript(installMicHook).catch((e: unknown) => log.warn("page", `microphone init script: ${errorText(e)}`));
+    contextScripts.add(context);
+  }
+  let installed = 0;
+  for (const frame of page.frames()) if ((await frame.evaluate(installMicHook).catch(() => "failed")) === "installed") installed++;
+  if (installed) log.info("page", "microphone hook installed", { frames: installed });
 }
 
 // Real input through CDP, like a person at the desk: Teams keeps its endpoint active and the user Available

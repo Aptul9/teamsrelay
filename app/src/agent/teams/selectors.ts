@@ -89,6 +89,8 @@ export const SEL = {
   // buttons to answer and decline (never clicked); its text names the caller
   callToast: '[data-testid="calling-notification"]',
   callText: '[id^="cn-calling-main-content-"]',
+  // clicked only to answer from the app, only this button of the toast
+  callAccept: '[data-testid="calling-notification"] [data-testid="calling-actions"] button[aria-label="Accept with audio"]',
 
   // Activity feed: the id of an item is in the id of its title, named by aria-labelledby
   feedItem: '[data-tid="activity-feed-list-item"]',

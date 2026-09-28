@@ -1,0 +1,9 @@
+{
+  "AudioCaptureAllowedUrls": [
+    "https://teams.microsoft.com/",
+    "https://teams.cloud.microsoft/",
+    "https://teams.live.com/",
+    "https://teams.microsoft.com.mcas.ms/",
+    "https://teams.cloud.microsoft.mcas.ms/"
+  ]
+}

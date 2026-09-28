@@ -78,7 +78,7 @@ function agent(): Agent {
     isOpen: async () => opens,
   } as unknown as TeamsPage;
   return {
-    config: { uploadsDir: uploads, activity: true, readBy: true, alerts: { signInAfter: 60, browserAfter: 300, signIn: "Sign in again", browserDown: "The browser does not start" } },
+    config: { uploadsDir: uploads, activity: true, readBy: true, answerCalls: false, alerts: { signInAfter: 60, browserAfter: 300, signIn: "Sign in again", browserDown: "The browser does not start" } },
     store,
     notifier: {
       push: async () => 0,
@@ -314,6 +314,23 @@ describe("command handlers", () => {
     expect(store.commandStatus(id)).toBe("pending");
   });
 
+  it("leaves answer and hangup to the call watch: the loop keeps them pending and never runs them", async () => {
+    const answer = store.enqueue("answer", "Anna Rossi", '{"since":1790000000000}');
+    const hangup = store.enqueue("hangup");
+    const open = store.enqueue("open");
+    await runPendingCommands(agent());
+    expect(store.commandStatus(answer)).toBe("pending");
+    expect(store.commandStatus(hangup)).toBe("pending");
+    expect(store.commandStatus(open)).toBe("done");
+    expect(evaluated.filter((n) => n === "readChatList")).toHaveLength(1);
+  });
+
+  it("answer and hangup handed to a handler end as failed with nothing done on Teams", async () => {
+    expect(await runCommand(agent(), cmd("answer", "Anna Rossi", '{"since":1790000000000}'))).toBe("failed");
+    expect(await runCommand(agent(), cmd("hangup", ""))).toBe("failed");
+    expect(evaluated).toEqual([]);
+  });
+
   it("never runs a command that waited too long: a send queued while Teams was down stays unsent", async () => {
     const insert = db().prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, ?, ?)");
     insert.run(Math.floor(Date.now() / 1000) - COMMAND_MAX_AGE - 5, "send", "Anna Rossi", "from an hour ago");
@@ -405,6 +422,25 @@ describe("agent loop", () => {
       vi.advanceTimersByTime(60_000);
       await round(10);
       expect(reads).toEqual([11, 15]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("moves Teams nowhere while a call is in progress: parking, the full list, the feed, Read by and the check of the day wait", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 8, 27, 9, 0));
+      const a = agent();
+      a.health = { cdp: "ok", teams: "ok", overall: "green", ts: 1 };
+      a.railReady = true;
+      store.setState(STATE.activeChat, "Anna Rossi");
+      const ctx = { onTeams: true, want: "Anna Rossi" };
+      const waiting = ["parking", "chats-full", "activity", "read-by", "self-check"];
+      const jobs = agentJobs(a).filter((j) => waiting.includes(j.name));
+      expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, true]));
+      a.inCall = true;
+      expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, false]));
     } finally {
       vi.useRealTimers();
     }

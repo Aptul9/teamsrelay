@@ -16,7 +16,7 @@ let alerts: string[];
 
 function agent(): Agent {
   return {
-    config: { uploadsDir: "", activity: true, readBy: true, alerts: { signInAfter: 60, browserAfter: 300, signIn: "Sign in again in the relay window", browserDown: "The browser of the relay does not start" } },
+    config: { uploadsDir: "", activity: true, readBy: true, answerCalls: false, alerts:{ signInAfter: 60, browserAfter: 300, signIn: "Sign in again in the relay window", browserDown: "The browser of the relay does not start" } },
     store,
     notifier: { alert: async (title: string, body: string) => alerts.push(`${title}: ${body}`), deviceCount: () => 1 } as unknown as Notifier,
     // a loaded Teams page, for updateHealth

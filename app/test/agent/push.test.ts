@@ -91,13 +91,14 @@ describe("notifier", () => {
     ]);
   });
 
-  const notifier = (clock = () => 1_000_000) =>
+  const notifier = (clock = () => 1_000_000, answerable = false) =>
     new Notifier({
       store,
       devices: new AppStore(appDbFile, 1),
       vapid,
       subject: "mailto:admin@example.com",
       ntfy: null,
+      answerable,
       clock,
       later: (ms, run) => retries.push({ ms, run }),
       send: async (s, payload, options) => {
@@ -180,6 +181,24 @@ describe("notifier", () => {
         urgency: "high",
       },
     ]);
+  });
+
+  it("offers the answer on every push of a ringing call of an account that can answer from the app, never once it stopped", async () => {
+    const n = notifier(undefined, true);
+    await n.call("Anna Rossi", "ringing", 1_790_000_000_000);
+    await n.call("Anna Rossi", "again", 1_790_000_000_000);
+    await n.call("Anna Rossi", "ended", 1_790_000_000_000, 9);
+    expect(sent.map((s) => (s.payload as { answer?: boolean }).answer)).toEqual([true, true, undefined]);
+  });
+
+  it("offers no answer for an account that cannot answer from the app (a relay)", async () => {
+    await notifier().call("Anna Rossi", "ringing", 1_790_000_000_000);
+    expect(sent[0].payload).not.toHaveProperty("answer");
+  });
+
+  it("ends the notification of a call answered from the app as answered", async () => {
+    await notifier(undefined, true).call("Anna Rossi", "ended", 1_790_000_000_000, 9, true);
+    expect(sent[0].payload).toMatchObject({ title: "Call from Anna Rossi", body: "Answered in TeamsRelay", call: "ended" });
   });
 
   it("says a call came when it could not read who calls, and names the account when the owner has more", async () => {

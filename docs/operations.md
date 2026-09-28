@@ -80,13 +80,13 @@ One line per event, `<prefix>: <message> key=value`. In the log of the browsers 
 |---|---|
 | `agent` | start with slot and push status (`push`, `fcm`: phones of the Android app, `ntfy`), `check ok`, `blank tab` or `not on Teams` (with the host), exit without a Teams tab, configuration error |
 | `cdp` | connection to the browser, waiting for it, connection lost |
-| `CMD` | a command of the web app starts (`id`, `arg`) |
+| `CMD` | a command of the web app starts (`id`, `arg`); `answer` and `hangup` start in the call watch, which does not wait for the loop |
 | `SESSION` | Teams signed out for a minute (push sent), signed in again |
 | `NEWMSG`, `MSG` | new message from the chat list, notification caught from Teams |
-| `call` | incoming call: `ringing` with the `caller`, `ended` with the `seconds` its toast showed; a page it could not read (at most once a minute); `not saved`: the slot database refused the call for the web app or the call log (the push went out anyway) |
+| `call` | incoming call: `ringing` with the `caller`, `ended` with the `seconds` its toast showed (`answered` when the app answered it); `answered`, `in progress`, `over` and `hung up` for a call answered from the app, or the reason an answer or a hang-up failed (`that call no longer rings`, `no Accept button to click`, `the toast stayed after the click`, `no call in progress`, `the microphone stayed on after the shortcut`); a page it could not read (at most once a minute); `not saved`: the slot database refused the call for the web app or the call log (the push went out anyway) |
 | `SELFCHECK` | outcome of the automatic check |
 | `show` | Teams goes back to the chat of the app or to the self chat |
-| `page`, `input`, `presence` | page made visible, hook installed, input errors, your Teams status changed; `page: overlay still open after Escape` names (role, label, `data-tid`) the menu or dialog that kept an action from running, which the web app shows as failed |
+| `page`, `input`, `presence` | page made visible, hook installed (notifications; microphone, with the number of `frames`), input errors, your Teams status changed; `page: overlay still open after Escape` names (role, label, `data-tid`) the menu or dialog that kept an action from running, which the web app shows as failed |
 | `identity` | signed-in account found or changed |
 | `open`, `send`, `reply`, `react`, `pill`, `edit`, `delete`, `readby` | an action that did not apply on Teams, and why |
 | `chats`, `messages`, `activity`, `media`, `download`, `health` | reads that failed; `media` also `removed files no row names` with their number (`files`), when the job of every 300 rounds removed some |

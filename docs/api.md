@@ -54,6 +54,8 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 | POST | `/api/activity/refresh` | reads the Activity feed again |
 | POST | `/api/resync` | reads the chat list and the open conversation again |
 | POST | `/api/recheck` | full check, outcome sent as a push |
+| POST | `/api/call/answer` | `{since}`: answers the call ringing now on the account, named by when it started ringing (the `since` of the event stream and of the call notification); `{ok, id, desktop}`, `desktop` the remote desktop of the account, which carries the sound. 409 when that call no longer rings, for a stopped or checked account and for an account on another computer. A second request while the answer still waits gets the same `id` |
+| POST | `/api/call/hangup` | ends the call in progress on the account; 409 without one. A second request while the hang-up still waits gets the same `id` |
 
 ## Push
 

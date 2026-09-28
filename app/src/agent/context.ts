@@ -13,6 +13,8 @@ export type AgentSettings = {
   // Activity feed and "Read by": read only where an app shows them
   activity: boolean;
   readBy: boolean;
+  // calls answered and hung up from the app, sound through the remote desktop: an account of the browsers container only
+  answerCalls: boolean;
   alerts: {
     // seconds a problem lasts before its push: Teams signed out, browser not starting
     signInAfter: number;
@@ -38,6 +40,8 @@ export type Agent = {
   railReady?: boolean;
   // the web app starts this account only to check it, every few hours (server only)
   checkedOnly?: () => boolean;
+  // a call is in progress: the Teams page records from the microphone (src/agent/jobs/calls.ts)
+  inCall?: boolean;
 };
 
 export const nowSeconds = () => Math.floor(Date.now() / 1000);

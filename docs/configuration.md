@@ -53,6 +53,19 @@ Set by `docker-compose.yml` and the browsers image. The supervisor checks these 
 | `DATA_DIR`, `VAPID_DIR`, `FCM_DIR` | `/root/data`, `/root/vapid`, `/root/fcm` | Passed to the agents |
 | `TZ`, `LANG`, `LANGUAGE`, `LC_ALL` | | Passed to the browsers when set; `TZ`, `VAPID_SUBJECT` and `NTFY_*` to the agents |
 
+## Remote desktop
+
+Set by `docker-compose.yml` for Selkies, the remote desktop of the browsers container (`/desktop/`).
+
+| Variable | Value | Meaning |
+|---|---|---|
+| `SUBFOLDER` | `/desktop/` | Path Caddy publishes it on, only to users with a Teams account |
+| `SELKIES_ENCODER` | `jpeg` | JPEG frames: without a GPU (ARM VMs) the H.264 of the browser decoder gets no frame |
+| `SELKIES_MICROPHONE_ENABLED` | `true` | The microphone of the viewer can reach Teams, for a call answered from the app. The start of the browsers container then makes the virtual source `SelkiesVirtualMic` the default one: without a viewer Selkies has none, and Teams would record the sound of the desktop |
+| `SELKIES_MICROPHONE_ON_START` | `demand` | The viewer is asked for its microphone only while an application records from `SelkiesVirtualMic`, and released 10 s after |
+
+The browsers image also carries the Chromium policy `AudioCaptureAllowedUrls` (`app/docker/browsers/etc/chromium/policies/managed/teamsrelay.json`): the Teams origins get the microphone without a prompt.
+
 ## Files outside `.env`
 
 | Path | Content |

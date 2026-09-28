@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import type { CommandType } from "@/shared/slot-db/commands";
 import { HAS_TEAMS_ID, type ActivityItem, type CallLogEntry, type Chat, type Message, type MessageExtra } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
-import { CallState, cmdResultKey, Members, membersKey, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
+import { CallState, cmdResultKey, InCall, Members, membersKey, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
 
 // data/N/messages.db is created and written by the agent of slot N; the web app reads it and
@@ -148,6 +148,12 @@ export class SlotReader {
     return v ? parseState(CallState, v, null) : null;
   }
 
+  // The call in progress as the agent keeps it, null before the first one
+  inCall(): InCall | null {
+    const v = this.all<{ v: string }>("SELECT v FROM state WHERE k=?", STATE.inCall)[0]?.v;
+    return v ? parseState(InCall, v, null) : null;
+  }
+
   // The calls the agent saw ring, newest first
   callLog(): CallLogEntry[] {
     return this.all<CallLogEntry>(`SELECT caller, since, seconds FROM calls ORDER BY since DESC, id DESC LIMIT ${CALL_LOG_SIZE}`);
@@ -171,6 +177,15 @@ export class SlotReader {
       .prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?,?,?,?)")
       .run(Math.floor(Date.now() / 1000), type, arg1, arg2);
     return Number(r.lastInsertRowid);
+  }
+
+  // The same command still waiting for the agent, else a new one: a tap sent twice queues it once, a try after one that
+  // ended queues it again
+  enqueueOnce(type: CommandType, arg1 = "", arg2 = ""): number {
+    return this.db.transaction(() => {
+      const waiting = this.all<{ id: number }>("SELECT id FROM commands WHERE status='pending' AND type=? AND arg1=? AND arg2=? ORDER BY id LIMIT 1", type, arg1, arg2)[0];
+      return waiting ? waiting.id : this.enqueue(type, arg1, arg2);
+    })();
   }
 
   // What the last check of the account found (checked every N hours): forgotten, the next check only records what it

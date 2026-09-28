@@ -67,6 +67,8 @@ export class Notifier {
       send?: Send;
       later?: Later;
       clock?: () => number;
+      // a ringing call can be answered from the app (an account of the browsers container): its pushes offer it
+      answerable?: boolean;
     },
   ) {
     this.recent = new RecentPushes(o.clock);
@@ -107,10 +109,11 @@ export class Notifier {
   // Android app, which loop the ringtone themselves until the end (a phone the first push did not reach gets the next
   // one), and ntfy, whose app keeps alerting for a message of priority 5 when its setting says so. Not in the history
   // of notified messages.
-  async call(caller: string, state: "ringing" | "again" | "ended", since: number, seconds = 0): Promise<number> {
+  // answered: the call ended because it was answered from the app
+  async call(caller: string, state: "ringing" | "again" | "ended", since: number, seconds = 0, answered = false): Promise<number> {
     const ringing = state !== "ended";
     const title = ringing ? (caller ? `${caller} is calling` : "Incoming call") : caller ? `Call from ${caller}` : "Call ended";
-    const body = ringing ? "Teams call, ringing now" : seconds ? `Ended after ${seconds} s` : "Ended";
+    const body = ringing ? "Teams call, ringing now" : answered ? "Answered in TeamsRelay" : seconds ? `Ended after ${seconds} s` : "Ended";
     const chat = caller && this.o.store.isKnownChat(caller) ? caller : "";
     // a phone that did not take the first push of the call gets the next one, until one reaches it
     if (state === "ringing") this.phonesRinging = { since, took: new Set() };
@@ -118,7 +121,8 @@ export class Notifier {
     // ntfy beside the devices, one message after the other so that the end of the call comes after its start: a slow
     // ntfy.sh holds no push of the call
     if (state !== "again") this.ntfyCalls = this.ntfyCalls.then(() => this.ntfyCall(title, body, since, ringing));
-    return this.deliver((acc) => ({ title, body, chat, tag: callTag(acc), call: ringing ? "ringing" : "ended", ts: since }), {
+    const answer = ringing && this.o.answerable ? { answer: true } : {};
+    return this.deliver((acc) => ({ title, body, chat, tag: callTag(acc), call: ringing ? "ringing" : "ended", ts: since, ...answer }), {
       urgency: "high",
       ttl: ringing ? CALL_TTL : PUSH_TTL,
       retry: !ringing,

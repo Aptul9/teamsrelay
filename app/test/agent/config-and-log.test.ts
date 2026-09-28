@@ -11,6 +11,8 @@ describe("agent configuration", () => {
     expect(c.vapid).toEqual({ privateKeyFile: "/vapid/private_key.pem", appKeyFile: "/vapid/appkey.txt", subject: "mailto:admin@example.com" });
     // the service account key of Firebase, for the phones of the Android app: FCM stays off while the file is missing
     expect(c.fcmCredentials).toBe("/fcm/service-account.json");
+    // the sound of a call goes through the remote desktop of the browsers container: answered from the app
+    expect(c.answerCalls).toBe(true);
   });
 
   it("reads the environment docker-compose.yml gives a slot", () => {

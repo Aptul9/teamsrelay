@@ -74,7 +74,7 @@ describe("send on a page that behaves like Teams", () => {
   it("saves the chat as soon as the message went, before Teams confirms it", async () => {
     await fake("stall", true);
     const a = {
-      config: { uploadsDir: tempDir(), activity: true, readBy: true, alerts: { signInAfter: 60, browserAfter: 300, signIn: "", browserDown: "" } },
+      config: { uploadsDir: tempDir(), activity: true, readBy: true, answerCalls: false, alerts:{ signInAfter: 60, browserAfter: 300, signIn: "", browserDown: "" } },
       store,
       notifier: { alert: async () => 0, message: async () => undefined, push: async () => 0, deviceCount: () => 0 } as unknown as Notifier,
       media: new Media(tempDir(), tempDir()),

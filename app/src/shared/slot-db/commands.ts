@@ -20,8 +20,14 @@ export const COMMAND_TYPES = [
   "sendmentions",
   // an account checked every N hours: the whole chat list and the Activity feed, then one push if something is new
   "check",
+  // the incoming call (arg1 the caller, AnswerArgs) and the call in progress: run by the call watch of the agent, not
+  // by the loop, since a round of the loop can take longer than a call rings
+  "answer",
+  "hangup",
 ] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
+
+export const CALL_COMMANDS: readonly CommandType[] = ["answer", "hangup"];
 
 // pending: queued; done: Teams shows the change; failed: not applied on Teams. Later additions, written by the agent
 // only: running, on Teams now; unconfirmed, the agent stopped while it ran and does not run it again, as it may
@@ -65,6 +71,10 @@ const MentionPart = z.union([z.object({ text: z.string() }), z.object({ mention:
 export type MentionPart = z.infer<typeof MentionPart>;
 export const MentionArgs = z.object({ parts: z.array(MentionPart).catch([]) });
 export type MentionArgs = z.infer<typeof MentionArgs>;
+
+// answer: the call, by when it started ringing (since of the call state, ms)
+export const AnswerArgs = z.object({ since: z.number().catch(0) });
+export type AnswerArgs = z.infer<typeof AnswerArgs>;
 
 // Images the app can send, by file extension
 export const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", gif: "image/gif", webp: "image/webp" } as const;
