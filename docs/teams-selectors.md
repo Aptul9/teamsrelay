@@ -63,7 +63,7 @@ Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-
 
 ## Incoming call
 
-Seen on 2026-09-27 on slot 2 (behind Defender for Cloud Apps) with 1:1 audio calls from a person of another organization; a video call and a group call were not seen. The fixture `call-toast.html` was rebuilt from those probes (attributes, texts and nesting as seen, name invented), not captured with the script. Nothing of the toast is ever clicked.
+Seen on 2026-09-27 on slot 2 (behind Defender for Cloud Apps) with 1:1 audio calls from a person of another organization; a video call and a group call were not seen. The fixture `call-toast.html` was rebuilt from those probes (attributes, texts and nesting as seen, name invented), not captured with the script. The only click on the toast is *Accept with audio*, when the owner answers from the app (`SEL.callAccept`, a real click through CDP).
 
 | Element | Selector |
 |---|---|
@@ -72,6 +72,8 @@ Seen on 2026-09-27 on slot 2 (behind Defender for Cloud Apps) with 1:1 audio cal
 | Buttons | `[data-testid="calling-actions"]`: `aria-label` *Accept with audio*, *Decline call*; in the header *More options* and `[data-testid="dismiss-toast-button"]` *Dismiss notification* |
 | Sound | Teams plays its ringtone (the content of `Teams_Call_Ringing.mp3`, 7.6 s) while the toast shows, then `Teams_Call_Ended.mp3`; with the page visible there is no browser notification |
 | Afterwards | the Activity feed lists *Missed call from Anna Rossi* for a missed call, nothing for one taken by voicemail |
+| Call in progress | no selector: the page records from the microphone. An init script of every page and frame wraps `navigator.mediaDevices.getUserMedia` and keeps the audio tracks it returns (`__teamsMicTracks`); a track `live` is a call in progress |
+| Hang up | the shortcut of Teams web for ending a call, Ctrl+Shift+H (Microsoft support, *Keyboard shortcuts for Microsoft Teams*, web column; there accept audio call is Alt+Shift+S, decline Ctrl+Shift+D, mute Ctrl+Shift+M), sent to the page that records |
 
 ## Expired session
 
