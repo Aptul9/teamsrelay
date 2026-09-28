@@ -125,7 +125,6 @@ export class ServerLink {
   private readonly db: Database.Database;
   private version = -1;
   private sent = nothingSent();
-  private readonly uploaded = { media: new Set<string>(), files: new Set<string>() };
   // when the account took its slot on the server (the series of its command ids), 0 until the server said
   private added = 0;
   // the last command of the series queued here
@@ -140,6 +139,8 @@ export class ServerLink {
   // files a sync named that did not go for a failure of the server or of the network: they go at the next sync, logged
   // once each
   private readonly retry = nothingNamed();
+  // files the server refused, logged once each: they go again when a later sync names them
+  private readonly refused = nothingNamed();
   // notifications, one after the other in the order they came
   private pushes: Promise<unknown> = Promise.resolve();
   // the stop of the relay: every request ends with it
@@ -469,17 +470,20 @@ export class ServerLink {
   }
 
   // The files a sync names, and those that failed before: the server says which it lacks, those go up one by one.
-  // A name stays with one picture or file (src/agent/media.ts), so a name the server has is the same one. A file the
-  // server refuses (not the image its name says, too large, no room left for the account) is left out, logged; one that
-  // fails for the server or the network goes again at the next sync. Neither holds up the sync of everything else. A
-  // file gone from its folder meanwhile (the agent removes the pictures no row names any more) goes nowhere.
+  // A name stays with one picture or file (src/agent/media.ts), so a name the server has is the same one. The server is
+  // asked at every sync that names a file, whatever went before: it removes the pictures no row names any more
+  // (src/lib/relay.ts), and one that shows again must go again. A file the server refuses (not the image its name says,
+  // too large, no room left for the account) is left out, logged once, and goes again when a later sync names it: the
+  // server may have room by then. One that fails for the server or the network goes again at the next sync. Neither
+  // holds up the sync of everything else. A file gone from its folder meanwhile (the agent removes the pictures no row
+  // names any more) goes nowhere.
   private async uploadFiles(named: Named) {
     const dirOf = { media: this.o.mediaDir, files: this.o.filesDir };
     const pattern = { media: MEDIA_NAME, files: FILE_NAME };
     const want: HaveBody = { media: [], files: [] };
     for (const kind of ["media", "files"] as const) {
       for (const name of new Set([...named[kind], ...this.retry[kind]])) {
-        if (!pattern[kind].test(name) || this.uploaded[kind].has(name)) continue;
+        if (!pattern[kind].test(name)) continue;
         if (fs.existsSync(path.join(dirOf[kind], name))) want[kind].push(name);
         else this.retry[kind].delete(name);
       }
@@ -504,11 +508,13 @@ export class ServerLink {
               this.retry[kind].add(name);
               continue;
             }
-            log.warn("server", `${kind} file refused: ${e.message}`, { file: name });
+            if (!this.refused[kind].has(name)) log.warn("server", `${kind} file refused: ${e.message}`, { file: name });
+            this.refused[kind].add(name);
+            this.retry[kind].delete(name);
+            continue;
           }
         }
         this.retry[kind].delete(name);
-        this.uploaded[kind].add(name);
       }
     }
   }

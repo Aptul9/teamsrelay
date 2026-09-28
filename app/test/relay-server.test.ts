@@ -16,7 +16,7 @@ import { HttpError } from "@/lib/http";
 import { applySync, missingRelayFiles, relayJson, requireRelay, saveRelayFile, waitForRelayCommands } from "@/lib/relay";
 import { withSlot } from "@/lib/slotdb";
 import { addRelayAccount, keepSlotsUp, removeAccount, renewRelayToken, setAccountRunning, setCheckMode } from "@/lib/slots";
-import { HaveBody } from "@/shared/relay-sync";
+import { HaveBody, type SyncBody } from "@/shared/relay-sync";
 import { ringingCall, STATE } from "@/shared/slot-db/state";
 import { held, tempDir } from "./helpers";
 
@@ -36,6 +36,8 @@ const bearer = (token: string, extra: Record<string, string> = {}) => new Reques
 const caller = (token: string) => requireRelay(bearer(token));
 const slotDb = (n: number) => new Database(path.join(dataDir, String(n), "messages.db"), { fileMustExist: true });
 const stream = (data: Buffer | string) => new Response(typeof data === "string" ? data : new Uint8Array(data)).body;
+// rows of a sync as the relay sends them
+const chatRow = (name: string, av: string) => ({ name, preview: "", pos: 0, ts: 0, tm: "", unread: 0, mention: 0, muted: 0, av });
 
 beforeAll(() => {
   dataDir = tempDir();
@@ -320,6 +322,49 @@ describe("the files of a relay", () => {
       a.release();
       b.release();
       expect([(await first).status, (await second).status]).toEqual([200, 413]);
+    } finally {
+      delete process.env.RELAY_QUOTA_MB;
+    }
+  });
+
+  it("leave the media folder once no row names them, whichever rows named them", async () => {
+    const { slot, token } = await addRelayAccount("f6", opts());
+    const media = path.join(dataDir, String(slot), "media");
+    const [chatA, chatB, image, feed, own] = ["a0a0a0a0a0a0a0a0.png", "b1b1b1b1b1b1b1b1.png", "c2c2c2c2c2c2c2c2.jpg", "d3d3d3d3d3d3d3d3.png", "e4e4e4e4e4e4e4e4.png"];
+    for (const f of [chatA, chatB, feed, own]) await saveRelayFile(caller(token), "media", f, stream(PNG));
+    await saveRelayFile(caller(token), "media", image, stream(Buffer.from("ffd8ffe000104a464946", "hex")));
+    await saveRelayFile(caller(token), "files", "f5f5f5f5f5f5f5f5.pdf", stream("%PDF-1.7"));
+    // an upload on its way
+    const part = `${chatA}.0badc0de.part`;
+    fs.writeFileSync(path.join(media, part), "half");
+    const message = { idx: 0, mid: "1790431664072", author: "Anna Rossi", text: "look", mine: 0, reacts: "", extra: JSON.stringify({ images: [{ f: image, w: 1, h: 1 }] }) };
+    const item = { id: "25006882909", pos: 0, kind: "reaction", actor: "Anna Rossi", title: "", emoji: "", preview: "", tm: "", chat: "Anna Rossi", channel: 0, unread: 0, ts: 0, av: feed };
+    const me = (av: string) => JSON.stringify({ name: "Test User", email: "test.user@contoso.example", tenant: "Contoso", av });
+    const sync = (b: Partial<SyncBody>) => applySync(caller(token), { host: "pc", now: Date.now(), ...b });
+    const left = () => fs.readdirSync(media).sort();
+
+    sync({ chats: [chatRow("Anna Rossi", chatA), chatRow("Luca Bianchi", chatB)], messages: { "Anna Rossi": [message] }, activity: [item], state: { [STATE.me]: me(own) } });
+    expect(left()).toEqual([chatA, part, chatB, image, feed, own].sort());
+    sync({ chats: [chatRow("Anna Rossi", chatA)] });
+    expect(left()).toEqual([chatA, part, image, feed, own].sort());
+    sync({ messages: { "Anna Rossi": [] } });
+    expect(left()).toEqual([chatA, part, feed, own].sort());
+    sync({ activity: [] });
+    expect(left()).toEqual([chatA, part, own].sort());
+    sync({ state: { [STATE.me]: me("") } });
+    expect(left()).toEqual([chatA, part].sort());
+    expect(fs.readdirSync(path.join(dataDir, String(slot), "files"))).toEqual(["f5f5f5f5f5f5f5f5.pdf"]);
+  });
+
+  it("give their room back to the account when they leave the media folder", async () => {
+    const { token } = await addRelayAccount("f7", opts());
+    process.env.RELAY_QUOTA_MB = String((2 * PNG.length + 10) / 2 ** 20);
+    try {
+      await saveRelayFile(caller(token), "media", "a6a6a6a6a6a6a6a6.png", stream(PNG));
+      await saveRelayFile(caller(token), "media", "b7b7b7b7b7b7b7b7.png", stream(PNG));
+      await expect(saveRelayFile(caller(token), "media", "c8c8c8c8c8c8c8c8.png", stream(PNG))).rejects.toMatchObject({ status: 413 });
+      applySync(caller(token), { host: "pc", now: Date.now(), chats: [chatRow("Anna Rossi", "a6a6a6a6a6a6a6a6.png")] });
+      await expect(saveRelayFile(caller(token), "media", "c8c8c8c8c8c8c8c8.png", stream(PNG))).resolves.toBeUndefined();
     } finally {
       delete process.env.RELAY_QUOTA_MB;
     }

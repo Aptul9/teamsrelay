@@ -110,21 +110,9 @@ export class SlotStore {
     return r?.name ?? "";
   }
 
-  // Files of the media folder the rows name: pictures of the chats, of the feed and of the account, images and pictures
-  // of the messages kept (a chat that left the list keeps the last ones). No other file of the folder shows anywhere.
+  // Files of the media folder the rows name (mediaFilesOf)
   mediaFiles(): Set<string> {
-    const files = new Set<string>();
-    const add = (f: unknown) => {
-      if (typeof f === "string" && f) files.add(f);
-    };
-    for (const av of this.db.prepare("SELECT av FROM chats UNION SELECT av FROM activity").pluck().all()) add(av);
-    for (const v of this.db.prepare("SELECT extra FROM chat_messages").pluck().all() as (string | null)[]) {
-      const extra = parseExtra(v);
-      add(extra.av);
-      for (const im of Array.isArray(extra.images) ? extra.images : []) add(im?.f);
-    }
-    add(parseState(Identity, this.getState(STATE.me), null)?.av);
-    return files;
+    return mediaFilesOf(this.db);
   }
 
   saveChatMessages(chat: string, messages: readonly SavedMessage[]) {
@@ -261,6 +249,24 @@ export class SlotStore {
       );
     })();
   }
+}
+
+// Files of the media folder the rows of a slot database name: pictures of the chats, of the feed and of the account,
+// images and pictures of the messages kept (a chat that left the list keeps the last ones). No other file of the folder
+// shows anywhere. The web app reads them in the database of an account on another computer (src/lib/relay.ts).
+export function mediaFilesOf(db: Database.Database): Set<string> {
+  const files = new Set<string>();
+  const add = (f: unknown) => {
+    if (typeof f === "string" && f) files.add(f);
+  };
+  for (const av of db.prepare("SELECT av FROM chats UNION SELECT av FROM activity").pluck().all()) add(av);
+  for (const v of db.prepare("SELECT extra FROM chat_messages").pluck().all() as (string | null)[]) {
+    const extra = parseExtra(v);
+    add(extra.av);
+    for (const im of Array.isArray(extra.images) ? extra.images : []) add(im?.f);
+  }
+  add(parseState(Identity, db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.me) as string | null | undefined, null)?.av);
+  return files;
 }
 
 function parseExtra(v: string | null): MessageExtra {
