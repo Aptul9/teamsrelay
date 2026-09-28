@@ -39,6 +39,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message } from "@/lib/client";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
+import { dayLabel, fullTime, placeMessages, sentAt, timeLabel } from "@/lib/message-times";
 
 const EMO: Record<string, string> = { like: "👍", heart: "❤️", laugh: "😆", surprised: "😮", cry: "😢", angry: "😠" };
 const EMO_LABEL: Record<string, string> = { like: "Like", heart: "Heart", laugh: "Laugh", surprised: "Surprised", cry: "Sad", angry: "Angry" };
@@ -400,27 +401,27 @@ export function Conversation({
 
   const people = picker && members ? matchPeople(members, picker.query) : [];
   const loading = rows === null || (!messages.length && !shownPending.length && now - openedAt < 5000);
-  // Teams shows author and picture only on the first of consecutive messages of the same person
-  const firsts: boolean[] = [];
-  let prevAuthor: string | null = null;
-  let prevMine: boolean | null = null;
-  for (const m of messages) {
-    firsts.push(m.mine ? prevMine !== true : m.author !== prevAuthor || prevMine !== false);
-    prevAuthor = m.mine ? null : m.author;
-    prevMine = !!m.mine;
-  }
+  // Teams shows author, picture and time only on the first of consecutive messages of the same person, and again after
+  // a pause or on another day, under the divider of that day
+  const placed = placeMessages(messages);
   // and the delivery status only under the last of your consecutive messages
   const lastMine = messages.map((m, i) => !!m.mine && !messages[i + 1]?.mine);
   const sheetMsg = sheetFor ? messages.find((m) => String(m.mid) === sheetFor) : undefined;
 
-  const bubbles = messages.map((m, idx) => {
+  const bubbles = messages.flatMap((m, idx) => {
+    const at = sentAt(m.mid);
+    const day = placed[idx].day && at !== null && (
+      <div key={`day:${at}`} role="separator" className="mt-5 mb-1 flex justify-center">
+        <span className="rounded-full bg-muted px-2.5 py-0.5 text-[0.6875rem] font-medium text-muted-foreground">{dayLabel(at, now)}</span>
+      </div>
+    );
     const images = m.images || [];
     const files = m.files || [];
-    if (!m.deleted && !(m.text || "").trim() && !images.length && !files.length) return null;
+    if (!m.deleted && !(m.text || "").trim() && !images.length && !files.length) return day ? [day] : [];
     const mid = String(m.mid || "");
     const mine = !!m.mine;
     const pe = pendingEdits[mid];
-    const first = firsts[idx];
+    const first = placed[idx].first;
     const teamsReacts = (m.reactions || [])
       .filter((r) => !pillPending[mid]?.[r.e])
       .map((r) => ({ e: r.e, n: r.n, mine: r.mine, pend: false }));
@@ -433,7 +434,8 @@ export function Conversation({
     const actionsOpen = menuFor === mid || sheetFor === mid;
     const canAct = !!mid && !m.deleted && !pe;
 
-    return (
+    return [
+      day,
       <div
         key={mid || `${idx}:${m.text}`}
         data-mid={mid}
@@ -441,14 +443,20 @@ export function Conversation({
       >
         {!mine && (first ? <Avatar name={m.author || "?"} av={m.av} acc={acc} className="mt-5 size-8" /> : <div className="w-8 shrink-0" />)}
         <div className={cn("flex max-w-[min(36rem,82%)] min-w-0 flex-col", mine ? "items-end" : "items-start")}>
-          {!mine && first && m.author && (
-            <div className="mb-1 ml-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              {m.author}
-              {m.mentionsMe && <span className="rounded-full bg-destructive/10 px-1.5 text-[0.6875rem] font-semibold text-destructive">@you</span>}
+          {first && ((!mine && m.author) || at !== null) && (
+            <div className={cn("mb-1 flex items-center gap-1.5 text-xs text-muted-foreground", mine ? "mr-1" : "ml-1")}>
+              {!mine && m.author && <span className="font-medium">{m.author}</span>}
+              {at !== null && (
+                <time dateTime={new Date(at).toISOString()} className="tabular-nums">
+                  {timeLabel(at)}
+                </time>
+              )}
+              {!mine && m.mentionsMe && <span className="rounded-full bg-destructive/10 px-1.5 text-[0.6875rem] font-semibold text-destructive">@you</span>}
             </div>
           )}
           <div className="relative">
             <div
+              title={at !== null ? fullTime(at) : undefined}
               onClick={(e) => {
                 if (!touch || !canAct || (e.target as HTMLElement).closest("a,button")) return;
                 setSheetFor(mid);
@@ -642,8 +650,8 @@ export function Conversation({
             m.edited && !m.deleted && <div className={cn("mt-1 text-[0.6875rem] text-muted-foreground", mine ? "mr-1" : "ml-1")}>Edited</div>
           )}
         </div>
-      </div>
-    );
+      </div>,
+    ];
   });
 
   return (
