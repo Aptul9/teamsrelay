@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRingIcon, KeyRoundIcon, LaptopIcon, LogOutIcon, MessagesSquareIcon, MonitorSmartphoneIcon, MoonIcon, PaletteIcon, SunIcon, UserRoundIcon } from "lucide-react";
+import { BellRingIcon, KeyRoundIcon, LaptopIcon, LogOutIcon, MessagesSquareIcon, MonitorSmartphoneIcon, MoonIcon, PaletteIcon, SunIcon, UserRoundIcon, Volume2Icon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
@@ -24,16 +24,25 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { authClient } from "@/lib/auth-client";
-import { accountStatus, ApiError, call, CHECK_INTERVALS, hours, post, toLogin, type Account } from "@/lib/client";
+import { accountStatus, ApiError, bellOn, call, CHECK_INTERVALS, hours, post, setBellOn, toLogin, type Account } from "@/lib/client";
 import { enablePush, pushState, type PushState } from "@/lib/push";
+import { Ringer } from "@/lib/ring";
 
 const noSubscribe = () => () => {};
+
+// the bell setting of this device, in the storage of the browser: the switch follows its changes
+const bellWatchers = new Set<() => void>();
+const watchBell = (fn: () => void) => {
+  bellWatchers.add(fn);
+  return () => void bellWatchers.delete(fn);
+};
 
 function SectionTitle({ icon: Icon, children }: { icon: React.ComponentType<{ className?: string }>; children: React.ReactNode }) {
   return (
@@ -178,10 +187,30 @@ export function Settings({ user, passwordManaged }: { user: { name: string; emai
   const [errors, setErrors] = useState<{ next?: string; confirm?: string; form?: string }>({});
   const [busy, setBusy] = useState(false);
   const [push, setPush] = useState<PushState | null>(null);
+  // the bell of new messages on this device; the server has no storage and renders it on
+  const bell = useSyncExternalStore(watchBell, bellOn, () => true);
+  const [ringer] = useState(() => (typeof window === "undefined" ? null : new Ringer()));
 
   useEffect(() => {
     void pushState().then(setPush);
   }, []);
+
+  useEffect(() => {
+    if (!ringer) return;
+    ringer.attach(document);
+    return () => ringer.close();
+  }, [ringer]);
+
+  // the click that asks for the bell also lets the page play sound
+  async function tryBell() {
+    await ringer?.allow();
+    if (!(await ringer?.bell())) toast.error("This browser plays no sound from TeamsRelay", { description: "Check the sound of the device and of the browser." });
+  }
+
+  function turnBell(on: boolean) {
+    setBellOn(on);
+    for (const fn of bellWatchers) fn();
+  }
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -342,6 +371,22 @@ export function Settings({ user, passwordManaged }: { user: { name: string; emai
             ) : (
               <span className="text-muted-foreground">This browser does not support push notifications. On iPhone, install the app from Safari first (Share, Add to Home Screen).</span>
             )}
+          </CardContent>
+          <CardContent>
+            <Field orientation="horizontal">
+              <Switch id="bell" checked={bell} onCheckedChange={turnBell} />
+              <FieldContent>
+                <FieldLabel htmlFor="bell">Bell for new messages</FieldLabel>
+                <FieldDescription>
+                  While TeamsRelay is open, even in the background, a bell rings instead of the sound of the device. With the app closed the device
+                  plays its own sound.
+                </FieldDescription>
+              </FieldContent>
+              <Button variant="outline" className="h-10 md:h-9" onClick={() => void tryBell()}>
+                <Volume2Icon />
+                Play
+              </Button>
+            </Field>
           </CardContent>
         </Card>
 

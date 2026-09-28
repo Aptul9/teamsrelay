@@ -6,7 +6,7 @@ import path from "node:path";
 import { build } from "esbuild";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { RING } from "@/lib/ring";
+import { BELL, RING } from "@/lib/ring";
 
 type Chrome = { browser: Browser; page: Page; cdp: CDPSession; errors: string[] };
 
@@ -106,6 +106,27 @@ const loudest = (c: Chrome) =>
     })()`,
   );
 
+// Rings the bell of a message as the page does for the service worker: whether it played, and the loudest level the
+// page plays while the bell lasts
+const bell = (c: Chrome) =>
+  run<{ played: boolean; loudest: number }>(
+    c,
+    `(async () => {
+      const played = await window.bell();
+      const analyser = window.analyser;
+      const d = new Float32Array(analyser.fftSize);
+      let loudest = 0;
+      for (const end = performance.now() + ${BELL.length * 1000 + 300}; performance.now() < end; ) {
+        if (analyser.context.state === "running") {
+          analyser.getFloatTimeDomainData(d);
+          loudest = Math.max(loudest, Math.sqrt(d.reduce((s, x) => s + x * x, 0) / d.length));
+        }
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      return { played, loudest };
+    })()`,
+  );
+
 describe("call ring where the page may play sound (installed app)", () => {
   const c = chrome("no-user-gesture-required");
 
@@ -137,10 +158,31 @@ describe("call ring where the page may play sound (installed app)", () => {
     await setCalls(c, []);
     expect(c.errors).toEqual([]);
   });
+
+  it("rings the bell of a message once, without a click, then rests again", async () => {
+    await until(c, "Luca Bianchi is calling", false);
+    const r = await bell(c);
+    expect(r).toMatchObject({ played: true });
+    expect(r.loudest).toBeGreaterThan(0.02);
+    await expect.poll(() => contextState(c), { timeout: 3000 }).toBe("suspended");
+  });
+
+  it("rings the bell over a call ringing, which goes on ringing after it", async () => {
+    await setCalls(c, [call("Anna Rossi", 1_790_000_120_000)]);
+    await until(c, "Anna Rossi is calling");
+    expect((await bell(c)).played).toBe(true);
+    expect(await loudest(c)).toBeGreaterThan(0.05);
+    await setCalls(c, []);
+    expect(c.errors).toEqual([]);
+  });
 });
 
 describe("call ring where sound needs a click in the page first (browser tab)", () => {
   const c = chrome("document-user-activation-required");
+
+  it("rings no bell before a click in the page: the notification keeps the sound of the device", async () => {
+    expect(await bell(c)).toEqual({ played: false, loudest: 0 });
+  });
 
   it("shows the hint, stays silent with the banner up, and rings from the first click anywhere in the page", async () => {
     await until(c, "Click to allow the call ring");
@@ -151,6 +193,12 @@ describe("call ring where sound needs a click in the page first (browser tab)", 
     await c.page.mouse.click(EMPTY.x, EMPTY.y);
     await until(c, "Click to allow the call ring", false);
     expect(await loudest(c)).toBeGreaterThan(0.05);
+  });
+
+  it("rings the bell of a message once the page was clicked", async () => {
+    const r = await bell(c);
+    expect(r.played).toBe(true);
+    expect(r.loudest).toBeGreaterThan(0.02);
   });
 
   it("rings a later call without another click, the context resting in between", async () => {

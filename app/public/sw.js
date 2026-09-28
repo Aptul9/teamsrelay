@@ -27,18 +27,65 @@ async function badge(d) {
 }
 
 // A chat has one notification: a new message replaces it, alerts again and keeps the last lines. A line it already
-// holds (the same push sent again) changes nothing. A push without a tag (checks, session expired) gets a
-// notification of its own.
+// holds (the same push sent again) changes nothing. A push without a tag (checks, missed calls, session expired) gets
+// a notification of its own. What alerts rings the bell of the app when a window of it plays one, quietly then.
 async function show(d) {
   const title = d.title || 'TeamsRelay';
   const base = { icon: '/static/icon-192.png', badge: '/static/icon-192.png' };
   if (d.call) return showCall(title, d, base);
-  if (!d.tag) return self.registration.showNotification(title, { ...base, body: d.body || '', tag: 'teams-' + Date.now(), data: d });
+  if (!d.tag) {
+    const quiet = await bellRung();
+    return self.registration.showNotification(title, { ...base, body: d.body || '', tag: 'teams-' + Date.now(), data: d, ...(quiet && { silent: true }) });
+  }
   const [shown] = await self.registration.getNotifications({ tag: d.tag });
   const before = (shown && shown.data && shown.data.lines) || [];
   const again = !!d.body && before.includes(d.body);
   const lines = again ? before : [...before, d.body || ''].filter(Boolean).slice(-LINES);
-  return self.registration.showNotification(title, { ...base, body: lines.join('\n'), tag: d.tag, renotify: !again, data: { ...d, lines } });
+  const quiet = !again && (await bellRung());
+  return self.registration.showNotification(title, { ...base, body: lines.join('\n'), tag: d.tag, renotify: !again, data: { ...d, lines }, ...(quiet && { silent: true }) });
+}
+
+// milliseconds a window of the app has to say whether it played the bell
+const BELL_WAIT = 500;
+
+// A page cannot give a notification a sound of its own: while a window of the app is open, its page rings the bell of
+// messages (App.tsx) and the notification comes quiet. The windows are asked one at a time, the ones on screen first,
+// until one plays it: one bell per message. With no window, or none that plays it in time (a tab not clicked since it
+// loaded may play no sound, a page the browser froze does not answer), the notification keeps the sound of the device.
+async function bellRung() {
+  let windows = [];
+  try {
+    windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  } catch (_) {}
+  const order = [...windows.filter(w => w.visibilityState === 'visible'), ...windows.filter(w => w.visibilityState !== 'visible')];
+  for (const w of order) if (await askBell(w)) return true;
+  return false;
+}
+
+// No account in the message: one with an account switches the account on screen
+function askBell(w) {
+  return new Promise(resolve => {
+    let ch;
+    try {
+      ch = new MessageChannel();
+    } catch (_) {
+      return resolve(false);
+    }
+    let timer;
+    const done = played => {
+      clearTimeout(timer);
+      ch.port1.onmessage = null;
+      ch.port1.close();
+      resolve(played);
+    };
+    timer = setTimeout(() => done(false), BELL_WAIT);
+    ch.port1.onmessage = e => done(!!(e.data && e.data.played));
+    try {
+      w.postMessage({ type: 'bell' }, [ch.port2]);
+    } catch (_) {
+      done(false);
+    }
+  });
 }
 
 // An incoming call has one notification per account. While it rings it stays on screen, vibrates and alerts again at

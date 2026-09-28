@@ -105,8 +105,9 @@ describe("call watch", () => {
   afterEach(() => vi.useRealTimers());
 
   // what the page shows at each look: a caller, no toast (null), or an error of the page (navigating). saved: the
-  // call as the slot database holds it; failWrites: a database that refuses every write (locked)
-  function watch(seen: (string | null | Error)[], url = "https://teams.microsoft.com/v2/", o: { failWrites?: boolean } = {}) {
+  // call as the slot database holds it; failWrites: a database that refuses every write (locked); ended: told of each
+  // call that ended
+  function watch(seen: (string | null | Error)[], url = "https://teams.microsoft.com/v2/", o: { failWrites?: boolean; ended?: () => void } = {}) {
     const calls: unknown[][] = [];
     const logged: unknown[][] = [];
     const states = new Map<string, string>();
@@ -131,7 +132,7 @@ describe("call watch", () => {
       },
     } as unknown as Agent;
     let now = 1_790_000_000_000;
-    const w = new CallWatch(a, () => now, () => now);
+    const w = new CallWatch(a, () => now, () => now, o.ended);
     const saved = () => JSON.parse(states.get(STATE.call) ?? "null");
     // a look, then the pushes it started, done
     const tick = async (seconds = 1) => {
@@ -169,6 +170,15 @@ describe("call watch", () => {
       ["Anna Rossi", 1_790_000_001_000, 1],
       ["Luca Bianchi", 1_790_000_003_000, 0],
     ]);
+  });
+
+  it("tells of each call that ended, gone or replaced by another: the Activity feed read then says whether it was missed", async () => {
+    const ended = vi.fn();
+    const { tick } = watch(["Anna Rossi", "Anna Rossi", "Luca Bianchi", null, null, null, null], undefined, { ended });
+    for (let i = 0; i < 3; i++) await tick();
+    expect(ended).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 4; i++) await tick();
+    expect(ended).toHaveBeenCalledTimes(2);
   });
 
   it("records each call that ended in the call log of the account, with how long it rang", async () => {
