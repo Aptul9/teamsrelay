@@ -176,6 +176,16 @@ export function appBadgeCount(accounts: Account[], unreadOf: (a: Account) => Unr
   return accounts.reduce((n, a) => n + unreadTotal(unreadOf(a)), 0);
 }
 
+// The same number in the title of the page, for the tab and the taskbar: "(5) TeamsRelay"
+export const pageTitle = (n: number) => (n > 0 ? `(${n > 99 ? "99+" : n}) TeamsRelay` : "TeamsRelay");
+
+// An account never signed in to Microsoft has no name nor email yet: it shows as an account being added, not as a
+// numbered one, until its first sign-in. One signed out since keeps who it was.
+export const NEW_ACCOUNT = "New Teams account";
+export const signedInOnce = (a: Pick<Account, "name" | "email">) => !!(a.name || a.email);
+export const addingTitle = (accounts: Account[]) =>
+  accounts.some(signedInOnce) ? "Finish adding this Teams account" : "Add your first Teams account";
+
 export function markActivitySeen(seen: string[] | null, items: ActivityItem[]): string[] {
   const ids = items.map((a) => a.id);
   const now = new Set(ids);
@@ -320,3 +330,8 @@ export function writeStorage(key: string, value: string) {
     // private mode: the choice is not remembered
   }
 }
+
+// The bell of new messages while the app is open (sw.js, App.tsx), per device: on unless turned off in Settings
+const BELL_KEY = "bell";
+export const bellOn = () => readStorage(BELL_KEY) !== "off";
+export const setBellOn = (on: boolean) => writeStorage(BELL_KEY, on ? "on" : "off");

@@ -22,6 +22,9 @@ export const STATE = {
   // JSON {chats, activity, calls, feed, read}: what the last check of an account checked every N hours found
   // (src/agent/commands/check.ts)
   checkSeen: "check_seen",
+  // JSON string[]: ids of the missed calls of the feed an account always on already alerted, newest first
+  // (src/agent/jobs/missed-calls.ts)
+  callsTold: "calls_told",
   // JSON CallState: the incoming call Teams shows, written by the agent while it rings and once it ends
   call: "call",
   // JSON RelayLink: an account on another computer, written by the web app at each sync of its relay (src/lib/relay.ts)

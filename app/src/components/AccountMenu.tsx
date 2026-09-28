@@ -17,9 +17,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { checkLine, idleChecked, lastCheck, relayOffline, statusText, type Account, type Unread } from "@/lib/client";
+import { checkLine, idleChecked, lastCheck, NEW_ACCOUNT, relayOffline, statusText, type Account, type Unread } from "@/lib/client";
 
-export const accName = (a: Account) => a.name || a.email || `Account ${a.slot}`;
+export const accName = (a: Account) => a.name || a.email || NEW_ACCOUNT;
 
 // chats and notifications share the purple count; missed calls have a red one of their own
 const total = (u: Unread) => u.chats + u.notifications;

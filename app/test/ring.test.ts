@@ -1,6 +1,7 @@
-// The ring of the web app, made in the page: two short trills and a rest, looped by the browser while a call rings
+// The ring of the web app, made in the page: two short trills and a rest, looped by the browser while a call rings;
+// and the bell of a new message, played once
 import { describe, expect, it } from "vitest";
-import { RING, ringSamples } from "@/lib/ring";
+import { BELL, bellSamples, RING, ringSamples } from "@/lib/ring";
 
 const RATE = 8000;
 
@@ -29,5 +30,33 @@ describe("ring", () => {
     expect(Math.max(...s.map(Math.abs))).toBeLessThanOrEqual(0.5);
     expect(s[0]).toBe(0);
     expect(s[s.length - 1]).toBe(0);
+  });
+});
+
+describe("bell", () => {
+  const s = bellSamples(RATE);
+  const at = (i: number) => BELL.notes[i][0];
+
+  it("lasts the length of the bell, played once", () => {
+    expect(s).toHaveLength(Math.round(BELL.length * RATE));
+  });
+
+  it("strikes two notes, each one fading away", () => {
+    // each note is loud right after its strike, and much quieter a few decays later
+    expect(rms(s, at(0) + 0.01, at(1) - 0.01)).toBeGreaterThan(0.05);
+    expect(rms(s, at(1) + 0.01, at(1) + 0.1)).toBeGreaterThan(0.05);
+    const late = at(1) + 4 * BELL.decay;
+    expect(rms(s, late, late + 0.05)).toBeLessThan(rms(s, at(1) + 0.01, at(1) + 0.06) / 10);
+  });
+
+  it("stays under half of full scale, and starts and ends at zero: no click", () => {
+    expect(Math.max(...s.map(Math.abs))).toBeLessThanOrEqual(0.5);
+    expect(s[0]).toBe(0);
+    expect(s[s.length - 1]).toBe(0);
+  });
+
+  it("does not sound like the ring of a call: other notes, and over before the ring would ring again", () => {
+    expect(BELL.notes.map(([, f]) => f)).not.toEqual([...RING.tones]);
+    expect(BELL.length).toBeLessThan(RING.period);
   });
 });

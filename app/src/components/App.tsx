@@ -45,8 +45,10 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authClient } from "@/lib/auth-client";
 import {
   accountUnread,
+  addingTitle,
   ApiError,
   appBadgeCount,
+  bellOn,
   call,
   callsSnapshot,
   checkLine,
@@ -57,10 +59,12 @@ import {
   isSelf,
   loadSeen,
   noteShown,
+  pageTitle,
   post,
   readStorage,
   relayOffline,
   runCmd,
+  signedInOnce,
   toLogin,
   unreadInOthers,
   unseenActivity,
@@ -110,6 +114,22 @@ function CountBadge({ n, red }: { n: number; red?: boolean }) {
 
 // The number of what waits on the icon of the installed app (Badging API, Chrome and Edge)
 type BadgeNavigator = Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+
+// Sign in to Microsoft: in the remote browser, or, for an account checked every N hours, with a check that waits for it
+function SignInButton({
+  a,
+  onDesktop,
+  onCheck,
+  ...props
+}: { a: Account; onDesktop: (n: number) => void; onCheck: (a: Account) => void } & Omit<React.ComponentProps<typeof Button>, "onClick">) {
+  const checked = idleChecked(a);
+  return (
+    <Button {...props} disabled={checked && a.nextCheck === 0} onClick={() => (checked ? onCheck(a) : onDesktop(a.slot))}>
+      {checked ? <PowerIcon /> : <ExternalLinkIcon />}
+      {checked ? (a.nextCheck === 0 ? "Check asked" : "Start to sign in") : "Sign in to Microsoft"}
+    </Button>
+  );
+}
 
 export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [acc, setAcc] = useState(0);
@@ -262,16 +282,21 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     };
   }, [acc, openChat, onScreen, applyAccounts, noteActivity, reconnects]);
 
-  // notification tapped while the app is open: switch to the account it comes from
+  // notification tapped while the app is open: switch to the account it comes from. A message that alerts: the service
+  // worker asks whether this page rings the bell, and shows the notification quiet when it does (sw.js)
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
     const onMessage = (e: MessageEvent) => {
+      if (e.data?.type === "bell") {
+        void (ringer && bellOn() ? ringer.bell() : Promise.resolve(false)).then((played) => e.ports[0]?.postMessage({ played }));
+        return;
+      }
       const n = Number(e.data?.acc);
       if (n) selectAccount(n);
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
-  }, [selectAccount]);
+  }, [selectAccount, ringer]);
 
   useEffect(() => {
     void pushState().then((s) => setPushOff(s === "off"));
@@ -433,9 +458,15 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     if (badge === null || !nav.setAppBadge) return;
     void (badge ? nav.setAppBadge(badge) : nav.clearAppBadge?.())?.catch(() => undefined);
   }, [badge, onScreen]);
+  // and in the title of the page, for the tab and the taskbar
+  useEffect(() => {
+    if (badge !== null) document.title = pageTitle(badge);
+  }, [badge]);
   const canAdd = !!accounts && accounts.length < limits.max && limits.free > 0;
   const addLabel = canAdd ? "Add a Teams account" : accounts && accounts.length >= limits.max ? `At most ${limits.max} accounts` : "No free slot on this server";
   const noAccounts = !!accounts && !accounts.length;
+  // the account on screen, while it was never signed in to Microsoft: an account still being added
+  const beingAdded = current && !current.relay && !signedInOnce(current) ? current : null;
   // on a phone the list and the chat (or the remote desktop) take the whole screen in turn
   const phoneShowsMain = pane === "desktop" || !!openChat;
 
@@ -600,25 +631,19 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             ) : (
               <Alert className="border-warning/40 bg-warning/10">
                 <TriangleAlertIcon className="text-warning" />
-                <AlertTitle>Microsoft sign-in needed</AlertTitle>
+                <AlertTitle>{signedInOnce(current) ? "Microsoft sign-in needed" : addingTitle(accounts ?? [])}</AlertTitle>
                 <AlertDescription>
                   {idleChecked(current) ? (
                     <p>
                       Found by the check{current.checked ? ` of ${clock(current.checked)}` : ""}. Start a check: its browser waits ten minutes for the
                       sign-in, with password and MFA in the remote Teams.
                     </p>
-                  ) : (
+                  ) : signedInOnce(current) ? (
                     <p>Sign in with password and MFA in the remote browser of this account.</p>
+                  ) : (
+                    <p>Sign in to Microsoft with password and MFA in the remote browser of this account: its chats show up within a minute.</p>
                   )}
-                  <Button
-                    size="sm"
-                    className="mt-2 h-9 md:h-8"
-                    disabled={idleChecked(current) && current.nextCheck === 0}
-                    onClick={() => (idleChecked(current) ? void checkNow(current) : openDesktop(current.slot))}
-                  >
-                    {idleChecked(current) ? <PowerIcon /> : <ExternalLinkIcon />}
-                    {idleChecked(current) ? (current.nextCheck === 0 ? "Check asked" : "Start to sign in") : "Sign in to Microsoft"}
-                  </Button>
+                  <SignInButton a={current} size="sm" className="mt-2 h-9 md:h-8" onDesktop={openDesktop} onCheck={(a) => void checkNow(a)} />
                 </AlertDescription>
               </Alert>
             )}
@@ -730,13 +755,20 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
                 <EmptyMedia variant="icon">
                   <MessagesSquareIcon />
                 </EmptyMedia>
-                <EmptyTitle>{noAccounts ? "Welcome to TeamsRelay" : "Select a conversation"}</EmptyTitle>
+                <EmptyTitle>{noAccounts ? "Welcome to TeamsRelay" : beingAdded ? addingTitle(accounts ?? []) : "Select a conversation"}</EmptyTitle>
                 <EmptyDescription>
                   {noAccounts
                     ? "Add your first Teams account from the panel on the left."
-                    : `The chats of ${current ? accName(current) : "this account"} are on the left. Messages you send here go out from Teams.`}
+                    : beingAdded
+                      ? "Sign in to Microsoft in the remote browser of this account, with password and MFA: its chats show up here within a minute."
+                      : `The chats of ${current ? accName(current) : "this account"} are on the left. Messages you send here go out from Teams.`}
                 </EmptyDescription>
               </EmptyHeader>
+              {beingAdded && needsLogin(beingAdded) && (
+                <EmptyContent>
+                  <SignInButton a={beingAdded} className="h-10 md:h-9" onDesktop={openDesktop} onCheck={(a) => void checkNow(a)} />
+                </EmptyContent>
+              )}
             </Empty>
           ))}
         {pane === "desktop" && phoneNav}

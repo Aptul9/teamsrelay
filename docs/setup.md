@@ -46,7 +46,7 @@ An administrator manages users and can free a slot. The chats and the desktop of
 
 ## 5. Teams accounts
 
-1. Account menu → **Add a Teams account**. The account gets its browser and agent; Teams takes up to two minutes to load.
+1. Account menu → **Add a Teams account**. The account gets its browser and agent; Teams takes up to two minutes to load. Until its first sign-in it shows as *New Teams account*, under **Add your first Teams account** (or **Finish adding this Teams account** next to accounts already signed in).
 2. **Sign in to Microsoft** (button of the banner, or account menu): the remote desktop opens with the window of the account in front, on the Microsoft login. On a PC it opens in a new tab, on a phone or tablet in the **Desktop** view. Sign in with password and MFA.
 3. Set the language of Teams web to **English**: the agent reads some English texts.
 4. Back in the app, the chat list appears and the status pill turns green within a minute.
@@ -66,6 +66,10 @@ TeamsRelay is a PWA: installed from the browser, it opens like an app, with icon
 - **PC**: any current browser, chats on the left and the open conversation on the right. The remote desktop opens in a browser tab. To hear incoming calls, install the app (the **Install** icon at the right of the address bar, Chrome or Edge): the installed app rings without a click, a tab only after a click or a key press in it since it loaded. In Chrome, **Settings** → **Performance** → **Always keep these sites active** → **Add** the address of TeamsRelay, so that Memory Saver never puts it to sleep.
 
 The status panel shows how many devices of the user receive notifications. A device receives the notifications of every Teams account of its user; with more than one account, the title of a notification ends with the organization of its account (its email when Teams shows none), and a tap opens the app on that account.
+
+While TeamsRelay is open, installed or in a tab, even in the background, a new message rings a bell of the app instead of the sound of the device, and its notification comes quiet; with the app closed the device plays its own sound. **Settings** → **Notifications on this device** → **Bell for new messages** turns it off on that device, **Play** tries it. A tab plays sound only after a click or a key press in it since it loaded: until then the device sound stays.
+
+The title of the page counts what waits in every account, as the icon of the installed app does: **(5) TeamsRelay**. A call missed on an account always on arrives as a notification of its own a few seconds after it ends (*Missed call from Anna Rossi*), and counts in red on the **Calls** tab.
 
 An incoming Teams call arrives as a notification that alerts again every 5 s while the call rings and turns quiet when it stops ("Call from Anna Rossi, ended after 9 s"); an iPhone gets one notification when the call starts and one when it ends. Its sound is the one of the device. On Android it can be told apart from other apps: long-press a TeamsRelay notification, open its settings and pick a sound (it applies to messages too). Only accounts whose browser runs can see a call (see [limitations](limitations.md)).
 

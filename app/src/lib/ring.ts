@@ -16,6 +16,46 @@ export const RING = {
   ramp: 0.01,
 } as const;
 
+// The bell of a new message, made in the page too and played once: two notes a fifth apart (A5, E6), struck like a
+// small bell and fading away, short and lower than the ring so that a message never sounds like a call
+export const BELL = {
+  // seconds of the whole bell
+  length: 1.2,
+  // when each note is struck (seconds) and its pitch (Hz)
+  notes: [
+    [0, 880],
+    [0.16, 1318.5],
+  ],
+  // overtones of a small bell: ratio to the note, and loudness
+  partials: [
+    [1, 1],
+    [2.76, 0.3],
+  ],
+  // seconds for a note to fall to a third of its loudness (1/e)
+  decay: 0.22,
+  // peak of full scale for both notes together, and seconds of rise of a note and of fade at the end (no click)
+  level: 0.45,
+  attack: 0.004,
+  fade: 0.02,
+} as const;
+
+export function bellSamples(rate: number): Float32Array<ArrayBuffer> {
+  const s = new Float32Array(Math.round(BELL.length * rate));
+  const norm = BELL.partials.reduce((n, [, loud]) => n + loud, 0);
+  for (const [start, pitch] of BELL.notes) {
+    for (let i = Math.round(start * rate); i < s.length; i++) {
+      const t = i / rate - start;
+      const envelope = Math.min(1, t / BELL.attack) * Math.exp(-t / BELL.decay);
+      let tone = 0;
+      for (const [ratio, loud] of BELL.partials) tone += loud * Math.sin(2 * Math.PI * pitch * ratio * t);
+      s[i] += (BELL.level / BELL.notes.length) * envelope * (tone / norm);
+    }
+  }
+  const fade = Math.round(BELL.fade * rate);
+  for (let i = Math.max(0, s.length - fade); i < s.length; i++) s[i] *= (s.length - 1 - i) / fade;
+  return s;
+}
+
 export function ringSamples(rate: number): Float32Array<ArrayBuffer> {
   const s = new Float32Array(Math.round(RING.period * rate));
   for (const [from, to] of RING.bursts) {
@@ -40,6 +80,9 @@ export class Ringer {
   private out: AudioNode | null = null;
   private buffer: AudioBuffer | null = null;
   private src: AudioBufferSourceNode | null = null;
+  private bellBuffer: AudioBuffer | null = null;
+  // bells playing now: the context keeps running until the last one ends
+  private readonly bells = new Set<AudioBufferSourceNode>();
   private ok = false;
   private readonly listeners = new Set<() => void>();
   private detach = () => {};
@@ -69,10 +112,14 @@ export class Ringer {
     this.update();
   }
 
-  // From a click, a tap or a key press: the browser lets the context run from now on
-  allow() {
-    if (this.ok) return;
-    void this.ctx?.resume().then(() => this.update(), () => undefined);
+  // From a click, a tap or a key press: the browser lets the context run from now on. Settled once it runs, or once
+  // the browser refused.
+  allow(): Promise<void> {
+    if (this.ok || !this.ctx) return Promise.resolve();
+    return this.ctx.resume().then(
+      () => this.update(),
+      () => undefined,
+    );
   }
 
   // Loops the ring from its start until stop(); silent until the page may play
@@ -94,16 +141,45 @@ export class Ringer {
     this.src.stop();
     this.src.disconnect();
     this.src = null;
-    if (this.ok) void this.ctx?.suspend().catch(() => undefined);
+    this.rest();
+  }
+
+  // Plays the bell of a new message once, beside the ring if a call rings. True once it plays; false when the page
+  // may not play sound yet (a tab not clicked since it loaded) or the context does not run, and then the notification
+  // keeps the sound of the device (sw.js).
+  async bell(): Promise<boolean> {
+    const ctx = this.context();
+    if (!ctx || !this.out || !this.ok) return false;
+    this.bellBuffer ??= this.makeBuffer(ctx, bellSamples);
+    const src = ctx.createBufferSource();
+    src.buffer = this.bellBuffer;
+    src.connect(this.out);
+    src.onended = () => {
+      src.disconnect();
+      this.bells.delete(src);
+      this.rest();
+    };
+    this.bells.add(src);
+    src.start();
+    const running = await ctx.resume().then(
+      () => ctx.state === "running",
+      () => false,
+    );
+    // never later: a bell the context plays only once a call rings would come out of place
+    if (!running) src.stop();
+    return running;
   }
 
   close() {
     this.stop();
+    for (const b of this.bells) b.stop();
+    this.bells.clear();
     this.detach();
     void this.ctx?.close().catch(() => undefined);
     this.ctx = null;
     this.out = null;
     this.buffer = null;
+    this.bellBuffer = null;
     this.ok = false;
   }
 
@@ -117,14 +193,14 @@ export class Ringer {
     return ctx;
   }
 
-  private makeBuffer(ctx: AudioContext): AudioBuffer {
-    const samples = ringSamples(ctx.sampleRate);
+  private makeBuffer(ctx: AudioContext, samplesOf = ringSamples): AudioBuffer {
+    const samples = samplesOf(ctx.sampleRate);
     const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate);
     buffer.copyToChannel(samples, 0);
     return buffer;
   }
 
-  // A context that runs has been allowed; with nothing to play it rests until a call rings
+  // A context that runs has been allowed; with nothing to play it rests until a call rings or a message comes
   private update() {
     const ctx = this.ctx;
     if (ctx?.state !== "running") return;
@@ -133,6 +209,10 @@ export class Ringer {
       this.detach();
       for (const fn of this.listeners) fn();
     }
-    if (!this.src) void ctx.suspend().catch(() => undefined);
+    this.rest();
+  }
+
+  private rest() {
+    if (this.ok && !this.src && !this.bells.size) void this.ctx?.suspend().catch(() => undefined);
   }
 }
