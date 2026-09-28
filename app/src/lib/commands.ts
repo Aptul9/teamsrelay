@@ -28,3 +28,10 @@ export function queue(slot: number, type: CommandType, arg1 = "", arg2 = ""): nu
   if (why) throw new HttpError(409, why);
   return withSlot(slot, (r) => r.enqueue(type, arg1, arg2));
 }
+
+// The same, but a request sent again while its command still waits (a double tap) gets that command
+export function queueOnce(slot: number, type: CommandType, arg1 = "", arg2 = ""): number {
+  const why = idleReason(slot);
+  if (why) throw new HttpError(409, why);
+  return withSlot(slot, (r) => r.enqueueOnce(type, arg1, arg2));
+}

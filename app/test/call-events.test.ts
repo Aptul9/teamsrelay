@@ -70,6 +70,22 @@ describe("calls ringing in the accounts of a user", () => {
     expect(readers.ringing([slot(4)], NOW)).toEqual([{ acc: 4, caller: "", since: NOW }]);
   });
 
+  it("lists a call in progress too, marked active, until the agent says it is over or stops seeing it", () => {
+    keep(1, { caller: "Anna Rossi", since: NOW - 3000, seen: NOW, ringing: true });
+    const talk = (n: number, row: object) => {
+      const db = createSlotDb(path.join(dir, String(n), "messages.db"));
+      db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.inCall, JSON.stringify(row));
+      db.close();
+    };
+    talk(2, { caller: "Luca Bianchi", since: NOW - 60_000, seen: NOW - 1000, active: true });
+    talk(3, { caller: "Marta Verdi", since: NOW - 60_000, seen: NOW - 1000, active: false });
+    talk(4, { caller: "Paolo Neri", since: NOW - 60_000, seen: NOW - CALL_FRESH_FOR * 1000 - 1, active: true });
+    expect(readers.ringing([slot(1), slot(2), slot(3), slot(4)], NOW)).toEqual([
+      { acc: 1, caller: "Anna Rossi", since: NOW - 3000 },
+      { acc: 2, caller: "Luca Bianchi", since: NOW - 60_000, active: true },
+    ]);
+  });
+
   it("reads what the agent writes next, and nothing from a broken row", () => {
     keep(1, { caller: "Anna Rossi", since: NOW, seen: NOW, ringing: true });
     expect(readers.ringing([slot(1)], NOW)).toHaveLength(1);
