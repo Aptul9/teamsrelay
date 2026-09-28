@@ -344,6 +344,21 @@ describe("agent loop", () => {
     ]);
   });
 
+  // right after a start the list is not drawn yet: a sweep for the chat found nothing and logged it not in the list
+  it("parks Teams on a chat only once Teams shows its chat list, not while it starts or asks for a sign-in", () => {
+    const a = agent();
+    const job = agentJobs(a).find((j) => j.name === "parking");
+    const want = { onTeams: true, want: "Anna Rossi (You)" };
+    a.health = null;
+    expect(job?.when?.(want)).toBe(false);
+    a.health = { cdp: "ok", teams: "loading", overall: "yellow", ts: 1 };
+    expect(job?.when?.(want)).toBe(false);
+    a.health = { cdp: "ok", teams: "login", overall: "red", ts: 1 };
+    expect(job?.when?.(want)).toBe(false);
+    a.health = { cdp: "ok", teams: "ok", overall: "green", ts: 1 };
+    expect(job?.when?.(want)).toBe(true);
+  });
+
   it("reads the Activity feed once Teams shows a side bar it can click, as soon as that happens after a start", () => {
     const a = agent();
     const job = agentJobs(a).find((j) => j.name === "activity");
