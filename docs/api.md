@@ -27,13 +27,13 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 
 | Method | Path | Answer |
 |---|---|---|
-| GET | `/api/events?a=N&chat=<name>` | server-sent events: `accounts`, `health`, `chats`, `activity`, `calllog` (`[{caller, since, seconds}]`, the calls the agent saw ring, newest first, `since` in ms), `messages` (`{chat, rows}`), each sent when its content changes; `calls` (`[{acc, caller, since, active?, muted?}]`) lists the calls ringing now in every account of the user and the calls in progress (`active`), whichever `a` names; `muted` is the mute of Teams for a call in progress, absent while the agent cannot read it |
+| GET | `/api/events?a=N&chat=<name>` | server-sent events: `accounts`, `health`, `chats`, `activity`, `calllog` (`[{caller, since, seconds}]`, the calls the agent saw ring, newest first, `since` in ms), `messages` (`{chat, rows, open}`: `open` the last open of that chat, `{id, status, reason?}` with `status` `pending`, `done` or `failed`, null before the first; read before the rows, so a `done` open comes with rows saved no earlier than its own), each sent when its content changes; `calls` (`[{acc, caller, since, active?, muted?}]`) lists the calls ringing now in every account of the user and the calls in progress (`active`), whichever `a` names; `muted` is the mute of Teams for a call in progress, absent while the agent cannot read it |
 | GET | `/api/chats` | `name, preview, tm, unread, mention, muted, av` |
 | GET | `/api/messages?name=<chat>` | per message `mid, author, text, mine, reacts` and, when present, `html, quote, images, files, reactions, status, readby, edited, deleted, mentionsMe, av` |
 | GET | `/api/activity` | `{ts, items}`, items with `id, kind, actor, title, emoji, preview, tm, chat, channel, unread, av`; `kind` is `reaction`, `mention`, `reply`, `task`, `team`, `call`, `meeting` or `message` |
 | GET | `/api/feed` | history of the notifications sent |
 | GET | `/api/health` | health, see below |
-| GET | `/api/cmd/{id}` | `{status, result}`, `status` is `pending`, `done` or `failed` |
+| GET | `/api/cmd/{id}` | `{status, result}`, `status` is `pending`, `done` or `failed`; a failed `open` has `result` `{reason}`: `signed-out` or `loading` (Teams untouched), `not-listed`, `not-shown`, `unreadable`; none when it waited too long or the agent restarted while it ran |
 | GET | `/media/{file}?a=N` | images of messages and profile pictures |
 | GET | `/files/{file}?a=N&name=<name>` | downloaded attachment, with its original name |
 
@@ -41,7 +41,7 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 
 | Method | Path | Body |
 |---|---|---|
-| POST | `/api/open` | `{name}`: opens the chat in the remote Teams |
+| POST | `/api/open` | `{name}`: opens the chat in the remote Teams. Done once Teams shows it and its messages are saved |
 | POST | `/api/send` | `{name, text, mentions?}`: `mentions` lists the people tagged in `text` as `@name`, by the names `/api/members` gives (up to 20); each one is picked in the Teams list of people when sent |
 | POST | `/api/members` | `{name}`: `{names, id?}`, the people of the chat that can be tagged, as Teams names them, you excluded. When the names are older than an hour the agent reads them again: `id` is that command, and the answer after it has the new names |
 | POST | `/api/sendimage` | multipart form: `name`, `file` (PNG, JPEG, GIF or WebP, recognized by content, up to 10 MB), `text` (caption, optional). 413 above the size, 415 for another type. The image is sent as if pasted in Teams |
