@@ -47,7 +47,7 @@ export class MicSender {
     await addWorklet(ctx, MIC);
     if (run !== this.run) return;
     const node = new AudioWorkletNode(ctx, "call-audio-mic", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: "explicit" });
-    node.port.onmessage = (e: MessageEvent<Float32Array>) => this.samples(e.data);
+    node.port.onmessage = (e: MessageEvent<Float32Array<ArrayBuffer>>) => this.samples(e.data);
     // a node the graph does not pull is never run: into the speakers, silent
     const silent = ctx.createGain();
     silent.gain.value = 0;
@@ -93,7 +93,7 @@ export class MicSender {
     return encoder;
   }
 
-  private samples(chunk: Float32Array) {
+  private samples(chunk: Float32Array<ArrayBuffer>) {
     const encoder = this.encoder;
     const frames = chunk.length;
     if (!this.muted && encoder?.state === "configured") {
