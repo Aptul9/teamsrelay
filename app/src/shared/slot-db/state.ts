@@ -31,6 +31,9 @@ export const STATE = {
   inCall: "in_call",
   // JSON RelayLink: an account on another computer, written by the web app at each sync of its relay (src/lib/relay.ts)
   relay: "relay",
+  // JSON Desktop: when the owner opened the remote desktop of the account from the app (/api/desktop/N); the agent
+  // leaves Teams to the owner for a while (src/agent/logic/owner.ts)
+  desktop: "desktop",
 } as const;
 
 // JSON result of command <id>, e.g. DownloadResult
@@ -44,6 +47,10 @@ export const selfCheckKey = (day: string, half: "am" | "pm") => `hc_${day}_${hal
 
 export const Viewing = z.object({ chat: z.string().catch(""), ts: z.number().catch(0) });
 export type Viewing = z.infer<typeof Viewing>;
+
+// ts: Unix seconds
+export const Desktop = z.object({ ts: z.number().catch(0) });
+export type Desktop = z.infer<typeof Desktop>;
 
 export const Watch = z.object({ since: z.number().catch(0), alerted: z.boolean().catch(false) });
 export type Watch = z.infer<typeof Watch>;
@@ -126,6 +133,8 @@ export const AgentHealth = z.object({
   last_scan_ts: z.number().optional(),
   watcher: z.enum(["ok", "stale"]).optional(),
   overall: z.enum(["green", "yellow", "red"]),
+  // the owner uses Teams (remote desktop, window of the local relay): the agent moves it nowhere on its own
+  desktop: z.literal("in-use").optional(),
 });
 export type AgentHealth = z.infer<typeof AgentHealth>;
 

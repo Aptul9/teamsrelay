@@ -170,4 +170,17 @@ describe("relay against a Teams page", () => {
       "Teams back: Signed in again: messages are relayed.",
     ]);
   });
+
+  // the owner in the window of the relay: the agent's own sends, reads and presence keeper never count as the owner's
+  // input, a click it did not send does, and the agent then leaves Teams as it is
+  it("leaves Teams to the owner after a click the agent did not send, and says so in its health", async () => {
+    const since = Math.floor(Date.now() / 1000);
+    const h = await until("a fresh health", async () => {
+      const health = (await api("/api/state")).json.health;
+      return health?.ts > since ? health : null;
+    });
+    expect(h.desktop).toBeUndefined();
+    await teams().mouse.click(5, 300);
+    await until("the health in use", async () => (await api("/api/state")).json.health?.desktop === "in-use");
+  }, 60_000);
 });
