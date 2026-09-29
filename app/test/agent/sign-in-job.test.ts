@@ -7,6 +7,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/agent/context";
 import { trySignIn } from "@/agent/jobs/sign-in";
+import { log } from "@/agent/log";
 import type { Notifier } from "@/agent/push/notifier";
 import { SlotStore } from "@/agent/store/slot-store";
 import type { TeamsPage } from "@/agent/teams/page";
@@ -235,7 +236,7 @@ describe("one press of Sign in after a sign-out", () => {
     expect(tried().at).toBe(0);
   });
 
-  it("presses nothing in Teams without exactly one Sign in, and says it once", async () => {
+  it("presses nothing in Teams without exactly one Sign in, and starts no attempt", async () => {
     pages[0].shown.teams = { asks: true, found: 2, at: null };
     const a = agent();
     signedOut();
@@ -243,6 +244,59 @@ describe("one press of Sign in after a sign-out", () => {
     await trySignIn(a);
     await trySignIn(a);
     expect(presses).toEqual([]);
-    expect(tried()).toMatchObject({ pressed: [] });
+    expect(tried().at).toBe(0);
+  });
+
+  // prod, slot 2, 2026-09-29 16:13Z: a start of Teams through the proxy of the tenant read as signed out for 20 s, on
+  // a Teams page still loading: an attempt began there, pressed nothing and held off the next one for 30 min
+  it("starts no attempt while there is neither a Sign in of Teams nor a Microsoft page, as while Teams starts", async () => {
+    pages[0].shown.teams = { asks: false, found: 0, at: null };
+    const a = agent();
+    signedOut();
+    later(SIGN_IN_TRY_AFTER + 10);
+    await trySignIn(a);
+    expect(tried().at).toBe(0);
+    // it shows up later in the same sign-out: the attempt starts then
+    pages[0].shown.teams = { asks: true, found: 1, at };
+    later(5);
+    await trySignIn(a);
+    expect(presses).toEqual(["teams@40,12"]);
+  });
+
+  it("lets an attempt that pressed nothing hold off no later sign-out", async () => {
+    pages[0].shown.teams = { asks: false, found: 0, at: null };
+    popup({ microsoft: { asks: true, accounts: 0, account: null, buttons: 0, button: null } });
+    const a = agent();
+    signedOut();
+    later(SIGN_IN_TRY_AFTER);
+    await trySignIn(a);
+    later(1);
+    await trySignIn(a);
+    expect(tried()).toMatchObject({ pressed: [], microsoft: true });
+    back();
+    pages.pop();
+    pages[0].shown.teams = { asks: true, found: 1, at };
+    later(300);
+    signedOut();
+    later(SIGN_IN_TRY_AFTER);
+    await trySignIn(a);
+    expect(presses).toEqual(["teams@40,12"]);
+  });
+
+  it("lists what a sign-out shows once it lasts as long as the push waits, when nothing started an attempt", async () => {
+    pages[0].shown.teams = { asks: false, found: 0, at: null };
+    const info = vi.spyOn(log, "info");
+    const a = agent();
+    signedOut();
+    later(SIGN_IN_TRY_AFTER);
+    await trySignIn(a);
+    expect(info.mock.calls.filter(([, m]) => m === "sign-in page buttons")).toEqual([]);
+    later(60 - SIGN_IN_TRY_AFTER);
+    store.setState(STATE.loginWatch, JSON.stringify({ since: Math.floor(Date.now() / 1000) - 60, alerted: true }));
+    await trySignIn(a);
+    await trySignIn(a);
+    expect(info.mock.calls.filter(([, m]) => m === "sign-in page buttons")).toHaveLength(1);
+    expect(presses).toEqual([]);
+    info.mockRestore();
   });
 });
