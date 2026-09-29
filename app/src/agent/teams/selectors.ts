@@ -91,6 +91,9 @@ export const SEL = {
   callText: '[id^="cn-calling-main-content-"]',
   // clicked only to answer from the app, only this button of the toast
   callAccept: '[data-testid="calling-notification"] [data-testid="calling-actions"] button[aria-label="Accept with audio"]',
+  // the microphone button of the call in progress, data-state "mic" (live) or "mic-off" (muted); Teams can leave a
+  // hidden one in the page after the call. Clicked only to mute from the app where its shortcut changed nothing.
+  callMic: "#microphone-button",
 
   // Activity feed: the id of an item is in the id of its title, named by aria-labelledby
   feedItem: '[data-tid="activity-feed-list-item"]',

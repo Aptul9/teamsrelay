@@ -1,6 +1,7 @@
 // Page scripts of calls: Teams web shows an incoming call as a toast in the page, with the buttons to answer and
-// decline, and plays its ringtone until the call stops; a call in progress records from the microphone. Nothing here
-// clicks: the answer asked from the app is a click of the agent (../call-actions.ts).
+// decline, and plays its ringtone until the call stops; a call in progress records from the microphone and shows its
+// microphone button, muted or not. Nothing here clicks: the answer and the mute asked from the app are input of the
+// agent (../call-actions.ts).
 // They run inside the Teams page: self-contained, type imports only.
 import type { Selectors, Texts } from "../selectors";
 
@@ -44,4 +45,21 @@ export function micLive(): boolean {
   const live = (w.__teamsMicTracks || []).filter((t) => t.readyState === "live");
   w.__teamsMicTracks = live;
   return live.length > 0;
+}
+
+// Teams' own mute of the call shown in this frame: true muted, false live, null when it cannot be told. Only the
+// microphone buttons on screen count (Teams can leave a hidden one after a call); none, an unknown state or two that
+// disagree give null, and nothing is pressed on null.
+export function micMuted(s: Selectors): boolean | null {
+  const states = new Set(
+    [...document.querySelectorAll<HTMLElement>(s.callMic)]
+      .filter((b) => {
+        const r = b.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      })
+      .map((b) => b.getAttribute("data-state")),
+  );
+  if (states.size !== 1) return null;
+  const [state] = states;
+  return state === "mic-off" ? true : state === "mic" ? false : null;
 }
