@@ -86,7 +86,10 @@ jobs:
         run: |
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
-          got=$("$apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          # a signer is "Signer #1" or, with signatures per range of Android versions, "Signer (minSdkVersion=...)"
+          certs=$("$apksigner" verify --print-certs "$apk")
+          echo "$certs"
+          got=$(echo "$certs" | sed -n 's/^Signer.* certificate SHA-256 digest: //p' | sort -u)
           echo "$apk signed by certificate SHA-256 $got"
           if [ -n "$DEBUG_KEY_SHA256" ] && [ "$got" != "$DEBUG_KEY_SHA256" ]; then
             echo "::error::the APK is not signed with the key of ANDROID_DEBUG_KEYSTORE ($DEBUG_KEY_SHA256)"
