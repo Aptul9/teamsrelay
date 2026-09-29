@@ -1,6 +1,6 @@
 "use client";
 
-import { MicIcon, MicOffIcon, MonitorIcon, PhoneIcon, PhoneIncomingIcon, PhoneOffIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
+import { MicIcon, MicOffIcon, MonitorIcon, PhoneIcon, PhoneIncomingIcon, PhoneOffIcon, SlidersHorizontalIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import type { CallAudioState } from "@/lib/call-audio/call-audio";
@@ -34,7 +34,8 @@ function useRingAllowed(ringer: Ringer | null) {
 // The calls ringing now in every account of the user, on top of the app, with the ring while one of them is not muted.
 // A tap on a call opens its account; Mute silences that call only, and the next one rings again. Answer takes the call
 // on an account of the browsers container; its sound comes to the app (audio), or goes through the remote desktop. A
-// call in progress (active) rings no more and offers the state of its sound with Mute, the desktop and Hang up.
+// call in progress (active) rings no more and offers the state of its sound with Mute, its microphone and speaker
+// (devicesPanel), the desktop and Hang up.
 export function CallBanner({
   calls,
   accounts,
@@ -46,6 +47,7 @@ export function CallBanner({
   audio,
   onMute,
   onTapToHear,
+  devicesPanel,
 }: {
   calls: RingingCall[];
   accounts: Account[] | null;
@@ -57,8 +59,11 @@ export function CallBanner({
   audio?: Record<number, CallAudioState>;
   onMute?: (acc: number, on: boolean) => void;
   onTapToHear?: (acc: number) => void;
+  devicesPanel?: (acc: number) => React.ReactNode;
 }) {
   const [muted, setMuted] = useState<string[]>([]);
+  // the call whose microphone and speaker panel is open
+  const [devicesOf, setDevicesOf] = useState<string | null>(null);
   const allowed = useRingAllowed(ringer);
   const loud = calls.some((c) => !c.active && !muted.includes(callKey(c)));
 
@@ -82,39 +87,56 @@ export function CallBanner({
         if (c.active) {
           const sound = audio?.[c.acc];
           const line = sound ? audioLine(sound) : "";
+          const devicesOpen = devicesOf === key && !!devicesPanel;
           return (
-            <div key={key} role="alert" className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
-              <PhoneIcon className="size-5 shrink-0 text-success" />
-              <div className="min-w-0 flex-1">
-                <button type="button" onClick={() => onSelect(c.acc)} className="block w-full min-w-0 text-left outline-none focus-visible:underline">
-                  <span className="block truncate text-sm font-semibold">{c.caller ? `In call with ${c.caller}` : "Call in progress"}</span>
-                  {!sound?.needsTap && <span className="block truncate text-xs text-muted-foreground">{line ? `${line} (${label})` : `(${label})`}</span>}
-                </button>
-                {sound?.needsTap && onTapToHear && (
-                  <button type="button" onClick={() => onTapToHear(c.acc)} className="flex items-center gap-1 text-xs font-medium text-primary outline-none focus-visible:underline">
-                    <Volume2Icon className="size-3.5" />
-                    Tap to hear
+            <div key={key} role="alert" className="pointer-events-auto w-full max-w-md rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
+              <div className="flex items-center gap-2">
+                <PhoneIcon className="size-5 shrink-0 text-success" />
+                <div className="min-w-0 flex-1">
+                  <button type="button" onClick={() => onSelect(c.acc)} className="block w-full min-w-0 text-left outline-none focus-visible:underline">
+                    <span className="block truncate text-sm font-semibold">{c.caller ? `In call with ${c.caller}` : "Call in progress"}</span>
+                    {!sound?.needsTap && <span className="block truncate text-xs text-muted-foreground">{line ? `${line} (${label})` : `(${label})`}</span>}
                   </button>
+                  {sound?.needsTap && onTapToHear && (
+                    <button type="button" onClick={() => onTapToHear(c.acc)} className="flex items-center gap-1 text-xs font-medium text-primary outline-none focus-visible:underline">
+                      <Volume2Icon className="size-3.5" />
+                      Tap to hear
+                    </button>
+                  )}
+                </div>
+                {sound && sound.link === "live" && onMute && (
+                  <Button size="sm" variant="secondary" className={button} onClick={() => onMute(c.acc, !sound.muted)}>
+                    {sound.muted ? <MicOffIcon /> : <MicIcon />}
+                    {sound.muted ? "Unmute" : "Mute"}
+                  </Button>
+                )}
+                {sound && devicesPanel && (
+                  <Button
+                    size="sm"
+                    variant={devicesOpen ? "secondary" : "ghost"}
+                    className={button}
+                    title="Microphone and speaker"
+                    aria-expanded={devicesOpen}
+                    onClick={() => setDevicesOf(devicesOpen ? null : key)}
+                  >
+                    <SlidersHorizontalIcon />
+                    <span className="sr-only">Devices</span>
+                  </Button>
+                )}
+                {onDesktop && (
+                  <Button size="sm" variant="secondary" className={button} onClick={() => onDesktop(c.acc)}>
+                    <MonitorIcon />
+                    Desktop
+                  </Button>
+                )}
+                {onHangUp && (
+                  <Button size="sm" variant="destructive" className={button} onClick={() => onHangUp(c)}>
+                    <PhoneOffIcon />
+                    Hang up
+                  </Button>
                 )}
               </div>
-              {sound && sound.link === "live" && onMute && (
-                <Button size="sm" variant="secondary" className={button} onClick={() => onMute(c.acc, !sound.muted)}>
-                  {sound.muted ? <MicOffIcon /> : <MicIcon />}
-                  {sound.muted ? "Unmute" : "Mute"}
-                </Button>
-              )}
-              {onDesktop && (
-                <Button size="sm" variant="secondary" className={button} onClick={() => onDesktop(c.acc)}>
-                  <MonitorIcon />
-                  Desktop
-                </Button>
-              )}
-              {onHangUp && (
-                <Button size="sm" variant="destructive" className={button} onClick={() => onHangUp(c)}>
-                  <PhoneOffIcon />
-                  Hang up
-                </Button>
-              )}
+              {devicesOpen && <div className="mt-2.5 border-t pt-2.5">{devicesPanel(c.acc)}</div>}
             </div>
           );
         }

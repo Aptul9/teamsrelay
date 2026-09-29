@@ -212,6 +212,20 @@ describe("call ring where the page may play sound (installed app)", () => {
     await setCalls(c, []);
   });
 
+  it("opens the microphone and speaker panel of a call answered here, and closes it again", async () => {
+    const active = { acc: 2, caller: "Anna Rossi", since: 1_790_000_140_000, active: true };
+    await setCalls(c, [active]);
+    await run(c, `window.setAudio(${JSON.stringify({ 2: { link: "live", mic: "on", muted: false, needsTap: false, micFallback: false, speakerFallback: false } })})`);
+    await until(c, "Sound in the app, microphone on");
+    await until(c, "Devices of account 2", false);
+    await click(c, "[role=alert] button", "Devices");
+    await until(c, "Devices of account 2");
+    await click(c, "[role=alert] button", "Devices");
+    await until(c, "Devices of account 2", false);
+    await run(c, "window.setAudio({})");
+    await setCalls(c, []);
+  });
+
   it("rings the bell of a message once, without a click, then rests again", async () => {
     await until(c, "Luca Bianchi is calling", false);
     const r = await bell(c);

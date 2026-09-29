@@ -9,7 +9,7 @@ import { CALL_END_AFTER, CALL_RING_EVERY, CALL_RING_FOR, CallTracker } from "@/a
 import * as callActions from "@/agent/teams/call-actions";
 import { CALL_SEEN_EVERY, STATE } from "@/shared/slot-db/state";
 
-vi.mock("@/agent/teams/call-actions", () => ({ acceptCall: vi.fn(), hangUp: vi.fn() }));
+vi.mock("@/agent/teams/call-actions", () => ({ acceptCall: vi.fn(), acceptShortcut: vi.fn(), hangUp: vi.fn() }));
 
 describe("call tracker", () => {
   let now = 1_790_000_000_000;
@@ -267,6 +267,7 @@ describe("call watch", () => {
 describe("answer and hang-up asked from the app", () => {
   beforeEach(() => {
     vi.mocked(callActions.acceptCall).mockReset();
+    vi.mocked(callActions.acceptShortcut).mockReset();
     vi.mocked(callActions.hangUp).mockReset();
   });
 
@@ -347,7 +348,7 @@ describe("answer and hang-up asked from the app", () => {
     expect(callActions.acceptCall).not.toHaveBeenCalled();
   });
 
-  it("fails an answer whose click found no button, or whose toast stayed after the click", async () => {
+  it("fails an answer only when the call still rings after the click and the shortcut", async () => {
     const p = phone();
     p.toast.on = true;
     await p.tick();
@@ -357,6 +358,67 @@ describe("answer and hang-up asked from the app", () => {
     const stayed = p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
     await p.tick();
     expect([p.status(noButton), p.status(stayed)]).toEqual(["failed", "failed"]);
+    expect(callActions.acceptShortcut).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers with the shortcut of Teams web when no part of Accept can be clicked", async () => {
+    const p = phone();
+    p.toast.on = true;
+    await p.tick();
+    vi.mocked(callActions.acceptCall).mockResolvedValueOnce(false);
+    vi.mocked(callActions.acceptShortcut).mockImplementationOnce(async () => void (p.toast.on = false));
+    const id = p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
+    await p.tick();
+    expect(p.status(id)).toBe("done");
+    expect(callActions.acceptShortcut).toHaveBeenCalledTimes(1);
+  });
+
+  it("presses the shortcut once when the toast stays after the click", async () => {
+    const p = phone();
+    p.toast.on = true;
+    await p.tick();
+    vi.mocked(callActions.acceptCall).mockResolvedValueOnce(true);
+    vi.mocked(callActions.acceptShortcut).mockImplementationOnce(async () => void (p.toast.on = false));
+    const id = p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
+    await p.tick();
+    expect(p.status(id)).toBe("done");
+    expect(callActions.acceptShortcut).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts the call answered as soon as the page records, though the toast still shows, and presses nothing more", async () => {
+    const p = phone();
+    p.toast.on = true;
+    await p.tick();
+    vi.mocked(callActions.acceptCall).mockImplementationOnce(async () => {
+      p.mic.on = true;
+      return true;
+    });
+    const id = p.queue("answer", JSON.stringify({ since: p.ringingSince() }));
+    await p.tick();
+    expect(p.status(id)).toBe("done");
+    expect(callActions.acceptShortcut).not.toHaveBeenCalled();
+  });
+
+  it("tells the loop when a call in progress is over: Teams may leave a post-meeting page in its main window", async () => {
+    const p = phone();
+    p.mic.on = true;
+    await p.tick();
+    expect(p.a.callOverAt).toBeUndefined();
+    p.mic.on = false;
+    await p.tick();
+    expect(p.a.callOverAt).toBeGreaterThan(0);
+  });
+
+  it("keeps the loop off the page while a call rings", async () => {
+    const p = phone();
+    await p.tick();
+    expect(p.a.ringing).toBeFalsy();
+    p.toast.on = true;
+    await p.tick();
+    expect(p.a.ringing).toBe(true);
+    p.toast.on = false;
+    for (let i = 0; i < CALL_END_AFTER + 1; i++) await p.tick();
+    expect(p.a.ringing).toBe(false);
   });
 
   it("ends the notification of a call answered here as answered, not as missed", async () => {

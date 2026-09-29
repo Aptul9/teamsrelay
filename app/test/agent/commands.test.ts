@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { COMMAND_MAX_AGE, runCommand, runPendingCommands } from "@/agent/commands";
 import type { Agent } from "@/agent/context";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
+import { backToChats } from "@/agent/jobs/page-setup";
 import { agentJobs } from "@/agent/loop";
 import { Scheduler } from "@/agent/scheduler";
 import type { Media } from "@/agent/media";
@@ -13,6 +14,7 @@ import * as actions from "@/agent/teams/actions";
 import * as mentionActions from "@/agent/teams/mentions";
 import type { TeamsPage } from "@/agent/teams/page";
 import type { PageMessage } from "@/agent/teams/scripts/conversation";
+import { SEL } from "@/agent/teams/selectors";
 import { membersKey, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
@@ -346,6 +348,7 @@ describe("agent loop", () => {
     expect(jobs).toEqual([
       ["page", "1+0", false],
       ["input", "60s", false],
+      ["back-to-chats", "1+0", false],
       ["parking", "5+2", false],
       ["hook", "1+0", false],
       ["commands", "1+0", false],
@@ -441,9 +444,73 @@ describe("agent loop", () => {
       expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, true]));
       a.inCall = true;
       expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, false]));
+      // and while a call rings: the answer clicks on the page
+      a.inCall = false;
+      a.ringing = true;
+      expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, false]));
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // Teams shows an answered call in its main window, and may leave a post-meeting page there once it ends: the side bar
+  // shows, no chat list, the health says loading, and every job that moves Teams waits for a Teams "ok"
+  it("goes back to the chat list when the side bar shows without it: 3 s after a call, after 2 min otherwise, never in a call", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 8, 29, 9, 0));
+      const a = agent();
+      a.health = { cdp: "ok", teams: "loading", overall: "yellow", ts: 1 };
+      a.railReady = true;
+      const job = agentJobs(a).find((j) => j.name === "back-to-chats");
+      const ctx = { onTeams: true, want: "" };
+      const when = () => job?.when?.(ctx);
+      a.loadingSince = Date.now();
+      expect(when()).toBe(false);
+      a.callOverAt = Date.now() - 2_000;
+      expect(when()).toBe(false);
+      a.callOverAt = Date.now() - 3_000;
+      expect(when()).toBe(true);
+      a.ringing = true;
+      expect(when()).toBe(false);
+      a.ringing = false;
+      a.inCall = true;
+      expect(when()).toBe(false);
+      a.inCall = false;
+      a.callOverAt = Date.now() - 200_000;
+      expect(when()).toBe(false);
+      a.loadingSince = Date.now() - 120_000;
+      expect(when()).toBe(true);
+      a.railReady = false;
+      expect(when()).toBe(false);
+      a.railReady = true;
+      a.health = { ...a.health, teams: "ok" };
+      expect(when()).toBe(false);
+      // a try that brought no list back: again 15 s later, not 2 min
+      a.health = { ...a.health, teams: "loading" };
+      a.loadingSince = Date.now();
+      a.backTries = 1;
+      a.backAt = Date.now() - 14_000;
+      expect(when()).toBe(false);
+      a.backAt = Date.now() - 15_000;
+      expect(when()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clicks the Chat button of the side bar to go back, and reloads Teams after three tries that brought no list back", async () => {
+    const a = agent();
+    const clicked: string[] = [];
+    let reloaded = 0;
+    a.tp = { page: { reload: async () => void reloaded++ }, clickRail: async (sel: string) => void clicked.push(sel) } as unknown as TeamsPage;
+    for (let i = 0; i < 3; i++) await backToChats(a);
+    expect(clicked).toEqual([SEL.chatView, SEL.chatView, SEL.chatView]);
+    expect(reloaded).toBe(0);
+    await backToChats(a);
+    expect(reloaded).toBe(1);
+    expect(a.backTries).toBe(0);
+    expect(clicked).toHaveLength(3);
   });
 
   it("runs no automatic check of the day on an account the web app starts only to check it", () => {
@@ -463,6 +530,6 @@ describe("agent loop", () => {
   it("leaves out the Activity feed and Read by for an app that does not show them", () => {
     const a = agent();
     a.config = { ...a.config, activity: false, readBy: false };
-    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "input", "parking", "hook", "commands", "chats-full", "chats", "identity", "health", "conversation", "media", "self-check"]);
+    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "input", "back-to-chats", "parking", "hook", "commands", "chats-full", "chats", "identity", "health", "conversation", "media", "self-check"]);
   });
 });

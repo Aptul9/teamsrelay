@@ -43,6 +43,38 @@ afterEach(() => {
 
 const later = (seconds: number) => vi.setSystemTime(Date.now() + seconds * 1000);
 
+describe("health of a Teams page away from its chats", () => {
+  // the side bar shows (Activity clickable) but no chat list: since when, for the job that goes back to the chats
+  function away(ready: { domReady: boolean }) {
+    const a = agent();
+    a.tp = {
+      page: {
+        url: () => "https://teams.cloud.microsoft/v2/",
+        evaluate: async (fn: { name: string }) =>
+          fn.name === "probePage" ? { reduced: false, domReady: ready.domReady, hookInstalled: true, presence: "available" } : fn.name === "uncoveredPoint" ? { x: 30, y: 60 } : 0,
+      },
+    } as unknown as TeamsPage;
+    return a;
+  }
+
+  it("notes since when the side bar shows without the chat list, and forgets it with the list back, tries included", async () => {
+    const ready = { domReady: false };
+    const a = away(ready);
+    await updateHealth(a);
+    expect(a.health?.teams).toBe("loading");
+    const since = a.loadingSince;
+    expect(since).toBe(Date.now());
+    later(10);
+    await updateHealth(a);
+    expect(a.loadingSince).toBe(since);
+    a.backTries = 2;
+    ready.domReady = true;
+    await updateHealth(a);
+    expect(a.loadingSince).toBeUndefined();
+    expect(a.backTries).toBe(0);
+  });
+});
+
 describe("health without a Teams tab", () => {
   it("is loading on a blank tab and a sign-in on any other page, in a row the app reads", async () => {
     const a = agent();

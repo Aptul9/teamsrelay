@@ -42,6 +42,14 @@ export type Agent = {
   checkedOnly?: () => boolean;
   // a call is in progress: the Teams page records from the microphone (src/agent/jobs/calls.ts)
   inCall?: boolean;
+  // a call rings: its toast shows (src/agent/jobs/calls.ts)
+  ringing?: boolean;
+  // when the last call in progress ended (ms): Teams shows a call in its main window and may leave a post-meeting page
+  callOverAt?: number;
+  // since when the side bar of Teams shows without the chat list (ms), and the tries to go back to it (backToChats)
+  loadingSince?: number;
+  backTries?: number;
+  backAt?: number;
 };
 
 export const nowSeconds = () => Math.floor(Date.now() / 1000);

@@ -63,7 +63,7 @@ Tests: `app/test/agent/page-*.test.ts` run every page script in Chrome, on hand-
 
 ## Incoming call
 
-Seen on 2026-09-27 on slot 2 (behind Defender for Cloud Apps) with 1:1 audio calls from a person of another organization; a video call and a group call were not seen. The fixture `call-toast.html` was rebuilt from those probes (attributes, texts and nesting as seen, name invented), not captured with the script. The only click on the toast is *Accept with audio*, when the owner answers from the app (`SEL.callAccept`, a real click through CDP).
+Seen on 2026-09-27 on slot 2 (behind Defender for Cloud Apps) with 1:1 audio calls from a person of another organization; a video call and a group call were not seen. The fixture `call-toast.html` was rebuilt from those probes (attributes, texts and nesting as seen, name invented), not captured with the script. The only click on the toast is *Accept with audio*, when the owner answers from the app (`SEL.callAccept`): a real click, CDP mouse events at a point of the button nothing covers, sent at once. Teams animates the toast while it rings, and a click that waited for the button to hold still (Playwright's) waited 3 s on prod and landed after its own timeout (2026-09-29). Where no part of Accept can be clicked, or its toast stays 1.5 s after the click, the Accept shortcut of Teams web follows, Alt+Shift+S; the answer counts once the toast is gone or a page records.
 
 | Element | Selector |
 |---|---|
@@ -74,6 +74,8 @@ Seen on 2026-09-27 on slot 2 (behind Defender for Cloud Apps) with 1:1 audio cal
 | Afterwards | the Activity feed lists *Missed call from Anna Rossi* for a missed call, nothing for one taken by voicemail |
 | Call in progress | no selector: the page records from the microphone. An init script of every page and frame wraps `navigator.mediaDevices.getUserMedia` and keeps the audio tracks it returns (`__teamsMicTracks`); a track `live` is a call in progress |
 | Hang up | the shortcut of Teams web for ending a call, Ctrl+Shift+H (Microsoft support, *Keyboard shortcuts for Microsoft Teams*, web column; there accept audio call is Alt+Shift+S, decline Ctrl+Shift+D, mute Ctrl+Shift+M), sent to the page that records |
+| Call window | a 1:1 call answered on slot 2 (2026-09-29) showed in the main window, the calling screen in place of the app: nothing depends on it. The sound goes through the one sound server of the desktop whatever the window, the call in progress is read from every Teams page of the browser, and the hang-up goes to the page that records |
+| After the call | the main area can stay on a post-meeting page, `[data-tid="calling-screen-background"]` with a Teams Labs offer (`post-meeting-teams-labs-feature-dismiss` *Not now*, `post-meeting-teams-labs-feature-opt-in` *Try it*): the side bar shows, the chat list does not. The Chat button of the side bar brings the list back at once (the agent clicks it 3 s after the call, reloads Teams after 3 tries); *Try it* is never clicked |
 
 ## Expired session
 
