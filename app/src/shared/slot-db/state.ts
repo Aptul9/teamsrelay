@@ -80,18 +80,20 @@ export type RelayLink = z.infer<typeof RelayLink>;
 
 // The call in progress of the account (src/agent/jobs/calls.ts): caller and since of the call answered, seen: the last
 // time the agent saw the page record from the microphone (ms on the wall clock), rewritten every CALL_SEEN_EVERY
-// seconds while it does; active false once it stopped
+// seconds while it does; active false once it stopped. muted: Teams' own mute of the call, what the others see,
+// absent while the agent cannot read it (rewritten at once when it changes).
 export const InCall = z.object({
   caller: z.string().catch(""),
   since: z.number().catch(0),
   seen: z.number().catch(0),
   active: z.boolean().catch(false),
+  muted: z.boolean().optional().catch(undefined),
 });
 export type InCall = z.infer<typeof InCall>;
 
 // A call of an account of the user (acc: its slot), as the event stream sends it to the app: ringing now, or in
-// progress (active)
-export type RingingCall = { acc: number; caller: string; since: number; active?: boolean };
+// progress (active), with Teams' own mute state when known
+export type RingingCall = { acc: number; caller: string; since: number; active?: boolean; muted?: boolean };
 
 // The call the account is ringing with now, if any
 export function ringingCall(c: CallState | null, now: number): { caller: string; since: number } | null {
@@ -100,9 +102,9 @@ export function ringingCall(c: CallState | null, now: number): { caller: string;
 }
 
 // The call in progress of the account, if any: the agent saw it a moment ago
-export function inCallOf(c: InCall | null, now: number): { caller: string; since: number } | null {
+export function inCallOf(c: InCall | null, now: number): { caller: string; since: number; muted?: boolean } | null {
   if (!c?.active || now - c.seen > CALL_FRESH_FOR * 1000) return null;
-  return { caller: c.caller, since: c.since };
+  return c.muted === undefined ? { caller: c.caller, since: c.since } : { caller: c.caller, since: c.since, muted: c.muted };
 }
 
 // teams as the agent writes it; the web app adds "starting" and "unknown" when the agent is silent

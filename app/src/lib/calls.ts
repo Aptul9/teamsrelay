@@ -6,7 +6,7 @@ import { inCallOf, ringingCall, type RingingCall } from "@/shared/slot-db/state"
 export const runsBrowser = (s: Slot) => !s.stopped && (!s.check_every || s.checking > 0);
 
 // The calls ringing now in the accounts of a user, for the event stream of an open app, which rings for all of them,
-// and the calls in progress (active), which the app offers to hang up.
+// and the calls in progress (active), which the app offers to hang up and to mute, with Teams' own mute state.
 // One connection per account database for the life of the stream, opened once the agent has created it.
 export class CallReaders {
   private readonly readers = new Map<number, SlotReader>();

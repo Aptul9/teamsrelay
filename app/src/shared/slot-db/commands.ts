@@ -24,10 +24,12 @@ export const COMMAND_TYPES = [
   // by the loop, since a round of the loop can take longer than a call rings
   "answer",
   "hangup",
+  // Teams' own mute of the call in progress (arg1 the caller, MuteArgs), run by the call watch as well
+  "mute",
 ] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 
-export const CALL_COMMANDS: readonly CommandType[] = ["answer", "hangup"];
+export const CALL_COMMANDS: readonly CommandType[] = ["answer", "hangup", "mute"];
 
 // pending: queued; done: Teams shows the change; failed: not applied on Teams. Later additions, written by the agent
 // only: running, on Teams now; unconfirmed, the agent stopped while it ran and does not run it again, as it may
@@ -75,6 +77,11 @@ export type MentionArgs = z.infer<typeof MentionArgs>;
 // answer: the call, by when it started ringing (since of the call state, ms)
 export const AnswerArgs = z.object({ since: z.number().catch(0) });
 export type AnswerArgs = z.infer<typeof AnswerArgs>;
+
+// mute: the state asked for, muted (true) or not; the shortcut of Teams toggles, so a state, never a toggle. Anything
+// else is null, which the agent refuses: a broken command never unmutes.
+export const MuteArgs = z.object({ on: z.boolean().nullable().catch(null) });
+export type MuteArgs = z.infer<typeof MuteArgs>;
 
 // Images the app can send, by file extension
 export const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", gif: "image/gif", webp: "image/webp" } as const;

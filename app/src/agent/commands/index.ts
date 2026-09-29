@@ -25,7 +25,7 @@ export type Handler = (a: Agent, cmd: PendingCommand) => Promise<Outcome>;
 // Seconds a command may wait for the agent: older ones end as failed without touching Teams
 export const COMMAND_MAX_AGE = 120;
 
-// The call watch runs answer and hangup (src/agent/jobs/calls.ts): here they end as failed, with nothing done
+// The call watch runs answer, hangup and mute (src/agent/jobs/calls.ts): here they end as failed, with nothing done
 const byCallWatch: Handler = async () => "failed";
 
 // One handler per command type of the web app and of the local relay (src/shared/slot-db/commands.ts)
@@ -47,6 +47,7 @@ export const HANDLERS: Record<CommandType, Handler> = {
   check,
   answer: byCallWatch,
   hangup: byCallWatch,
+  mute: byCallWatch,
 };
 
 // open, resync and recheck end as done whatever happened on Teams, like in the Python agent; an unknown type ends

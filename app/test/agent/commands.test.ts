@@ -316,20 +316,23 @@ describe("command handlers", () => {
     expect(store.commandStatus(id)).toBe("pending");
   });
 
-  it("leaves answer and hangup to the call watch: the loop keeps them pending and never runs them", async () => {
+  it("leaves answer, hangup and mute to the call watch: the loop keeps them pending and never runs them", async () => {
     const answer = store.enqueue("answer", "Anna Rossi", '{"since":1790000000000}');
     const hangup = store.enqueue("hangup");
+    const mute = store.enqueue("mute", "Anna Rossi", '{"on":true}');
     const open = store.enqueue("open");
     await runPendingCommands(agent());
     expect(store.commandStatus(answer)).toBe("pending");
     expect(store.commandStatus(hangup)).toBe("pending");
+    expect(store.commandStatus(mute)).toBe("pending");
     expect(store.commandStatus(open)).toBe("done");
     expect(evaluated.filter((n) => n === "readChatList")).toHaveLength(1);
   });
 
-  it("answer and hangup handed to a handler end as failed with nothing done on Teams", async () => {
+  it("answer, hangup and mute handed to a handler end as failed with nothing done on Teams", async () => {
     expect(await runCommand(agent(), cmd("answer", "Anna Rossi", '{"since":1790000000000}'))).toBe("failed");
     expect(await runCommand(agent(), cmd("hangup", ""))).toBe("failed");
+    expect(await runCommand(agent(), cmd("mute", "Anna Rossi", '{"on":true}'))).toBe("failed");
     expect(evaluated).toEqual([]);
   });
 

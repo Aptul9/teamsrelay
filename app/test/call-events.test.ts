@@ -86,6 +86,20 @@ describe("calls ringing in the accounts of a user", () => {
     ]);
   });
 
+  it("carries Teams' mute state of a call in progress when the agent could read it", () => {
+    const talk = (n: number, row: object) => {
+      const db = createSlotDb(path.join(dir, String(n), "messages.db"));
+      db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.inCall, JSON.stringify(row));
+      db.close();
+    };
+    talk(1, { caller: "Anna Rossi", since: NOW - 60_000, seen: NOW - 1000, active: true, muted: true });
+    talk(2, { caller: "Luca Bianchi", since: NOW - 60_000, seen: NOW - 1000, active: true });
+    expect(readers.ringing([slot(1), slot(2)], NOW)).toEqual([
+      { acc: 1, caller: "Anna Rossi", since: NOW - 60_000, active: true, muted: true },
+      { acc: 2, caller: "Luca Bianchi", since: NOW - 60_000, active: true },
+    ]);
+  });
+
   it("reads what the agent writes next, and nothing from a broken row", () => {
     keep(1, { caller: "Anna Rossi", since: NOW, seen: NOW, ringing: true });
     expect(readers.ringing([slot(1)], NOW)).toHaveLength(1);
