@@ -54,7 +54,7 @@ Date: 2026-09-29. Follows [2026-09-29-call-audio-in-app.md](2026-09-29-call-audi
 - Call watch with a fake page: no press when already in state, when unknown, without a call, with a junk `on`; one key, done on read-back; one click after a key that changed nothing; failed when neither; `in_call.muted` written at once on a change from the desktop and absent when unknown; a muted call without a live track stays in progress, over when the button goes. Loop: `mute` stays pending there.
 - Route: queued once, 400, 409 (no call, another computer), 404.
 - `CallMutes` in node; the banner in Chrome (Mute from Teams' state with no sound in the app, the lines, the press).
-- Prod, before any deploy: a real call to slot 2 read by a harness over DevTools that runs `micMuted` and the key of this change on the live call view, with the probe of 2026-09-29 beside it. After the deploy the owner approves: Mute and Unmute from the app, a mute pressed in the desktop showing in the app.
+- Prod, before any deploy: a real call to slot 2 read by a harness over DevTools that runs `micMuted` and the key of this change on the live call view, with the probe of 2026-09-29 beside it. Done on 2026-09-29: the first call found the live `data-state` (fixed); in the second, `setMute` by the shortcut and a direct click each muted and unmuted within 250 ms, the caller seeing the mute mark twice. After the deploy the owner approves: Mute and Unmute from the app, a mute pressed in the desktop showing in the app.
 
 ## Docs
 
