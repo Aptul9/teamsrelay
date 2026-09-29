@@ -30,6 +30,8 @@ const ADDED_COLUMNS = [
   ["activity", "channel", "INTEGER"],
   ["activity", "av", "TEXT"],
   ["commands", "key", "TEXT"],
+  // the presence of the person of a 1:1 chat as the list shows it (shared/presence), "" otherwise
+  ["chats", "presence", "TEXT"],
 ] as const;
 
 export const SLOT_TABLES = ["messages", "chats", "chat_messages", "commands", "state", "readby", "activity", "calls"] as const;

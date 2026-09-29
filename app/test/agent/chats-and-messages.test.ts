@@ -1,8 +1,11 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CHAT_LIMIT, mergeChats, type ChatEntry } from "@/agent/logic/chats";
 import { extraOf } from "@/agent/logic/messages";
+import { SlotStore } from "@/agent/store/slot-store";
+import { tempDir } from "../helpers";
 
-const chat = (name: string, av = ""): ChatEntry => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av });
+const chat = (name: string, av = "", presence = ""): ChatEntry => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av, presence });
 
 describe("chat list merge", () => {
   const stored = [chat("A", "a.png"), chat("B", "b.png"), chat("C", "c.png")];
@@ -24,6 +27,27 @@ describe("chat list merge", () => {
 
   it("replaces the list with a complete read", () => {
     expect(mergeChats([chat("B"), chat("D")], stored, true)).toEqual([chat("B", "b.png"), chat("D")]);
+  });
+
+  // a presence is as old as the read that saw it: rows out of this read show none rather than a stale one
+  it("keeps the presence of the chats this read saw, and forgets it for the others", () => {
+    const known = [chat("A", "", "away"), chat("B", "", "available")];
+    expect(mergeChats([chat("C", "", "busy"), chat("A", "", "offline")], known, false).map((c) => [c.name, c.presence])).toEqual([
+      ["C", "busy"],
+      ["A", "offline"],
+      ["B", ""],
+    ]);
+  });
+});
+
+describe("chat list saved by the agent", () => {
+  it("keeps the presence of each chat", () => {
+    const store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
+    store.saveChats([chat("Anna Rossi", "", "away"), chat("Team, +2")]);
+    expect(store.chats().map((c) => [c.name, c.presence])).toEqual([
+      ["Anna Rossi", "away"],
+      ["Team, +2", ""],
+    ]);
   });
 });
 

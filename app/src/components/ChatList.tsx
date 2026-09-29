@@ -105,7 +105,7 @@ export function ChatList({
                   active && "bg-sidebar-accent hover:bg-sidebar-accent",
                 )}
               >
-                <Avatar name={c.name} av={c.av} acc={acc} muted={!!c.muted} className="size-11 md:size-10" />
+                <Avatar name={c.name} av={c.av} acc={acc} muted={!!c.muted} presence={c.presence} className="size-11 md:size-10" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
                     <span className={cn("truncate text-[0.9375rem] md:text-sm", c.unread ? "font-semibold" : "font-medium")}>{c.name}</span>

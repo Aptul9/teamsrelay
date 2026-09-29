@@ -30,6 +30,8 @@ export const SEL = {
   activityView: 'button[aria-label^="Activity"]',
   chatView: 'button[aria-label^="Chat"]',
   presence: '[data-tid="me-control-avatar-presence"]',
+  // the presence of the person of a chat row, on their picture: aria-label "Available", "Away", "Out of office"...
+  rowPresence: '[data-tid="presence-badge"]',
   meAvatar: '[data-tid="me-control-avatar"] img',
   editor: '[data-tid="ckeditor"]',
   textbox: '[role="textbox"]',

@@ -250,7 +250,7 @@ export class ServerLink {
     const all = <T>(sql: string, ...args: unknown[]) => this.db.prepare(sql).all(...args) as T[];
     let complete = true;
 
-    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av FROM chats ORDER BY pos")
+    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av, presence FROM chats ORDER BY pos")
       .filter((c) => this.fits(ChatRow, c, `chat ${c.name}`))
       .slice(0, 2000);
     const chatsDigest = digest(chats);

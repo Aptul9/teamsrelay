@@ -66,7 +66,7 @@ export class SlotStore {
   }
 
   chats(): ChatEntry[] {
-    const rows = this.db.prepare("SELECT name, preview, tm, unread, mention, muted, av FROM chats ORDER BY pos").all() as {
+    const rows = this.db.prepare("SELECT name, preview, tm, unread, mention, muted, av, presence FROM chats ORDER BY pos").all() as {
       name: string;
       preview: string | null;
       tm: string | null;
@@ -74,6 +74,7 @@ export class SlotStore {
       mention: number | null;
       muted: number | null;
       av: string | null;
+      presence: string | null;
     }[];
     return rows.map((r) => ({
       name: r.name,
@@ -83,6 +84,7 @@ export class SlotStore {
       mention: !!r.mention,
       muted: !!r.muted,
       av: r.av ?? "",
+      presence: r.presence ?? "",
     }));
   }
 
@@ -94,9 +96,9 @@ export class SlotStore {
       const ts = nowSeconds();
       this.db.prepare("DELETE FROM chats").run();
       const insert = this.db.prepare(
-        "INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av) VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av, presence) VALUES(?,?,?,?,?,?,?,?,?,?)",
       );
-      rows.forEach((c, i) => insert.run(c.name, c.preview, i, ts, c.time, bit(c.unread), bit(c.mention), bit(c.muted), c.av));
+      rows.forEach((c, i) => insert.run(c.name, c.preview, i, ts, c.time, bit(c.unread), bit(c.mention), bit(c.muted), c.av, c.presence ?? ""));
     })();
   }
 

@@ -136,8 +136,8 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
     db.transaction(() => {
       if (b.chats) {
         db.prepare("DELETE FROM chats").run();
-        const insert = db.prepare("INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av) VALUES(?,?,?,?,?,?,?,?,?)");
-        for (const c of b.chats) insert.run(c.name, c.preview, c.pos, c.ts, c.tm, c.unread, c.mention, c.muted, c.av);
+        const insert = db.prepare("INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av, presence) VALUES(?,?,?,?,?,?,?,?,?,?)");
+        for (const c of b.chats) insert.run(c.name, c.preview, c.pos, c.ts, c.tm, c.unread, c.mention, c.muted, c.av, c.presence ?? null);
       }
       if (b.messages) {
         const clear = db.prepare("DELETE FROM chat_messages WHERE chat=?");

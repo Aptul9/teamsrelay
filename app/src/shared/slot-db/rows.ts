@@ -1,6 +1,7 @@
 // Rows of data/N/messages.db as the web app reads them and the PWA receives them.
 
-export type Chat = { name: string; preview: string; tm: string; unread: number; mention: number; muted: number; av: string };
+// presence: a word of shared/presence, "" when the list shows none
+export type Chat = { name: string; preview: string; tm: string; unread: number; mention: number; muted: number; av: string; presence: string };
 
 export type Reaction = { e: string; n: number; mine: boolean };
 export type ReadBy = { label: string; names: string[] };

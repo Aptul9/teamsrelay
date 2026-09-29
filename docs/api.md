@@ -28,7 +28,7 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 | Method | Path | Answer |
 |---|---|---|
 | GET | `/api/events?a=N&chat=<name>` | server-sent events: `accounts`, `health`, `chats`, `activity`, `calllog` (`[{caller, since, seconds}]`, the calls the agent saw ring, newest first, `since` in ms), `messages` (`{chat, rows, open}`: `open` the last open of that chat, `{id, status, reason?}` with `status` `pending`, `done` or `failed`, null before the first; read before the rows, so a `done` open comes with rows saved no earlier than its own), each sent when its content changes; `calls` (`[{acc, caller, since, active?, muted?}]`) lists the calls ringing now in every account of the user and the calls in progress (`active`), whichever `a` names; `muted` is the mute of Teams for a call in progress, absent while the agent cannot read it |
-| GET | `/api/chats` | `name, preview, tm, unread, mention, muted, av` |
+| GET | `/api/chats` | `name, preview, tm, unread, mention, muted, av, presence`; `presence`: the presence Teams shows on the picture of the person of a 1:1 chat, `available`, `busy`, `dnd`, `away`, `offline` or `ooo` (out of office), `""` for a group chat, a chat the last list read did not show, or a label the agent does not know |
 | GET | `/api/messages?name=<chat>` | per message `mid, author, text, mine, reacts` and, when present, `html, quote, images, files, reactions, status, readby, edited, deleted, mentionsMe, av` |
 | GET | `/api/activity` | `{ts, items}`, items with `id, kind, actor, title, emoji, preview, tm, chat, channel, unread, av`; `kind` is `reaction`, `mention`, `reply`, `task`, `team`, `call`, `meeting` or `message` |
 | GET | `/api/feed` | history of the notifications sent |
