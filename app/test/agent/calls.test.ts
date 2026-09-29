@@ -711,8 +711,14 @@ describe("microphone hook of the pages", () => {
       }),
     };
     const context = { addInitScript: vi.fn(async (fn: { name: string }) => void added.push(fn.name)) };
-    const page = { addInitScript: vi.fn(async () => undefined), evaluate: vi.fn(async () => "already"), context: () => context, frames: () => [frame, frame] };
-    const agent = (answerCalls: boolean) => ({ config: { answerCalls }, tp: { page } }) as unknown as Agent;
+    // the page scripts of the loop are installed already; no input on the page
+    const page = {
+      addInitScript: vi.fn(async () => undefined),
+      evaluate: vi.fn(async (fn: { name: string }) => (fn.name === "drainInput" ? [] : "already")),
+      context: () => context,
+      frames: () => [frame, frame],
+    };
+    const agent = (answerCalls: boolean) => ({ config: { answerCalls }, tp: { page }, store: { getState: () => "" } }) as unknown as Agent;
     return { added, inFrames, agent };
   }
 

@@ -24,6 +24,8 @@ const missed = (id: string, caller: string) =>
 function agent(o: { checkedOnly?: boolean } = {}) {
   return {
     store,
+    // the Teams page of the round, for the span of the agent's own input
+    tp: { page: {} },
     config: { activity: true, readBy: false },
     health: { cdp: "ok", teams: "ok", overall: "green", ts: 1 },
     railReady: true,
