@@ -1,3 +1,4 @@
+import { openMicrophone } from "./devices";
 import { MIC_ENCODER, MIC_RATE, micFrame } from "./frames";
 import { addWorklet } from "./player";
 
@@ -12,10 +13,6 @@ class CallAudioMic extends AudioWorkletProcessor {
 }
 registerProcessor("call-audio-mic", CallAudioMic);
 `;
-
-const PROCESSING = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-// a chosen microphone the browser cannot open: gone (unplugged, a virtual device removed) or taken by another program
-const GONE = ["OverconstrainedError", "NotFoundError", "NotReadableError"];
 
 // The microphone of the phone for the call: echo cancellation, noise suppression and gain control as in a call app,
 // in an AudioContext of 24 kHz (the browser resamples), encoded to Opus (low delay where the browser offers it) and
@@ -118,17 +115,8 @@ export class MicSender {
   }
 
   private async open(device: string): Promise<MediaStream> {
-    if (device) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: { ...PROCESSING, deviceId: { exact: device } }, video: false });
-        this.fellBack = false;
-        return stream;
-      } catch (e) {
-        if (!GONE.includes((e as Error)?.name)) throw e;
-      }
-    }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: PROCESSING, video: false });
-    this.fellBack = !!device;
+    const { stream, fellBack } = await openMicrophone(device);
+    this.fellBack = fellBack;
     return stream;
   }
 

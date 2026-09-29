@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRingIcon, KeyRoundIcon, LaptopIcon, LogOutIcon, MessagesSquareIcon, MonitorSmartphoneIcon, MoonIcon, PaletteIcon, SunIcon, UserRoundIcon, Volume2Icon } from "lucide-react";
+import { BellRingIcon, HeadphonesIcon, KeyRoundIcon, LaptopIcon, LogOutIcon, MessagesSquareIcon, MonitorSmartphoneIcon, MoonIcon, PaletteIcon, SunIcon, UserRoundIcon, Volume2Icon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
@@ -24,6 +24,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CallDevices } from "./CallDevices";
+import { type CallDevices as Chosen, saveDevices, savedDevices } from "@/lib/call-audio/devices";
 import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -190,6 +192,8 @@ export function Settings({ user, passwordManaged }: { user: { name: string; emai
   // the bell of new messages on this device; the server has no storage and renders it on
   const bell = useSyncExternalStore(watchBell, bellOn, () => true);
   const [ringer] = useState(() => (typeof window === "undefined" ? null : new Ringer()));
+  // the microphone and the speaker of calls picked on this device
+  const [devices, setDevices] = useState<Chosen>(() => (typeof window === "undefined" ? { mic: "", speaker: "" } : savedDevices()));
 
   useEffect(() => {
     void pushState().then(setPush);
@@ -387,6 +391,27 @@ export function Settings({ user, passwordManaged }: { user: { name: string; emai
                 Play
               </Button>
             </Field>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <SectionTitle icon={HeadphonesIcon}>Calls on this device</SectionTitle>
+            <CardDescription>
+              The microphone and the speaker of calls answered in TeamsRelay, picked here once and kept on this device. Test them before a call: the bar
+              moves with your voice.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="max-w-md">
+            {mounted && (
+              <CallDevices
+                chosen={devices}
+                onChange={(d) => {
+                  saveDevices(d);
+                  setDevices(d);
+                }}
+              />
+            )}
           </CardContent>
         </Card>
 

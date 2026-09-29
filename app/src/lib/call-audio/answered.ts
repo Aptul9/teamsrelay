@@ -8,13 +8,18 @@ const ANSWER_GRACE_MS = 30_000;
 const CALL_OVER_GRACE_MS = 10_000;
 
 // The sound of the calls answered in the app, by account. One at a time: it is the sound of the whole desktop.
-export class AnsweredCalls {
-  private calls = new Map<number, { sound: CallSound; inProgress: boolean; timer?: ReturnType<typeof setTimeout> }>();
+export class AnsweredCalls<S extends CallSound = CallSound> {
+  private calls = new Map<number, { sound: S; inProgress: boolean; timer?: ReturnType<typeof setTimeout> }>();
 
-  constructor(private readonly o: { make: (acc: number) => CallSound; onStop?: (acc: number) => void }) {}
+  constructor(private readonly o: { make: (acc: number) => S; onStop?: (acc: number) => void }) {}
 
   has(acc: number) {
     return this.calls.has(acc);
+  }
+
+  // the sound of the call of an account while it lasts
+  get(acc: number): S | undefined {
+    return this.calls.get(acc)?.sound;
   }
 
   start(acc: number) {

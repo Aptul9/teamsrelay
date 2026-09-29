@@ -72,6 +72,14 @@ describe("AnsweredCalls", () => {
     expect(made[0].stopped).toBe(0);
   });
 
+  it("gives the sound of an account while it lasts, for its microphone and speaker", () => {
+    calls.start(2);
+    expect(calls.get(2)).toBeDefined();
+    expect(calls.get(3)).toBeUndefined();
+    calls.stop(2);
+    expect(calls.get(2)).toBeUndefined();
+  });
+
   it("passes Mute and a tap on", () => {
     calls.start(2);
     calls.mute(2, true);

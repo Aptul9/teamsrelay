@@ -22,6 +22,7 @@ import { cn } from "cn";
 import { AccountMenu, accName, needsLogin } from "./AccountMenu";
 import { Activity } from "./Activity";
 import { CallBanner, RingHint } from "./CallAlert";
+import { CallDevices } from "./CallDevices";
 import { Calls } from "./Calls";
 import { ChatList } from "./ChatList";
 import { Conversation } from "./Conversation";
@@ -40,6 +41,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AnsweredCalls } from "@/lib/call-audio/answered";
 import { CallAudio, callAudioSupported, callAudioUrl, type CallAudioState } from "@/lib/call-audio/call-audio";
+import { type CallDevices as Chosen, saveDevices, savedDevices } from "@/lib/call-audio/devices";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
@@ -172,11 +174,14 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   // The sound of a call answered here, in the app: the websocket of the remote desktop, without its video. Where the
   // browser cannot, or the desktop is on another site, the desktop carries it as before.
   const [callAudio, setCallAudio] = useState<Record<number, CallAudioState>>({});
+  // the microphone and the speaker of calls picked on this device
+  const [devices, setDevices] = useState<Chosen>(() => (typeof window === "undefined" ? { mic: "", speaker: "" } : savedDevices()));
   const [answered] = useState(() =>
     typeof window === "undefined"
       ? null
-      : new AnsweredCalls({
-          make: (n) => new CallAudio({ url: callAudioUrl(window.location), onState: (st) => setCallAudio((m) => ({ ...m, [n]: st })) }),
+      : new AnsweredCalls<CallAudio>({
+          make: (n) =>
+            new CallAudio({ url: callAudioUrl(window.location), devices: savedDevices(), onState: (st) => setCallAudio((m) => ({ ...m, [n]: st })) }),
           onStop: (n) =>
             setCallAudio((m) => {
               const next = { ...m };
@@ -422,6 +427,15 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     else toast.error("Call not ended", { description: "End it in Teams, in the remote desktop of the account." });
   }
 
+  // another microphone or speaker, for the call in progress and the calls to come
+  function pickDevices(n: number, d: Chosen) {
+    saveDevices(d);
+    const call = answered?.get(n);
+    if (d.mic !== devices.mic) void call?.useMic(d.mic);
+    if (d.speaker !== devices.speaker) void call?.useSpeaker(d.speaker);
+    setDevices(d);
+  }
+
   // the desktop takes the call over, its sound included
   function callToDesktop(n: number) {
     answered?.stop(n);
@@ -598,6 +612,15 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
         audio={callAudio}
         onMute={(n, on) => answered?.mute(n, on)}
         onTapToHear={(n) => answered?.resume(n)}
+        devicesPanel={(n) => (
+          <CallDevices
+            chosen={devices}
+            onChange={(d) => pickDevices(n, d)}
+            level={() => answered?.get(n)?.micLevel() ?? 0}
+            micFallback={callAudio[n]?.micFallback}
+            speakerFallback={callAudio[n]?.speakerFallback}
+          />
+        )}
       />
       <aside className={cn("flex w-full shrink-0 flex-col border-r bg-sidebar md:w-[22rem] xl:w-[25rem]", phoneShowsMain && "max-md:hidden")}>
         <div className="flex items-center gap-1 px-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 md:pt-2">

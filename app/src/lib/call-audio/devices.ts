@@ -76,3 +76,44 @@ export async function testSpeaker(speaker: string): Promise<boolean> {
     await ctx.close().catch(() => undefined);
   }
 }
+
+const PROCESSING = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+// a chosen microphone the browser cannot open: gone (unplugged, a virtual device removed) or taken by another program
+const GONE = ["OverconstrainedError", "NotFoundError", "NotReadableError"];
+
+// The microphone picked, as a call app opens it (echo cancellation, noise suppression, gain control); the default one
+// when the picked one is gone (fellBack)
+export async function openMicrophone(device: string): Promise<{ stream: MediaStream; fellBack: boolean }> {
+  if (device) {
+    try {
+      return { stream: await navigator.mediaDevices.getUserMedia({ audio: { ...PROCESSING, deviceId: { exact: device } }, video: false }), fellBack: false };
+    } catch (e) {
+      if (!GONE.includes((e as Error)?.name)) throw e;
+    }
+  }
+  return { stream: await navigator.mediaDevices.getUserMedia({ audio: PROCESSING, video: false }), fellBack: !!device };
+}
+
+// A test of the microphone picked, without a call: how loud it is, for as long as the test runs
+export async function testMicrophone(device: string): Promise<{ level(): number; fellBack: boolean; stop(): void }> {
+  const { stream, fellBack } = await openMicrophone(device);
+  const ctx = new AudioContext();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  void ctx.resume().catch(() => undefined);
+  const samples = new Float32Array(analyser.fftSize);
+  return {
+    fellBack,
+    level: () => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const s of samples) sum += s * s;
+      return Math.sqrt(sum / samples.length);
+    },
+    stop: () => {
+      stream.getTracks().forEach((t) => t.stop());
+      void ctx.close().catch(() => undefined);
+    },
+  };
+}

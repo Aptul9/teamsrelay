@@ -84,6 +84,7 @@ function Page() {
         audio={audio}
         onMute={(n, on) => (w.muted = [n, on])}
         onTapToHear={(n) => (w.tapped = n)}
+        devicesPanel={(n) => <div data-testid="devices-panel">Devices of account {n}</div>}
       />
     </>
   );
