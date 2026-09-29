@@ -14,9 +14,10 @@ Date: 2026-09-29. Follows [2026-09-29-call-audio-in-app.md](2026-09-29-call-audi
 
 ## What Teams shows
 
-- The call's microphone button is `#microphone-button`, with `data-state="mic"` while the microphone is live and `data-state="mic-off"` while muted. Teams can leave a hidden `#microphone-button` in the page after a call ends: only a button on screen counts. Source: the extension *teams-caffeine* (github.com/g-guerzoni/teams-caffeine, `selectors.js`, 2026-09-18), whose author checked the DOM on `teams.cloud.microsoft`; not yet seen on this project's accounts. The first call after this change is read with a probe (below) before relying on it.
+- The call's microphone button is `#microphone-button`. First known from the extension *teams-caffeine* (github.com/g-guerzoni/teams-caffeine, `selectors.js`, 2026-09-18): `data-state="mic"` live, `"mic-off"` muted, and a hidden button Teams can leave in the page after a call ends (only a button on screen counts).
+- Read in a real 1:1 call on slot 2 on 2026-09-29, muted and unmuted several times full screen and in the floating call monitor: live is `data-state="mic-volume-renderer"`, not `mic`, so a read of `data-state` against the extension's values said unknown on every live state. The button also carries the action a click takes, `data-track-action-scenario` (`callMuteAudio` while live, `callUnmuteAudio` while muted), and `aria-keyshortcuts="Ctrl+Shift+M"`. The read takes either mark, `mic` and `mic-volume-renderer` both live; two marks that disagree read as unknown.
 - Ctrl+Shift+M is the mute shortcut of Teams web (Microsoft support, *Keyboard shortcuts for Microsoft Teams*, web column), sent the way the hang-up shortcut is (Playwright key events on the page of the call).
-- Unknown until a real call: whether Teams web lets the microphone track go while muted. The call in progress is read from that track (`micLive`), so a call muted in Teams stays in progress while its button on screen reads muted.
+- The microphone track stayed live while muted in that call. The call in progress is read from that track (`micLive`); a call muted in Teams would still stay in progress while its button on screen reads muted, in case a build lets the microphone go.
 
 ## Contract
 
