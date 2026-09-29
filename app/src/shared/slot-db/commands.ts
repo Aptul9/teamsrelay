@@ -96,10 +96,10 @@ export type DownloadResult = z.infer<typeof DownloadResult>;
 // another chat
 export const OPEN_PROBLEMS = ["not-listed", "not-shown"] as const;
 export type OpenProblem = (typeof OPEN_PROBLEMS)[number];
-// Result of an open that failed, in the state row cmd_result:<id>: Teams signed out or still loading (nothing
-// touched), the chat not shown, or shown with messages that could not be read. An open that failed without one
-// waited too long or was cut by a restart of the agent.
-export const OPEN_REASONS = ["signed-out", "loading", ...OPEN_PROBLEMS, "unreadable"] as const;
+// Result of an open that failed, in the state row cmd_result:<id>: Teams signed out (nothing touched), the chat not
+// shown, or shown with messages that could not be read. An open that failed without one waited too long (Teams showed
+// no chat list for 2 minutes) or was cut by a restart of the agent.
+export const OPEN_REASONS = ["signed-out", ...OPEN_PROBLEMS, "unreadable"] as const;
 export type OpenReason = (typeof OPEN_REASONS)[number];
 export const OpenResult = z.object({ reason: z.enum(OPEN_REASONS) });
 export type OpenResult = z.infer<typeof OpenResult>;

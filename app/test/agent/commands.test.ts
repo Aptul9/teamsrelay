@@ -149,17 +149,30 @@ describe("command handlers", () => {
     expect(db().prepare("SELECT COUNT(*) FROM chat_messages").pluck().get()).toBe(0);
   });
 
-  it("open: failed at once, Teams untouched, while Teams is signed out or still loading", async () => {
+  it("open: failed at once, Teams untouched, while Teams is signed out", async () => {
     const a = agent();
     a.health = { cdp: "ok", ts: 0, teams: "login", overall: "red" };
     expect(await runCommand(a, cmd("open"))).toBe("failed");
     expect(openResult()).toEqual({ reason: "signed-out" });
-    a.health = { cdp: "ok", ts: 0, teams: "loading", overall: "yellow" };
-    expect(await runCommand(a, cmd("open"))).toBe("failed");
-    expect(openResult()).toEqual({ reason: "loading" });
     expect(opened).toEqual([]);
     // the chat is on screen in the app all the same: Teams opens it once it can
     expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("Anna Rossi");
+  });
+
+  // Teams starting, or the page a call leaves in its main window: no chat list yet, which the agent brings back soon
+  it("keeps an open pending while Teams shows no chat list yet, and opens the chat once it does", async () => {
+    const a = agent();
+    const id = store.enqueue("open", "Anna Rossi");
+    for (const health of [null, { cdp: "ok" as const, ts: 0, teams: "loading" as const, overall: "yellow" as const }, { cdp: "ok" as const, ts: 0, teams: "err" as const, overall: "red" as const }]) {
+      a.health = health;
+      await runPendingCommands(a);
+      expect(store.commandStatus(id)).toBe("pending");
+    }
+    expect(opened).toEqual([]);
+    a.health = { cdp: "ok", ts: 0, teams: "ok", overall: "green" };
+    await runPendingCommands(a);
+    expect(store.commandStatus(id)).toBe("done");
+    expect(opened).toEqual(["Anna Rossi"]);
   });
 
   it("send: done once Teams shows the message, failed when it does not, the conversation saved either way", async () => {
@@ -283,7 +296,10 @@ describe("command handlers", () => {
     insert.run(now, "open", "Anna Rossi", "");
     insert.run(now, "reply", "Anna Rossi", '{"mid":"m1","text":"x"}');
     vi.mocked(actions.replyWithQuote).mockResolvedValueOnce("failed");
-    await runPendingCommands(agent());
+    const a = agent();
+    // Teams shows its chat list: an open does not wait
+    a.health = { cdp: "ok", ts: 0, teams: "ok", overall: "green" };
+    await runPendingCommands(a);
     expect(db().prepare("SELECT type, status FROM commands ORDER BY id").all()).toEqual([
       { type: "open", status: "done" },
       { type: "reply", status: "failed" },
@@ -357,7 +373,9 @@ describe("command handlers", () => {
     const hangup = store.enqueue("hangup");
     const mute = store.enqueue("mute", "Anna Rossi", '{"on":true}');
     const open = store.enqueue("open");
-    await runPendingCommands(agent());
+    const a = agent();
+    a.health = { cdp: "ok", ts: 0, teams: "ok", overall: "green" };
+    await runPendingCommands(a);
     expect(store.commandStatus(answer)).toBe("pending");
     expect(store.commandStatus(hangup)).toBe("pending");
     expect(store.commandStatus(mute)).toBe("pending");
