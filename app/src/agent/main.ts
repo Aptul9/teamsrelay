@@ -25,6 +25,7 @@ import * as memberScripts from "./teams/scripts/members";
 import * as mentionScripts from "./teams/scripts/mentions";
 import * as actionScripts from "./teams/scripts/message-actions";
 import * as pageScripts from "./teams/scripts/page-state";
+import * as signInScripts from "./teams/scripts/sign-in";
 
 // The image runs this at build time: a runtime package missing from the image, a native binary of another
 // architecture, or a page script the bundler changed (they reach the page as source text) fail the build.
@@ -33,7 +34,7 @@ function check() {
   const sqlite = (db.prepare("SELECT sqlite_version() AS v").get() as { v: string }).v;
   db.close();
   let scripts = 0;
-  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts, callScripts]) {
+  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts, callScripts, signInScripts]) {
     for (const [name, fn] of Object.entries(scriptModule)) {
       if (typeof fn !== "function") continue;
       const source = fn.toString();

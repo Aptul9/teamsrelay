@@ -26,6 +26,7 @@ import * as memberScripts from "@/agent/teams/scripts/members";
 import * as mentionScripts from "@/agent/teams/scripts/mentions";
 import * as actionScripts from "@/agent/teams/scripts/message-actions";
 import * as pageScripts from "@/agent/teams/scripts/page-state";
+import * as signInScripts from "@/agent/teams/scripts/sign-in";
 import { probePage, readIdentity } from "@/agent/teams/scripts/page-state";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
 import { BrowserKeeper, launchBrowser, openTeams } from "./browser";
@@ -49,7 +50,7 @@ function check() {
   const sqlite = (db.prepare("SELECT sqlite_version() AS v").get() as { v: string }).v;
   db.close();
   let scripts = 0;
-  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts, callScripts]) {
+  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts, callScripts, signInScripts]) {
     for (const [name, fn] of Object.entries(scriptModule)) {
       if (typeof fn !== "function") continue;
       const source = fn.toString();
