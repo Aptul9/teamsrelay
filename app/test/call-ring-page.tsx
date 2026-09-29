@@ -2,12 +2,13 @@
 // through an analyser the test reads (window.analyser), the calls come from window.setCalls as the event stream would
 // send them, a click on the banner lands in window.selected, Answer, Hang up and Desktop in window.answered,
 // window.hungUp and window.desktop, the sound of a call answered here from window.setAudio (Mute in window.muted, Tap
-// to hear in window.tapped), and window.bell rings the bell of a message as the page does when the service
-// worker asks it (App.tsx). Account 3 runs on another computer.
+// to hear in window.tapped), Teams' own mute of a call in progress from window.setMutes, and window.bell rings the bell
+// of a message as the page does when the service worker asks it (App.tsx). Account 3 runs on another computer.
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CallBanner, RingHint } from "@/components/CallAlert";
 import type { CallAudioState } from "@/lib/call-audio/call-audio";
+import type { MuteView } from "@/lib/call-audio/mute";
 import type { Account, RingingCall } from "@/lib/client";
 import { Ringer } from "@/lib/ring";
 
@@ -21,6 +22,7 @@ type TestWindow = Window & {
   muted?: [number, boolean];
   tapped?: number;
   setAudio?: (a: Record<number, CallAudioState>) => void;
+  setMutes?: (m: Record<number, MuteView>) => void;
   bell?: () => Promise<boolean>;
 };
 const w = window as TestWindow;
@@ -66,9 +68,11 @@ w.bell = () => ringer.bell();
 function Page() {
   const [calls, setCalls] = useState<RingingCall[]>([]);
   const [audio, setAudio] = useState<Record<number, CallAudioState>>({});
+  const [mutes, setMutes] = useState<Record<number, MuteView>>({});
   useEffect(() => {
     w.setCalls = setCalls;
     w.setAudio = setAudio;
+    w.setMutes = setMutes;
   }, []);
   return (
     <>
@@ -82,6 +86,7 @@ function Page() {
         onHangUp={(c) => (w.hungUp = c)}
         onDesktop={(n) => (w.desktop = n)}
         audio={audio}
+        mutes={mutes}
         onMute={(n, on) => (w.muted = [n, on])}
         onTapToHear={(n) => (w.tapped = n)}
         devicesPanel={(n) => <div data-testid="devices-panel">Devices of account {n}</div>}

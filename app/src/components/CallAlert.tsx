@@ -5,16 +5,19 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { useAppStart } from "@/lib/android-app";
 import type { CallAudioState } from "@/lib/call-audio/call-audio";
+import { type MuteView, shownMuted } from "@/lib/call-audio/mute";
 import type { Account, RingingCall } from "@/lib/client";
 import type { Ringer } from "@/lib/ring";
 
-// The sound of a call answered in the app, in words
-function audioLine(a: CallAudioState): string {
+// The sound of a call in progress and its mute, in words. Muted with Teams not muted (nor a press on its way to it):
+// the microphone of this device is silent, the others see no mute mark. Without Teams' state (m), the device's alone.
+function callLine(a: CallAudioState | undefined, m: MuteView | undefined, muted: boolean): string {
+  if (!a) return muted ? "Muted" : "";
   if (a.link === "connecting" || a.link === "retrying") return "Connecting the sound";
-  if (a.link === "desktop") return "Sound on the desktop";
+  if (a.link === "desktop") return muted ? "Sound on the desktop, muted" : "Sound on the desktop";
   if (a.link === "unavailable") return `${a.reason || "No sound in the app"}: use Desktop`;
   if (a.link === "closed") return "";
-  if (a.muted) return "Sound in the app, muted";
+  if (muted) return !m || m.teams === true || m.want !== null ? "Sound in the app, muted" : "Sound in the app, muted here only";
   if (a.mic === "on") return "Sound in the app, microphone on";
   if (a.mic === "denied") return "Sound in the app, microphone blocked";
   return "Sound in the app";
@@ -35,8 +38,9 @@ function useRingAllowed(ringer: Ringer | null) {
 // The calls ringing now in every account of the user, on top of the app, with the ring while one of them is not muted.
 // A tap on a call opens its account; Mute silences that call only, and the next one rings again. Answer takes the call
 // on an account of the browsers container; its sound comes to the app (audio), or goes through the remote desktop. A
-// call in progress (active) rings no more and offers the state of its sound with Mute, its microphone and speaker
-// (devicesPanel), the desktop and Hang up.
+// call in progress (active) rings no more and offers the state of its sound, its microphone and speaker
+// (devicesPanel), the desktop and Hang up, and Mute: Teams' own mute where its state is known (mutes), wherever the
+// sound is, and the microphone of this device while it carries the sound.
 export function CallBanner({
   calls,
   accounts,
@@ -46,6 +50,7 @@ export function CallBanner({
   onHangUp,
   onDesktop,
   audio,
+  mutes,
   onMute,
   onTapToHear,
   devicesPanel,
@@ -58,6 +63,7 @@ export function CallBanner({
   onHangUp?: (c: RingingCall) => void;
   onDesktop?: (acc: number) => void;
   audio?: Record<number, CallAudioState>;
+  mutes?: Record<number, MuteView>;
   onMute?: (acc: number, on: boolean) => void;
   onTapToHear?: (acc: number) => void;
   devicesPanel?: (acc: number) => React.ReactNode;
@@ -90,7 +96,10 @@ export function CallBanner({
         const label = accountLabel(accounts?.find((a) => a.slot === c.acc), c.acc);
         if (c.active) {
           const sound = audio?.[c.acc];
-          const line = sound ? audioLine(sound) : "";
+          const mute = mutes?.[c.acc];
+          const sourceLive = sound?.link === "live";
+          const muted = mute ? shownMuted(mute, sourceLive) : !!sound?.muted;
+          const line = callLine(sound, mute, muted);
           const devicesOpen = devicesOf === key && !!devicesPanel;
           return (
             <div key={key} role="alert" className="pointer-events-auto w-full max-w-md rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
@@ -108,10 +117,10 @@ export function CallBanner({
                     </button>
                   )}
                 </div>
-                {sound && sound.link === "live" && onMute && (
-                  <Button size="sm" variant="secondary" className={button} onClick={() => onMute(c.acc, !sound.muted)}>
-                    {sound.muted ? <MicOffIcon /> : <MicIcon />}
-                    {sound.muted ? "Unmute" : "Mute"}
+                {onMute && (sourceLive || mute?.teams !== undefined) && (
+                  <Button size="sm" variant="secondary" className={button} onClick={() => onMute(c.acc, !muted)}>
+                    {muted ? <MicOffIcon /> : <MicIcon />}
+                    {muted ? "Unmute" : "Mute"}
                   </Button>
                 )}
                 {sound && devicesPanel && (

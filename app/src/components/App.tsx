@@ -42,6 +42,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AnsweredCalls } from "@/lib/call-audio/answered";
 import { CallAudio, callAudioSupported, callAudioUrl, type CallAudioState } from "@/lib/call-audio/call-audio";
 import { type CallDevices as Chosen, saveDevices, savedDevices } from "@/lib/call-audio/devices";
+import { CallMutes, type MuteView } from "@/lib/call-audio/mute";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
@@ -203,6 +204,17 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     answered?.inProgress(calls.filter((c) => c.active).map((c) => c.acc));
   }, [answered, calls]);
   useEffect(() => () => answered?.stopAll(), [answered]);
+  // Teams' own mute of the calls in progress, as the agents read it, and the microphone of this device, which goes
+  // silent at once on a press and then follows Teams (mute.ts)
+  const [mutes, setMutes] = useState<Record<number, MuteView>>({});
+  const [callMutes] = useState(() => new CallMutes({ onChange: (n, v) => setMutes((m) => ({ ...m, [n]: v })) }));
+  useEffect(() => {
+    for (const c of calls) if (c.active) callMutes.call(c.acc, c.since, c.muted);
+  }, [callMutes, calls]);
+  // a new sound of a call (callAudio) gets the mute of its call as well
+  useEffect(() => {
+    for (const [n, v] of Object.entries(mutes)) answered?.mute(Number(n), v.source);
+  }, [answered, mutes, callAudio]);
   // Answer on a notification with no window of the app open: the app opens with call=1, and the sound comes here
   const [callOnLoad] = useState(() => {
     if (typeof window === "undefined") return 0;
@@ -427,6 +439,18 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     else toast.error("Call not ended", { description: "End it in Teams, in the remote desktop of the account." });
   }
 
+  // Mute from the banner: the microphone of this device at once, Teams' own mute by the agent within a second or two.
+  // Where Teams is not changed the device stays as pressed.
+  async function muteCall(n: number, on: boolean) {
+    callMutes.press(n, on);
+    const r = await runCmd("/api/call/mute", { on }, n, 15);
+    callMutes.settled(n, r.status === "done");
+    if (r.status !== "done" && callMutes.view(n).teams !== undefined)
+      toast.error(on ? "Teams did not mute" : "Teams did not unmute", {
+        description: on ? "Muted on this device only: the others see no mute mark." : "Unmute in Teams, in the remote desktop of the account.",
+      });
+  }
+
   // another microphone or speaker, for the call in progress and the calls to come
   function pickDevices(n: number, d: Chosen) {
     saveDevices(d);
@@ -610,7 +634,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
         onHangUp={(c) => void hangUpCall(c)}
         onDesktop={callToDesktop}
         audio={callAudio}
-        onMute={(n, on) => answered?.mute(n, on)}
+        mutes={mutes}
+        onMute={(n, on) => void muteCall(n, on)}
         onTapToHear={(n) => answered?.resume(n)}
         devicesPanel={(n) => (
           <CallDevices
