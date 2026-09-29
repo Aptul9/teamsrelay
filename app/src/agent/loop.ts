@@ -10,12 +10,13 @@ import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
 import { pruneMedia } from "./jobs/media";
 import { FeedAfterCalls, pushMissedCalls } from "./jobs/missed-calls";
-import { awayFromChats, backToChats, drainHook, keepActive, park, preparePage, wanted } from "./jobs/page-setup";
+import { awayFromChats, backToChats, drainHook, keepActive, ownerUses, park, preparePage, wanted } from "./jobs/page-setup";
 import { prefetchReadBy } from "./jobs/read-by";
 import { scheduledSelfCheck, selfCheckDue } from "./jobs/self-check";
 import { hostOf, isTeamsUrl, pickTeamsPage } from "./logic/hosts";
 import { errorText, log } from "./log";
 import { Scheduler, type Job } from "./scheduler";
+import { asAgent } from "./teams/input";
 import { sleep, TeamsPage } from "./teams/page";
 
 // Seconds between two inputs on the Teams page
@@ -34,9 +35,12 @@ type Round = { onTeams: boolean; want: string };
 // ended, and each read alerts the missed calls it shows first (an account checked every N hours: its check does).
 export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Round>[] {
   const teamsOk = () => a.health?.teams === "ok";
-  // while a call rings (an answer clicks its toast) and during a call (the call view stays on screen) the jobs that move
-  // Teams to a chat or the feed wait; commands of the app go on, asked by the owner
-  const free = () => teamsOk() && !a.inCall && !a.ringing;
+  // while a call rings (an answer clicks its toast), during a call (the call view stays on screen) and while the owner
+  // uses Teams (remote desktop, window of the local relay) the jobs that move Teams to a chat or the feed wait; commands
+  // of the app go on, asked by the owner
+  const free = () => teamsOk() && !a.inCall && !a.ringing && !ownerUses(a);
+  // the page sees the input of these jobs as trusted input, as the owner's: it is the agent's own (teams/input.ts)
+  const own = <T>(fn: () => Promise<T>) => asAgent(a.tp.page, fn);
   const active = () => a.store.getState(STATE.activeChat);
   // a feed read that failed is tried once more ACTIVITY_RETRY seconds later, not 150 rounds later
   let retryAt = 0;
@@ -44,7 +48,7 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     const retry = retryAt > 0;
     retryAt = 0;
     afterCalls.ran();
-    if ((await readActivity(a)) === null) {
+    if ((await own(() => readActivity(a))) === null) {
       if (!retry) retryAt = Date.now() + ACTIVITY_RETRY * 1000;
       return;
     }
@@ -69,11 +73,11 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
   };
   const jobs: (Job<Round> | false)[] = [
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
-    { name: "input", every: { seconds: ACTIVE_EVERY }, run: () => keepActive(a) },
+    { name: "input", every: { seconds: ACTIVE_EVERY }, when: () => !ownerUses(a), run: () => keepActive(a) },
     // the side bar without the chat list (the page a call leaves in the main window): back to the chats
     { name: "back-to-chats", every: { rounds: 1 }, when: () => awayFromChats(a), run: () => backToChats(a) },
     // no chat to open before Teams shows its list: right after a start, or with a sign-in to do
-    { name: "parking", every: { rounds: 5, offset: 2 }, when: free, run: (r) => park(a, r.want) },
+    { name: "parking", every: { rounds: 5, offset: 2 }, when: free, run: (r) => own(() => park(a, r.want)) },
     { name: "hook", every: { rounds: 1 }, run: () => drainHook(a) },
     { name: "commands", every: { rounds: 1 }, run: () => runPendingCommands(a) },
     // until Teams is connected (sign-in to do, session expired) there is nothing to scroll or read
@@ -102,7 +106,7 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
       name: "read-by",
       every: { rounds: 2 },
       when: (r) => !!r.want && active() === r.want && free() && !a.store.hasPendingCommands(),
-      run: (r) => prefetchReadBy(a, r.want),
+      run: (r) => own(() => prefetchReadBy(a, r.want)),
     },
     // the first time 31 rounds after a start, which has usually read the list, the feed and the account by then (rows left
     // from before keep their files anyway); off the rounds of the list and the health

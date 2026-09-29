@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { COMMAND_MAX_AGE, runCommand, runPendingCommands } from "@/agent/commands";
 import type { Agent } from "@/agent/context";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
-import { backToChats } from "@/agent/jobs/page-setup";
+import { backToChats, noteOwnerInput } from "@/agent/jobs/page-setup";
+import { asAgent, byAgent, TAIL_MS } from "@/agent/teams/input";
 import { agentJobs } from "@/agent/loop";
 import { Scheduler } from "@/agent/scheduler";
 import type { Media } from "@/agent/media";
@@ -508,6 +509,99 @@ describe("agent loop", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // the owner in the remote desktop (or in the window of the local relay): the agent moves Teams nowhere on its own
+  // while the owner clicks, types or scrolls there, nor for 3 min after, nor 3 min after the owner opened the desktop
+  it("moves Teams nowhere while the owner uses it: presence keeper, parking, list sweep, feed and Read by wait", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 8, 29, 9, 0));
+      const a = agent();
+      a.health = { cdp: "ok", teams: "ok", overall: "green", ts: 1 };
+      a.railReady = true;
+      store.setState(STATE.activeChat, "Anna Rossi");
+      const ctx = { onTeams: true, want: "Anna Rossi" };
+      const paused = ["input", "parking", "chats-full", "activity", "read-by"];
+      const kept = ["page", "hook", "commands", "chats", "health", "conversation", "self-check"];
+      const when = (names: string[]) =>
+        agentJobs(a)
+          .filter((j) => names.includes(j.name))
+          .map((j) => [j.name, j.when?.(ctx) ?? true]);
+      const all = (names: string[], v: boolean) => names.map((n) => [n, v]);
+      expect(when(paused)).toEqual(all(paused, true));
+      a.ownerAt = Date.now() - 1000;
+      expect(when(paused)).toEqual(all(paused, false));
+      expect(when(kept)).toEqual(all(kept, true));
+      vi.setSystemTime(Date.now() + 178_000);
+      expect(when(paused)).toEqual(all(paused, false));
+      vi.setSystemTime(Date.now() + 3_000);
+      expect(when(paused)).toEqual(all(paused, true));
+      // the owner opened the remote desktop of this account from the app: paused before any click
+      store.setState(STATE.desktop, JSON.stringify({ ts: Math.floor(Date.now() / 1000) }));
+      expect(when(paused)).toEqual(all(paused, false));
+      vi.setSystemTime(Date.now() + 181_000);
+      expect(when(paused)).toEqual(all(paused, true));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("takes the owner's input from the page, never the input the agent sent itself", async () => {
+    const a = agent();
+    let recorded: number[] = [];
+    Object.assign(a.tp.page, {
+      evaluate: async (fn: { name: string }) => (fn.name === "drainInput" ? recorded.splice(0) : fn.name === "watchInput" ? "already" : null),
+    });
+    let keyAt = 0;
+    await asAgent(a.tp.page, async () => {
+      keyAt = Date.now();
+    });
+    recorded = [keyAt];
+    await noteOwnerInput(a);
+    expect(a.ownerAt).toBeUndefined();
+    const click = Date.now() + TAIL_MS + 2000;
+    recorded = [keyAt, click];
+    await noteOwnerInput(a);
+    expect(a.ownerAt).toBe(click);
+  });
+
+  it("counts the input of commands, parking, the feed read and Read by as the agent's own", async () => {
+    const a = agent();
+    a.health = { cdp: "ok", teams: "ok", overall: "green", ts: 1 };
+    a.railReady = true;
+    const at: Record<string, number> = {};
+    vi.mocked(actions.sendText).mockImplementationOnce(async () => {
+      at.send = Date.now();
+      return "sent";
+    });
+    store.enqueue("send", "Anna Rossi", "hello");
+    await runPendingCommands(a);
+    Object.assign(a.tp, {
+      isOpen: async () => false,
+      openChat: async () => {
+        at.parking = Date.now();
+        return true;
+      },
+      clearOverlays: async () => {
+        at.activity = Date.now();
+        return true;
+      },
+      clickRail: async () => undefined,
+    });
+    vi.mocked(actions.readReceipts).mockImplementationOnce(async () => {
+      at.readBy = Date.now();
+      return null;
+    });
+    store.setState(STATE.activeChat, "Anna Rossi");
+    db().prepare("INSERT INTO chat_messages(chat, idx, mid, author, text, mine, reacts, extra) VALUES(?,?,?,?,?,?,?,?)").run("Anna Rossi", 0, "m9", "", "mine", 1, "", "");
+    const jobs = agentJobs(a);
+    const run = (name: string, want: string) => jobs.find((j) => j.name === name)!.run({ onTeams: true, want });
+    await run("parking", "Anna Rossi");
+    await run("activity", "");
+    await run("read-by", "Anna Rossi");
+    expect(Object.keys(at).sort()).toEqual(["activity", "parking", "readBy", "send"]);
+    for (const t of Object.values(at)) expect(byAgent(a.tp.page, t)).toBe(true);
   });
 
   // Teams shows an answered call in its main window, and may leave a post-meeting page there once it ends: the side bar

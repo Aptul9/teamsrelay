@@ -6,6 +6,7 @@ import { errorText, log } from "../log";
 import { openOverlays } from "../teams/scripts/message-actions";
 import { probePage, uncoveredPoint } from "../teams/scripts/page-state";
 import { SEL, TEXTS } from "../teams/selectors";
+import { ownerUses } from "./page-setup";
 
 // Health row read by the app (healthOf in src/lib/slotdb.ts and the status panel; /api/state of the local relay),
 // about every 5 s
@@ -42,6 +43,7 @@ export async function updateHealth(a: Agent): Promise<AgentHealth> {
   if (h.teams === "loading" && rail) a.loadingSince ??= Date.now();
   else a.loadingSince = undefined;
   if (h.teams === "ok") a.backTries = 0;
+  if (ownerUses(a)) h.desktop = "in-use";
   return saveHealth(a, h);
 }
 

@@ -3,6 +3,7 @@ import type { Agent } from "../context";
 import { scanChats } from "../jobs/chat-list";
 import { errorText, log } from "../log";
 import type { PendingCommand } from "../store/slot-store";
+import { asAgent } from "../teams/input";
 import { activity } from "./activity";
 import { check } from "./check";
 import { deleteCommand } from "./delete";
@@ -84,7 +85,8 @@ export async function runPendingCommands(a: Agent) {
     if (cmd.type === "open" && a.health?.teams !== "ok" && a.health?.teams !== "login") continue;
     log.info("CMD", cmd.type, { id: cmd.id, arg: cmd.type === "download" ? undefined : cmd.arg1 });
     a.store.startCommand(cmd.id);
-    a.store.finishCommand(cmd.id, await runCommand(a, cmd));
+    // the page sees the input of a command as trusted input, as the owner's: it is the agent's own
+    a.store.finishCommand(cmd.id, await asAgent(a.tp.page, () => runCommand(a, cmd)));
     await scanChats(a);
   }
 }

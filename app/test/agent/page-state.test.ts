@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
 import { copyImage, fetchImage } from "@/agent/teams/scripts/media";
-import { drainNotifications, installNotificationHook, makeVisible, probePage, readIdentity } from "@/agent/teams/scripts/page-state";
+import { drainInput, drainNotifications, installNotificationHook, makeVisible, probePage, readIdentity, watchInput } from "@/agent/teams/scripts/page-state";
 import { picture, withChrome } from "./chrome";
 
 const chrome = withChrome();
@@ -29,6 +29,34 @@ describe("page state scripts", () => {
       { title: "Nice job!", body: "" },
     ]);
     expect(await chrome.page.evaluate(drainNotifications)).toEqual([]);
+  });
+
+  // the owner's use of the page: clicks, keys and wheel turns of real input; mouse moves (Chrome sends its own when the
+  // page moves under a still pointer) and events made by scripts are not
+  it("records the times of real clicks, keys and wheel turns on the page, and hands them out once", async () => {
+    await chrome.page.setContent('<button id="b" style="width:200px;height:60px">Chat</button><div style="height:3000px"></div>');
+    expect(await chrome.page.evaluate(watchInput)).toBe("installed");
+    expect(await chrome.page.evaluate(watchInput)).toBe("already");
+    const before = Date.now();
+    await chrome.page.mouse.move(50, 30);
+    await chrome.page.mouse.move(80, 40);
+    await chrome.page.evaluate(() => {
+      document.getElementById("b")!.click();
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+      window.dispatchEvent(new PointerEvent("pointerdown"));
+    });
+    expect(await chrome.page.evaluate(drainInput)).toEqual([]);
+    await chrome.page.mouse.click(50, 30);
+    await chrome.page.keyboard.press("Shift");
+    // the wheel event reaches the page after mouse.wheel returns
+    await chrome.page.mouse.wheel(0, 200);
+    const times: number[] = [];
+    await expect.poll(async () => times.push(...(await chrome.page.evaluate(drainInput))) && times.length).toBe(3);
+    for (const t of times) {
+      expect(t).toBeGreaterThanOrEqual(before);
+      expect(t).toBeLessThanOrEqual(Date.now());
+    }
+    expect(await chrome.page.evaluate(drainInput)).toEqual([]);
   });
 
   it("probes a loaded Teams page", async () => {

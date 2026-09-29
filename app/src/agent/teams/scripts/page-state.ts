@@ -3,7 +3,7 @@
 import type { Selectors, Texts } from "../selectors";
 
 type Captured = { title: string; body: string };
-type RelayWindow = Window & { __teamsVisible?: boolean; __teamsHookInstalled?: boolean; __teamsMsgs?: Captured[] };
+type RelayWindow = Window & { __teamsVisible?: boolean; __teamsHookInstalled?: boolean; __teamsMsgs?: Captured[]; __relayInput?: number[]; __relayInputWatch?: boolean };
 
 // Teams keeps the user Available only while its page is visible and focused: the page says so from its first
 // script (init script) on. Also run on every round, for a page loaded before the agent attached.
@@ -85,6 +85,31 @@ export function drainNotifications(): Captured[] {
   const captured = w.__teamsMsgs || [];
   w.__teamsMsgs = [];
   return captured;
+}
+
+// Real input on the page (the owner in the remote desktop, in the window of the local relay, or the agent itself over
+// CDP): the times (ms) of trusted clicks, keys and wheel turns, the last 50, until drainInput takes them. Mouse moves are
+// left out: Chrome sends trusted moves of its own when the page moves under a still pointer.
+export function watchInput(): "already" | "installed" {
+  const w = window as RelayWindow;
+  if (w.__relayInputWatch) return "already";
+  w.__relayInput = w.__relayInput || [];
+  const note = (e: Event) => {
+    if (!e.isTrusted) return;
+    const times = (w.__relayInput = w.__relayInput || []);
+    times.push(Date.now());
+    if (times.length > 50) times.splice(0, times.length - 50);
+  };
+  for (const type of ["pointerdown", "keydown", "wheel"]) window.addEventListener(type, note, { capture: true, passive: true });
+  w.__relayInputWatch = true;
+  return "installed";
+}
+
+export function drainInput(): number[] {
+  const w = window as RelayWindow;
+  const times = w.__relayInput || [];
+  w.__relayInput = [];
+  return times;
 }
 
 // A point of the first visible element of `sel` that nothing covers (a tooltip, a popup), or null

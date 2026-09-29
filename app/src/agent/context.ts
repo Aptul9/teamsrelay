@@ -50,6 +50,10 @@ export type Agent = {
   loadingSince?: number;
   backTries?: number;
   backAt?: number;
+  // the owner's last click, key or wheel turn on the page (ms), not sent by the agent; whether the pause it gives was
+  // logged as started (logic/owner.ts)
+  ownerAt?: number;
+  ownerPaused?: boolean;
 };
 
 export const nowSeconds = () => Math.floor(Date.now() / 1000);

@@ -1,11 +1,12 @@
 import type { BrowserContext, Page } from "playwright-core";
-import { STATE } from "@/shared/slot-db/state";
+import { Desktop, parseState, STATE } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
+import { OWNER_PAUSE, ownerBusy } from "../logic/owner";
 import { wantedChat } from "../logic/parking";
 import { errorText, log } from "../log";
-import { withInput } from "../teams/input";
+import { byAgent, withInput } from "../teams/input";
 import { installMicHook } from "../teams/scripts/calls";
-import { drainNotifications, installNotificationHook, makeVisible } from "../teams/scripts/page-state";
+import { drainInput, drainNotifications, installNotificationHook, makeVisible, watchInput } from "../teams/scripts/page-state";
 import { SEL, TEXTS } from "../teams/selectors";
 
 const initScripts = new WeakSet<Page>();
@@ -18,11 +19,35 @@ export async function preparePage(a: Agent) {
   const page = a.tp.page;
   if (!initScripts.has(page)) {
     await page.addInitScript(makeVisible).catch((e: unknown) => log.warn("page", `init script: ${errorText(e)}`));
+    await page.addInitScript(watchInput).catch((e: unknown) => log.warn("page", `input init script: ${errorText(e)}`));
     initScripts.add(page);
   }
   if ((await page.evaluate(makeVisible)) === "installed") log.info("page", "visible");
   if ((await page.evaluate(installNotificationHook)) === "installed") log.info("page", "notification hook installed");
   if (a.config.answerCalls) await hookMicrophone(page);
+  await noteOwnerInput(a);
+}
+
+// The owner's clicks, keys and wheel turns on the page since the last round (the remote desktop, the window of the local
+// relay): what the page recorded, less the input the agent sent itself. The pause of the jobs that move Teams is logged
+// when it starts and when it ends.
+export async function noteOwnerInput(a: Agent) {
+  const page = a.tp.page;
+  await page.evaluate(watchInput);
+  const owner = ((await page.evaluate(drainInput)) ?? []).filter((t) => !byAgent(page, t));
+  if (owner.length) a.ownerAt = Math.max(a.ownerAt ?? 0, ...owner);
+  const busy = ownerUses(a);
+  if (busy === !!a.ownerPaused) return;
+  a.ownerPaused = busy;
+  if (busy) log.info("page", "the owner uses Teams: the agent leaves it as it is", { by: owner.length ? "input" : "desktop" });
+  else log.info("page", `no input from the owner for ${OWNER_PAUSE / 60} min: parking and presence keeper again`);
+}
+
+// The owner clicked, typed or scrolled in Teams, or opened its remote desktop, a moment ago: the jobs that move Teams
+// wait (presence keeper, parking, back to the chats, list sweep, feed, Read by)
+export function ownerUses(a: Agent, now = Date.now()): boolean {
+  const desktop = parseState(Desktop, a.store.getState(STATE.desktop), { ts: 0 });
+  return ownerBusy(a.ownerAt ?? 0, desktop.ts, now);
 }
 
 // In the pages and frames to come (a call window included) before Teams asks for the microphone, and in those open now
@@ -48,7 +73,7 @@ const RETRY_MS = 15_000;
 const BACK_TRIES = 3;
 
 export function awayFromChats(a: Agent, now = Date.now()): boolean {
-  if (a.inCall || a.ringing || a.health?.teams !== "loading" || !a.railReady || !a.loadingSince) return false;
+  if (a.inCall || a.ringing || a.health?.teams !== "loading" || !a.railReady || !a.loadingSince || ownerUses(a, now)) return false;
   if (a.backTries) return now - (a.backAt ?? 0) >= RETRY_MS;
   const sinceCall = a.callOverAt ? now - a.callOverAt : Infinity;
   return (sinceCall >= AFTER_CALL_MS && sinceCall <= AFTER_CALL_WINDOW_MS) || now - a.loadingSince >= AWAY_MS;

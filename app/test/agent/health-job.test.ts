@@ -75,6 +75,19 @@ describe("health of a Teams page away from its chats", () => {
   });
 });
 
+describe("health while the owner uses Teams", () => {
+  it("says the remote desktop is in use while the agent leaves Teams to the owner, in a row the app reads", async () => {
+    const a = agent();
+    expect((await updateHealth(a)).desktop).toBeUndefined();
+    a.ownerAt = Date.now();
+    const h = await updateHealth(a);
+    expect(h.desktop).toBe("in-use");
+    expect(AgentHealth.safeParse(JSON.parse(store.getState(STATE.health))).data?.desktop).toBe("in-use");
+    later(181);
+    expect((await updateHealth(a)).desktop).toBeUndefined();
+  });
+});
+
 describe("health without a Teams tab", () => {
   it("is loading on a blank tab and a sign-in on any other page, in a row the app reads", async () => {
     const a = agent();
