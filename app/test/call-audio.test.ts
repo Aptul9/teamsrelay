@@ -10,7 +10,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { MIC_RATE } from "@/lib/call-audio/frames";
 import { tempDir } from "./helpers";
 
-type Win = Window & { startCall(): void; call: { mute(on: boolean): void }; states: { link: string; mic: string }[]; micTracks: MediaStreamTrack[]; peak(): number };
+type Call = { mute(on: boolean): void; useMic(id: string): Promise<void>; useSpeaker(id: string): Promise<void>; micLevel(): number; speaker(): string };
+type Win = Window & {
+  startCall(): void;
+  call: Call;
+  states: { link: string; mic: string; micFallback: boolean; speakerFallback: boolean }[];
+  micTracks: MediaStreamTrack[];
+  peak(): number;
+};
 
 const TONE_DOWN = 440;
 const TONE_UP = 660;
@@ -203,5 +210,71 @@ describe("call audio in Chrome", () => {
     expect(tracks.length).toBeGreaterThan(0);
     expect(tracks.every((s) => s === "ended")).toBe(true);
     expect(await page.evaluate(() => (window as unknown as Win).states.at(-1)?.mic)).toBe("off");
+  }, 30_000);
+});
+
+// the same call, on: the microphone again, then Mute, a switch of device and a device gone
+describe("devices and mute of the call audio in Chrome", () => {
+  const w = () => window as unknown as Win;
+  const live = () => page.evaluate(() => (window as unknown as Win).micTracks.filter((t) => t.readyState === "live").map((t) => ({ label: t.label, enabled: t.enabled })));
+  const last = () => page.evaluate(() => (window as unknown as Win).states.at(-1));
+  const devices = (kind: MediaDeviceKind) =>
+    page.evaluate(
+      async (kind) => (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === kind && d.deviceId !== "default").map((d) => ({ id: d.deviceId, label: d.label })),
+      kind,
+    );
+
+  it("mutes at the source: the track of the microphone is off, its level falls to 0 and nothing is sent, until unmuted", async () => {
+    server?.send("CAPTURE_DEMAND microphone 1");
+    await until(async () => (await last())?.mic === "on", "microphone on");
+    await until(async () => (await page.evaluate(() => (window as unknown as Win).call.micLevel())) > 0.01, "a level from the microphone");
+    await page.evaluate(() => (window as unknown as Win).call.mute(true));
+    await sleep(300);
+    const before = micFrames().length;
+    const tracks = await live();
+    const level = await page.evaluate(() => (window as unknown as Win).call.micLevel());
+    await sleep(400);
+    expect(micFrames().length).toBe(before);
+    expect(tracks.length).toBe(1);
+    expect(tracks[0].enabled).toBe(false);
+    expect(level).toBeLessThan(0.01);
+    await page.evaluate(() => (window as unknown as Win).call.mute(false));
+    await until(() => micFrames().length > before + 10, "frames after unmute");
+    expect((await live()).map((t) => t.enabled)).toEqual([true]);
+  }, 30_000);
+
+  it("switches to the microphone chosen during the call, releases the one before, and keeps sending, still muted when muted", async () => {
+    const mics = await devices("audioinput");
+    expect(mics.length).toBeGreaterThan(1);
+    const before = micFrames().length;
+    await page.evaluate((id) => (window as unknown as Win).call.useMic(id), mics[1].id);
+    await until(async () => (await live()).map((t) => t.label).join() === mics[1].label, "only the chosen microphone live");
+    await until(() => micFrames().length > before + 25, "frames from the chosen microphone");
+    await page.evaluate(() => (window as unknown as Win).call.mute(true));
+    await page.evaluate((id) => (window as unknown as Win).call.useMic(id), mics[0].id);
+    await until(async () => (await live()).map((t) => t.label).join() === mics[0].label, "the other microphone live");
+    expect((await live()).map((t) => t.enabled)).toEqual([false]);
+    await page.evaluate(() => (window as unknown as Win).call.mute(false));
+    expect((await last())?.micFallback).toBe(false);
+  }, 30_000);
+
+  it("uses the default microphone when the chosen one is gone, and says so", async () => {
+    await page.evaluate(() => (window as unknown as Win).call.useMic("no-such-microphone"));
+    await until(async () => (await last())?.micFallback === true, "the fallback told");
+    expect((await live()).map((t) => t.label)).toEqual(["Fake Default Audio Input"]);
+    const before = micFrames().length;
+    await until(() => micFrames().length > before + 10, "frames from the default microphone");
+  }, 30_000);
+
+  it("plays on the speaker chosen, and on the default one when the chosen one is gone", async () => {
+    const speakers = await devices("audiooutput");
+    expect(speakers.length).toBeGreaterThan(0);
+    await page.evaluate((id) => (window as unknown as Win).call.useSpeaker(id), speakers[0].id);
+    expect(await page.evaluate(() => (window as unknown as Win).call.speaker())).toBe(speakers[0].id);
+    expect((await last())?.speakerFallback).toBe(false);
+    await page.evaluate(() => (window as unknown as Win).call.useSpeaker("no-such-speaker"));
+    expect(await page.evaluate(() => (window as unknown as Win).call.speaker())).toBe("");
+    expect((await last())?.speakerFallback).toBe(true);
+    expect(w).toBeTypeOf("function");
   }, 30_000);
 });
