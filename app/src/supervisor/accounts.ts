@@ -21,6 +21,9 @@ export type AccountsConfig = {
   cdpBasePort: number;
   // Wayland session of the desktop, where the browser windows open
   session: Record<string, string>;
+  // port of the websocket of the remote desktop (Selkies, behind the nginx of the image): its viewers are connections
+  // to it, which the agents count (src/agent/jobs/desktop.ts)
+  desktopPort: number;
   browserEnv: Record<string, string>;
   agentEnv: Record<string, string>;
   wlrctl: string;
@@ -103,6 +106,13 @@ export function agentCommand(n: number, cfg: AccountsConfig): Command {
       VAPID_PRIVATE: join(cfg.vapidDir, "private_key.pem"),
       VAPID_APPKEY: join(cfg.vapidDir, "appkey.txt"),
       FCM_CREDENTIALS: join(cfg.fcmDir, "service-account.json"),
+      // the owner on the remote desktop with the window of this account in front (src/agent/jobs/desktop.ts)
+      DESKTOP_PORT: String(cfg.desktopPort),
+      DESKTOP_UID: String(cfg.uid),
+      DESKTOP_GID: String(cfg.gid),
+      DESKTOP_APP_ID: `teamsrelay-${n}`,
+      XDG_RUNTIME_DIR: cfg.session.XDG_RUNTIME_DIR ?? "",
+      WAYLAND_DISPLAY: cfg.session.WAYLAND_DISPLAY ?? "",
     },
   };
 }

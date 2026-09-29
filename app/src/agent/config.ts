@@ -18,6 +18,14 @@ const Env = z.object({
   NTFY_ENABLED: z.enum(["0", "1"]).default("0"),
   NTFY_URL: z.url({ protocol: /^https?$/ }).default("https://ntfy.sh"),
   NTFY_TOPIC: z.string().default(""),
+  // the remote desktop of the browsers container, given by the supervisor: the port of its websocket, the desktop
+  // user and session (wlrctl), the app id of this account's window. Unset: nothing watched (a slot run by hand).
+  DESKTOP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  DESKTOP_UID: z.coerce.number().int().min(0).optional(),
+  DESKTOP_GID: z.coerce.number().int().min(0).optional(),
+  DESKTOP_APP_ID: z.string().optional(),
+  XDG_RUNTIME_DIR: z.string().optional(),
+  WAYLAND_DISPLAY: z.string().optional(),
 });
 
 export type Config = AgentSettings & {
@@ -55,6 +63,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     uploadsDir: path.join(dataDir, "uploads"),
     vapid: { privateKeyFile: e.VAPID_PRIVATE, appKeyFile: e.VAPID_APPKEY, subject: e.VAPID_SUBJECT },
     fcmCredentials: e.FCM_CREDENTIALS,
+    desktop:
+      e.DESKTOP_PORT && e.DESKTOP_UID !== undefined && e.DESKTOP_GID !== undefined && e.DESKTOP_APP_ID && e.XDG_RUNTIME_DIR && e.WAYLAND_DISPLAY
+        ? { port: e.DESKTOP_PORT, uid: e.DESKTOP_UID, gid: e.DESKTOP_GID, appId: e.DESKTOP_APP_ID, session: { XDG_RUNTIME_DIR: e.XDG_RUNTIME_DIR, WAYLAND_DISPLAY: e.WAYLAND_DISPLAY } }
+        : null,
     ntfy: e.NTFY_ENABLED === "1" && e.NTFY_TOPIC ? { url: e.NTFY_URL, topic: e.NTFY_TOPIC } : null,
     // the web app shows both
     activity: true,

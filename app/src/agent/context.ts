@@ -27,7 +27,13 @@ export type AgentSettings = {
     signIn: string;
     browserDown: string;
   };
+  // the remote desktop of the browsers container, watched for the owner (jobs/desktop.ts); none for the local relay
+  desktop?: DesktopWatch | null;
 };
+
+// The websocket of the remote desktop (its viewers are connections to that port) and how to ask its compositor which
+// window is in front: as the desktop user, in its session
+export type DesktopWatch = { port: number; uid: number; gid: number; appId: string; session: Record<string, string> };
 
 // What the jobs and the command handlers work with. tp is the Teams page of the current round.
 export type Agent = {
@@ -58,6 +64,11 @@ export type Agent = {
   // logged as started (logic/owner.ts)
   ownerAt?: number;
   ownerPaused?: boolean;
+  // a viewer of the remote desktop with the window of this account in front, at the last look (jobs/desktop.ts); the
+  // last time one was seen (ms); the connections of the desktop could not be read
+  onDesktop?: boolean;
+  desktopSeenAt?: number;
+  desktopUnknown?: boolean;
 };
 
 export const nowSeconds = () => Math.floor(Date.now() / 1000);

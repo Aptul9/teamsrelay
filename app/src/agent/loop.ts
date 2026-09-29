@@ -6,6 +6,7 @@ import { readActivity } from "./jobs/activity";
 import { CallWatch } from "./jobs/calls";
 import { scanChats, scanChatsFull } from "./jobs/chat-list";
 import { saveOpenChat } from "./jobs/conversation";
+import { watchDesktop } from "./jobs/desktop";
 import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
 import { pruneMedia } from "./jobs/media";
@@ -72,7 +73,9 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     unreadySince ||= Date.now();
     return Date.now() - unreadySince >= SELF_CHECK_GRACE * 1000;
   };
-  const jobs: (Job<Round> | false)[] = [
+  const jobs: (Job<Round> | false | null | undefined)[] = [
+    // the owner on the remote desktop with this account in front, first: the jobs of the round know it (sign-in page too)
+    a.config.desktop && { name: "desktop", every: { rounds: 1 }, anyPage: true, run: () => watchDesktop(a) },
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
     { name: "input", every: { seconds: ACTIVE_EVERY }, when: () => !ownerUses(a), run: () => keepActive(a) },
     // the side bar without the chat list (the page a call leaves in the main window): back to the chats

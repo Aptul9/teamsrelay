@@ -41,6 +41,7 @@ function accounts() {
       agentScript: "/app/agent.cjs",
       node: "node",
       cdpBasePort: 9221,
+      desktopPort: 8082,
       session: {},
       browserEnv: {},
       agentEnv: {},
