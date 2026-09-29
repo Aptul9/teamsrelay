@@ -47,6 +47,7 @@ Date: 2026-09-29. Follows [2026-09-28-answer-calls.md](2026-09-28-answer-calls.m
 - `app/src/lib/call-audio/player.ts`: `AudioDecoder` and the play worklet.
 - `app/src/lib/call-audio/mic.ts`: the microphone, its worklet, its Opus encoder, mute.
 - `app/src/lib/call-audio/call-audio.ts`: one call audio of one account, from the three, and its state for the banner.
+- `app/src/lib/call-audio/answered.ts`: the call audios of the page, one at a time, and when each ends (30 s after an answer that never became a call in progress, 10 s after the call left the event stream).
 - `app/src/components/CallAlert.tsx`, `app/src/components/App.tsx`: the banner and the answer flow. `app/public/sw.js`: Answer opens or tells the app.
 
 ## Tests
