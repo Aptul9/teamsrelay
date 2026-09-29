@@ -47,19 +47,22 @@ export function micLive(): boolean {
   return live.length > 0;
 }
 
-// Teams' own mute of the call shown in this frame: true muted, false live, null when it cannot be told. Only the
-// microphone buttons on screen count (Teams can leave a hidden one after a call); none, an unknown state or two that
-// disagree give null, and nothing is pressed on null.
+// Teams' own mute of the call shown in this frame: true muted, false live, null when it cannot be told. A microphone
+// button tells it twice, by its data-state and by the action a click takes (data-track-action-scenario): one mark
+// known is enough, two that disagree tell nothing. Only the buttons on screen count (Teams can leave a hidden one after
+// a call); none, one with no known mark, or two that disagree give null, and nothing is pressed on null.
 export function micMuted(s: Selectors): boolean | null {
-  const states = new Set(
-    [...document.querySelectorAll<HTMLElement>(s.callMic)]
-      .filter((b) => {
-        const r = b.getBoundingClientRect();
-        return r.width > 0 && r.height > 0;
-      })
-      .map((b) => b.getAttribute("data-state")),
-  );
-  if (states.size !== 1) return null;
-  const [state] = states;
-  return state === "mic-off" ? true : state === "mic" ? false : null;
+  const reads = new Set<boolean | null>();
+  for (const b of document.querySelectorAll<HTMLElement>(s.callMic)) {
+    const r = b.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) continue;
+    const state = b.getAttribute("data-state") || "";
+    const byState = s.callMicMuted.includes(state) ? true : s.callMicLive.includes(state) ? false : null;
+    const action = b.getAttribute("data-track-action-scenario");
+    const byAction = action === s.callMicUnmute ? true : action === s.callMicMute ? false : null;
+    reads.add(byState !== null && byAction !== null && byState !== byAction ? null : (byState ?? byAction));
+  }
+  if (reads.size !== 1) return null;
+  const [muted] = reads;
+  return muted ?? null;
 }
