@@ -174,14 +174,29 @@ describe("service worker call notifications", () => {
     expect((await sw.push({ ...ringing, answer: true, title: "Call from Anna Rossi", body: "Ended after 9 s", call: "ended" })).actions).toBeUndefined();
   });
 
-  it("Answer asks the server to answer that call, then opens the remote desktop it names", async () => {
+  it("Answer asks the server to answer that call, then opens the app, which takes the sound of the call", async () => {
     const sw = serviceWorker({ fetch: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, id: 7, desktop: "/api/desktop/2" }) }) });
     await sw.click({ ...ringing, answer: true }, "answer");
     expect(sw.requests).toHaveLength(1);
     expect(sw.requests[0].url).toBe("/api/call/answer?a=2");
     expect(sw.requests[0].init).toMatchObject({ method: "POST", credentials: "same-origin" });
     expect(JSON.parse(String(sw.requests[0].init.body))).toEqual({ since: 1_790_000_000_000 });
-    expect(sw.opened).toEqual(["/api/desktop/2"]);
+    expect(sw.opened).toEqual(["/?a=2&call=1"]);
+  });
+
+  it("Answer with the app open tells that window to take the sound of the call, and brings it to the front", async () => {
+    const w = { ...appWindow("hidden", "no answer"), focused: 0, focus: async () => void w.focused++ };
+    const sw = serviceWorker({ windows: [w], fetch: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, id: 7, desktop: "/api/desktop/2" }) }) });
+    await sw.click({ ...ringing, answer: true }, "answer");
+    expect(w.asked).toEqual([{ acc: 2, call: true }]);
+    expect(w.focused).toBe(1);
+    expect(sw.opened).toEqual([]);
+  });
+
+  it("Answer opens the remote desktop where it is on another site, whose sound the app cannot take", async () => {
+    const sw = serviceWorker({ fetch: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, id: 7, desktop: "https://desk.example/desktop/2" }) }) });
+    await sw.click({ ...ringing, answer: true }, "answer");
+    expect(sw.opened).toEqual(["https://desk.example/desktop/2"]);
   });
 
   it("opens the app on the account when the server refuses the answer or cannot be reached", async () => {

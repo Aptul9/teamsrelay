@@ -1,11 +1,13 @@
 // The call banner and the ring hint of the web app on a page of their own, for test/call-ring.test.ts: the ring plays
 // through an analyser the test reads (window.analyser), the calls come from window.setCalls as the event stream would
 // send them, a click on the banner lands in window.selected, Answer, Hang up and Desktop in window.answered,
-// window.hungUp and window.desktop, and window.bell rings the bell of a message as the page does when the service
+// window.hungUp and window.desktop, the sound of a call answered here from window.setAudio (Mute in window.muted, Tap
+// to hear in window.tapped), and window.bell rings the bell of a message as the page does when the service
 // worker asks it (App.tsx). Account 3 runs on another computer.
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CallBanner, RingHint } from "@/components/CallAlert";
+import type { CallAudioState } from "@/lib/call-audio/call-audio";
 import type { Account, RingingCall } from "@/lib/client";
 import { Ringer } from "@/lib/ring";
 
@@ -16,6 +18,9 @@ type TestWindow = Window & {
   answered?: RingingCall;
   hungUp?: RingingCall;
   desktop?: number;
+  muted?: [number, boolean];
+  tapped?: number;
+  setAudio?: (a: Record<number, CallAudioState>) => void;
   bell?: () => Promise<boolean>;
 };
 const w = window as TestWindow;
@@ -60,8 +65,10 @@ w.bell = () => ringer.bell();
 
 function Page() {
   const [calls, setCalls] = useState<RingingCall[]>([]);
+  const [audio, setAudio] = useState<Record<number, CallAudioState>>({});
   useEffect(() => {
     w.setCalls = setCalls;
+    w.setAudio = setAudio;
   }, []);
   return (
     <>
@@ -74,6 +81,9 @@ function Page() {
         onAnswer={(c) => (w.answered = c)}
         onHangUp={(c) => (w.hungUp = c)}
         onDesktop={(n) => (w.desktop = n)}
+        audio={audio}
+        onMute={(n, on) => (w.muted = [n, on])}
+        onTapToHear={(n) => (w.tapped = n)}
       />
     </>
   );
