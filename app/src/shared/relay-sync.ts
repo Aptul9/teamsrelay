@@ -32,6 +32,8 @@ export const ChatRow = z.object({
   mention: int.nullable(),
   muted: int.nullable(),
   av: text(100).nullable(),
+  // relays of earlier releases send none
+  presence: text(20).nullable().optional(),
 });
 export type ChatRow = z.infer<typeof ChatRow>;
 

@@ -1,5 +1,6 @@
 // A chat of the Teams list, as the agent keeps it (tm in the chats table is time here)
-export type ChatEntry = { name: string; preview: string; time: string; unread: boolean; mention: boolean; muted: boolean; av: string };
+// presence: a word of shared/presence, "" or absent when the list shows none
+export type ChatEntry = { name: string; preview: string; time: string; unread: boolean; mention: boolean; muted: boolean; av: string; presence?: string };
 
 export const CHAT_LIMIT = 40;
 
@@ -11,7 +12,9 @@ export function mergeChats(visible: readonly ChatEntry[], stored: readonly ChatE
   const rows = visible.map((c) => (!c.av && knownAv.has(c.name) ? { ...c, av: knownAv.get(c.name) ?? "" } : c));
   if (replace) return rows;
   const seen = new Set(visible.map((c) => c.name));
-  return [...rows, ...stored.filter((c) => !seen.has(c.name))].slice(0, CHAT_LIMIT);
+  // a presence is as old as the read that saw it: none rather than a stale one for the chats out of this read
+  const others = stored.filter((c) => !seen.has(c.name)).map((c) => ({ ...c, presence: "" }));
+  return [...rows, ...others].slice(0, CHAT_LIMIT);
 }
 
 // The open title can differ from the list name (names are cut at 60 characters, suffixes such as

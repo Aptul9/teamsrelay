@@ -102,6 +102,7 @@ export function listChats(userId: string, { account, unread_only }: Account & { 
           unread: !!c.unread,
           ...(c.mention ? { mention: true } : {}),
           ...(c.muted ? { muted: true } : {}),
+          ...(c.presence ? { presence: c.presence } : {}),
           ...(c.name === live ? { open: true } : {}),
         })),
     };

@@ -2,7 +2,8 @@
 // imports only, selectors and texts come in as argument.
 import type { Selectors, Texts } from "../selectors";
 
-export type ListRow = { name: string; preview: string; time: string; unread: boolean; mention: boolean; muted: boolean; avsrc: string };
+// presence: the label of the badge on the picture of the person ("Away"), "" on a group chat
+export type ListRow = { name: string; preview: string; time: string; unread: boolean; mention: boolean; muted: boolean; avsrc: string; presence: string };
 type ListArgs = { s: Selectors; t: Texts };
 
 // Chats are the level-2 rows of the Chats and Favorites sections; Quick views (Mentions, Drafts) are not.
@@ -43,7 +44,8 @@ export function readChatList({ s, t }: ListArgs): ListRow[] {
     const muted = e.getAttribute("data-item-type") === s.mutedItemType || !!e.querySelector(s.mutedIcon);
     const avatar = e.querySelector<HTMLImageElement>(s.avatar);
     const avsrc = avatar && avatar.naturalWidth ? avatar.currentSrc || avatar.src : "";
-    out.push({ name: name.slice(0, 60), preview: preview.slice(0, 120), time, unread, mention, muted, avsrc });
+    const presence = (e.querySelector(s.rowPresence)?.getAttribute("aria-label") || "").trim().slice(0, 60);
+    out.push({ name: name.slice(0, 60), preview: preview.slice(0, 120), time, unread, mention, muted, avsrc, presence });
     if (out.length >= 40) break;
   }
   return out;

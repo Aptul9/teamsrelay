@@ -41,6 +41,17 @@ describe("chat list captured from Teams", () => {
     expect(rows.filter((r) => r.avsrc).length).toBeGreaterThan(10);
   });
 
+  it("reads the presence Teams shows on the picture of a person, none on a group", async () => {
+    await chrome.page.setContent(fixture("chat-list.html"));
+    const rows = await chrome.page.evaluate(readChatList, { s: SEL, t: TEXTS });
+    const shown = rows.filter((r) => r.presence);
+    expect(shown.length).toBeGreaterThanOrEqual(15);
+    expect(new Set(shown.map((r) => r.presence))).toEqual(new Set(["Available", "Away", "Offline", "Out of office"]));
+    const groups = rows.filter((r) => /, \+\d+$/.test(r.name));
+    expect(groups.length).toBeGreaterThan(0);
+    for (const g of groups) expect(g.presence, g.name).toBe("");
+  });
+
   it("clicks the row of every name it reads", async () => {
     await chrome.page.setContent(fixture("chat-list.html"));
     const rows = await chrome.page.evaluate(readChatList, { s: SEL, t: TEXTS });

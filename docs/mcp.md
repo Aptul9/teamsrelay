@@ -52,7 +52,7 @@ The server serves protocol revision `2026-07-28` and the 2025 revisions from the
 | Tool | Input | Answer | Effect on Teams |
 |---|---|---|---|
 | `list_accounts` | none | slot, name, email, organization, Teams state, stopped, unread chats | none |
-| `list_chats` | `account?`, `unread_only?` | name, preview, time label, unread, mention, muted, `open` for the chat open in Teams now | none |
+| `list_chats` | `account?`, `unread_only?` | name, preview, time label, unread, mention, muted, `presence` of the person of a 1:1 chat when the last list read showed one (`available`, `busy`, `dnd`, `away`, `offline`, `ooo`), `open` for the chat open in Teams now | none |
 | `read_chat` | `account?`, `chat` | the saved messages: id, time (UTC, from the Teams message id), author, mine, text, quote, reactions, number of images, file names, edited, deleted; `live` when the chat is open in Teams and the messages are current | none |
 | `refresh_chat` | `account?`, `chat` | as `read_chat`, after opening the chat in Teams | the chat turns read in Teams, senders may see their messages as seen, Teams keeps it open for at least 90 s |
 | `list_activity` | `account?`, `unread_only?` | Activity feed as last read: kind, actor, title, preview, time label, chat, unread | none |

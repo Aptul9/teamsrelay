@@ -7,7 +7,7 @@ import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
 import { STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
-const chat = (name: string, extra: Partial<ChatEntry> = {}): ChatEntry => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av: "", ...extra });
+const chat = (name: string, extra: Partial<ChatEntry> = {}): ChatEntry => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av: "", presence: "", ...extra });
 
 let file: string;
 let store: SlotStore;
@@ -35,8 +35,8 @@ describe("agent store", () => {
   it("writes the chat list the web app shows", () => {
     store.saveChats([chat("Anna Rossi", { preview: "ciao", time: "10:30", unread: true, av: "0123456789abcdef.png" }), chat("Release notes", { muted: true })]);
     expect(reader((r) => r.chats())).toEqual([
-      { name: "Anna Rossi", preview: "ciao", tm: "10:30", unread: 1, mention: 0, muted: 0, av: "0123456789abcdef.png" },
-      { name: "Release notes", preview: "", tm: "", unread: 0, mention: 0, muted: 1, av: "" },
+      { name: "Anna Rossi", preview: "ciao", tm: "10:30", unread: 1, mention: 0, muted: 0, av: "0123456789abcdef.png", presence: "" },
+      { name: "Release notes", preview: "", tm: "", unread: 0, mention: 0, muted: 1, av: "", presence: "" },
     ]);
     store.saveChats([]);
     expect(reader((r) => r.chats())).toHaveLength(2);

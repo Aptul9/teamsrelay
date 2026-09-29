@@ -1,3 +1,4 @@
+import { presenceOf } from "@/shared/presence";
 import { STATE } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
 import { CHAT_LIMIT, type ChatEntry } from "../logic/chats";
@@ -6,11 +7,13 @@ import { sleep } from "../teams/page";
 import { readChatList, scrollChatList, type ListRow } from "../teams/scripts/chat-list";
 import { SEL, TEXTS } from "../teams/selectors";
 
-export const readList = (a: Agent) => a.tp.page.evaluate(readChatList, { s: SEL, t: TEXTS });
+// The rows as Teams shows them, the presence of each person as one of the words the app knows
+export const readList = async (a: Agent): Promise<ListRow[]> =>
+  (await a.tp.page.evaluate(readChatList, { s: SEL, t: TEXTS })).map((r) => ({ ...r, presence: presenceOf(r.presence) }));
 
 // A list read saved without copying pictures: the known ones stay
 export const withoutPictures = (rows: readonly ListRow[]): ChatEntry[] =>
-  rows.map(({ name, preview, time, unread, mention, muted }) => ({ name, preview, time, unread, mention, muted, av: "" }));
+  rows.map(({ name, preview, time, unread, mention, muted, presence }) => ({ name, preview, time, unread, mention, muted, av: "", presence }));
 
 // New messages found in a list read: history, ntfy, push
 export async function notifyNew(a: Agent, rows: readonly ListRow[]) {

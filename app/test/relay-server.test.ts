@@ -356,6 +356,15 @@ describe("the files of a relay", () => {
     expect(fs.readdirSync(path.join(dataDir, String(slot), "files"))).toEqual(["f5f5f5f5f5f5f5f5.pdf"]);
   });
 
+  it("keep the presence a relay reads in its list, none from a relay that does not send it", async () => {
+    const { token, slot } = await addRelayAccount("f8", opts());
+    applySync(caller(token), { host: "pc", now: Date.now(), chats: [{ ...chatRow("Anna Rossi", ""), presence: "busy" }, { ...chatRow("Luca Bianchi", ""), pos: 1 }] });
+    expect(withSlot(slot, (r) => r.chats().map((c) => [c.name, c.presence]))).toEqual([
+      ["Anna Rossi", "busy"],
+      ["Luca Bianchi", ""],
+    ]);
+  });
+
   it("give their room back to the account when they leave the media folder", async () => {
     const { token } = await addRelayAccount("f7", opts());
     process.env.RELAY_QUOTA_MB = String((2 * PNG.length + 10) / 2 ** 20);
