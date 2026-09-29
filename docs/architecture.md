@@ -82,7 +82,7 @@ About one round per second. Each step is a job of a small scheduler (`app/src/ag
 | every round | open conversation |
 | every 2 rounds, no commands | "Read by" of one of your recent messages in the open group chat; not in the local relay |
 | every 300 rounds, the first time 31 rounds after a start | files of the media folder no row names any more removed: pictures of chats that left the list, of items gone from the feed, images of messages no longer kept |
-| 8-11 and 17-20 | automatic check with a push of the outcome; not on an account checked every few hours |
+| 8-11 and 17-20 | automatic check with a push of the outcome, once Teams shows its page (a start or a reload inside the window loads first; Teams still not ready 5 minutes into the window is reported); not on an account checked every few hours |
 
 A message is new when the preview or the time of a chat changes with an incoming text, or when the chat turns unread. A time that turns into a date with the same preview is the same message getting older (the list shows the time of the last message for about a day). Muted chats and the chat with yourself do not notify; identical notifications within 150 s are dropped.
 

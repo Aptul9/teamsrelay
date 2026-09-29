@@ -518,6 +518,8 @@ describe("agent loop", () => {
     try {
       vi.setSystemTime(new Date(2026, 8, 27, 9, 0));
       const a = agent();
+      // Teams loaded: the check waits for it otherwise (test/agent/loop-self-check.test.ts)
+      a.health = { cdp: "ok", teams: "ok", overall: "green", ts: 1 };
       const job = agentJobs(a).find((j) => j.name === "self-check");
       expect(job?.when?.({ onTeams: true, want: "" })).toBe(true);
       a.checkedOnly = () => true;
