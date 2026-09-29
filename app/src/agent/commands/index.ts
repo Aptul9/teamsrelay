@@ -50,8 +50,8 @@ export const HANDLERS: Record<CommandType, Handler> = {
   mute: byCallWatch,
 };
 
-// open, resync and recheck end as done whatever happened on Teams, like in the Python agent; an unknown type ends
-// as done too. A handler that throws: failed, and the command is not run again.
+// resync and recheck end as done whatever happened on Teams, like in the Python agent; an unknown type ends as done
+// too. A handler that throws: failed, and the command is not run again.
 export async function runCommand(a: Agent, cmd: PendingCommand): Promise<Outcome> {
   const handler = HANDLERS[cmd.type as CommandType] as Handler | undefined;
   if (!handler) return "done";

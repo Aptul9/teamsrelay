@@ -92,6 +92,20 @@ export const UPLOAD_NAME = /^[0-9a-f]{16}\.(png|jpg|gif|webp)$/;
 export const DownloadResult = z.object({ f: z.string() });
 export type DownloadResult = z.infer<typeof DownloadResult>;
 
+// Why Teams did not show the chat an open asked for: no row of that name in its list, or a row clicked that showed
+// another chat
+export const OPEN_PROBLEMS = ["not-listed", "not-shown"] as const;
+export type OpenProblem = (typeof OPEN_PROBLEMS)[number];
+// Result of an open that failed, in the state row cmd_result:<id>: Teams signed out or still loading (nothing
+// touched), the chat not shown, or shown with messages that could not be read. An open that failed without one
+// waited too long or was cut by a restart of the agent.
+export const OPEN_REASONS = ["signed-out", "loading", ...OPEN_PROBLEMS, "unreadable"] as const;
+export type OpenReason = (typeof OPEN_REASONS)[number];
+export const OpenResult = z.object({ reason: z.enum(OPEN_REASONS) });
+export type OpenResult = z.infer<typeof OpenResult>;
+// The last open of a chat as the app follows it, in the messages event of the event stream (src/lib/slotdb.ts)
+export type OpenStatus = { id: number; status: "pending" | "done" | "failed"; reason?: OpenReason };
+
 // arg2 that is not JSON, or not an object, gives the empty arguments
 export function parseArgs<T>(schema: z.ZodType<T>, arg2: string | null | undefined): T {
   let value: unknown = {};
