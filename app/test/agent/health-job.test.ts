@@ -8,6 +8,8 @@ import { openOverlays } from "@/agent/teams/scripts/message-actions";
 import { uncoveredPoint } from "@/agent/teams/scripts/page-state";
 import { SEL } from "@/agent/teams/selectors";
 import { SlotStore } from "@/agent/store/slot-store";
+import { nowSeconds } from "@/agent/context";
+import { SIGN_IN_TRY_AFTER, SIGN_IN_TRY_WAIT } from "@/shared/sign-in";
 import { AgentHealth, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
@@ -169,6 +171,63 @@ describe("alerts of the health job", () => {
     expect(alerts).toEqual(["Teams signed out: Sign in again in the relay window: no messages until then.", "Teams back: Signed in again: messages are relayed."]);
     await updateHealth(a);
     expect(alerts).toHaveLength(2);
+  });
+
+  // the one press of Sign in (jobs/sign-in.ts) gets its minute before the owner is told
+  it("after a press of Sign in, push only when Teams is still signed out a minute after it, saying the button did not help", async () => {
+    store.setState(STATE.me, JSON.stringify({ name: "Test User", email: "test.user@contoso.example" }));
+    const a = agent();
+    const signInPage = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
+    await noTabHealth(a, signInPage);
+    later(SIGN_IN_TRY_AFTER);
+    store.setState(STATE.signInTry, JSON.stringify({ at: nowSeconds(), pressed: ["teams"], microsoft: false }));
+    later(60 - SIGN_IN_TRY_AFTER);
+    await noTabHealth(a, signInPage);
+    expect(alerts).toEqual([]);
+    later(SIGN_IN_TRY_WAIT + SIGN_IN_TRY_AFTER - 60 - 1);
+    await noTabHealth(a, signInPage);
+    expect(alerts).toEqual([]);
+    later(1);
+    await noTabHealth(a, signInPage);
+    expect(alerts).toEqual(["Teams signed out: The Sign in button did not help. Sign in again in the relay window: no messages until then."]);
+  });
+
+  it("after a press of Sign in that brought Teams back, push nothing at all", async () => {
+    store.setState(STATE.me, JSON.stringify({ name: "Test User", email: "test.user@contoso.example" }));
+    const a = agent();
+    const signInPage = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
+    await noTabHealth(a, signInPage);
+    later(SIGN_IN_TRY_AFTER);
+    store.setState(STATE.signInTry, JSON.stringify({ at: nowSeconds(), pressed: ["teams", "account"], microsoft: true }));
+    // past the minute of a sign-out without a press, within the minute of the press
+    later(50);
+    await noTabHealth(a, signInPage);
+    later(5);
+    expect(await updateHealth(a)).toMatchObject({ teams: "ok" });
+    later(120);
+    await updateHealth(a);
+    expect(alerts).toEqual([]);
+  });
+
+  it("with nothing pressed in that sign-out, push after a minute as before", async () => {
+    store.setState(STATE.me, JSON.stringify({ name: "Test User", email: "test.user@contoso.example" }));
+    const a = agent();
+    const signInPage = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
+    // an attempt of an earlier sign-out, and one of this sign-out that found nothing to press
+    store.setState(STATE.signInTry, JSON.stringify({ at: nowSeconds() - 7200, pressed: ["teams"], microsoft: true }));
+    await noTabHealth(a, signInPage);
+    later(SIGN_IN_TRY_AFTER);
+    later(60 - SIGN_IN_TRY_AFTER);
+    await noTabHealth(a, signInPage);
+    expect(alerts).toEqual(["Teams signed out: Sign in again in the relay window: no messages until then."]);
+    store.setState(STATE.loginWatch, JSON.stringify({ since: 0, alerted: false }));
+    alerts = [];
+    await noTabHealth(a, signInPage);
+    later(SIGN_IN_TRY_AFTER);
+    store.setState(STATE.signInTry, JSON.stringify({ at: nowSeconds(), pressed: [], microsoft: false }));
+    later(60 - SIGN_IN_TRY_AFTER);
+    await noTabHealth(a, signInPage);
+    expect(alerts).toEqual(["Teams signed out: Sign in again in the relay window: no messages until then."]);
   });
 
   it("push nothing for an account never signed in: its first sign-in is still to do", async () => {

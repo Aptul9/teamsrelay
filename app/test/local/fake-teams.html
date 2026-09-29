@@ -181,8 +181,15 @@
         renderList();
         renderConversation();
       },
-      signOut() {
-        document.body.append(Object.assign(document.createElement("div"), { id: "lost", textContent: "We need you to sign in again" }));
+      // with button: the banner has Teams' own Sign in, which signs in again on a click of a person (trusted) only
+      signOut(button) {
+        const lost = Object.assign(document.createElement("div"), { id: "lost", textContent: "We need you to sign in again" });
+        if (button) {
+          const b = Object.assign(document.createElement("button"), { textContent: "Sign in" });
+          b.addEventListener("click", (e) => e.isTrusted && lost.remove());
+          lost.append(" ", b);
+        }
+        document.body.append(lost);
       },
       signIn() {
         document.getElementById("lost")?.remove();

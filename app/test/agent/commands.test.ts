@@ -397,6 +397,7 @@ describe("agent loop", () => {
       ["activity", "150+5", false],
       ["identity", "300+7", false],
       ["health", "5+0", true],
+      ["sign-in", "1+0", true],
       ["conversation", "1+0", false],
       ["read-by", "2+0", false],
       ["media", "300+31", false],
@@ -524,6 +525,31 @@ describe("agent loop", () => {
       expect(when(paused)).toEqual(all(paused, false));
       vi.setSystemTime(Date.now() + 181_000);
       expect(when(paused)).toEqual(all(paused, true));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // jobs/sign-in.ts: on any page (a Teams tab sent to the Microsoft sign-in counts), never while the owner uses Teams
+  // (signing in by hand in the remote desktop) nor while a call rings or runs
+  it("tries the one press of Sign in only while Teams is signed out, the owner away and no call on", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const a = agent();
+      const job = agentJobs(a).find((j) => j.name === "sign-in")!;
+      const when = () => job.when?.({ onTeams: false, want: "" });
+      a.health = { cdp: "ok", teams: "ok", overall: "green", ts: 1 };
+      expect(when()).toBe(false);
+      a.health = { cdp: "ok", teams: "login", overall: "red", ts: 1 };
+      expect(when()).toBe(true);
+      a.ringing = true;
+      expect(when()).toBe(false);
+      a.ringing = false;
+      a.inCall = true;
+      expect(when()).toBe(false);
+      a.inCall = false;
+      a.ownerAt = Date.now();
+      expect(when()).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -665,6 +691,6 @@ describe("agent loop", () => {
   it("leaves out the Activity feed and Read by for an app that does not show them", () => {
     const a = agent();
     a.config = { ...a.config, activity: false, readBy: false };
-    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "input", "back-to-chats", "parking", "hook", "commands", "chats-full", "chats", "identity", "health", "conversation", "media", "self-check"]);
+    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "input", "back-to-chats", "parking", "hook", "commands", "chats-full", "chats", "identity", "health", "sign-in", "conversation", "media", "self-check"]);
   });
 });

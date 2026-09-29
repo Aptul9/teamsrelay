@@ -14,6 +14,7 @@ import { Media } from "@/agent/media";
 import { Notifier } from "@/agent/push/notifier";
 import { loadVapidKeys } from "@/agent/push/vapid";
 import { SlotStore } from "@/agent/store/slot-store";
+import { STATE } from "@/shared/slot-db/state";
 import { BrowserKeeper, launchBrowser } from "@/local/browser";
 import { loadConfig, type Config } from "@/local/config";
 import { RelayDevices } from "@/local/devices";
@@ -66,7 +67,7 @@ const payloads = () => push.received.map((r) => r.payload as { title: string; bo
 beforeAll(async () => {
   const dir = tempDir("teamsrelay-relay-");
   const loaded = loadConfig({ STATE_DIR: dir, HOST_LABEL: "test-pc" });
-  config = { ...loaded, alerts: { ...loaded.alerts, signInAfter: 2 } };
+  config = { ...loaded, alerts: { ...loaded.alerts, signInAfter: 2, signInTryAfter: 1, signInTryWait: 10 } };
   execFileSync(process.execPath, [path.join(APP, "scripts", "gen-vapid.mjs"), path.dirname(config.vapid.privateKeyFile)], { stdio: "pipe" });
   const vapid = loadVapidKeys(config.vapid.privateKeyFile, config.vapid.appKeyFile);
   store = SlotStore.open(config.dbPath);
@@ -136,6 +137,17 @@ describe("relay against a Teams page", () => {
     expect(shown.json.open).toBe(true);
     expect(shown.json.messages.at(-1)).toMatchObject({ text: "on my way", mine: true, status: "Sent" });
     expect(shown.json.messages.at(-1).mid).toMatch(/^\d{13}$/);
+  }, 60_000);
+
+  // the one press of Sign in after a sign-out (src/agent/jobs/sign-in.ts): a real click the page takes as a person's
+  it("presses Teams' own Sign in once when Teams asks, and pushes nothing when that brings Teams back", async () => {
+    const before = payloads().length;
+    await teams().evaluate(() => (window as unknown as { fakeTeams: { signOut(button: boolean): void } }).fakeTeams.signOut(true));
+    await until("the press", () => store.getState(STATE.signInTry).includes('"teams"'));
+    await until("Teams back", async () => (await api("/api/state")).json.health?.teams === "ok");
+    // past the alert of a sign-out without a press (2 s here) and the wait of a press (10 s here)
+    await new Promise((r) => setTimeout(r, 12_000));
+    expect(payloads()).toHaveLength(before);
   }, 60_000);
 
   it("pushes once when Teams is signed out for a while, refuses commands meanwhile, and pushes again when it is back", async () => {

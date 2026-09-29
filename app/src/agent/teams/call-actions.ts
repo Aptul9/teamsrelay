@@ -1,5 +1,5 @@
 import type { Page } from "playwright-core";
-import { withInput } from "./input";
+import { cdpClick, withInput } from "./input";
 import { uncoveredPoint } from "./scripts/page-state";
 import { SEL } from "./selectors";
 
@@ -9,15 +9,8 @@ async function realClick(page: Page, sel: string): Promise<boolean> {
   return withInput(page, async () => {
     const at = await page.evaluate(uncoveredPoint, sel).catch(() => null);
     if (!at) return false;
-    const cdp = await page.context().newCDPSession(page);
-    try {
-      await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
-      await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "left", buttons: 1, clickCount: 1 });
-      await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
-      return true;
-    } finally {
-      await cdp.detach().catch(() => undefined);
-    }
+    await cdpClick(page, at);
+    return true;
   });
 }
 
