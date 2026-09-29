@@ -1,0 +1,15 @@
+<!-- Teams web asking to sign in again, REBUILT BY HAND, NOT CAPTURED: no sign-out of this kind was ever read on an account here. The banner text is the one of PWAsForFirefox issue 704 (2025) and of slot 2 on 2026-09-27 (TEXTS.sessionLost); its Sign in button opens the Microsoft identity platform with window.open (teams-for-linux issue 2621). Structure, attributes and the rest of the page are invented. The next real sign-out logs the buttons it shows (SESSION: sign-in page buttons) to confirm them. -->
+<div data-tid="app-layout-area--main">
+  <div role="alert" class="banner">
+    <span>We need you to sign in again. This could be a request from your IT department or Teams, or the result of a password update.</span>
+    <a href="https://aka.ms/teams-sign-in-requests" target="_blank">Learn more about sign-in requests</a>
+    <button type="button">Sign in</button>
+  </div>
+  <nav aria-label="App bar">
+    <button type="button" aria-label="Activity (Ctrl+Shift+1)">Activity</button>
+    <button type="button" aria-label="Chat (Ctrl+Shift+2)">Chat</button>
+  </nav>
+  <div role="tree" aria-label="Chat list">
+    <div role="treeitem" aria-level="2" id="menu-1">Anna Rossi</div>
+  </div>
+</div>

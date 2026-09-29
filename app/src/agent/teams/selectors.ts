@@ -110,6 +110,13 @@ export const SEL = {
   // Teams keeps the signed-in profile in localStorage
   userKey: "tmp.auth.v1.GLOBAL.User.User",
   tenantsKey: /^tmp\.auth\.v1\..*\.Tenants\.Tenants$/,
+
+  // A sign-out: what can be pressed on the page, found by its text (TEXTS.signInButton, TEXTS.microsoftButton); on
+  // Microsoft's account picker a tile holds the name and the email of an account, data-test-id the email; any field
+  // on Microsoft's page asks for something to type (password, code, email), and nothing is pressed there
+  clickable: 'button,[role="button"],a,input[type="submit"],input[type="button"]',
+  accountTile: "[data-test-id]",
+  fields: "input,textarea,select",
 };
 export type Selectors = typeof SEL;
 
@@ -170,6 +177,11 @@ export const TEXTS = {
   // session expired or Teams syncing in reduced mode
   sessionLost:
     /REDUCED_CAPABILITIES|Chats are temporarily unavailable|Sync engine is running in Reduced|We need you to sign in again|Chat non (?:sono )?disponibili/i,
+  // Teams' own button of its banner "We need you to sign in again" (pressed once after a sign-out), and the buttons of
+  // Microsoft's sign-in page pressed once after it, all by their whole text; the rest of the texts of those pages go to
+  // the log
+  signInButton: /^sign in$/i,
+  microsoftButton: /^(sign in|continue)$/i,
 
   // Activity feed: the time line is recognized by its format; before it the preview, after it the place
   feedTime: /^(\d{1,2}:\d{2}\s?(AM|PM)?|\d{1,2}\/\d{1,2}(\/\d{2,4})?|Yesterday|Ieri|Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/i,
