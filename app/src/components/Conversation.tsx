@@ -70,7 +70,6 @@ function readStatus(m: Message): { label: string; seen: boolean } {
 // waited too long for the agent, or was cut by its restart
 const OPEN_FAILED: Record<OpenReason, string> = {
   "signed-out": "Teams is signed out: sign in again, then try again.",
-  loading: "Teams is still starting.",
   "not-listed": "Teams has no chat with this name in its list.",
   "not-shown": "Teams did not show it.",
   unreadable: "Teams showed it, but its messages could not be read.",

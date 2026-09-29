@@ -33,7 +33,7 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 | GET | `/api/activity` | `{ts, items}`, items with `id, kind, actor, title, emoji, preview, tm, chat, channel, unread, av`; `kind` is `reaction`, `mention`, `reply`, `task`, `team`, `call`, `meeting` or `message` |
 | GET | `/api/feed` | history of the notifications sent |
 | GET | `/api/health` | health, see below |
-| GET | `/api/cmd/{id}` | `{status, result}`, `status` is `pending`, `done` or `failed`; a failed `open` has `result` `{reason}`: `signed-out` or `loading` (Teams untouched), `not-listed`, `not-shown`, `unreadable`; none when it waited too long or the agent restarted while it ran |
+| GET | `/api/cmd/{id}` | `{status, result}`, `status` is `pending`, `done` or `failed`; a failed `open` has `result` `{reason}`: `signed-out` (Teams untouched), `not-listed`, `not-shown`, `unreadable`; none when it waited too long (an open waits while Teams shows no chat list) or the agent restarted while it ran |
 | GET | `/media/{file}?a=N` | images of messages and profile pictures |
 | GET | `/files/{file}?a=N&name=<name>` | downloaded attachment, with its original name |
 
