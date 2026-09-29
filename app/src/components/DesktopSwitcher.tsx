@@ -1,15 +1,17 @@
 "use client";
 
-import { MonitorIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { cn } from "cn";
+import { useEffect, useRef, useState } from "react";
 import { accName } from "@/components/AccountMenu";
 import { Button } from "@/components/ui/button";
 import { onDesktop, type Account } from "@/lib/client";
 
 const label = (a: Account) => a.tenant || accName(a);
 
-// The one remote desktop in a tab of its own, a button per account above it: a click brings the window of that account
-// to the front of the desktop on screen (POST /api/desktop/N) and the desktop stays connected. A second tab of the
+// The one remote desktop on the whole page, and a small tab with an arrow at its top: a click pulls down the accounts
+// whose window is on the desktop, a pick brings that account to the front of the desktop on screen (POST
+// /api/desktop/N) and the desktop stays connected. The address names the account in front. A second tab of the
 // desktop would cut off the first: Selkies keeps one viewer in control.
 export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; initial: number }) {
   const list = onDesktop(accounts);
@@ -17,8 +19,29 @@ export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; in
   const [front, setFront] = useState(first?.slot ?? 0);
   // opened once, on the first account: another address would load the desktop again
   const [src] = useState(first ? `/api/desktop/${first.slot}` : "");
+  const [down, setDown] = useState(false);
   const [problem, setProblem] = useState("");
   const frame = useRef<HTMLIFrameElement>(null);
+  const tab = useRef<HTMLDivElement>(null);
+
+  // a reload opens the account in front again
+  useEffect(() => {
+    if (front) window.history.replaceState(null, "", `?account=${front}`);
+  }, [front]);
+
+  // up again at a click anywhere else (a click on the desktop takes the focus from this page) and at Escape
+  useEffect(() => {
+    if (!down) return;
+    const away = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Escape") return;
+      if (e.type === "pointerdown" && tab.current?.contains(e.target as Node)) return;
+      setDown(false);
+    };
+    for (const type of ["pointerdown", "keydown", "blur"]) window.addEventListener(type, away);
+    return () => {
+      for (const type of ["pointerdown", "keydown", "blur"]) window.removeEventListener(type, away);
+    };
+  }, [down]);
 
   async function bring(a: Account) {
     setProblem("");
@@ -31,29 +54,46 @@ export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; in
     } catch {
       why = "the server did not answer";
     }
-    if (why) setProblem(`${label(a)} not brought to the front: ${why}`);
-    else setFront(a.slot);
+    // the tab stays down with the reason
+    if (why) return setProblem(`${label(a)} not brought to the front: ${why}`);
+    setFront(a.slot);
+    setDown(false);
     // the keyboard back to the desktop
     frame.current?.focus();
   }
 
   if (!first) return <p className="p-4 text-sm text-muted-foreground">No account has its window on the remote desktop.</p>;
   return (
-    <div className="flex h-dvh flex-col bg-background">
-      <nav aria-label="Accounts" className="flex h-10 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
-        <MonitorIcon className="mr-1 size-4 shrink-0 text-muted-foreground" />
-        {list.map((a) => (
-          <Button key={a.slot} size="sm" variant={a.slot === front ? "secondary" : "ghost"} aria-pressed={a.slot === front} className="h-8 shrink-0" onClick={() => void bring(a)}>
-            {label(a)}
-          </Button>
-        ))}
-        {problem && (
-          <span role="alert" className="ml-2 truncate text-xs text-destructive">
-            {problem}
-          </span>
-        )}
-      </nav>
-      <iframe ref={frame} src={src} title="Remote Teams desktop" allow="microphone; autoplay" className="min-h-0 w-full flex-1 border-0" />
+    <div className="relative h-dvh overflow-hidden bg-background">
+      <iframe ref={frame} src={src} title="Remote Teams desktop" allow="microphone; autoplay" className="absolute inset-0 size-full border-0" />
+      <div ref={tab} className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 flex-col items-center">
+        <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", down ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+          <div id="desktop-accounts" inert={!down} aria-hidden={!down} className="min-h-0 overflow-hidden">
+            <div className="flex min-w-44 flex-col gap-0.5 rounded-b-lg border border-t-0 bg-background/95 p-1 shadow-lg backdrop-blur">
+              {list.map((a) => (
+                <Button key={a.slot} size="sm" variant={a.slot === front ? "secondary" : "ghost"} aria-pressed={a.slot === front} className="h-8 justify-start" onClick={() => void bring(a)}>
+                  {label(a)}
+                </Button>
+              ))}
+              {problem && (
+                <p role="alert" className="max-w-60 px-2 py-1 text-xs text-destructive">
+                  {problem}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label="Accounts"
+          aria-expanded={down}
+          aria-controls="desktop-accounts"
+          onClick={() => setDown((d) => !d)}
+          className="flex h-5 w-12 items-center justify-center rounded-b-md border border-t-0 bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-accent hover:text-foreground"
+        >
+          {down ? <ChevronUpIcon className="size-4" /> : <ChevronDownIcon className="size-4" />}
+        </button>
+      </div>
     </div>
   );
 }

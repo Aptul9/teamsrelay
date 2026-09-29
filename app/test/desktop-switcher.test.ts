@@ -1,6 +1,6 @@
-// The desktop tab (/remote) in the local Google Chrome, headless: a button per account above the one desktop, and a
-// click brings another account to the front on the desktop already on screen (POST /api/desktop/N, answered by the
-// test), with no new load of the desktop.
+// The desktop tab (/remote) in the local Google Chrome, headless: the one desktop on the whole page, a small tab with an
+// arrow at the top that pulls down the accounts, and a pick brings another account to the front on the desktop already
+// on screen (POST /api/desktop/N, answered by the test), with no new load of the desktop.
 import path from "node:path";
 import { build } from "esbuild";
 import { chromium, type Browser } from "playwright-core";
@@ -55,58 +55,109 @@ async function open(url: string, answer: { status: number; body: unknown } = { s
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(url);
   await page.frameLocator("iframe").locator("p").waitFor();
-  const pressed = async () => page.locator('button[aria-pressed="true"]').innerText();
+  const arrow = page.getByRole("button", { name: "Accounts", exact: true });
+  const shown = async () => (await arrow.getAttribute("aria-expanded")) === "true";
+  // the accounts of the tab, as a user can reach them: none while it is up
+  const picks = async () => page.locator("#desktop-accounts").getByRole("button").allInnerTexts();
+  const pressed = async () => page.locator('#desktop-accounts button[aria-pressed="true"]').innerText();
   const frame = async () => page.locator("iframe").getAttribute("src");
-  return { page, errors, loads, posts, pressed, frame, close: () => context.close() };
+  return { page, errors, loads, posts, arrow, shown, picks, pressed, frame, close: () => context.close() };
 }
 
 describe("the desktop tab", () => {
-  it("opens the desktop on the account asked for, with a button for each account whose window is on it", async () => {
-    const { page, errors, loads, pressed, frame, close } = await open("http://app.test/remote?account=2");
+  it("opens the desktop on the account asked for, with only the arrow of the tab over it", async () => {
+    const { page, errors, loads, shown, picks, pressed, frame, close } = await open("http://app.test/remote?account=2");
 
-    expect(await page.getByRole("button").allInnerTexts()).toEqual(["Contoso Cruises", "User Test"]);
+    expect(await shown()).toBe(false);
+    expect(await picks()).toEqual([]);
     expect(await pressed()).toBe("User Test");
     expect(await frame()).toBe("/api/desktop/2");
+    expect(new URL(page.url()).search).toBe("?account=2");
     expect(loads).toEqual([2]);
     expect(errors).toEqual([]);
     await close();
   });
 
-  it("brings another account to the front on the desktop already on screen, and gives the keyboard back to it", async () => {
-    const { page, errors, loads, posts, pressed, frame, close } = await open("http://app.test/remote?account=2");
+  it("pulls down the accounts whose window is on the desktop at a click on the arrow, and puts them away at the next", async () => {
+    const { page, arrow, shown, picks, pressed, close } = await open("http://app.test/remote?account=2");
 
+    await arrow.click();
+
+    expect(await shown()).toBe(true);
+    expect(await picks()).toEqual(["Contoso Cruises", "User Test"]);
+    expect(await pressed()).toBe("User Test");
+    // the arrow is under the accounts now, pointing up
+    const [list, tab] = await Promise.all([page.locator("#desktop-accounts").boundingBox(), arrow.boundingBox()]);
+    expect(tab!.y).toBeGreaterThanOrEqual(list!.y + list!.height - 1);
+
+    await arrow.click();
+
+    await expect.poll(shown).toBe(false);
+    expect(await picks()).toEqual([]);
+    await close();
+  });
+
+  it("puts the accounts away at a click anywhere else, the desktop included, and at Escape", async () => {
+    const { page, arrow, shown, close } = await open("http://app.test/remote?account=2");
+
+    await arrow.click();
+    await page.frameLocator("iframe").locator("p").click();
+    await expect.poll(shown).toBe(false);
+
+    await arrow.click();
+    await page.keyboard.press("Escape");
+    await expect.poll(shown).toBe(false);
+    await close();
+  });
+
+  it("brings the account picked to the front on the desktop already on screen, and the address follows it", async () => {
+    const { page, errors, loads, posts, arrow, shown, pressed, frame, close } = await open("http://app.test/remote?account=2");
+
+    await arrow.click();
     await page.getByRole("button", { name: "Contoso Cruises" }).click();
 
-    await expect.poll(pressed).toBe("Contoso Cruises");
+    await expect.poll(shown).toBe(false);
     expect(posts).toEqual([1]);
+    expect(await pressed()).toBe("Contoso Cruises");
+    expect(new URL(page.url()).search).toBe("?account=1");
     expect(await frame()).toBe("/api/desktop/2");
     expect(loads).toEqual([2]);
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("IFRAME");
     expect(errors).toEqual([]);
+
+    // a reload opens the account in front
+    await page.reload();
+    await page.frameLocator("iframe").locator("p").waitFor();
+    expect(await frame()).toBe("/api/desktop/1");
+    expect(await pressed()).toBe("Contoso Cruises");
     await close();
   });
 
-  it("keeps the account in front and says why when the other one could not be brought forward", async () => {
+  it("keeps the account in front and says why when the one picked could not be brought forward", async () => {
     for (const answer of [
       { status: 503, body: { detail: "Account not ready yet" } },
       { status: 200, body: { ok: true, shown: false } },
     ]) {
-      const { page, posts, pressed, close } = await open("http://app.test/remote?account=2", answer);
+      const { page, posts, arrow, shown, pressed, close } = await open("http://app.test/remote?account=2", answer);
 
+      await arrow.click();
       await page.getByRole("button", { name: "Contoso Cruises" }).click();
 
-      await expect.poll(() => page.getByRole("alert").innerText()).toMatch(/Contoso Cruises/);
+      await expect.poll(() => page.locator("#desktop-accounts").getByRole("alert").innerText()).toMatch(/Contoso Cruises/);
       expect(posts).toEqual([1]);
+      expect(await shown()).toBe(true);
       expect(await pressed()).toBe("User Test");
+      expect(new URL(page.url()).search).toBe("?account=2");
       await close();
     }
   });
 
-  it("opens on the first account of the desktop when the one asked for is not there", async () => {
+  it("opens on the first account of the desktop when the one asked for is not there, and says so in the address", async () => {
     for (const url of ["http://app.test/remote?account=3", "http://app.test/remote"]) {
-      const { pressed, frame, close } = await open(url);
+      const { page, pressed, frame, close } = await open(url);
       expect(await pressed()).toBe("Contoso Cruises");
       expect(await frame()).toBe("/api/desktop/1");
+      expect(new URL(page.url()).search).toBe("?account=1");
       await close();
     }
   });
