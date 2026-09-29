@@ -153,5 +153,48 @@ describe("a chat opening in Teams", () => {
     await new Promise((r) => setTimeout(r, 500));
     expect(await shows("Opening in Teams")).toBe(false);
     expect(asked).toEqual([]);
+    // nor when the app comes back on screen
+    await page.clock.install();
+    await visibility("hidden");
+    await page.clock.fastForward("05:00");
+    await visibility("visible");
+    await new Promise((r) => setTimeout(r, 500));
+    expect(asked).toEqual([]);
+  });
+});
+
+// hides or shows the page, as a switch to another tab or window does
+const visibility = (state: "hidden" | "visible") =>
+  page.evaluate((s) => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => s });
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => s === "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, state);
+
+// Away from the app for long, Teams went back to the self chat: the chat on screen is opened again, and says so
+describe("a chat back on screen", () => {
+  it("asks Teams to open the chat again after a minute or more away, not after a short absence", async () => {
+    await page.clock.install();
+    await expect.poll(() => asked).toEqual(["Anna Rossi"]);
+    await setView(saved, { id: 41, status: "done" });
+    await until("Opening in Teams", false);
+    // half a minute in another tab: Teams still shows the chat, the messages on return are current
+    await visibility("hidden");
+    await page.clock.fastForward("00:30");
+    await visibility("visible");
+    await new Promise((r) => setTimeout(r, 500));
+    expect(asked).toEqual(["Anna Rossi"]);
+    expect(await shows("Opening in Teams")).toBe(false);
+    // over a minute: opened again, the saved messages dimmed under Opening in Teams until that open is done
+    answer = { status: 200, body: { ok: true, id: 42 } };
+    await visibility("hidden");
+    await page.clock.fastForward("01:05");
+    await visibility("visible");
+    await expect.poll(() => asked).toEqual(["Anna Rossi", "Anna Rossi"]);
+    await until("Opening in Teams");
+    await until("saved at the last visit");
+    await setView(saved, { id: 42, status: "done" });
+    await until("Opening in Teams", false);
+    expect(errors).toEqual([]);
   });
 });
