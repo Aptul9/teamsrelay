@@ -40,6 +40,11 @@ export const config = {
     const s = process.env.VAPID_SUBJECT || "";
     return /^(mailto:|https:\/\/)/.test(s) ? s : "mailto:admin@example.com";
   },
+  // Service account key of the Firebase project, for the phones of the Android app (mobile/): the same file the agents
+  // read, for the notifications of the accounts on another computer. A missing file leaves FCM off for them.
+  get fcmCredentialsFile() {
+    return process.env.FCM_CREDENTIALS || "/fcm/service-account.json";
+  },
   get ntfy(): { url: string; topic: string } | null {
     const topic = process.env.NTFY_TOPIC || "";
     return process.env.NTFY_ENABLED === "1" && topic ? { url: process.env.NTFY_URL || "https://ntfy.sh", topic } : null;

@@ -1,4 +1,5 @@
 import { getMigrations } from "better-auth/db/migration";
+import { loadServiceAccount } from "@/agent/push/fcm";
 import { appDb, migrateAppSchema } from "@/lib/appdb";
 import { authOptions } from "@/lib/auth";
 import { config } from "@/lib/config";
@@ -27,6 +28,12 @@ export async function boot() {
     fatal(e instanceof Error ? e.message : String(e));
   }
   if (config.mcpToken) console.log("MCP endpoint on: /mcp");
+  // the phones of the Android app get the notifications of the accounts on another computer from here (lib/relay.ts)
+  try {
+    if (loadServiceAccount(config.fcmCredentialsFile)) console.log("FCM on: phones of the Android app");
+  } catch (e) {
+    console.error(`FCM off: ${e instanceof Error ? e.message : String(e)}`);
+  }
   const ctl = controlClient();
   // a check cut by the restart left its browser running: stopped first, through the same queue
   void settleChecks(ctl, appDb());
