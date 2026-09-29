@@ -41,6 +41,10 @@ Date: 2026-09-29.
 - The local relay in one process (`test/local/relay.test.ts`): its fake Teams banner has a Sign in that signs in on a trusted click only; the relay presses it, Teams comes back, nothing is pushed.
 - Checks: a sign-out that the press ends is a normal check.
 
+## Revision: an attempt only with something to act on (2026-09-29, evening)
+
+Found on prod at the restart of the deploy: slot 2 starts through the hosts of the proxy of its tenant, and Teams read as signed out from 16:13:35 to past 16:13:50Z, on a page still loading. The attempt began 15 s in, found no Sign in and pressed nothing, as it should, but it counted as the attempt of that sign-out and held off the next one for 30 minutes. Now an attempt starts only once Teams shows its Sign in or a Microsoft sign-in page shows (checked at every round from 15 s on, until the push); the 30 minutes follow only an attempt that pressed something; the buttons of a sign-out that started no attempt are listed once, when the push goes out, so a real sign-out whose screens differ from these still says what it showed.
+
 ## Docs
 
 `teams-selectors.md` (*Expired session*), `limitations.md` (*Expiring session*), `architecture.md` (loop table, checked accounts), `operations.md` (log lines).
