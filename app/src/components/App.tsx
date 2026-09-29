@@ -38,6 +38,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AnsweredCalls } from "@/lib/call-audio/answered";
+import { CallAudio, callAudioSupported, callAudioUrl, type CallAudioState } from "@/lib/call-audio/call-audio";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
@@ -166,6 +168,45 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const onScreen = useSyncExternalStore(onVisibility, visibleNow, () => true);
 
   const deskUrl = useCallback((n: number) => desktopUrl.replace("{n}", String(n)), [desktopUrl]);
+
+  // The sound of a call answered here, in the app: the websocket of the remote desktop, without its video. Where the
+  // browser cannot, or the desktop is on another site, the desktop carries it as before.
+  const [callAudio, setCallAudio] = useState<Record<number, CallAudioState>>({});
+  const [answered] = useState(() =>
+    typeof window === "undefined"
+      ? null
+      : new AnsweredCalls({
+          make: (n) => new CallAudio({ url: callAudioUrl(window.location), onState: (st) => setCallAudio((m) => ({ ...m, [n]: st })) }),
+          onStop: (n) =>
+            setCallAudio((m) => {
+              const next = { ...m };
+              delete next[n];
+              return next;
+            }),
+        }),
+  );
+  const startCallAudio = useCallback(
+    (n: number): boolean => {
+      if (!answered || !callAudioSupported() || new URL(deskUrl(n), window.location.href).origin !== window.location.origin) return false;
+      answered.start(n);
+      return true;
+    },
+    [answered, deskUrl],
+  );
+  // the call answered here goes on while it is in progress, and its sound ends with it
+  useEffect(() => {
+    answered?.inProgress(calls.filter((c) => c.active).map((c) => c.acc));
+  }, [answered, calls]);
+  useEffect(() => () => answered?.stopAll(), [answered]);
+  // Answer on a notification with no window of the app open: the app opens with call=1, and the sound comes here
+  const [callOnLoad] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    const q = new URLSearchParams(window.location.search);
+    return q.get("call") === "1" ? Number(q.get("a")) || 0 : 0;
+  });
+  useEffect(() => {
+    if (callOnLoad) startCallAudio(callOnLoad);
+  }, [callOnLoad, startCallAudio]);
 
   // the ring of the calls: learns at once whether the page may play sound, else the first click allows it
   const [ringer] = useState(() => (typeof window === "undefined" ? null : new Ringer()));
@@ -297,10 +338,12 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       }
       const n = Number(e.data?.acc);
       if (n) selectAccount(n);
+      // Answer on a notification: the sound of the call comes to this window
+      if (n && e.data?.call) startCallAudio(n);
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () => navigator.serviceWorker.removeEventListener("message", onMessage);
-  }, [selectAccount, ringer]);
+  }, [selectAccount, ringer, startCallAudio]);
 
   useEffect(() => {
     void pushState().then((s) => setPushOff(s === "off"));
@@ -362,18 +405,27 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     setDeskOpened(true);
   }
 
-  // Answer from the app: the remote desktop, which carries the sound, opens at once (a window opened after the request
-  // would count as a popup), and the agent clicks Accept with audio in Teams within a second
+  // Answer from the app: the sound of the call comes to the app, started from this tap (a page may play from a tap);
+  // where it cannot, the remote desktop, which carries the sound, opens at once (a window opened after the request
+  // would count as a popup). The agent clicks Accept with audio in Teams within a second.
   function answerCall(c: RingingCall) {
-    openDesktop(c.acc);
-    post("/api/call/answer", { since: c.since }, c.acc).catch((e: unknown) =>
-      toast.error("Call not answered", { description: e instanceof ApiError ? e.message : "The server could not be reached" }),
-    );
+    if (!startCallAudio(c.acc)) openDesktop(c.acc);
+    post("/api/call/answer", { since: c.since }, c.acc).catch((e: unknown) => {
+      answered?.stop(c.acc);
+      toast.error("Call not answered", { description: e instanceof ApiError ? e.message : "The server could not be reached" });
+    });
   }
 
   async function hangUpCall(c: RingingCall) {
     const r = await runCmd("/api/call/hangup", {}, c.acc, 15);
-    if (r.status !== "done") toast.error("Call not ended", { description: "End it in Teams, in the remote desktop of the account." });
+    if (r.status === "done") answered?.stop(c.acc);
+    else toast.error("Call not ended", { description: "End it in Teams, in the remote desktop of the account." });
+  }
+
+  // the desktop takes the call over, its sound included
+  function callToDesktop(n: number) {
+    answered?.stop(n);
+    openDesktop(n);
   }
 
   async function addAccount() {
@@ -542,7 +594,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
         onSelect={selectAccount}
         onAnswer={answerCall}
         onHangUp={(c) => void hangUpCall(c)}
-        onDesktop={openDesktop}
+        onDesktop={callToDesktop}
+        audio={callAudio}
+        onMute={(n, on) => answered?.mute(n, on)}
+        onTapToHear={(n) => answered?.resume(n)}
       />
       <aside className={cn("flex w-full shrink-0 flex-col border-r bg-sidebar md:w-[22rem] xl:w-[25rem]", phoneShowsMain && "max-md:hidden")}>
         <div className="flex items-center gap-1 px-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 md:pt-2">

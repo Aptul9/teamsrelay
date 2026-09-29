@@ -119,8 +119,10 @@ function callOptions(d, alert) {
   };
 }
 
-// Answer: the server queues the answer of that call (ts = since), then the remote desktop of the account opens for its
-// sound; a call that no longer rings, or a server out of reach, opens the app on the account
+// Answer: the server queues the answer of that call (ts = since), then the app takes its sound: a window of the app
+// open now is told and brought to the front, otherwise the app opens with call=1. A remote desktop on another site
+// (DESKTOP_URL) carries the sound itself and opens instead; a call that no longer rings, or a server out of reach,
+// opens the app on the account.
 function answerCall(d) {
   return fetch('/api/call/answer?a=' + d.acc, {
     method: 'POST',
@@ -130,7 +132,19 @@ function answerCall(d) {
   })
     .then(r => (r.ok ? r.json() : null))
     .catch(() => null)
-    .then(j => clients.openWindow(j && j.desktop ? j.desktop : '/?a=' + d.acc));
+    .then(j => {
+      if (!j) return clients.openWindow('/?a=' + d.acc);
+      if (j.desktop && !String(j.desktop).startsWith('/')) return clients.openWindow(j.desktop);
+      return clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cl => {
+        for (const c of cl) {
+          if ('focus' in c) {
+            c.postMessage({ acc: d.acc, call: true });
+            return c.focus();
+          }
+        }
+        return clients.openWindow('/?a=' + d.acc + '&call=1');
+      });
+    });
 }
 
 // the notification opens the app on the account it comes from (acc = slot, web app), or on its chat (local relay)

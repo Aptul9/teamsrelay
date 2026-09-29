@@ -188,6 +188,30 @@ describe("call ring where the page may play sound (installed app)", () => {
     expect(c.errors).toEqual([]);
   });
 
+  it("shows the sound of a call answered here, with Mute, and Tap to hear while the page may not play yet", async () => {
+    const active = { acc: 2, caller: "Anna Rossi", since: 1_790_000_130_000, active: true };
+    const audio = (a: object) => run(c, `window.setAudio(${JSON.stringify({ 2: { link: "live", mic: "on", muted: false, needsTap: false, ...a } })})`);
+    await setCalls(c, [active]);
+    await audio({});
+    await until(c, "Sound in the app, microphone on");
+    await click(c, "[role=alert] button", "Mute");
+    expect(await run(c, "window.muted")).toEqual([2, true]);
+    await audio({ muted: true });
+    await until(c, "Sound in the app, muted");
+    await click(c, "[role=alert] button", "Unmute");
+    expect(await run(c, "window.muted")).toEqual([2, false]);
+    await audio({ link: "connecting", mic: "off", needsTap: true });
+    await until(c, "Tap to hear");
+    await click(c, "[role=alert] button", "Tap to hear");
+    expect(await run(c, "window.tapped")).toBe(2);
+    await audio({ link: "desktop", mic: "off" });
+    await until(c, "Sound on the desktop");
+    await audio({ link: "unavailable", reason: "The remote desktop cannot be reached", mic: "off" });
+    await until(c, "The remote desktop cannot be reached: use Desktop");
+    await run(c, "window.setAudio({})");
+    await setCalls(c, []);
+  });
+
   it("rings the bell of a message once, without a click, then rests again", async () => {
     await until(c, "Luca Bianchi is calling", false);
     const r = await bell(c);
