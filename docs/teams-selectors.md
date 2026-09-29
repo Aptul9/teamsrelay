@@ -74,7 +74,8 @@ Seen on 2026-09-27 on slot 2 (behind Defender for Cloud Apps) with 1:1 audio cal
 | Afterwards | the Activity feed lists *Missed call from Anna Rossi* for a missed call, nothing for one taken by voicemail |
 | Call in progress | no selector: the page records from the microphone. An init script of every page and frame wraps `navigator.mediaDevices.getUserMedia` and keeps the audio tracks it returns (`__teamsMicTracks`); a track `live` is a call in progress |
 | Hang up | the shortcut of Teams web for ending a call, Ctrl+Shift+H (Microsoft support, *Keyboard shortcuts for Microsoft Teams*, web column; there accept audio call is Alt+Shift+S, decline Ctrl+Shift+D, mute Ctrl+Shift+M), sent to the page that records |
-| Call window | Teams may show the call in a window of its own (not recorded yet): nothing depends on it. The sound goes through the one sound server of the desktop whatever the window, the call in progress is read from every Teams page of the browser, and the hang-up goes to the page that records |
+| Call window | a 1:1 call answered on slot 2 (2026-09-29) showed in the main window, the calling screen in place of the app: nothing depends on it. The sound goes through the one sound server of the desktop whatever the window, the call in progress is read from every Teams page of the browser, and the hang-up goes to the page that records |
+| After the call | the main area can stay on a post-meeting page, `[data-tid="calling-screen-background"]` with a Teams Labs offer (`post-meeting-teams-labs-feature-dismiss` *Not now*, `post-meeting-teams-labs-feature-opt-in` *Try it*): the side bar shows, the chat list does not. The Chat button of the side bar brings the list back at once (the agent clicks it 3 s after the call, reloads Teams after 3 tries); *Try it* is never clicked |
 
 ## Expired session
 
