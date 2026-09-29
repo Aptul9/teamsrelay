@@ -37,7 +37,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message } from "@/lib/client";
+import { ApiError, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message, type OpenReason, type OpenStatus } from "@/lib/client";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
 import { dayLabel, fullTime, placeMessages, sentAt, timeLabel } from "@/lib/message-times";
 
@@ -66,6 +66,17 @@ function readStatus(m: Message): { label: string; seen: boolean } {
   return { label: "Sent", seen: false };
 }
 
+// Why Teams did not open the chat, as the agent tells it (cmd_result of the open); an open failed without a reason
+// waited too long for the agent, or was cut by its restart
+const OPEN_FAILED: Record<OpenReason, string> = {
+  "signed-out": "Teams is signed out: sign in again, then try again.",
+  loading: "Teams is still starting.",
+  "not-listed": "Teams has no chat with this name in its list.",
+  "not-shown": "Teams did not show it.",
+  unreadable: "Teams showed it, but its messages could not be read.",
+};
+const NO_ANSWER = "Teams did not get to it in time.";
+
 // text as shown, as Teams will show it; raw and mentions as typed, for a retry
 type Pending = { text: string; ts: number; quote?: { author: string; text: string }; raw?: string; mentions?: string[] };
 
@@ -86,6 +97,7 @@ export function Conversation({
   chat,
   entry,
   rows,
+  open = null,
   stopped,
   stoppedText = "Account stopped: start it to send",
   others,
@@ -97,6 +109,8 @@ export function Conversation({
   chat: string;
   entry?: Chat;
   rows: Message[] | null;
+  // the last open of this chat, from the event stream: which one Teams has done, or why it failed
+  open?: OpenStatus | null;
   // the account is switched off, or runs only during its checks: the messages are the last ones read, nothing can be
   // sent; stoppedText says why
   stopped: boolean;
@@ -122,7 +136,6 @@ export function Conversation({
   const [restoring, setRestoring] = useState<Record<string, boolean>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [openedAt] = useState(() => Date.now());
   const boxRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -143,16 +156,36 @@ export function Conversation({
   const realMine = messages.filter((m) => m.mine).map((m) => (m.text || "").trim());
   const shownPending = pending.filter((p) => !realMine.includes(p.text.trim()));
 
-  // Opens the chat in the remote Teams: the agent keeps the messages of the open chat up to date
+  // Opens the chat in the remote Teams: the agent saves what Teams shows, then keeps it up to date. Until that open is
+  // done the messages are the ones saved at the last visit. asks counts the tries (Try again); asked is the command the
+  // web app queued for the last one, or why it could not queue it.
+  const [asks, setAsks] = useState(0);
+  const [asked, setAsked] = useState<{ ask: number; id?: number; error?: string } | null>(null);
   useEffect(() => {
-    if (!stopped) void post("/api/open", { name: chat }, acc).catch(() => undefined);
-  }, [chat, acc, stopped]);
-
-  // the spinner gives the agent a few seconds to open the chat before "No messages" is shown
-  useEffect(() => {
-    const t = setTimeout(() => setNow(Date.now()), 5100);
-    return () => clearTimeout(t);
-  }, []);
+    if (stopped) return;
+    let gone = false;
+    post<{ id: number }>("/api/open", { name: chat }, acc).then(
+      (r) => !gone && setAsked({ ask: asks, id: r.id }),
+      (e: unknown) => !gone && setAsked({ ask: asks, error: e instanceof ApiError ? e.message : "No answer from the server." }),
+    );
+    return () => {
+      gone = true;
+    };
+  }, [chat, acc, stopped, asks]);
+  const mine = asked?.ask === asks ? asked : null;
+  // saved: a stopped account, nothing asked; live once the open of this visit (or a later one) is done
+  const openState: "saved" | "opening" | "live" | "failed" = stopped
+    ? "saved"
+    : mine?.error
+      ? "failed"
+      : mine?.id !== undefined && open && open.id >= mine.id
+        ? open.status === "pending"
+          ? "opening"
+          : open.status === "done"
+            ? "live"
+            : "failed"
+        : "opening";
+  const whyNot = mine?.error ?? (open?.reason ? OPEN_FAILED[open.reason] : NO_ANSWER);
 
   // a pending message that never shows up on Teams turns into "Not sent"
   useEffect(() => {
@@ -400,7 +433,8 @@ export function Conversation({
   }
 
   const people = picker && members ? matchPeople(members, picker.query) : [];
-  const loading = rows === null || (!messages.length && !shownPending.length && now - openedAt < 5000);
+  const nothing = !messages.length && !shownPending.length && !imagesPending.length;
+  const loading = (rows === null && openState !== "failed") || (openState === "opening" && nothing);
   // Teams shows author, picture and time only on the first of consecutive messages of the same person, and again after
   // a pause or on another day, under the divider of that day
   const placed = placeMessages(messages);
@@ -709,21 +743,58 @@ export function Conversation({
         </Tooltip>
       </header>
 
+      {(openState === "failed" || (openState === "opening" && !loading)) && (
+        <div
+          role={openState === "failed" ? "alert" : "status"}
+          className={cn(
+            "flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs md:px-6",
+            openState === "failed" ? "bg-destructive/10 text-destructive" : "bg-muted/60 text-muted-foreground",
+          )}
+        >
+          {openState === "opening" ? (
+            <>
+              <Spinner className="size-3.5 shrink-0" />
+              <span>Opening in Teams… showing the messages saved at your last visit.</span>
+            </>
+          ) : (
+            <>
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">Teams did not open this chat.</span> {whyNot}
+                {messages.length ? " Showing the messages saved at your last visit." : ""}
+              </span>
+              <Button variant="link" size="xs" className="h-auto shrink-0 p-0 text-xs" onClick={() => setAsks((n) => n + 1)}>
+                Try again
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
       <div ref={boxRef} onScroll={onScroll} className="scroll-thin min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto w-full max-w-4xl px-3 pt-2 pb-6 md:px-6">
+        {/* the messages saved at the last visit, dimmed until Teams has opened the chat for this one */}
+        <div className={cn("mx-auto w-full max-w-4xl px-3 pt-2 pb-6 transition-opacity md:px-6", openState === "opening" && !loading && "opacity-60")}>
           {loading ? (
             <div className="flex h-60 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
               <Spinner className="size-6" />
               Opening the chat in Teams…
             </div>
-          ) : !messages.length && !shownPending.length && !imagesPending.length ? (
+          ) : nothing ? (
             <Empty className="h-60">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <MessageSquareDashedIcon />
                 </EmptyMedia>
-                <EmptyTitle>No messages in this chat</EmptyTitle>
-                <EmptyDescription>Write the first one below.</EmptyDescription>
+                {openState === "failed" ? (
+                  <>
+                    <EmptyTitle>No messages saved for this chat</EmptyTitle>
+                    <EmptyDescription>They show once Teams opens it.</EmptyDescription>
+                  </>
+                ) : (
+                  <>
+                    <EmptyTitle>No messages in this chat</EmptyTitle>
+                    <EmptyDescription>Write the first one below.</EmptyDescription>
+                  </>
+                )}
               </EmptyHeader>
             </Empty>
           ) : (

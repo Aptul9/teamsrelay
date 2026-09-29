@@ -32,6 +32,7 @@ export type Account = {
   relaySeen: number;
 };
 export type { ActivityItem, CallLogEntry, Chat, Message, Reaction } from "@/shared/slot-db/rows";
+export type { OpenReason, OpenStatus } from "@/shared/slot-db/commands";
 export { CHECK_INTERVALS } from "@/shared/checks";
 export type { RingingCall, SlotHealth as Health } from "@/shared/slot-db/state";
 // detail: why the web app refused the command, when it did
