@@ -80,6 +80,9 @@ export async function runPendingCommands(a: Agent) {
     // a refresh of the Activity feed, or a check, stays pending until the health check finds the side bar clickable:
     // while Teams starts (sign-in redirects, then its loading bar) the clicks would time out
     if ((cmd.type === "activity" || cmd.type === "check") && !a.railReady) continue;
+    // an open stays pending while Teams shows no chat list yet (starting, a page a call left, a page not read): the app
+    // says the chat is opening meanwhile; signed out, the open fails at once with its reason
+    if (cmd.type === "open" && a.health?.teams !== "ok" && a.health?.teams !== "login") continue;
     log.info("CMD", cmd.type, { id: cmd.id, arg: cmd.type === "download" ? undefined : cmd.arg1 });
     a.store.startCommand(cmd.id);
     // the page sees the input of a command as trusted input, as the owner's: it is the agent's own
