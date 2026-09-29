@@ -33,7 +33,7 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 
 - The web app has no access to Docker, and no container mounts the Docker socket. The web app asks the supervisor of the browsers container, on a unix socket in the volume `control` (mode 600, owned by root), to start, stop, wipe or show an account.
 - Chromium runs as `abc` with its sandbox: renderers in a seccomp filter and in their own user and PID namespaces. `abc` is not in the `sudo` group of the image.
-- `data/`, `vapid/`, `fcm/` and the control socket are mounted under `/root` (mode 700): the agents and the supervisor, running as root, reach them; the browsers do not.
+- `data/`, `vapid/`, `fcm/` and the control socket are mounted under `/root` (mode 700): the agents and the supervisor, running as root, reach them; the browsers do not. The web app mounts `vapid/` and `fcm/` read-only as well: it sends the notifications of the accounts on another computer.
 - DevTools of each browser listen on `127.0.0.1:(9221+N)` without authentication, so every process of the container reaches every browser. They refuse connections that carry a web origin: a web page cannot open them.
 - A browser that escapes its sandbox reaches every profile under `/profiles` and every DevTools port: every account has the same owner.
 

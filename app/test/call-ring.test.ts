@@ -8,7 +8,7 @@ import { chromium, type Browser, type CDPSession, type Page } from "playwright-c
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BELL, RING } from "@/lib/ring";
 
-type Chrome = { browser: Browser; page: Page; cdp: CDPSession; errors: string[] };
+type Chrome = { browser: Browser; page: Page; cdp: CDPSession; errors: string[]; url: string };
 
 let js = "";
 
@@ -27,9 +27,10 @@ beforeAll(async () => {
   js = out.outputFiles[0].text;
 });
 
-// Chrome with the given --autoplay-policy, on the test page; touch: a touch screen, as a phone
-function chrome(policy: "no-user-gesture-required" | "document-user-activation-required", o: { touch?: boolean } = {}) {
-  const c = {} as Chrome;
+// Chrome with the given --autoplay-policy, on the test page; touch: a touch screen, as a phone; search: the query of the
+// page, as the start page of the Android app opens the server (?app=)
+function chrome(policy: "no-user-gesture-required" | "document-user-activation-required", o: { touch?: boolean; search?: string } = {}) {
+  const c = { url: `http://ring.test/${o.search ?? ""}` } as Chrome;
   beforeAll(async () => {
     c.browser = await chromium.launch({ channel: "chrome", headless: true, args: [`--autoplay-policy=${policy}`] });
     c.page = await c.browser.newPage({ viewport: { width: 1280, height: 800 }, hasTouch: !!o.touch });
@@ -50,7 +51,7 @@ function chrome(policy: "no-user-gesture-required" | "document-user-activation-r
 
 // The test page, loaded again: a new document, which the user has not clicked yet
 async function load(c: Chrome) {
-  await c.page.goto("http://ring.test/");
+  await c.page.goto(c.url);
   for (let i = 0; i < 100 && (await run(c, "typeof window.setCalls")) !== "function"; i++) await new Promise((r) => setTimeout(r, 50));
 }
 
@@ -288,6 +289,22 @@ describe("call ring where sound needs a click in the page first (browser tab)", 
     await setCalls(c, [call("Anna Rossi")]);
     expect(await loudest(c)).toBeGreaterThan(0.05);
     await setCalls(c, []);
+  });
+});
+
+// the WebView of the app plays sound without a gesture (wry sets mediaPlaybackRequiresUserGesture false), and the phone
+// rings the call itself with the ringtone of the Calls channel of the app (mobile/plugin)
+describe("call ring inside the Android app", () => {
+  const c = chrome("no-user-gesture-required", { search: `?app=${encodeURIComponent("http://tauri.localhost/")}` });
+
+  it("shows the call with Answer but adds no ring of its own: the phone rings", async () => {
+    await setCalls(c, [call("Anna Rossi", 1_790_000_200_000)]);
+    await until(c, "Anna Rossi is calling");
+    expect(await run(c, `[...document.querySelectorAll("[role=alert] button")].some((b) => b.textContent.includes("Answer"))`)).toBe(true);
+    expect(await loudest(c)).toBeLessThan(0.001);
+    await setCalls(c, []);
+    await until(c, "Anna Rossi is calling", false);
+    expect(c.errors).toEqual([]);
   });
 });
 

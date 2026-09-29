@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import Database from "better-sqlite3";
 import type { z } from "zod";
 import { MAX_DOWNLOAD } from "@/agent/logic/files";
+import { FcmSender, loadServiceAccount } from "@/agent/push/fcm";
 import { Notifier, type PushDevices } from "@/agent/push/notifier";
 import { loadVapidKeys } from "@/agent/push/vapid";
 import { AppStore } from "@/agent/store/app-store";
@@ -241,6 +242,15 @@ function relayNotifier(caller: RelayCaller): Notifier {
   } catch (e) {
     console.error(`relay ${caller.slot}: push keys: ${(e as Error).message}`);
   }
+  // the phones of the Android app, as the agents reach them; a key file that is no service account key leaves them
+  // without notifications, and the browsers with theirs
+  let fcm: FcmSender | null = null;
+  try {
+    const sa = loadServiceAccount(config.fcmCredentialsFile);
+    if (sa) fcm = new FcmSender(sa);
+  } catch (e) {
+    console.error(`relay ${caller.slot}: FCM key: ${(e as Error).message}`);
+  }
   if (!fs.existsSync(slotDbPath(caller.slot))) throw new SlotNotReady();
   const store = SlotStore.open(slotDbPath(caller.slot));
   const app = new AppStore(config.appDb, caller.slot);
@@ -252,7 +262,7 @@ function relayNotifier(caller: RelayCaller): Notifier {
     remove: (endpoint) => app.remove(endpoint),
     account: (me) => app.account(me),
   };
-  const notifier = new Notifier({ store, devices, vapid, subject: config.vapidSubject, ntfy: config.ntfy });
+  const notifier = new Notifier({ store, devices, vapid, subject: config.vapidSubject, ntfy: config.ntfy, fcm });
   pushers().set(slot, { added, store, notifier });
   return notifier;
 }

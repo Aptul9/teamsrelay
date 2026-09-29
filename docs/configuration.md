@@ -71,7 +71,7 @@ The browsers image also carries the Chromium policy `AudioCaptureAllowedUrls` (`
 | Path | Content |
 |---|---|
 | `vapid/private_key.pem`, `vapid/appkey.txt` | Web Push keys, generated once ([setup.md](setup.md)). |
-| `fcm/service-account.json` | Service account key of the Firebase project, for the Android app ([setup.md](setup.md#android-app)). Not in git; mounted read-only in the browsers container. |
+| `fcm/service-account.json` | Service account key of the Firebase project, for the Android app ([setup.md](setup.md#android-app)). Not in git; mounted read-only in the browsers container (agents) and in the web app (`/fcm`, `FCM_CREDENTIALS`: the phones of the owner of an account on another computer). A missing file leaves FCM off; a file that is not a service account key stops an agent, and the web app logs `FCM off` with the reason and sends those accounts' notifications to the browsers only. |
 | `config/N/` | Chromium profile of account N: the signed-in Microsoft session. |
 | `data/app.db` | Users, sessions, slot ownership, push subscriptions, the SHA-256 of the token of each account on another computer. |
 | `data/N/` | Database, images and files of slot N; for an account on another computer, written by the web app from what its relay sends. |

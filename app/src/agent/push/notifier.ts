@@ -3,7 +3,8 @@ import { Identity, parseState, STATE } from "@/shared/slot-db/state";
 import { CALL_TTL, callTag, chatTag, PUSH_TTL, pushRetryDelay, pushTitle, RecentPushes } from "../logic/notify";
 import { errorText, log } from "../log";
 import type { SlotStore } from "../store/slot-store";
-import { sealFor, type FcmSender } from "./fcm";
+import type { FcmSender } from "./fcm";
+import { sealFor } from "./seal";
 import type { VapidKeys } from "./vapid";
 
 type Send = (subscription: webpush.PushSubscription, payload: string, options: webpush.RequestOptions) => Promise<unknown>;

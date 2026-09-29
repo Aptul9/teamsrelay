@@ -1,11 +1,13 @@
-// FCM HTTP v1 as the relay speaks it to the phones of the Android app: OAuth token of the service account, one data
-// message per phone, its content sealed with the key of the phone. The Google endpoints are answered by the test.
+// FCM HTTP v1 as the relay speaks it to the phones of the Android app: OAuth token of the service account (Google's
+// client, google-auth-library, over the fetch of the sender), one data message per phone, its content sealed with the
+// key of the phone. The Google endpoints are answered by the test.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConfigError } from "@/agent/config";
-import { FcmSender, loadServiceAccount, newDeviceKey, sealFor } from "@/agent/push/fcm";
+import { FcmSender, loadServiceAccount } from "@/agent/push/fcm";
+import { newDeviceKey, sealFor } from "@/agent/push/seal";
 import { tempDir } from "../helpers";
 
 const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -31,11 +33,17 @@ function google(answers: { status: number; body?: unknown; headers?: Record<stri
   return { sent, fetch, fcm: () => sent.filter((s) => s.url.includes("fcm.googleapis.com")) };
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("FCM sender", () => {
   it("signs in as the service account with a JWT and keeps the access token until shortly before it ends", async () => {
-    let now = 1_790_000_000_000;
+    // the client of Google keeps its token by the clock of the process
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_790_000_000_000);
     const g = google();
-    const sender = new FcmSender(sa, { fetch: g.fetch, clock: () => now });
+    const sender = new FcmSender(sa, { fetch: g.fetch });
     await sender.send("phone-token-1234567890", { v: "1" }, { ttl: 60, high: true });
     await sender.send("phone-token-1234567890", { v: "1" }, { ttl: 60, high: true });
     const tokenCalls = g.sent.filter((s) => s.url === sa.token_uri);
@@ -43,7 +51,7 @@ describe("FCM sender", () => {
     const form = new URLSearchParams(tokenCalls[0].body);
     expect(form.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:jwt-bearer");
     const [head, claims, signature] = form.get("assertion")!.split(".");
-    expect(JSON.parse(Buffer.from(head, "base64url").toString())).toEqual({ alg: "RS256", typ: "JWT" });
+    expect(JSON.parse(Buffer.from(head, "base64url").toString())).toMatchObject({ alg: "RS256" });
     expect(JSON.parse(Buffer.from(claims, "base64url").toString())).toEqual({
       iss: sa.client_email,
       scope: "https://www.googleapis.com/auth/firebase.messaging",
@@ -52,7 +60,7 @@ describe("FCM sender", () => {
       exp: 1_790_003_600,
     });
     expect(crypto.verify("RSA-SHA256", Buffer.from(`${head}.${claims}`), publicKey, Buffer.from(signature, "base64url"))).toBe(true);
-    now += 3300 * 1000;
+    vi.setSystemTime(1_790_000_000_000 + 3300 * 1000);
     await sender.send("phone-token-1234567890", { v: "1" }, { ttl: 60, high: true });
     expect(g.sent.filter((s) => s.url === sa.token_uri)).toHaveLength(2);
     expect(g.fcm().map((s) => s.headers.Authorization)).toEqual(["Bearer token-1", "Bearer token-1", "Bearer token-2"]);
