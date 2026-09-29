@@ -58,6 +58,13 @@ Date: 2026-09-29. Follows [2026-09-28-answer-calls.md](2026-09-28-answer-calls.m
 - `sw.js`: Answer posts, then opens the app with `call=1`, or tells an open app.
 - The image and prod: a tone played into `output` of the browsers container arrives in the app's call audio; the fake microphone of a Chrome with the call audio arrives in `SelkiesVirtualMic` (`parec`). Then a real call on slot 2 with the owner.
 
+## Devices and Mute (added 2026-09-29, as built)
+
+- The microphone and the speaker of calls are picked on the device (`savedDevices` in the storage of the browser, `callDevices`), in the panel of the call banner (sliders button) and in Settings, which also tests them without a call: a meter of the microphone and a test sound on the speaker. The list leaves out the Default and Communications entries of Windows, which repeat a real device; before the microphone is allowed the browser names no device, and a button asks for it.
+- The microphone opens with `deviceId: {exact}`; a device gone (unplugged, a virtual device removed, taken by another program) gives way to the default one, and the banner says so. A switch during the call opens the new microphone before letting the old one go; a track that ends by itself (device unplugged) is opened again.
+- The speaker is `AudioContext.setSinkId`, where the browser has it (Chrome on a computer); a speaker gone plays on the default one, and the banner says so.
+- Mute turns the track of the microphone off (`enabled = false`: the browser gives silence), sends nothing, holds across a switch of device, and shows a meter at zero. Teams' own mute is not pressed.
+
 ## Out of scope
 
 Our own WebRTC path (UDP), the phone as a Teams endpoint of its own (Azure Communication Services), the iPhone, video, recording.
