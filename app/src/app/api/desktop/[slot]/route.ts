@@ -3,6 +3,7 @@ import { controlClient } from "@/lib/control";
 import { HttpError, route } from "@/lib/http";
 import { ON_ANOTHER_COMPUTER } from "@/lib/relay";
 import { currentUser } from "@/lib/session";
+import { SlotNotReady, withSlot } from "@/lib/slotdb";
 
 type Ctx = { params: Promise<{ slot: string }> };
 
@@ -16,6 +17,12 @@ export const GET = route<Ctx>(async (req, { params }) => {
   const n = Number((await params).slot);
   if (!Number.isInteger(n) || slotOwner(appDb(), n) !== user.id) throw new HttpError(404, "Account not found");
   if (slotRow(appDb(), n)?.relay) throw new HttpError(409, ON_ANOTHER_COMPUTER);
+  // the agent leaves Teams to the owner from now: no chat switch, no presence keeper while the owner looks
+  try {
+    withSlot(n, (r) => r.markDesktop());
+  } catch (e) {
+    if (!(e instanceof SlotNotReady)) throw e;
+  }
   // the desktop is still useful with the windows as they are
   await controlClient()
     .show(n)

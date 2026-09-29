@@ -5,7 +5,7 @@ import { GET as desktop } from "@/app/api/desktop/[slot]/route";
 import { appDb, claimSlot, migrateAppSchema, setRelayToken } from "@/lib/appdb";
 import { controlClient } from "@/lib/control";
 import { currentUser } from "@/lib/session";
-import { tempDir } from "./helpers";
+import { createSlotDb, tempDir } from "./helpers";
 
 // better-auth's session and the supervisor are stand-ins here
 vi.mock("@/lib/session", () => ({ currentUser: vi.fn() }));
@@ -51,6 +51,20 @@ describe("GET /api/desktop/N", () => {
     expect(r.status).toBe(302);
     expect(r.headers.get("Location")).toBe("/desktop/");
     expect(shown).toEqual([slot]);
+  });
+
+  // its agent then leaves Teams to the owner for a while: no chat switch, no presence keeper
+  it("marks the account in use in its database, for its owner only", async () => {
+    const db = createSlotDb(path.join(path.dirname(process.env.APP_DB!), String(slot), "messages.db"));
+    const desktopRow = () => db.prepare("SELECT v FROM state WHERE k='desktop'").pluck().get() as string | undefined;
+    vi.mocked(currentUser).mockResolvedValue(u2);
+    expect((await open(slot)).status).toBe(404);
+    expect(desktopRow()).toBeUndefined();
+    vi.mocked(currentUser).mockResolvedValue(u1);
+    const before = Math.floor(Date.now() / 1000);
+    expect((await open(slot)).status).toBe(302);
+    expect(JSON.parse(desktopRow()!).ts).toBeGreaterThanOrEqual(before);
+    db.close();
   });
 
   it("opens the desktop even when the window could not be brought forward", async () => {

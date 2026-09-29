@@ -61,6 +61,8 @@ export function StatusPanel({
     ? [
         ["Teams", ...teamsState(health.teams)],
         ["Your Teams status", ...presenceState(health.presence)],
+        // while the owner uses Teams (remote desktop, window of the relay) the agent switches no chat and moves no mouse
+        ...(health.desktop === "in-use" ? [["In use by you", "Left as it is", "ok"] as [string, string, Tone]] : []),
         ["New message detection", health.watcher === "ok" ? "Running" : "Stopped", health.watcher === "ok" ? "ok" : "warn"],
         ["Browser engine", health.agent === "ok" ? "Running" : "Not responding", health.agent === "ok" ? "ok" : "bad"],
         ["Last message", ago(health.last_msg_ts), health.last_msg_ts ? "ok" : "warn"],

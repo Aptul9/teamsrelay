@@ -211,6 +211,12 @@ export class SlotReader {
       .prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)")
       .run(STATE.viewing, JSON.stringify({ chat, ts: Math.floor(Date.now() / 1000) }));
   }
+
+  // The owner opens the remote desktop of the account: its agent leaves Teams as it is for a while
+  // (src/agent/logic/owner.ts)
+  markDesktop() {
+    this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.desktop, JSON.stringify({ ts: Math.floor(Date.now() / 1000) }));
+  }
 }
 
 const appStatus = (s: string) => (s === "running" ? "pending" : s === "unconfirmed" ? "failed" : s);
