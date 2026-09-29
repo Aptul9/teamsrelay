@@ -49,6 +49,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       agentScript: e.AGENT_SCRIPT,
       node: process.execPath,
       cdpBasePort: 9221,
+      // Selkies of the image listens there, behind its nginx (/etc/nginx/sites-available/default)
+      desktopPort: 8082,
       // the labwc session of the image (/defaults/startwm_wayland.sh): its clients connect to wayland-0
       session: { XDG_RUNTIME_DIR: e.XDG_RUNTIME_DIR, WAYLAND_DISPLAY: "wayland-0", DISPLAY: ":0" },
       browserEnv: pick(BROWSER_ENV),

@@ -22,6 +22,7 @@ beforeEach(() => {
     agentScript: "/app/agent.cjs",
     node: "/usr/local/bin/node",
     cdpBasePort: 9221,
+    desktopPort: 8082,
     session: { XDG_RUNTIME_DIR: "/config/.XDG", WAYLAND_DISPLAY: "wayland-0", DISPLAY: ":0" },
     browserEnv: { TZ: "Europe/Rome", LANG: "en_US.UTF-8" },
     agentEnv: { TZ: "Europe/Rome", VAPID_SUBJECT: "mailto:me@example.com", NTFY_ENABLED: "0" },
@@ -99,6 +100,18 @@ describe("agentCommand", () => {
       VAPID_SUBJECT: "mailto:me@example.com",
       NTFY_ENABLED: "0",
       TZ: "Europe/Rome",
+    });
+  });
+
+  // the agent tells when the owner has the remote desktop open with its window in front (src/agent/jobs/desktop.ts)
+  it("tells the agent the port of the desktop's websocket, the desktop user and session, and its window", () => {
+    expect(agentCommand(2, cfg).env).toMatchObject({
+      DESKTOP_PORT: "8082",
+      DESKTOP_UID: "1000",
+      DESKTOP_GID: "1000",
+      DESKTOP_APP_ID: "teamsrelay-2",
+      XDG_RUNTIME_DIR: "/config/.XDG",
+      WAYLAND_DISPLAY: "wayland-0",
     });
   });
 });

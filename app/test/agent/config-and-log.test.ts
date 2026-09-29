@@ -28,6 +28,13 @@ describe("agent configuration", () => {
     expect(loadConfig({ NTFY_ENABLED: "0", NTFY_TOPIC: "relay" }).ntfy).toBeNull();
   });
 
+  it("watches the remote desktop only when the supervisor gives its port, user and window", () => {
+    expect(loadConfig({}).desktop).toBeNull();
+    const env = { DESKTOP_PORT: "8082", DESKTOP_UID: "1000", DESKTOP_GID: "1001", DESKTOP_APP_ID: "teamsrelay-2", XDG_RUNTIME_DIR: "/config/.XDG", WAYLAND_DISPLAY: "wayland-0" };
+    expect(loadConfig(env).desktop).toEqual({ port: 8082, uid: 1000, gid: 1001, appId: "teamsrelay-2", session: { XDG_RUNTIME_DIR: "/config/.XDG", WAYLAND_DISPLAY: "wayland-0" } });
+    expect(loadConfig({ ...env, DESKTOP_APP_ID: "" }).desktop).toBeNull();
+  });
+
   it("treats an empty variable as unset", () => {
     expect(loadConfig({ VAPID_SUBJECT: "", ACCOUNT: "" })).toMatchObject({ slot: 1, vapid: { subject: "mailto:admin@example.com" } });
   });

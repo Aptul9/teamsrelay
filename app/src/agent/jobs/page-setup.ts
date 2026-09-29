@@ -1,6 +1,7 @@
 import type { BrowserContext, Page } from "playwright-core";
 import { Desktop, parseState, STATE } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
+import { DESKTOP_BRIDGE } from "../logic/desktop";
 import { OWNER_PAUSE, ownerBusy } from "../logic/owner";
 import { wantedChat } from "../logic/parking";
 import { errorText, log } from "../log";
@@ -29,25 +30,43 @@ export async function preparePage(a: Agent) {
 }
 
 // The owner's clicks, keys and wheel turns on the page since the last round (the remote desktop, the window of the local
-// relay): what the page recorded, less the input the agent sent itself. The pause of the jobs that move Teams is logged
-// when it starts and when it ends.
+// relay): what the page recorded, less the input the agent sent itself
 export async function noteOwnerInput(a: Agent) {
   const page = a.tp.page;
   await page.evaluate(watchInput);
   const owner = ((await page.evaluate(drainInput)) ?? []).filter((t) => !byAgent(page, t));
   if (owner.length) a.ownerAt = Math.max(a.ownerAt ?? 0, ...owner);
-  const busy = ownerUses(a);
-  if (busy === !!a.ownerPaused) return;
-  a.ownerPaused = busy;
-  if (busy) log.info("page", "the owner uses Teams: the agent leaves it as it is", { by: owner.length ? "input" : "desktop" });
-  else log.info("page", `no input from the owner for ${OWNER_PAUSE / 60} min: parking and presence keeper again`);
+  notePause(a);
 }
 
-// The owner clicked, typed or scrolled in Teams, or opened its remote desktop, a moment ago: the jobs that move Teams
-// wait (presence keeper, parking, back to the chats, list sweep, feed, Read by)
+// The pause of the jobs that move Teams, logged when it starts (with what started it) and when it ends
+export function notePause(a: Agent) {
+  const why = ownerWhy(a);
+  if (!!why === !!a.ownerPaused) return;
+  a.ownerPaused = !!why;
+  if (why) log.info("page", "the owner uses Teams: the agent leaves it as it is", { by: why });
+  else log.info("page", "the owner left Teams: parking and presence keeper again");
+}
+
+// The owner uses Teams now: the jobs that move Teams wait (presence keeper, parking, back to the chats, list sweep,
+// feed, Read by, the press of Sign in)
 export function ownerUses(a: Agent, now = Date.now()): boolean {
-  const desktop = parseState(Desktop, a.store.getState(STATE.desktop), { ts: 0 });
-  return ownerBusy(a.ownerAt ?? 0, desktop.ts, now);
+  return ownerWhy(a, now) !== null;
+}
+
+// Where the agent watches the remote desktop (jobs/desktop.ts): while the owner has it open with the window of this
+// account in front, and from a click on the desktop link of the app until the connection shows (DESKTOP_BRIDGE at
+// most); nothing is left once it closes. Elsewhere (the window of the local relay on the owner's own screen, or the
+// connections of the desktop not readable): the owner's clicks, keys and wheel turns, and the desktop link, OWNER_PAUSE
+// seconds each.
+function ownerWhy(a: Agent, now = Date.now()): "desktop" | "link" | "input" | null {
+  const link = parseState(Desktop, a.store.getState(STATE.desktop), { ts: 0 }).ts * 1000;
+  if (a.config.desktop && !a.desktopUnknown) {
+    if (a.onDesktop) return "desktop";
+    return now - link < DESKTOP_BRIDGE * 1000 && (a.desktopSeenAt ?? 0) < link ? "link" : null;
+  }
+  if (!ownerBusy(a.ownerAt ?? 0, link / 1000, now)) return null;
+  return now - (a.ownerAt ?? 0) < OWNER_PAUSE * 1000 ? "input" : "link";
 }
 
 // In the pages and frames to come (a call window included) before Teams asks for the microphone, and in those open now

@@ -34,6 +34,10 @@ Date: 2026-09-29.
 - The local relay in one process against its fake Teams page (`test/local/relay.test.ts`): after its sends, reads and presence keeper the health is not in use; a click from outside the agent makes it so.
 - Route: `/api/desktop/N` writes `desktop` for the owner's account, nothing for another user.
 
+## Revision: the desktop open, not 3 minutes (2026-09-29, evening)
+
+Asked by the owner after the first release: the pause should follow the desktop being opened and closed, not a timer. Where the supervisor gives the desktop (every account of the browsers container), the pause lasts exactly while a viewer is connected to the websocket of Selkies and the window of the account is in front, and ends at once when the desktop closes or another account comes to the front; the clicks noted during it are forgotten then. The agent counts the viewers in `/proc/net/tcp` (it runs as root in the container, port 8082 behind the nginx of the image) and asks the compositor as the desktop user, only while there is a viewer (`wlrctl toplevel find state:focused app_id:teamsrelay-N`, as `/api/desktop/N` already focuses windows). The desktop link of the app counts from its click until the connection shows, 30 s at most. The presence keeper waits as well: the owner's own input keeps Available. Kept from the first release: the 3 minutes after the last input for the window of the local relay, and wherever the connections cannot be read; a compositor that cannot be asked counts as this account in front. The call sound answered in the app is a viewer too: the loop already waits during the call, and the socket closes with it. Tests: `test/agent/desktop.test.ts` (connections parsed from a `/proc/net/tcp` text, focus and bridge, fallbacks), `test/supervisor/accounts.test.ts` (the `DESKTOP_*` of the agents).
+
 ## Docs
 
 `limitations.md` (*Presence*), `architecture.md` (the loop table, *The owner in Teams*), `operations.md` (log lines).

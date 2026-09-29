@@ -18,6 +18,7 @@ describe("loadConfig", () => {
       agentScript: "/app/agent.cjs",
       node: process.execPath,
       cdpBasePort: 9221,
+      desktopPort: 8082,
       wlrctl: "wlrctl",
       session: { XDG_RUNTIME_DIR: "/config/.XDG", WAYLAND_DISPLAY: "wayland-0", DISPLAY: ":0" },
     });
