@@ -21,6 +21,9 @@ import { sleep, TeamsPage } from "./teams/page";
 // Seconds between two inputs on the Teams page
 export const ACTIVE_EVERY = 60;
 export const ACTIVITY_RETRY = 30;
+// The automatic check judges Teams once it had time to load: a start or a reload inside a window of the check shows
+// Teams within a minute; Teams not ready this many seconds into the window is the problem the check reports
+export const SELF_CHECK_GRACE = 300;
 // Pages that show nothing: a tab just opened, an error page of the browser
 const BLANK = /^(about:|chrome:|edge:|chrome-error:)/;
 
@@ -46,6 +49,23 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
       return;
     }
     if (!a.checkedOnly?.()) await pushMissedCalls(a);
+  };
+  // An account started only to be checked has its checks: its start would find Teams still loading. For the others
+  // the check waits for Teams, for SELF_CHECK_GRACE at most: since when Teams was not ready while the check was due,
+  // 0 while it is (a Teams not ready before the window counts from its start)
+  let unreadySince = 0;
+  const selfCheckNow = () => {
+    if (!selfCheckDue(a) || a.checkedOnly?.()) {
+      unreadySince = 0;
+      return false;
+    }
+    if (a.inCall || a.ringing) return false;
+    if (teamsOk()) {
+      unreadySince = 0;
+      return true;
+    }
+    unreadySince ||= Date.now();
+    return Date.now() - unreadySince >= SELF_CHECK_GRACE * 1000;
   };
   const jobs: (Job<Round> | false)[] = [
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
@@ -87,8 +107,7 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     // the first time 31 rounds after a start, which has usually read the list, the feed and the account by then (rows left
     // from before keep their files anyway); off the rounds of the list and the health
     { name: "media", every: { rounds: 300, offset: 31 }, run: () => pruneMedia(a) },
-    // an account started only to be checked has its checks: its start would find Teams still loading
-    { name: "self-check", every: { rounds: 1 }, when: () => !!selfCheckDue(a) && !a.checkedOnly?.() && !a.inCall && !a.ringing, run: () => scheduledSelfCheck(a) },
+    { name: "self-check", every: { rounds: 1 }, when: selfCheckNow, run: () => scheduledSelfCheck(a) },
   ];
   return jobs.filter((j): j is Job<Round> => !!j);
 }
