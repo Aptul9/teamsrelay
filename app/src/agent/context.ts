@@ -42,6 +42,8 @@ export type Agent = {
   checkedOnly?: () => boolean;
   // a call is in progress: the Teams page records from the microphone (src/agent/jobs/calls.ts)
   inCall?: boolean;
+  // a call rings: its toast shows (src/agent/jobs/calls.ts)
+  ringing?: boolean;
 };
 
 export const nowSeconds = () => Math.floor(Date.now() / 1000);

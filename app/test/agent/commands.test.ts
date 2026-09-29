@@ -441,6 +441,10 @@ describe("agent loop", () => {
       expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, true]));
       a.inCall = true;
       expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, false]));
+      // and while a call rings: the answer clicks on the page
+      a.inCall = false;
+      a.ringing = true;
+      expect(jobs.map((j) => [j.name, j.when?.(ctx)])).toEqual(waiting.map((n) => [n, false]));
     } finally {
       vi.useRealTimers();
     }

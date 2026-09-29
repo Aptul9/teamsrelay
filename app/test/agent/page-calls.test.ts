@@ -1,7 +1,7 @@
 // The incoming call toast of Teams web, read in Chrome: who calls, and the click of the answer asked from the app.
 // The microphone the page records from tells the call in progress.
 import { describe, expect, it } from "vitest";
-import { acceptCall, hangUp } from "@/agent/teams/call-actions";
+import { acceptCall, acceptShortcut, hangUp } from "@/agent/teams/call-actions";
 import { installMicHook, micLive, readIncomingCall } from "@/agent/teams/scripts/calls";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
 import { fixture, withChrome } from "./chrome";
@@ -20,7 +20,7 @@ const count = () =>
       const label = b.getAttribute("aria-label") || "";
       b.addEventListener("click", (e) => (w.clicks[label] = (w.clicks[label] || 0) + (e.isTrusted ? 1 : 100)));
     }
-    document.addEventListener("keydown", (e) => w.keys.push(`${e.ctrlKey ? "Ctrl+" : ""}${e.shiftKey ? "Shift+" : ""}${e.key}`));
+    document.addEventListener("keydown", (e) => w.keys.push(`${e.ctrlKey ? "Ctrl+" : ""}${e.altKey ? "Alt+" : ""}${e.shiftKey ? "Shift+" : ""}${e.key}`));
   });
 const clicks = () => chrome.page.evaluate(() => (window as unknown as Counted).clicks);
 
@@ -39,6 +39,56 @@ describe("answering from the app", () => {
     await chrome.page.setContent(`<div style="display:none">${fixture("call-toast.html")}</div>`);
     await count();
     expect(await acceptCall(chrome.page)).toBe(false);
+    expect(await clicks()).toEqual({});
+  });
+
+  // Teams animates the toast while it rings: a click that waits for the button to hold still can wait for seconds
+  it("clicks Accept at once while the toast keeps moving", async () => {
+    await chrome.page.setContent(
+      `<style>@keyframes ring { to { transform: translateX(3px) } } [data-testid="calling-notification"] { animation: ring 90ms infinite alternate }</style>${fixture("call-toast.html")}`,
+    );
+    await count();
+    const start = Date.now();
+    expect(await acceptCall(chrome.page)).toBe(true);
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(await clicks()).toEqual({ "Accept with audio": 1 });
+  });
+
+  it("clicks a part of Accept nothing covers, and nothing at all when all of it is covered", async () => {
+    const page = `<style>button { width: 120px; height: 40px }</style>${fixture("call-toast.html")}<div id="cover" style="position:fixed;background:#eee"></div>`;
+    // the cover lies over the right half of Accept, or over all of it
+    const place = (all: boolean) =>
+      chrome.page.evaluate((all) => {
+        const r = document.querySelector('[aria-label="Accept with audio"]')!.getBoundingClientRect();
+        const cover = document.getElementById("cover")!;
+        cover.style.left = `${all ? r.left : r.left + r.width / 2}px`;
+        cover.style.top = `${r.top}px`;
+        cover.style.width = `${all ? r.width : r.width / 2}px`;
+        cover.style.height = `${r.height}px`;
+        const w = window as unknown as { coverClicks: number };
+        w.coverClicks = 0;
+        cover.addEventListener("click", () => w.coverClicks++);
+      }, all);
+    const coverClicks = () => chrome.page.evaluate(() => (window as unknown as { coverClicks: number }).coverClicks);
+    await chrome.page.setContent(page);
+    await place(false);
+    await count();
+    expect(await acceptCall(chrome.page)).toBe(true);
+    expect(await clicks()).toEqual({ "Accept with audio": 1 });
+    expect(await coverClicks()).toBe(0);
+    await chrome.page.setContent(page);
+    await place(true);
+    await count();
+    expect(await acceptCall(chrome.page)).toBe(false);
+    expect(await clicks()).toEqual({});
+    expect(await coverClicks()).toBe(0);
+  });
+
+  it("answers with the Accept shortcut of Teams web, Alt+Shift+S", async () => {
+    await chrome.page.setContent(fixture("call-toast.html"));
+    await count();
+    await acceptShortcut(chrome.page);
+    expect(await chrome.page.evaluate(() => (window as unknown as Counted).keys)).toContain("Alt+Shift+S");
     expect(await clicks()).toEqual({});
   });
 

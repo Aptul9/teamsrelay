@@ -6,7 +6,7 @@ import { CallTracker, type EndedCall } from "../logic/calls";
 import { isTeamsUrl } from "../logic/hosts";
 import { errorText, log } from "../log";
 import type { PendingCommand } from "../store/slot-store";
-import { acceptCall, hangUp } from "../teams/call-actions";
+import { acceptCall, acceptShortcut, hangUp } from "../teams/call-actions";
 import { micLive, readIncomingCall } from "../teams/scripts/calls";
 import { SEL, TEXTS } from "../teams/selectors";
 
@@ -15,6 +15,8 @@ export const CALL_WATCH_EVERY = 1;
 // An answer or a hang-up shows on the page within CONFIRM_TRIES looks CONFIRM_EVERY ms apart (5 s), or it failed
 export const CONFIRM_TRIES = 20;
 export const CONFIRM_EVERY = 250;
+// looks after a click that did not take (the toast still there, no microphone) before the Accept shortcut (1.5 s)
+const SHORTCUT_AFTER = 6;
 // Seconds between two reads of the microphone of every frame while no call rings, was just answered here or is in
 // progress: a call answered in the desktop shows in progress within that time
 export const MIC_LOOK_EVERY = 5;
@@ -22,7 +24,7 @@ export const MIC_LOOK_EVERY = 5;
 export const ANSWERED_WATCH = 60;
 
 type Outcome = "done" | "failed";
-type Watched = Pick<Agent, "notifier" | "store" | "inCall"> & { tp?: Agent["tp"]; config?: Pick<Agent["config"], "answerCalls"> };
+type Watched = Pick<Agent, "notifier" | "store" | "inCall" | "ringing"> & { tp?: Agent["tp"]; config?: Pick<Agent["config"], "answerCalls"> };
 
 // An incoming call, pushed as soon as its toast shows and followed until it stops (logic/calls.ts). Teams web rings
 // a few seconds only, so the watch runs on a timer of its own, beside the loop: a round can take many seconds (the
@@ -90,6 +92,8 @@ export class CallWatch {
 
   private async lookAtToast(page: Page) {
     const event = this.tracker.update(await this.readToast(page));
+    // the loop keeps off the page while a call rings: an answer clicks there
+    this.a.ringing = !!this.tracker.current();
     if (event?.kind === "ringing") {
       if (event.replaced) {
         this.logCall(event.replaced);
@@ -129,7 +133,9 @@ export class CallWatch {
     }
   }
 
-  // Only the call of that since, only while its toast shows: a real click on Accept with audio
+  // Only the call of that since, only while its toast shows: a real click on Accept with audio, and the Accept shortcut
+  // of Teams web where no part of the button can be clicked, or where the toast stays SHORTCUT_AFTER looks after the
+  // click. Answered once the toast is gone or a page records from the microphone, whichever comes first.
   private async answer(page: Page, cmd: PendingCommand): Promise<Outcome> {
     const { since } = parseArgs(AnswerArgs, cmd.arg2);
     const ringing = this.tracker.current();
@@ -137,20 +143,26 @@ export class CallWatch {
       log.warn("call", "answer: that call no longer rings", { since });
       return "failed";
     }
-    if (!(await acceptCall(page))) {
-      log.warn("call", "answer: no Accept button to click", { caller: ringing.caller });
-      return "failed";
+    let shortcut = !(await acceptCall(page));
+    if (shortcut) {
+      log.warn("call", "answer: no part of Accept to click, pressing the shortcut", { caller: ringing.caller });
+      await acceptShortcut(page);
     }
     for (let i = 0; i < CONFIRM_TRIES; i++) {
-      if (!(await this.readToast(page))) {
+      if (!(await this.readToast(page)) || (await this.recordingPage(page))) {
         this.answered = since;
         this.answeredAt = this.clock();
-        log.info("call", "answered", { caller: ringing.caller });
+        log.info("call", "answered", { caller: ringing.caller, by: shortcut ? "shortcut" : "click" });
         return "done";
+      }
+      if (!shortcut && i + 1 === SHORTCUT_AFTER) {
+        log.warn("call", "answer: the toast stayed after the click, pressing the shortcut", { caller: ringing.caller });
+        await acceptShortcut(page);
+        shortcut = true;
       }
       await this.wait(CONFIRM_EVERY);
     }
-    log.warn("call", "answer: the toast stayed after the click", { caller: ringing.caller });
+    log.warn("call", "answer: the call still rings after the click and the shortcut", { caller: ringing.caller });
     return "failed";
   }
 

@@ -3,6 +3,7 @@ import { STATE } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
 import { wantedChat } from "../logic/parking";
 import { errorText, log } from "../log";
+import { withInput } from "../teams/input";
 import { installMicHook } from "../teams/scripts/calls";
 import { drainNotifications, installNotificationHook, makeVisible } from "../teams/scripts/page-state";
 import { TEXTS } from "../teams/selectors";
@@ -38,10 +39,14 @@ async function hookMicrophone(page: Page) {
 
 // Real input through CDP, like a person at the desk: Teams keeps its endpoint active and the user Available
 export async function keepActive(a: Agent) {
+  const page = a.tp.page;
   try {
-    await a.tp.page.mouse.move(6, 6);
-    await a.tp.page.mouse.move(2, 2);
-    await a.tp.page.keyboard.press("Shift");
+    // never in the middle of a click or a shortcut of the call watch
+    await withInput(page, async () => {
+      await page.mouse.move(6, 6);
+      await page.mouse.move(2, 2);
+      await page.keyboard.press("Shift");
+    });
   } catch (e) {
     log.warn("input", errorText(e));
   }
