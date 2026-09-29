@@ -24,7 +24,7 @@ export const MIC_LOOK_EVERY = 5;
 export const ANSWERED_WATCH = 60;
 
 type Outcome = "done" | "failed";
-type Watched = Pick<Agent, "notifier" | "store" | "inCall" | "ringing"> & { tp?: Agent["tp"]; config?: Pick<Agent["config"], "answerCalls"> };
+type Watched = Pick<Agent, "notifier" | "store" | "inCall" | "ringing" | "callOverAt"> & { tp?: Agent["tp"]; config?: Pick<Agent["config"], "answerCalls"> };
 
 // An incoming call, pushed as soon as its toast shows and followed until it stops (logic/calls.ts). Teams web rings
 // a few seconds only, so the watch runs on a timer of its own, beside the loop: a round can take many seconds (the
@@ -225,6 +225,7 @@ export class CallWatch {
       this.keepInCall({ caller: c.caller, since: c.since, seen: this.wall(), active: true });
     } else if (was) {
       this.inCall = null;
+      this.a.callOverAt = this.wall();
       log.info("call", "over", { caller: was.caller || undefined });
       this.keepInCall({ caller: was.caller, since: was.since, seen: this.wall(), active: false });
     }

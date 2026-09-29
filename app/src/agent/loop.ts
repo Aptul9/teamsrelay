@@ -10,7 +10,7 @@ import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
 import { pruneMedia } from "./jobs/media";
 import { FeedAfterCalls, pushMissedCalls } from "./jobs/missed-calls";
-import { drainHook, keepActive, park, preparePage, wanted } from "./jobs/page-setup";
+import { awayFromChats, backToChats, drainHook, keepActive, park, preparePage, wanted } from "./jobs/page-setup";
 import { prefetchReadBy } from "./jobs/read-by";
 import { scheduledSelfCheck, selfCheckDue } from "./jobs/self-check";
 import { hostOf, isTeamsUrl, pickTeamsPage } from "./logic/hosts";
@@ -50,6 +50,8 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
   const jobs: (Job<Round> | false)[] = [
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
     { name: "input", every: { seconds: ACTIVE_EVERY }, run: () => keepActive(a) },
+    // the side bar without the chat list (the page a call leaves in the main window): back to the chats
+    { name: "back-to-chats", every: { rounds: 1 }, when: () => awayFromChats(a), run: () => backToChats(a) },
     // no chat to open before Teams shows its list: right after a start, or with a sign-in to do
     { name: "parking", every: { rounds: 5, offset: 2 }, when: free, run: (r) => park(a, r.want) },
     { name: "hook", every: { rounds: 1 }, run: () => drainHook(a) },

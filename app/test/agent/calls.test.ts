@@ -399,6 +399,16 @@ describe("answer and hang-up asked from the app", () => {
     expect(callActions.acceptShortcut).not.toHaveBeenCalled();
   });
 
+  it("tells the loop when a call in progress is over: Teams may leave a post-meeting page in its main window", async () => {
+    const p = phone();
+    p.mic.on = true;
+    await p.tick();
+    expect(p.a.callOverAt).toBeUndefined();
+    p.mic.on = false;
+    await p.tick();
+    expect(p.a.callOverAt).toBeGreaterThan(0);
+  });
+
   it("keeps the loop off the page while a call rings", async () => {
     const p = phone();
     await p.tick();

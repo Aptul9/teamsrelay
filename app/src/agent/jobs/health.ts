@@ -38,6 +38,10 @@ export async function updateHealth(a: Agent): Promise<AgentHealth> {
     lastScanTs: Number(a.store.getState(STATE.lastScanTs)) || 0,
     now: nowSeconds(),
   });
+  // the side bar without the chat list: since when (backToChats in the loop); the list back ends the tries
+  if (h.teams === "loading" && rail) a.loadingSince ??= Date.now();
+  else a.loadingSince = undefined;
+  if (h.teams === "ok") a.backTries = 0;
   return saveHealth(a, h);
 }
 

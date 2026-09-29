@@ -6,7 +6,7 @@ import { errorText, log } from "../log";
 import { withInput } from "../teams/input";
 import { installMicHook } from "../teams/scripts/calls";
 import { drainNotifications, installNotificationHook, makeVisible } from "../teams/scripts/page-state";
-import { TEXTS } from "../teams/selectors";
+import { SEL, TEXTS } from "../teams/selectors";
 
 const initScripts = new WeakSet<Page>();
 const contextScripts = new WeakSet<BrowserContext>();
@@ -35,6 +35,40 @@ async function hookMicrophone(page: Page) {
   let installed = 0;
   for (const frame of page.frames()) if ((await frame.evaluate(installMicHook).catch(() => "failed")) === "installed") installed++;
   if (installed) log.info("page", "microphone hook installed", { frames: installed });
+}
+
+// Teams shows an answered call in its main window, and once the call is over it can leave a post-meeting page there
+// (prod, 2026-09-29): the side bar shows, the chat list does not, the health says loading, and every job that moves
+// Teams waits for Teams "ok". Back to the chats AFTER_CALL_MS after a call, AWAY_MS after anything else (someone may
+// browse Teams in the desktop meanwhile), again RETRY_MS after a try that brought no list back.
+const AFTER_CALL_MS = 3_000;
+const AFTER_CALL_WINDOW_MS = 120_000;
+const AWAY_MS = 120_000;
+const RETRY_MS = 15_000;
+const BACK_TRIES = 3;
+
+export function awayFromChats(a: Agent, now = Date.now()): boolean {
+  if (a.inCall || a.ringing || a.health?.teams !== "loading" || !a.railReady || !a.loadingSince) return false;
+  if (a.backTries) return now - (a.backAt ?? 0) >= RETRY_MS;
+  const sinceCall = a.callOverAt ? now - a.callOverAt : Infinity;
+  return (sinceCall >= AFTER_CALL_MS && sinceCall <= AFTER_CALL_WINDOW_MS) || now - a.loadingSince >= AWAY_MS;
+}
+
+// The Chat button of the side bar; after BACK_TRIES tries that brought no list back, Teams again (a reload)
+export async function backToChats(a: Agent) {
+  const tries = (a.backTries ?? 0) + 1;
+  a.backAt = Date.now();
+  a.callOverAt = undefined;
+  if (tries > BACK_TRIES) {
+    a.backTries = 0;
+    a.loadingSince = Date.now();
+    log.warn("page", "still no chat list after the Chat button: Teams reloaded");
+    await a.tp.page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 }).catch((e: unknown) => log.warn("page", `reload: ${errorText(e)}`));
+    return;
+  }
+  a.backTries = tries;
+  log.warn("page", "the side bar shows but no chat list: back to Chat", { try: tries });
+  await withInput(a.tp.page, () => a.tp.clickRail(SEL.chatView, 2000)).catch((e: unknown) => log.warn("page", `back to Chat: ${errorText(e)}`));
 }
 
 // Real input through CDP, like a person at the desk: Teams keeps its endpoint active and the user Available
