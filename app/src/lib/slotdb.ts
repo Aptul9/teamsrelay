@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
-import type { CommandType } from "@/shared/slot-db/commands";
+import { OpenResult, type CommandType, type OpenStatus } from "@/shared/slot-db/commands";
 import { HAS_TEAMS_ID, type ActivityItem, type CallLogEntry, type Chat, type Message, type MessageExtra } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
 import { CallState, cmdResultKey, InCall, Members, membersKey, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
@@ -168,8 +168,18 @@ export class SlotReader {
   commandStatus(id: number): CommandStatus | null {
     const r = this.all<{ status: string }>("SELECT status FROM commands WHERE id=?", id)[0];
     if (!r) return null;
-    const status = r.status === "running" ? "pending" : r.status === "unconfirmed" ? "failed" : r.status;
-    return { status, result: this.state<unknown>(cmdResultKey(id), null) };
+    return { status: appStatus(r.status), result: this.state<unknown>(cmdResultKey(id), null) };
+  }
+
+  // The last open of the chat, as the app follows it (OpenStatus); null before the first. The event stream reads it
+  // before the messages: an open read done comes with messages saved no earlier than its own.
+  openOf(chat: string): OpenStatus | null {
+    const r = this.all<{ id: number; status: string }>("SELECT id, status FROM commands WHERE type='open' AND arg1=? ORDER BY id DESC LIMIT 1", chat)[0];
+    if (!r) return null;
+    const status = appStatus(r.status) as OpenStatus["status"];
+    if (status !== "failed") return { id: r.id, status };
+    const why = OpenResult.safeParse(this.state<unknown>(cmdResultKey(r.id), null));
+    return why.success ? { id: r.id, status, reason: why.data.reason } : { id: r.id, status };
   }
 
   enqueue(type: CommandType, arg1 = "", arg2 = ""): number {
@@ -202,6 +212,8 @@ export class SlotReader {
       .run(STATE.viewing, JSON.stringify({ chat, ts: Math.floor(Date.now() / 1000) }));
   }
 }
+
+const appStatus = (s: string) => (s === "running" ? "pending" : s === "unconfirmed" ? "failed" : s);
 
 // The agent rewrites its health every ~5 s. Older than a minute, it no longer describes reality.
 export function healthOf(saved: Health, added: number): Health {

@@ -50,8 +50,8 @@ export const HANDLERS: Record<CommandType, Handler> = {
   mute: byCallWatch,
 };
 
-// open, resync and recheck end as done whatever happened on Teams, like in the Python agent; an unknown type ends
-// as done too. A handler that throws: failed, and the command is not run again.
+// resync and recheck end as done whatever happened on Teams, like in the Python agent; an unknown type ends as done
+// too. A handler that throws: failed, and the command is not run again.
 export async function runCommand(a: Agent, cmd: PendingCommand): Promise<Outcome> {
   const handler = HANDLERS[cmd.type as CommandType] as Handler | undefined;
   if (!handler) return "done";
@@ -79,6 +79,9 @@ export async function runPendingCommands(a: Agent) {
     // a refresh of the Activity feed, or a check, stays pending until the health check finds the side bar clickable:
     // while Teams starts (sign-in redirects, then its loading bar) the clicks would time out
     if ((cmd.type === "activity" || cmd.type === "check") && !a.railReady) continue;
+    // an open stays pending while Teams shows no chat list yet (starting, a page a call left, a page not read): the app
+    // says the chat is opening meanwhile; signed out, the open fails at once with its reason
+    if (cmd.type === "open" && a.health?.teams !== "ok" && a.health?.teams !== "login") continue;
     log.info("CMD", cmd.type, { id: cmd.id, arg: cmd.type === "download" ? undefined : cmd.arg1 });
     a.store.startCommand(cmd.id);
     a.store.finishCommand(cmd.id, await runCommand(a, cmd));

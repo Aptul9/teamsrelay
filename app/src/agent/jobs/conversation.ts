@@ -53,7 +53,9 @@ export async function readOpenMessages(a: Agent, chat: string): Promise<SavedMes
   return out;
 }
 
-export async function saveOpenChat(a: Agent, chat: string) {
+// True once the messages Teams shows for the chat are saved
+export async function saveOpenChat(a: Agent, chat: string): Promise<boolean> {
   const messages = await readOpenMessages(a, chat);
   if (messages) a.store.saveChatMessages(chat, messages);
+  return !!messages;
 }

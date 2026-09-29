@@ -24,6 +24,34 @@ describe("SlotReader", () => {
     r.close();
   });
 
+  it("gives the last open of a chat as the app follows it: pending while queued or running, done, failed with the agent's reason", () => {
+    const r = SlotReader.open(file);
+    const status = (id: number, s: string) => raw.prepare("UPDATE commands SET status=? WHERE id=?").run(s, id);
+    const result = (id: number, v: string) => raw.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(`cmd_result:${id}`, v);
+    expect(r.openOf("A")).toBeNull();
+    const first = r.enqueue("open", "A");
+    const other = r.enqueue("open", "B");
+    r.enqueue("send", "A", "hello");
+    expect(r.openOf("A")).toEqual({ id: first, status: "pending" });
+    status(first, "running");
+    expect(r.openOf("A")).toEqual({ id: first, status: "pending" });
+    status(first, "done");
+    expect(r.openOf("A")).toEqual({ id: first, status: "done" });
+    const second = r.enqueue("open", "A");
+    status(second, "failed");
+    result(second, JSON.stringify({ reason: "not-listed" }));
+    expect(r.openOf("A")).toEqual({ id: second, status: "failed", reason: "not-listed" });
+    // cut by a restart of the agent, waited too long, or a result of another shape: failed, no reason
+    const third = r.enqueue("open", "A");
+    status(third, "unconfirmed");
+    expect(r.openOf("A")).toEqual({ id: third, status: "failed" });
+    status(third, "failed");
+    result(third, JSON.stringify({ reason: "teleported" }));
+    expect(r.openOf("A")).toEqual({ id: third, status: "failed" });
+    expect(r.openOf("B")).toEqual({ id: other, status: "pending" });
+    r.close();
+  });
+
   it("refuses a slot whose agent has not created the database yet", () => {
     expect(() => SlotReader.open(path.join(tempDir(), "9", "messages.db"))).toThrow(SlotNotReady);
   });

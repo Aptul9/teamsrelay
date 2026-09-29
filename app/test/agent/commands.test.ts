@@ -15,7 +15,8 @@ import * as mentionActions from "@/agent/teams/mentions";
 import type { TeamsPage } from "@/agent/teams/page";
 import type { PageMessage } from "@/agent/teams/scripts/conversation";
 import { SEL } from "@/agent/teams/selectors";
-import { membersKey, STATE } from "@/shared/slot-db/state";
+import { OpenResult, type OpenProblem } from "@/shared/slot-db/commands";
+import { cmdResultKey, membersKey, parseState, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
 vi.mock("@/agent/teams/actions", () => ({
@@ -56,6 +57,8 @@ let store: SlotStore;
 let opened: string[];
 let evaluated: string[];
 let opens: boolean;
+// why Teams does not show the chat an open asks for, null when it shows it
+let shows: OpenProblem | null;
 let downloaded: string | null;
 let uploads: string;
 let alerts: string[];
@@ -76,6 +79,10 @@ function agent(): Agent {
     openChat: async (chat: string) => {
       opened.push(chat);
       return opens;
+    },
+    showChat: async (chat: string) => {
+      opened.push(chat);
+      return shows;
     },
     isOpen: async () => opens,
   } as unknown as TeamsPage;
@@ -104,6 +111,7 @@ beforeEach(() => {
   opened = [];
   evaluated = [];
   opens = true;
+  shows = null;
   downloaded = null;
   uploads = tempDir();
   alerts = [];
@@ -120,10 +128,51 @@ describe("command handlers", () => {
     expect(db().prepare("SELECT mid, text FROM chat_messages WHERE chat=?").all("Anna Rossi")).toEqual([{ mid: "m1", text: "ciao" }]);
   });
 
-  it("open: done even when the chat did not open, like the Python agent", async () => {
-    opens = false;
-    expect(await runCommand(agent(), cmd("open"))).toBe("done");
+  // the app says "Opening in Teams" until its open is done, and why when it failed
+  const openResult = () => parseState(OpenResult, store.getState(cmdResultKey(7)), null);
+
+  it("open: failed when Teams does not show the chat, why in its result, the chat not taken as in use", async () => {
+    shows = "not-listed";
+    expect(await runCommand(agent(), cmd("open"))).toBe("failed");
+    expect(openResult()).toEqual({ reason: "not-listed" });
     expect(store.getState(STATE.activeChat)).toBe("");
+    expect(evaluated).not.toContain("readMessages");
+    shows = "not-shown";
+    expect(await runCommand(agent(), cmd("open"))).toBe("failed");
+    expect(openResult()).toEqual({ reason: "not-shown" });
+  });
+
+  it("open: failed as unreadable when Teams shows the chat but its messages cannot be read", async () => {
+    opens = false;
+    expect(await runCommand(agent(), cmd("open"))).toBe("failed");
+    expect(openResult()).toEqual({ reason: "unreadable" });
+    expect(db().prepare("SELECT COUNT(*) FROM chat_messages").pluck().get()).toBe(0);
+  });
+
+  it("open: failed at once, Teams untouched, while Teams is signed out", async () => {
+    const a = agent();
+    a.health = { cdp: "ok", ts: 0, teams: "login", overall: "red" };
+    expect(await runCommand(a, cmd("open"))).toBe("failed");
+    expect(openResult()).toEqual({ reason: "signed-out" });
+    expect(opened).toEqual([]);
+    // the chat is on screen in the app all the same: Teams opens it once it can
+    expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("Anna Rossi");
+  });
+
+  // Teams starting, or the page a call leaves in its main window: no chat list yet, which the agent brings back soon
+  it("keeps an open pending while Teams shows no chat list yet, and opens the chat once it does", async () => {
+    const a = agent();
+    const id = store.enqueue("open", "Anna Rossi");
+    for (const health of [null, { cdp: "ok" as const, ts: 0, teams: "loading" as const, overall: "yellow" as const }, { cdp: "ok" as const, ts: 0, teams: "err" as const, overall: "red" as const }]) {
+      a.health = health;
+      await runPendingCommands(a);
+      expect(store.commandStatus(id)).toBe("pending");
+    }
+    expect(opened).toEqual([]);
+    a.health = { cdp: "ok", ts: 0, teams: "ok", overall: "green" };
+    await runPendingCommands(a);
+    expect(store.commandStatus(id)).toBe("done");
+    expect(opened).toEqual(["Anna Rossi"]);
   });
 
   it("send: done once Teams shows the message, failed when it does not, the conversation saved either way", async () => {
@@ -247,7 +296,10 @@ describe("command handlers", () => {
     insert.run(now, "open", "Anna Rossi", "");
     insert.run(now, "reply", "Anna Rossi", '{"mid":"m1","text":"x"}');
     vi.mocked(actions.replyWithQuote).mockResolvedValueOnce("failed");
-    await runPendingCommands(agent());
+    const a = agent();
+    // Teams shows its chat list: an open does not wait
+    a.health = { cdp: "ok", ts: 0, teams: "ok", overall: "green" };
+    await runPendingCommands(a);
     expect(db().prepare("SELECT type, status FROM commands ORDER BY id").all()).toEqual([
       { type: "open", status: "done" },
       { type: "reply", status: "failed" },
@@ -321,7 +373,9 @@ describe("command handlers", () => {
     const hangup = store.enqueue("hangup");
     const mute = store.enqueue("mute", "Anna Rossi", '{"on":true}');
     const open = store.enqueue("open");
-    await runPendingCommands(agent());
+    const a = agent();
+    a.health = { cdp: "ok", ts: 0, teams: "ok", overall: "green" };
+    await runPendingCommands(a);
     expect(store.commandStatus(answer)).toBe("pending");
     expect(store.commandStatus(hangup)).toBe("pending");
     expect(store.commandStatus(mute)).toBe("pending");

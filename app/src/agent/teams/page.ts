@@ -1,4 +1,5 @@
 import type { Page } from "playwright-core";
+import type { OpenProblem } from "@/shared/slot-db/commands";
 import { sameChat } from "../logic/chats";
 import { errorText, log } from "../log";
 import type { SlotStore } from "../store/slot-store";
@@ -52,11 +53,15 @@ export class TeamsPage {
     return this.sameChat(await this.openTitle(), name);
   }
 
+  async openChat(name: string): Promise<boolean> {
+    return (await this.showChat(name)) === null;
+  }
+
   // Opens the chat unless Teams shows it already: clicks its row and waits until Teams shows it (the messages of
   // the previous chat are still in the page for a moment), then takes the list back to the top, where the chats
-  // with new messages are
-  async openChat(name: string): Promise<boolean> {
-    if (await this.isOpen(name).catch(() => false)) return true;
+  // with new messages are. Null once Teams shows it, otherwise why not.
+  async showChat(name: string): Promise<OpenProblem | null> {
+    if (await this.isOpen(name).catch(() => false)) return null;
     const clicked = await this.clickRow(name);
     let open = false;
     for (let i = 0; i < 24 && clicked && !open; i++) {
@@ -64,14 +69,14 @@ export class TeamsPage {
       if (!open) await sleep(250);
     }
     await this.page.evaluate(scrollChatList, { s: SEL, to: "top" as const }).catch(() => false);
-    if (!clicked) return false;
+    if (!clicked) return "not-listed";
     if (!open) {
       log.warn("open", "chat did not open", { chat: name });
-      return false;
+      return "not-shown";
     }
     await this.page.waitForSelector(SEL.message, { timeout: 3000 }).catch(() => undefined);
     await sleep(400);
-    return true;
+    return null;
   }
 
   // The list is virtualized: only the rows in view are in the page. The row of that exact name, the list scrolled

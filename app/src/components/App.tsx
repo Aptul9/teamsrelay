@@ -82,6 +82,7 @@ import {
   type Chat,
   type Health,
   type Message,
+  type OpenStatus,
   type RingingCall,
   type Unread,
 } from "@/lib/client";
@@ -145,7 +146,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [pane, setPane] = useState<"main" | "desktop">("main");
   const [openChat, setOpenChat] = useState<string | null>(null);
   const [chats, setChats] = useState<Chat[] | null>(null);
-  const [messages, setMessages] = useState<{ chat: string; rows: Message[] } | null>(null);
+  const [messages, setMessages] = useState<{ chat: string; rows: Message[]; open?: OpenStatus | null } | null>(null);
   const [activity, setActivity] = useState<{ ts: number; items: ActivityItem[] } | null>(null);
   const [callLog, setCallLog] = useState<CallLogEntry[] | null>(null);
   // the calls ringing now in every account of the user, whichever is on screen, and the calls in progress (active)
@@ -326,7 +327,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     on<Chat[]>("chats", own(setChats));
     on<{ ts: number; items: ActivityItem[] }>("activity", own((d) => noteActivity(acc, d, listRef.current)));
     on<CallLogEntry[]>("calllog", own(setCallLog));
-    on<{ chat: string; rows: Message[] }>("messages", own(setMessages));
+    on<{ chat: string; rows: Message[]; open?: OpenStatus | null }>("messages", own(setMessages));
     let retry: ReturnType<typeof setTimeout> | undefined;
     es.onerror = () => {
       // without the stream no call is known to ring: the ring stops until it is back
@@ -873,6 +874,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               chat={openChat}
               entry={(chats ?? []).find((c) => c.name === openChat)}
               rows={messages?.chat === openChat ? messages.rows : null}
+              open={messages?.chat === openChat ? (messages.open ?? null) : null}
               stopped={!!current && (current.stopped || current.checkEvery > 0)}
               stoppedText={current?.checkEvery && !current.stopped ? "Runs only during its checks: set it to always on in Settings to send" : undefined}
               others={others}

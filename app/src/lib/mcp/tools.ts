@@ -136,7 +136,8 @@ export async function refreshChat(userId: string, { account, chat }: Account & {
     await sleep(wait.pollMs);
   }
   return withSlot(s.slot, (r) => {
-    // open ends as done even when Teams did not open the chat: only then it becomes the active chat
+    // an agent of an earlier release ends open as done even when Teams did not open the chat: only then it becomes the
+    // active chat
     if (r.activeChat() !== chat) throw new ToolError("Teams did not open this chat");
     return chatMessages(r, s, chat);
   });

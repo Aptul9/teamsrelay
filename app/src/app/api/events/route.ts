@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 
 // One stream per open app, replacing the polling timers of the previous PWA. Every second the server
 // reads health, chats, activity, the call log and the messages of the open chat of the selected account
-// (and the account list every 5 s), and the calls ringing in every account of the user; an event goes
-// out only for the parts whose content changed.
+// with its last open (and the account list every 5 s), and the calls ringing in every account of the user;
+// an event goes out only for the parts whose content changed.
 export const GET = route(async (req) => {
   const user = await requireUser(req);
   const url = new URL(req.url);
@@ -80,7 +80,11 @@ export const GET = route(async (req) => {
             send("chats", reader.chats());
             send("activity", reader.activity());
             send("calllog", reader.callLog());
-            if (chat) send("messages", { chat, rows: reader.messages(chat) });
+            if (chat) {
+              // the open first: one read done comes with messages saved no earlier than its own
+              const open = reader.openOf(chat);
+              send("messages", { chat, rows: reader.messages(chat), open });
+            }
             // the app asks for a chat only while it is on screen
             if (chat && ticks % 10 === 1) reader.markViewing(chat);
           }
