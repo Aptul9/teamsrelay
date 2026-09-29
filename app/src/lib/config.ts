@@ -1,4 +1,5 @@
 import path from "node:path";
+import { DEFAULT_DESKTOP_URL } from "./client";
 
 function positiveInt(name: string, fallback: number): number {
   const v = Number.parseInt(process.env[name] ?? "", 10);
@@ -26,7 +27,7 @@ export const config = {
   // Remote desktop of a slot, {n} is the slot number. The default brings the window of the slot to the front
   // of the one desktop, then opens it.
   get desktopUrl() {
-    return process.env.DESKTOP_URL || "/api/desktop/{n}";
+    return process.env.DESKTOP_URL || DEFAULT_DESKTOP_URL;
   },
   get vapidAppKeyFile() {
     return process.env.VAPID_APPKEY || "/vapid/appkey.txt";

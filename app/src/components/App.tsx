@@ -59,6 +59,7 @@ import {
   callsSnapshot,
   checkLine,
   clock,
+  desktopTarget,
   hours,
   idleChecked,
   isMissedCall,
@@ -399,7 +400,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     }
   }
 
-  // Microsoft login (and MFA) in the remote browser of the account: new tab on a PC, a view of its own elsewhere
+  // Microsoft login (and MFA) in the remote browser of the account: the desktop tab on a PC (one tab, reused by the
+  // next opening), a view of its own elsewhere
   function openDesktop(n: number) {
     const a = accounts?.find((x) => x.slot === n);
     if (a?.relay) {
@@ -415,7 +417,9 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       return;
     }
     if (isPc) {
-      window.open(deskUrl(n), "_blank", "noopener");
+      const { url, target } = desktopTarget(desktopUrl, n);
+      if (target === "_blank") window.open(url, target, "noopener");
+      else window.open(url, target);
       return;
     }
     selectAccount(n);

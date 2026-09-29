@@ -284,6 +284,21 @@ export const accountStatus = (a: Pick<Account, "stopped" | "checkEvery">): "stop
 // An account checked every N hours, between two checks: no browser, no agent, the chats and numbers of its last check
 export const idleChecked = (a: Pick<Account, "checkEvery" | "checking" | "stopped">) => a.checkEvery > 0 && !a.checking && !a.stopped;
 
+// The accounts with a window on the remote desktop: not on another computer, and with a browser running
+export const onDesktop = (accounts: Account[]) => accounts.filter((a) => !a.relay && !a.stopped && !idleChecked(a));
+
+// The one desktop of the browsers container, where every account has its window
+export const DEFAULT_DESKTOP_URL = "/api/desktop/{n}";
+export const DESKTOP_TAB = "teamsrelay-desktop";
+
+// Where a PC opens the desktop of account n: the one desktop in one tab of its own, with a button per account on top
+// (/remote), which the next opening of any account reuses (a second tab of that desktop would cut off the first); a
+// DESKTOP_URL of another desktop in a new tab
+export function desktopTarget(template: string, n: number): { url: string; target: string } {
+  if (template === DEFAULT_DESKTOP_URL) return { url: `/remote?account=${n}`, target: DESKTOP_TAB };
+  return { url: template.replace("{n}", String(n)), target: "_blank" };
+}
+
 // An account on another computer whose relay has not synced for a minute, or never did
 export const relayOffline = (a: Partial<Pick<Account, "relay" | "teams">>) => !!a.relay && (a.teams === "unknown" || a.teams === "starting");
 
