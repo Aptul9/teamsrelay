@@ -1,10 +1,11 @@
-// Answer and hang-up asked from the app: queued for the agent of the account, once per call, only while the call
-// rings or is in progress, only for an account of the browsers container.
+// Answer, hang-up and mute asked from the app: queued for the agent of the account, once per call, only while the
+// call rings or is in progress, only for an account of the browsers container.
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as answer } from "@/app/api/call/answer/route";
 import { POST as hangup } from "@/app/api/call/hangup/route";
+import { POST as mute } from "@/app/api/call/mute/route";
 import { appDb, claimSlot, migrateAppSchema, setCheckEvery, setRelayToken, setSlotStopped } from "@/lib/appdb";
 import { HttpError } from "@/lib/http";
 import { ON_ANOTHER_COMPUTER } from "@/lib/relay";
@@ -145,5 +146,50 @@ describe("POST /api/call/hangup", () => {
     vi.mocked(requireSlot).mockResolvedValueOnce({ user, slot: relaySlot, added: 0 });
     const r = await post(hangup, {});
     expect([r.status, await detail(r)]).toEqual([409, ON_ANOTHER_COMPUTER]);
+  });
+});
+
+describe("POST /api/call/mute", () => {
+  it("queues the state asked for the call in progress: once for two taps, again for the other state", async () => {
+    talk(Date.now() - 60_000);
+    const first = await post(mute, { on: true });
+    const second = await post(mute, { on: true });
+    expect(first.status).toBe(200);
+    const id = (await first.json()).id;
+    expect((await second.json()).id).toBe(id);
+    const back = await (await post(mute, { on: false })).json();
+    expect(back.id).not.toBe(id);
+    expect(commands()).toEqual([
+      { type: "mute", arg1: "Anna Rossi", arg2: JSON.stringify({ on: true }) },
+      { type: "mute", arg1: "Anna Rossi", arg2: JSON.stringify({ on: false }) },
+    ]);
+  });
+
+  it("refuses a request that asks for no state: 400, nothing queued", async () => {
+    talk(Date.now() - 60_000);
+    for (const b of [{}, { on: "yes" }, { on: 1 }, { on: null }]) expect((await post(mute, b)).status, JSON.stringify(b)).toBe(400);
+    expect(commands()).toEqual([]);
+  });
+
+  it("refuses a mute with no call in progress: 409, nothing queued", async () => {
+    const since = Date.now() - 60_000;
+    const refused = async () => {
+      const r = await post(mute, { on: true });
+      expect([r.status, await detail(r)]).toEqual([409, "No call in progress"]);
+    };
+    await refused();
+    talk(since, { active: false });
+    await refused();
+    talk(since, { seen: Date.now() - CALL_FRESH_FOR * 1000 - 1000 });
+    await refused();
+    expect(commands()).toEqual([]);
+  });
+
+  it("refuses an account on another computer: 409, and answers 404 for an account of someone else", async () => {
+    vi.mocked(requireSlot).mockResolvedValueOnce({ user, slot: relaySlot, added: 0 });
+    const r = await post(mute, { on: true });
+    expect([r.status, await detail(r)]).toEqual([409, ON_ANOTHER_COMPUTER]);
+    vi.mocked(requireSlot).mockRejectedValueOnce(new HttpError(404, "Account not found"));
+    expect((await post(mute, { on: true })).status).toBe(404);
   });
 });
