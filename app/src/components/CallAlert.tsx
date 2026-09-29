@@ -3,6 +3,7 @@
 import { MicIcon, MicOffIcon, MonitorIcon, PhoneIcon, PhoneIncomingIcon, PhoneOffIcon, SlidersHorizontalIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
+import { useAppStart } from "@/lib/android-app";
 import type { CallAudioState } from "@/lib/call-audio/call-audio";
 import type { Account, RingingCall } from "@/lib/client";
 import type { Ringer } from "@/lib/ring";
@@ -65,7 +66,10 @@ export function CallBanner({
   // the call whose microphone and speaker panel is open
   const [devicesOf, setDevicesOf] = useState<string | null>(null);
   const allowed = useRingAllowed(ringer);
-  const loud = calls.some((c) => !c.active && !muted.includes(callKey(c)));
+  // inside the Android app the phone rings the call itself, with the ringtone of the app's Calls channel until it ends
+  // (mobile/plugin): the page adds no ring of its own
+  const inApp = !!useAppStart();
+  const loud = !inApp && calls.some((c) => !c.active && !muted.includes(callKey(c)));
 
   useEffect(() => {
     if (!ringer) return;
