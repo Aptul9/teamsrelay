@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { askCheck, migrateAppSchema, openAppDb, slotRow } from "@/lib/appdb";
 import { ALERT_WAIT, runCheck, runDueChecks, settleChecks, SIGN_IN_WAIT, SIGNED_OUT, TEAMS_WAIT, type SlotPort } from "@/lib/checks";
 import type { ControlClient } from "@/lib/control";
+import { SIGN_IN_TRY_AFTER, SIGN_IN_TRY_WAIT } from "@/shared/sign-in";
 import { keepSlotsUp, setAccountRunning, setCheckMode } from "@/lib/slots";
 import { tempDir } from "./helpers";
 
@@ -108,6 +109,13 @@ describe("a check", () => {
   it("does not take a sign-out of a few seconds while Teams starts (Microsoft redirects) for a sign-in to do", async () => {
     account(1, 3600, T0, { teams: (elapsed) => (elapsed < 50 ? "login" : "ok") });
     expect(await runCheck(1, deps())).toBe("ok");
+  });
+
+  // the agent presses Sign in once SIGN_IN_TRY_AFTER s into a sign-out and gives it SIGN_IN_TRY_WAIT s (jobs/sign-in.ts)
+  it("gives the agent's one press of Sign in its time: a sign-out that the press ends is a normal check", async () => {
+    account(1, 3600, T0, { teams: (elapsed) => (elapsed < 40 + SIGN_IN_TRY_AFTER + SIGN_IN_TRY_WAIT - 5 ? "login" : "ok") });
+    expect(await runCheck(1, deps())).toBe("ok");
+    expect(SIGNED_OUT).toBeGreaterThan(SIGN_IN_TRY_AFTER + SIGN_IN_TRY_WAIT);
   });
 
   it("finds a sign-in to do after a minute signed out, and stops the account once the agent pushed its alert", async () => {

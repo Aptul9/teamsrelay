@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { SIGN_IN_TRY_AFTER, SIGN_IN_TRY_WAIT } from "@/shared/sign-in";
 import { STATE, Watch } from "@/shared/slot-db/state";
 import { beginCheck, endCheck, listSlots, nextCheck, slotRow, type CheckResult } from "./appdb";
 import type { ControlClient } from "./control";
@@ -32,9 +33,10 @@ export type CheckDeps = {
 };
 
 // Seconds a check waits for Teams after the start (browser, Microsoft redirects, Teams loading). A Teams signed out
-// that long is a sign-in to do, not a redirect of the start, which lasts a few seconds.
+// SIGNED_OUT seconds is a sign-in to do, not a redirect of the start, which lasts a few seconds, nor a sign-out the
+// agent's one press of Sign in ends (src/agent/jobs/sign-in.ts): longer than that press and its wait together.
 export const TEAMS_WAIT = 240;
-export const SIGNED_OUT = 60;
+export const SIGNED_OUT = SIGN_IN_TRY_AFTER + SIGN_IN_TRY_WAIT + 15;
 // Seconds for the check command, and for the agent's sign-in alert once a sign-in is found to do
 export const COMMAND_WAIT = 180;
 export const ALERT_WAIT = 30;
