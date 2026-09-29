@@ -128,8 +128,9 @@ async function inTheApp(page, launch) {
   return invoked;
 }
 
-// The server address the start page opens in the app: the account asked, and the page itself for Change server
-const inApp = (server, acc = 0) => `${server}/?${acc ? `a=${acc}&` : ""}app=${encodeURIComponent(origin + "/")}`;
+// The server address the start page opens in the app: the account asked, the sound of a call answered from its
+// notification (call=1), and the page itself for Change server
+const inApp = (server, acc = 0, call = false) => `${server}/?${acc ? `a=${acc}&` : ""}${call ? "call=1&" : ""}app=${encodeURIComponent(origin + "/")}`;
 
 test("in the app, hands the server and the address of the page to the plugin", async () => {
   const { page, errors } = await newPage();
@@ -147,6 +148,28 @@ test("in the app, hands the server and the address of the page to the plugin", a
 test("in the app, opens the saved server on the account of the notification that started the app", async () => {
   const { page, errors } = await newPage();
   await inTheApp(page, { acc: 2, change: false });
+  await page.goto(origin + "/");
+  await page.fill("#relay", "https://relay.test");
+  await Promise.all([page.waitForURL(inApp(RELAY)), page.click("button[type=submit]")]);
+  await page.goto(origin + "/");
+  await page.waitForURL(inApp(RELAY, 2));
+  assert.deepEqual(errors, []);
+});
+
+test("in the app, Answer on a call notification opens the account with the sound of the call once the server took it", async () => {
+  const { page, errors } = await newPage();
+  await inTheApp(page, { acc: 2, change: false, call: true });
+  await page.goto(origin + "/");
+  await page.fill("#relay", "https://relay.test");
+  await Promise.all([page.waitForURL(inApp(RELAY)), page.click("button[type=submit]")]);
+  await page.goto(origin + "/");
+  await page.waitForURL(inApp(RELAY, 2, true));
+  assert.deepEqual(errors, []);
+});
+
+test("in the app, Answer the server refused (the call no longer rings) opens the account without the call", async () => {
+  const { page, errors } = await newPage();
+  await inTheApp(page, { acc: 2, change: false, call: false });
   await page.goto(origin + "/");
   await page.fill("#relay", "https://relay.test");
   await Promise.all([page.waitForURL(inApp(RELAY)), page.click("button[type=submit]")]);

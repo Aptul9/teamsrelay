@@ -102,7 +102,8 @@ object Registration {
         }
     }
 
-    private fun call(method: String, url: String, cookies: String, body: JSONObject): Pair<Int, String> {
+    // A request of the plugin to the relay, as its web page would make it (Origin of the relay, the page's cookies)
+    fun call(method: String, url: String, cookies: String, body: JSONObject): Pair<Int, String> {
         val u = URL(url)
         val c = u.openConnection() as HttpURLConnection
         try {
