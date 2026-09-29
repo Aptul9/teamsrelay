@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, MonitorIcon } from "lucide-react";
 import { cn } from "cn";
 import { useEffect, useRef, useState } from "react";
 import { accName } from "@/components/AccountMenu";
@@ -69,14 +69,17 @@ export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; in
       <div ref={tab} className="absolute left-1/2 top-0 z-10 flex -translate-x-1/2 flex-col items-center">
         <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", down ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
           <div id="desktop-accounts" inert={!down} aria-hidden={!down} className="min-h-0 overflow-hidden">
-            <div className="flex min-w-44 flex-col gap-0.5 rounded-b-lg border border-t-0 bg-background/95 p-1 shadow-lg backdrop-blur">
-              {list.map((a) => (
-                <Button key={a.slot} size="sm" variant={a.slot === front ? "secondary" : "ghost"} aria-pressed={a.slot === front} className="h-8 justify-start" onClick={() => void bring(a)}>
-                  {label(a)}
-                </Button>
-              ))}
+            <div className="flex flex-col items-center rounded-b-lg border border-t-0 bg-background/95 px-2 py-1 shadow-lg backdrop-blur">
+              <div className="flex items-center gap-1">
+                <MonitorIcon className="mr-1 size-4 shrink-0 text-muted-foreground" />
+                {list.map((a) => (
+                  <Button key={a.slot} size="sm" variant={a.slot === front ? "secondary" : "ghost"} aria-pressed={a.slot === front} className="h-8 shrink-0" onClick={() => void bring(a)}>
+                    {label(a)}
+                  </Button>
+                ))}
+              </div>
               {problem && (
-                <p role="alert" className="max-w-60 px-2 py-1 text-xs text-destructive">
+                <p role="alert" className="max-w-80 px-2 pb-1 text-xs text-destructive">
                   {problem}
                 </p>
               )}
