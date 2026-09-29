@@ -1,18 +1,18 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
+import { JWT } from "google-auth-library";
 import { z } from "zod";
 import { ConfigError } from "../config";
 
 // Firebase Cloud Messaging, HTTP v1 API (https://firebase.google.com/docs/cloud-messaging/send/v1-api), for the phones
 // that run the TeamsRelay app of mobile/: one data message per phone, its content sealed with the key of that phone
-// (AES-256-GCM, sealFor), so that Google carries ciphertext only, as with Web Push. The app decrypts it and draws the
-// notification (mobile/plugin/android).
+// (AES-256-GCM, sealFor of seal.ts), so that Google carries ciphertext only, as with Web Push. The app decrypts it and draws the
+// notification (mobile/plugin/android). The access token of the service account comes from Google's own client
+// (google-auth-library), which signs the JWT and keeps the token until shortly before its end.
 
 const ServiceAccount = z.object({
   project_id: z.string().min(1),
   client_email: z.string().min(1),
   private_key: z.string().min(1),
-  token_uri: z.string().url().default("https://oauth2.googleapis.com/token"),
 });
 export type ServiceAccount = z.infer<typeof ServiceAccount>;
 
@@ -39,12 +39,14 @@ export type FcmResult = { ok: true } | { ok: false; status: number; gone: boolea
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
 export class FcmSender {
-  private access: { token: string; until: number } | null = null;
+  private auth: JWT;
 
   constructor(
     private readonly sa: ServiceAccount,
-    private readonly o: { fetch?: Fetch; clock?: () => number } = {},
-  ) {}
+    private readonly o: { fetch?: Fetch } = {},
+  ) {
+    this.auth = this.authClient();
+  }
 
   // A data message to one phone: priority high wakes a phone in Doze at once; ttl, seconds the service keeps it
   async send(token: string, data: Record<string, string>, opts: { ttl: number; high: boolean }): Promise<FcmResult> {
@@ -57,9 +59,9 @@ export class FcmSender {
         signal: AbortSignal.timeout(15_000),
       });
       if (res.ok) return { ok: true };
-      // an access token refused before its end: once more with a new one
+      // an access token refused before its end: once more with a new client, which asks for a new token
       if (res.status === 401 && attempt === 0) {
-        this.access = null;
+        this.auth = this.authClient();
         continue;
       }
       const detail = (await res.json().catch(() => ({}))) as FcmError;
@@ -67,24 +69,22 @@ export class FcmSender {
     }
   }
 
-  // OAuth 2.0 access token of the service account (JWT bearer grant), kept until five minutes before its end
-  private async accessToken(): Promise<string> {
-    const now = (this.o.clock ?? Date.now)();
-    if (this.access && now < this.access.until) return this.access.token;
-    const iat = Math.floor(now / 1000);
-    const part = (v: object) => Buffer.from(JSON.stringify(v)).toString("base64url");
-    const unsigned = `${part({ alg: "RS256", typ: "JWT" })}.${part({ iss: this.sa.client_email, scope: SCOPE, aud: this.sa.token_uri, iat, exp: iat + 3600 })}`;
-    const signature = crypto.sign("RSA-SHA256", Buffer.from(unsigned), this.sa.private_key).toString("base64url");
-    const res = await this.fetch(this.sa.token_uri, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${unsigned}.${signature}` }).toString(),
-      signal: AbortSignal.timeout(15_000),
+  // The OAuth 2.0 client of the service account (JWT bearer grant). Its requests go through the fetch of the sender:
+  // gaxios, the HTTP layer of google-auth-library, would otherwise load node-fetch.
+  private authClient(): JWT {
+    return new JWT({
+      email: this.sa.client_email,
+      key: this.sa.private_key,
+      scopes: [SCOPE],
+      transporterOptions: { fetchImplementation: (url, init) => this.fetch(String(url), init as RequestInit), timeout: 15_000 },
     });
-    if (!res.ok) throw new Error(`FCM access token refused: HTTP ${res.status}`);
-    const j = (await res.json()) as { access_token: string; expires_in: number };
-    this.access = { token: j.access_token, until: now + (j.expires_in - 300) * 1000 };
-    return j.access_token;
+  }
+
+  // Kept by the client until five minutes before its end; a refused key throws with Google's reason
+  private async accessToken(): Promise<string> {
+    const { token } = await this.auth.getAccessToken();
+    if (!token) throw new Error("FCM access token refused");
+    return token;
   }
 
   private fetch(url: string, init: RequestInit): Promise<Response> {
@@ -99,15 +99,4 @@ type FcmError = { error?: { status?: string; message?: string; details?: { error
 function tokenGone(status: number, d: FcmError): boolean {
   const code = d.error?.details?.find((x) => x.errorCode)?.errorCode ?? d.error?.status;
   return status === 404 || code === "UNREGISTERED" || code === "SENDER_ID_MISMATCH" || (status === 400 && /registration token/i.test(d.error?.message ?? ""));
-}
-
-// The key of a phone: 32 random bytes, base64url, answered to each registration of the phone
-export const newDeviceKey = () => crypto.randomBytes(32).toString("base64url");
-
-// The data of the FCM message for `content`: v 1, iv (12 random bytes), ct (ciphertext and 16-byte tag), base64url
-export function sealFor(key: string, content: object): Record<string, string> {
-  const iv = crypto.randomBytes(12);
-  const c = crypto.createCipheriv("aes-256-gcm", Buffer.from(key, "base64url"), iv);
-  const ct = Buffer.concat([c.update(JSON.stringify(content), "utf8"), c.final(), c.getAuthTag()]);
-  return { v: "1", iv: iv.toString("base64url"), ct: ct.toString("base64url") };
 }
