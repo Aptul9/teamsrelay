@@ -65,21 +65,30 @@ object Notices {
         manager(context).notify("alert", (System.currentTimeMillis() % Int.MAX_VALUE).toInt(), n)
     }
 
-    // A late message changes nothing: one of an older call, or a ringing one of a call already ended
+    // A late message changes nothing: one of an older call, or a ringing one of a call already ended. A call of an
+    // account of the browsers container (answer) offers Answer, which takes it in the app (PushPlugin, CallAnswer).
     private fun ring(context: Context, acc: Int, d: JSONObject) {
         val store = Store(context)
         val since = d.optLong("ts")
         val (last, ended) = store.lastCall(acc)
         if (since < last || (since == last && ended)) return
         store.setLastCall(acc, since, false)
-        val n = builder(context, CALLS, acc, d.optString("title"), d.optString("body"))
+        val b = builder(context, CALLS, acc, d.optString("title"), d.optString("body"))
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setTimeoutAfter(RING_FOR)
             .setWhen(since)
-            .build()
+        if (d.optBoolean("answer")) b.addAction(0, "Answer", answer(context, acc, since))
+        val n = b.build()
         n.flags = n.flags or Notification.FLAG_INSISTENT
         manager(context).notify(CALL_TAG, acc, n)
+    }
+
+    // Answer taken in the app: the ringtone stops at once, and pushes of the ring still on their way change nothing; the
+    // end of the call from the relay replaces the notification
+    fun stopRing(context: Context, acc: Int, since: Long) {
+        Store(context).setLastCall(acc, since, true)
+        manager(context).cancel(CALL_TAG, acc)
     }
 
     // Cancelling the ringing notification stops its sound; the quiet one takes its place
@@ -127,6 +136,17 @@ object Notices {
         val intent = (context.packageManager.getLaunchIntentForPackage(context.packageName) ?: Intent()).apply {
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(EXTRA_ACC, acc)
+        }
+        return PendingIntent.getActivity(context, acc, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    // Answer opens the app, or brings it to the front, with the call to take: its account and when it started ringing
+    private fun answer(context: Context, acc: Int, since: Long): PendingIntent {
+        val intent = (context.packageManager.getLaunchIntentForPackage(context.packageName) ?: Intent()).apply {
+            action = ACTION_ANSWER
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(EXTRA_ACC, acc)
+            putExtra(EXTRA_SINCE, since)
         }
         return PendingIntent.getActivity(context, acc, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }

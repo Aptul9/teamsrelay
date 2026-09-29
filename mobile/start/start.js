@@ -31,14 +31,16 @@ const PAGE = location.origin + location.pathname;
 
 // After the form, Back from the server page comes here, where the address can be changed. The automatic open at
 // start replaces this page: Chrome keeps no history entry for a page that leaves while it loads. In the app the server
-// page learns where this page is (app=), to offer Change server.
-async function open(origin, replace, acc) {
+// page learns where this page is (app=), to offer Change server; call: the server took the answer of a call from its
+// notification, and the page plays the sound of that call (call=1, as after Answer in the web app's notification).
+async function open(origin, replace, acc, call = false) {
   $("target").textContent = origin;
   $("opening").hidden = false;
   $("relay-form").hidden = true;
   await plugin("relay", { origin, page: PAGE });
   const query = new URLSearchParams();
   if (acc) query.set("a", String(acc));
+  if (acc && call) query.set("call", "1");
   if (window.__TAURI_INTERNALS__) query.set("app", PAGE);
   const target = origin + "/" + (String(query) ? `?${query}` : "");
   if (replace) location.replace(target);
@@ -67,13 +69,14 @@ $("relay-form").addEventListener("submit", (e) => {
 });
 $("relay").addEventListener("input", () => ($("error").textContent = ""));
 
-// What started the app, asked once: a tapped notification names its account, the launcher shortcut Change server asks
+// What started the app, asked once: a tapped notification names its account (with call when Answer on the
+// notification of a ringing call started it and the server took the answer), the launcher shortcut Change server asks
 // for the form. Nothing in a browser.
 const launch = (await plugin("opened")) ?? {};
 
 // Back from the server page, #change (Change server of the server page) or the launcher shortcut: the form with the
 // address in use; otherwise straight to the server
 const back = performance.getEntriesByType("navigation")[0]?.type === "back_forward";
-if (saved() && !back && location.hash !== "#change" && !launch.change) void open(saved(), true, launch.acc || 0);
+if (saved() && !back && location.hash !== "#change" && !launch.change) void open(saved(), true, launch.acc || 0, launch.call === true);
 else showForm();
 addEventListener("pageshow", (e) => e.persisted && showForm());

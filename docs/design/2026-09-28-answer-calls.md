@@ -67,4 +67,4 @@ Each account, once, in `/desktop/`: in Teams **Settings** → **Calls**, where u
 
 ## Out of scope
 
-The Android app (`mobile/`), declining from the app, video calls, group calls, accounts on another computer, calls placed from the app.
+Declining from the app, video calls, group calls, accounts on another computer, calls placed from the app. The Android app (`mobile/`), left out at first, got **Answer** on its ringing notification on 2026-09-29: the WebView of Tauri 2.12 (wry 0.57) passes the microphone request of the page to the Android `RECORD_AUDIO` prompt once the manifest declares it ([mobile/README.md](../../mobile/README.md)).

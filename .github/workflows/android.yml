@@ -60,8 +60,42 @@ jobs:
           printf '%s' "$GOOGLE_SERVICES_JSON" > "$RUNNER_TEMP/google-services.json"
           node scripts/firebase-values.mjs "$RUNNER_TEMP/google-services.json" plugin/android/src/main/res/values/google-services.xml
 
+      # One debug key for every run: the repository secret ANDROID_DEBUG_KEYSTORE (base64 of a debug.keystore, alias
+      # androiddebugkey, passwords android) goes where the Android Gradle plugin takes its debug key from, so the APK of
+      # a later run installs over the app, which keeps its server and session. Without it the build makes a key of its
+      # own, and an APK of another run needs the app removed first.
+      - name: Signing key
+        env:
+          ANDROID_DEBUG_KEYSTORE: ${{ secrets.ANDROID_DEBUG_KEYSTORE }}
+        run: |
+          if [ -z "$ANDROID_DEBUG_KEYSTORE" ]; then
+            echo "::warning::secret ANDROID_DEBUG_KEYSTORE not set: the APK is signed with a key made for this run"
+            exit 0
+          fi
+          mkdir -p "$HOME/.android"
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE" | base64 -d > "$HOME/.android/debug.keystore"
+          sha=$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sed -n 's/^[[:space:]]*SHA256: //p' | tr -d ':' | tr 'A-F' 'a-f')
+          [ -n "$sha" ] || { echo "::error::ANDROID_DEBUG_KEYSTORE is no keystore with the key androiddebugkey (password android)"; exit 1; }
+          echo "DEBUG_KEY_SHA256=$sha" >> "$GITHUB_ENV"
+
       - name: Build
         run: npx tauri android build --debug --apk --target aarch64
+
+      # the certificate the APK is signed with, which must be the one of the secret when it is set
+      - name: Signature
+        run: |
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          # the label of a signer depends on apksigner and on the signature: "Signer #1", "V2 Signer:", "Signer
+          # (minSdkVersion=...)"; every SHA-256 digest counts
+          certs=$("$apksigner" verify --print-certs "$apk")
+          echo "$certs"
+          got=$(echo "$certs" | sed -n 's/.*certificate SHA-256 digest: //p' | sort -u)
+          echo "$apk signed by certificate SHA-256 $got"
+          if [ -n "$DEBUG_KEY_SHA256" ] && [ "$got" != "$DEBUG_KEY_SHA256" ]; then
+            echo "::error::the APK is not signed with the key of ANDROID_DEBUG_KEYSTORE ($DEBUG_KEY_SHA256)"
+            exit 1
+          fi
 
       # unit tests of the Kotlin push plugin (it opens what the relay seals), in the Android project of the build
       - name: Plugin tests
