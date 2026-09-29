@@ -1,6 +1,6 @@
 // The audio part of the Selkies 2.0 wire format, as its server and page speak it (websockets_mode.py and
 // selkies-core.js of the browsers image): Opus down in 0x01 frames, with or without redundant blocks (RED), the
-// microphone up as 24 kHz 16-bit PCM in 0x02 frames, the demand for the microphone as text.
+// microphone up as Opus in 0x02 frames, the demand for the microphone as text.
 import { describe, expect, it } from "vitest";
 import { audioChannels, captureDemand, micFrame, opusPacket } from "@/lib/call-audio/frames";
 
@@ -34,8 +34,9 @@ describe("opusPacket", () => {
 });
 
 describe("micFrame", () => {
-  it("is 0x02 then 16-bit little-endian samples, full scale 32767, clamped", () => {
-    expect(micFrame(new Float32Array([0, 1, -1, 2]))).toEqual(bytes(0x02, 0x00, 0x00, 0xff, 0x7f, 0x01, 0x80, 0xff, 0x7f));
+  // Selkies' own page encodes the microphone to Opus and pcmflux decodes it: raw PCM there plays as noise
+  it("is 0x02 then the Opus packet of the microphone", () => {
+    expect(micFrame(bytes(0x78, 0x01, 0x02))).toEqual(bytes(0x02, 0x78, 0x01, 0x02));
   });
 });
 

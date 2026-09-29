@@ -1,7 +1,7 @@
 // The call audio in the local Google Chrome, headless, against a websocket the test routes and answers as Selkies
 // would: Opus of a 440 Hz tone, made by Chrome's own encoder, goes down in 0x01 frames and the page plays 440 Hz; with
-// a WAV of 660 Hz bursts as the fake microphone, the demand for the microphone brings 0x02 frames of 20 ms whose PCM
-// at 24 kHz is 660 Hz, Mute stops them, and the end of the demand stops them and releases the microphone.
+// a WAV of 660 Hz bursts as the fake microphone, the demand for the microphone brings 0x02 frames of Opus that decode
+// to 660 Hz at 24 kHz, Mute stops them, and the end of the demand stops them and releases the microphone.
 import fs from "node:fs";
 import path from "node:path";
 import { build } from "esbuild";
@@ -46,10 +46,9 @@ function burstsWav(file: string, hz: number) {
   fs.writeFileSync(file, Buffer.concat([head, pcm]));
 }
 
-// the loudest frequency of 16-bit little-endian PCM, among 200-2000 Hz in 5 Hz steps (Goertzel)
-function loudest(pcm: Buffer, rate: number): number {
-  const n = pcm.length / 2;
-  const x = Float64Array.from({ length: n }, (_, i) => pcm.readInt16LE(i * 2));
+// the loudest frequency of the samples, among 200-2000 Hz in 5 Hz steps (Goertzel)
+function loudest(x: number[], rate: number): number {
+  const n = x.length;
   let best = 0;
   let bestPower = -1;
   for (let f = 200; f <= 2000; f += 5) {
@@ -152,13 +151,35 @@ describe("call audio in Chrome", () => {
     expect(micFrames()).toEqual([]);
   }, 30_000);
 
-  it("sends the microphone while Selkies asks for it, 20 ms of 24 kHz PCM per frame", async () => {
+  it("sends the microphone as Opus while Selkies asks for it", async () => {
     server?.send("CAPTURE_DEMAND microphone 1");
     await until(() => micFrames().length > 75, "1.5 s of microphone frames");
-    const frames = micFrames();
-    expect(new Set(frames.map((f) => f.length))).toEqual(new Set([1 + 480 * 2]));
-    const pcm = Buffer.concat(frames.slice(-50).map((f) => f.subarray(1)));
-    expect(Math.abs(loudest(pcm, MIC_RATE) - TONE_UP)).toBeLessThanOrEqual(25);
+    const packets = micFrames()
+      .slice(-50)
+      .map((f) => [...f.subarray(1)]);
+    expect(packets.every((p) => p.length > 0)).toBe(true);
+    // decoded as pcmflux does, mono at 24 kHz
+    const samples = await page.evaluate(
+      async ({ packets, rate }) => {
+        const out: number[] = [];
+        const decoder = new AudioDecoder({
+          output: (d) => {
+            const plane = new Float32Array(d.numberOfFrames);
+            d.copyTo(plane, { planeIndex: 0, format: "f32-planar" });
+            out.push(...plane);
+            d.close();
+          },
+          error: (e) => console.error(e),
+        });
+        decoder.configure({ codec: "opus", sampleRate: rate, numberOfChannels: 1 });
+        packets.forEach((p, i) => decoder.decode(new EncodedAudioChunk({ type: "key", timestamp: i * 20_000, data: new Uint8Array(p) })));
+        await decoder.flush();
+        return out;
+      },
+      { packets, rate: MIC_RATE },
+    );
+    expect(samples.length).toBeGreaterThan(MIC_RATE / 2);
+    expect(Math.abs(loudest(samples, MIC_RATE) - TONE_UP)).toBeLessThanOrEqual(25);
     expect(await page.evaluate(() => (window as unknown as Win).states.at(-1)?.mic)).toBe("on");
   }, 30_000);
 

@@ -4,7 +4,7 @@ Spec: [2026-09-29-call-audio-in-app.md](2026-09-29-call-audio-in-app.md). Branch
 
 **Goal:** the sound of a call answered from the app, both ways, in the app, over the Selkies websocket of the browsers container, without its video.
 
-**Architecture:** a browser module `app/src/lib/call-audio/` speaks the audio part of the Selkies 2.0 protocol: `START_AUDIO` (SETTINGS for `primary` without a size as fallback), Opus in `0x01` frames decoded by WebCodecs, the microphone as 24 kHz PCM in `0x02` frames on `CAPTURE_DEMAND`. The banner of the call in progress owns one call audio per account; Answer starts it instead of opening the desktop.
+**Architecture:** a browser module `app/src/lib/call-audio/` speaks the audio part of the Selkies 2.0 protocol: `START_AUDIO` (SETTINGS for `primary` without a size as fallback), Opus in `0x01` frames decoded by WebCodecs, the microphone as Opus (24 kHz mono) in `0x02` frames on `CAPTURE_DEMAND`. The banner of the call in progress owns one call audio per account; Answer starts it instead of opening the desktop.
 
 **Tech stack:** Next.js 16 client components, WebCodecs `AudioDecoder`, Web Audio worklets (code as Blob URLs), vitest (node for pure units, the local Google Chrome through Playwright for audio, `page.routeWebSocket` as the Selkies server), `node:vm` for `sw.js` (`test/sw.test.ts`).
 
@@ -12,7 +12,7 @@ Spec: [2026-09-29-call-audio-in-app.md](2026-09-29-call-audio-in-app.md). Branch
 
 - Never `START_VIDEO`; the SETTINGS fallback carries `displayId: "primary"` and no size.
 - Websocket path `/desktop/api/websockets` on the origin of the app; in-app audio only where the desktop URL is on that origin.
-- `0x02` payload: Int16 little-endian mono 24 kHz; 20 ms (480 samples) per frame.
+- `0x02` payload: one Opus packet, mono 24 kHz, 32 kbps, `lowdelay` where supported (as Selkies' page; its server comment saying PCM is wrong, found on prod before Task 4).
 - Nothing starts the microphone but `CAPTURE_DEMAND microphone 1`; `microphone 0` stops every track.
 - Commit author `Aptul9 <aptul99@gmail.com>`, Conventional Commits, no AI trailer; PR body empty.
 
@@ -25,12 +25,12 @@ Spec: [2026-09-29-call-audio-in-app.md](2026-09-29-call-audio-in-app.md). Branch
 **Produces:**
 - `OP = { audio: 0x01, mic: 0x02, gzipText: 0x05 }`.
 - `opusPacket(frame: Uint8Array): Uint8Array | null`: the primary Opus packet of a `0x01` frame (RED or not), `null` when truncated or not audio.
-- `micFrame(samples: Float32Array): Uint8Array`: `0x02` + Int16 LE, clamped to [-1, 1].
+- `micFrame(packet: Uint8Array): Uint8Array`: `0x02` + the Opus packet.
 - `captureDemand(text: string): { subject: string; wanted: boolean } | null`.
 - `audioChannels(serverSettings: unknown): number`: `settings.audio_channels.value` when 1 or 2, else 2.
-- `MIC_RATE = 24000`, `MIC_FRAME = 480`, `OPUS_RATE = 48000`.
+- `MIC_RATE = 24000`, `OPUS_RATE = 48000`, `MIC_ENCODER` (Opus, mono, 24 kHz, 32 kbps).
 
-- [ ] Test: plain frame `[1,0,a,b,c]` gives `[a,b,c]`; RED frame with one redundant block gives the last block; RED frame shorter than its headers gives null; frame `[3,...]` null; `micFrame([0, 1, -1, 2])` is `02 00 00 ff 7f 01 80 ff 7f` (clamped, LE); `captureDemand("CAPTURE_DEMAND microphone 1")`, `"... 0"`, junk; `audioChannels` of `{type:"server_settings",settings:{audio_channels:{value:1}}}` 1, missing 2.
+- [ ] Test: plain frame `[1,0,a,b,c]` gives `[a,b,c]`; RED frame with one redundant block gives the last block; RED frame shorter than its headers gives null; frame `[3,...]` null; `micFrame([0x78, 1, 2])` is `02 78 01 02`; `captureDemand("CAPTURE_DEMAND microphone 1")`, `"... 0"`, junk; `audioChannels` of `{type:"server_settings",settings:{audio_channels:{value:1}}}` 1, missing 2.
 - [ ] `npx vitest run test/call-audio-frames.test.ts`: fails (no module).
 - [ ] Implement; passes. Commit `feat(call-audio): Selkies audio wire format`.
 
@@ -62,7 +62,7 @@ Spec: [2026-09-29-call-audio-in-app.md](2026-09-29-call-audio-in-app.md). Branch
 - `class CallAudio { constructor(o: { url: string; onState(s: CallAudioState): void; open?: (url: string) => SocketLike }); start(): void; resume(): Promise<void>; mute(on: boolean): void; stop(): void }`; `callAudioUrl(loc: Location): string`; `callAudioSupported(): boolean`.
 
 - [ ] Page: bundle of `call-audio.ts` exposing `window.startCall(url)`, `window.state`, an `AnalyserNode` on the player output.
-- [ ] Test (Chrome, `--autoplay-policy=no-user-gesture-required`, `--use-fake-ui-for-media-stream`, `--use-fake-device-for-media-stream`, `--use-file-for-fake-audio-capture=<660 Hz WAV>`): Opus of a 440 Hz tone made by Chrome's `AudioEncoder`, sent by `page.routeWebSocket` as `0x01` frames after `START_AUDIO`: the analyser peak is at 440 Hz ± 25; `CAPTURE_DEMAND microphone 1`: `0x02` frames arrive, 960 bytes of payload each, PCM peak at 660 Hz ± 25 (24 kHz); mute: none for 300 ms; unmute: again; `microphone 0`: none after 300 ms and the microphone track ended.
+- [ ] Test (Chrome, `--autoplay-policy=no-user-gesture-required`, `--use-fake-ui-for-media-stream`, `--use-fake-device-for-media-stream`, `--use-file-for-fake-audio-capture=<660 Hz WAV>`): Opus of a 440 Hz tone made by Chrome's `AudioEncoder`, sent by `page.routeWebSocket` as `0x01` frames after `START_AUDIO`: the analyser peak is at 440 Hz ± 25; `CAPTURE_DEMAND microphone 1`: `0x02` frames of Opus arrive, decoded in the page (mono 24 kHz) their peak is 660 Hz ± 25; mute: none for 300 ms; unmute: again; `microphone 0`: none after 300 ms and the microphone track ended.
 - [ ] Run: fails. Implement; passes. Commit `feat(call-audio): play the call and send the microphone in the app`.
 
 ### Task 4: the banner, the answer, the notification

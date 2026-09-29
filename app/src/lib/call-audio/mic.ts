@@ -1,4 +1,4 @@
-import { MIC_FRAME, MIC_RATE, micFrame } from "./frames";
+import { MIC_ENCODER, MIC_RATE, micFrame } from "./frames";
 import { addWorklet } from "./player";
 
 // The worklet that hands the microphone to the page, one render quantum (128 samples) at a time
@@ -14,14 +14,15 @@ registerProcessor("call-audio-mic", CallAudioMic);
 `;
 
 // The microphone of the phone for the call: echo cancellation, noise suppression and gain control as in a call app,
-// in an AudioContext of 24 kHz (the browser resamples), sent as 0x02 frames of 20 ms. Muted, nothing is sent.
+// in an AudioContext of 24 kHz (the browser resamples), encoded to Opus (low delay where the browser offers it) and
+// sent as 0x02 frames. Muted, nothing is encoded or sent.
 export class MicSender {
   muted = false;
   private stream: MediaStream | null = null;
   private ctx: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
-  private pending = new Float32Array(MIC_FRAME);
-  private filled = 0;
+  private encoder: AudioEncoder | null = null;
+  private timestamp = 0;
   // a start overtaken by a stop leaves nothing open
   private run = 0;
 
@@ -40,6 +41,7 @@ export class MicSender {
     });
     if (run !== this.run) return stream.getTracks().forEach((t) => t.stop());
     this.stream = stream;
+    this.encoder = await this.encoderFor(run);
     const ctx = new AudioContext({ sampleRate: MIC_RATE, latencyHint: "interactive" });
     this.ctx = ctx;
     await addWorklet(ctx, MIC);
@@ -66,21 +68,42 @@ export class MicSender {
     this.stream = null;
     this.node?.disconnect();
     this.node = null;
+    if (this.encoder && this.encoder.state !== "closed") this.encoder.close();
+    this.encoder = null;
     void this.ctx?.close().catch(() => undefined);
     this.ctx = null;
-    this.filled = 0;
+  }
+
+  private async encoderFor(run: number): Promise<AudioEncoder> {
+    const encoder = new AudioEncoder({
+      output: (chunk) => {
+        if (run !== this.run) return;
+        const packet = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(packet);
+        this.send(micFrame(packet));
+      },
+      error: () => undefined,
+    });
+    const lowDelay = { ...MIC_ENCODER, opus: { application: "lowdelay" } } as AudioEncoderConfig;
+    const supported = await AudioEncoder.isConfigSupported(lowDelay).then(
+      (s) => !!s.supported,
+      () => false,
+    );
+    encoder.configure(supported ? lowDelay : MIC_ENCODER);
+    return encoder;
   }
 
   private samples(chunk: Float32Array) {
-    for (let at = 0; at < chunk.length; ) {
-      const take = Math.min(MIC_FRAME - this.filled, chunk.length - at);
-      this.pending.set(chunk.subarray(at, at + take), this.filled);
-      this.filled += take;
-      at += take;
-      if (this.filled === MIC_FRAME) {
-        if (!this.muted) this.send(micFrame(this.pending));
-        this.filled = 0;
+    const encoder = this.encoder;
+    const frames = chunk.length;
+    if (!this.muted && encoder?.state === "configured") {
+      const data = new AudioData({ format: "f32", sampleRate: MIC_RATE, numberOfFrames: frames, numberOfChannels: 1, timestamp: this.timestamp, data: chunk });
+      try {
+        encoder.encode(data);
+      } finally {
+        data.close();
       }
     }
+    this.timestamp += Math.round((frames * 1_000_000) / MIC_RATE);
   }
 }

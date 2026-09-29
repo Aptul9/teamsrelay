@@ -2,10 +2,11 @@
 // selkies-core.js of its image). Binary frames carry their kind in the first byte.
 export const OP = { audio: 0x01, mic: 0x02, gzipText: 0x05 } as const;
 
-// Opus down at 48 kHz; the microphone up as 16-bit mono PCM at 24 kHz, 20 ms per frame
+// Opus down at 48 kHz. The microphone goes up as Opus too, mono at 24 kHz, encoded as Selkies' own page does
+// (selkies-core.js): its server's comment says PCM, but pcmflux decodes Opus and plays raw PCM as noise.
 export const OPUS_RATE = 48_000;
 export const MIC_RATE = 24_000;
-export const MIC_FRAME = 480;
+export const MIC_ENCODER: AudioEncoderConfig = { codec: "opus", sampleRate: MIC_RATE, numberOfChannels: 1, bitrate: 32_000 };
 
 // The Opus packet of a 0x01 frame. Byte 1 counts the redundant blocks (RED): with none the packet follows; with some,
 // a 4-byte timestamp, 4 bytes per block (offset and length in the last 3), the header byte of the primary, the
@@ -22,12 +23,11 @@ export function opusPacket(frame: Uint8Array): Uint8Array | null {
   return pos < frame.length ? frame.subarray(pos) : null;
 }
 
-// A 0x02 frame of the microphone: full scale 32767, clamped, little-endian
-export function micFrame(samples: Float32Array): Uint8Array {
-  const out = new Uint8Array(1 + samples.length * 2);
+// A 0x02 frame: one Opus packet of the microphone
+export function micFrame(packet: Uint8Array): Uint8Array {
+  const out = new Uint8Array(1 + packet.length);
   out[0] = OP.mic;
-  const view = new DataView(out.buffer);
-  for (let i = 0; i < samples.length; i++) view.setInt16(1 + i * 2, Math.round(Math.max(-1, Math.min(1, samples[i])) * 32767), true);
+  out.set(packet, 1);
   return out;
 }
 
