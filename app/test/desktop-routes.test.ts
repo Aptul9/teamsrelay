@@ -1,7 +1,7 @@
 import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as authcheck } from "@/app/api/authcheck/route";
-import { GET as desktop } from "@/app/api/desktop/[slot]/route";
+import { GET as desktop, POST as toFront } from "@/app/api/desktop/[slot]/route";
 import { appDb, claimSlot, migrateAppSchema, setRelayToken } from "@/lib/appdb";
 import { controlClient } from "@/lib/control";
 import { currentUser } from "@/lib/session";
@@ -41,6 +41,7 @@ beforeEach(() => {
 
 const open = (n: number | string) => desktop(new Request(`http://localhost:8090/api/desktop/${n}`), { params: Promise.resolve({ slot: String(n) }) });
 const check = (uri: string) => authcheck(new Request("http://webapp:8090/api/authcheck", { headers: { "X-Forwarded-Uri": uri } }), undefined);
+const bring = (n: number | string) => toFront(new Request(`http://localhost:8090/api/desktop/${n}`, { method: "POST" }), { params: Promise.resolve({ slot: String(n) }) });
 
 describe("GET /api/desktop/N", () => {
   it("brings the window of the account to the front and opens the desktop", async () => {
@@ -90,6 +91,51 @@ describe("GET /api/desktop/N", () => {
 
     expect(r.status).toBe(302);
     expect(r.headers.get("Location")).toBe(`/login?next=${encodeURIComponent(`/api/desktop/${slot}`)}`);
+  });
+});
+
+// the switcher of the desktop tab (/remote): another account in front, on the desktop already on screen
+describe("POST /api/desktop/N", () => {
+  it("brings the window of the account to the front, with no redirect", async () => {
+    vi.mocked(currentUser).mockResolvedValue(u1);
+
+    const r = await bring(slot);
+
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ ok: true, shown: true });
+    expect(shown).toEqual([slot]);
+  });
+
+  it("marks the account in use in its database, as the opening of the desktop does", async () => {
+    const db = createSlotDb(path.join(path.dirname(process.env.APP_DB!), String(slot), "messages.db"));
+    vi.mocked(currentUser).mockResolvedValue(u1);
+    const before = Math.floor(Date.now() / 1000);
+
+    await bring(slot);
+
+    expect(JSON.parse(db.prepare("SELECT v FROM state WHERE k='desktop'").pluck().get() as string).ts).toBeGreaterThanOrEqual(before);
+    db.close();
+  });
+
+  it("says when the window could not be brought forward", async () => {
+    vi.mocked(currentUser).mockResolvedValue(u1);
+    showFails = true;
+
+    expect(await (await bring(slot)).json()).toEqual({ ok: true, shown: false });
+  });
+
+  it("answers 404 for an account of someone else, 401 without a session, 409 for an account on another computer", async () => {
+    for (const user of [u2, admin]) {
+      vi.mocked(currentUser).mockResolvedValue(user);
+      expect((await bring(slot)).status).toBe(404);
+    }
+    vi.mocked(currentUser).mockResolvedValue(null);
+    expect((await bring(slot)).status).toBe(401);
+    const relay = claimSlot(appDb(), "u1", { slotCount: 4, perUser: 4 });
+    setRelayToken(appDb(), relay, "1".repeat(64));
+    vi.mocked(currentUser).mockResolvedValue(u1);
+    expect((await bring(relay)).status).toBe(409);
+    expect(shown).toEqual([]);
   });
 });
 

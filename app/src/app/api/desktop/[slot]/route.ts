@@ -9,23 +9,43 @@ type Ctx = { params: Promise<{ slot: string }> };
 
 const redirect = (location: string) => new Response(null, { status: 302, headers: { Location: location } });
 
-// Remote desktop of one account. Every account has its browser window on the one desktop of the browsers
-// container: the window of this account comes to the front, then the desktop opens.
-export const GET = route<Ctx>(async (req, { params }) => {
-  const user = await currentUser(req.headers);
-  if (!user) return redirect(`/login?next=${encodeURIComponent(new URL(req.url).pathname)}`);
-  const n = Number((await params).slot);
-  if (!Number.isInteger(n) || slotOwner(appDb(), n) !== user.id) throw new HttpError(404, "Account not found");
+// An account of this user whose window is on the desktop
+function ownAccount(userId: string, slot: string): number {
+  const n = Number(slot);
+  if (!Number.isInteger(n) || slotOwner(appDb(), n) !== userId) throw new HttpError(404, "Account not found");
   if (slotRow(appDb(), n)?.relay) throw new HttpError(409, ON_ANOTHER_COMPUTER);
+  return n;
+}
+
+// The window of the account to the front of the one desktop; false when the supervisor could not do it
+async function toFront(n: number): Promise<boolean> {
   // the agent leaves Teams to the owner from now: no chat switch, no presence keeper while the owner looks
   try {
     withSlot(n, (r) => r.markDesktop());
   } catch (e) {
     if (!(e instanceof SlotNotReady)) throw e;
   }
-  // the desktop is still useful with the windows as they are
-  await controlClient()
+  return controlClient()
     .show(n)
     .catch(() => false);
+}
+
+// Remote desktop of one account. Every account has its browser window on the one desktop of the browsers
+// container: the window of this account comes to the front, then the desktop opens.
+export const GET = route<Ctx>(async (req, { params }) => {
+  const user = await currentUser(req.headers);
+  if (!user) return redirect(`/login?next=${encodeURIComponent(new URL(req.url).pathname)}`);
+  const n = ownAccount(user.id, (await params).slot);
+  // the desktop is still useful with the windows as they are
+  await toFront(n);
   return redirect("/desktop/");
+});
+
+// Another account to the front of the desktop already on screen (the switcher of /remote): no redirect, the desktop
+// stays connected
+export const POST = route<Ctx>(async (req, { params }) => {
+  const user = await currentUser(req.headers);
+  if (!user) throw new HttpError(401, "Not signed in");
+  const n = ownAccount(user.id, (await params).slot);
+  return Response.json({ ok: true, shown: await toFront(n) });
 });
