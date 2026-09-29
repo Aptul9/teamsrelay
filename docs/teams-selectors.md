@@ -82,3 +82,12 @@ Seen on 2026-09-27 on slot 2 (behind Defender for Cloud Apps) with 1:1 audio cal
 ## Expired session
 
 Texts `REDUCED_CAPABILITIES`, *Chats are temporarily unavailable*, *Sync engine is running in Reduced*, *We need you to sign in again*.
+
+The one press of Sign in after a sign-out ([design](design/2026-09-29-sign-in-once.md)) reads the screens below by their texts only, and presses when exactly one matches. None of them was ever read on an account: they come from public reports, the fixtures `sign-in-teams.html` and `sign-in-microsoft.html` are rebuilt by hand, and the agent logs the buttons of each page once per sign-out (`SESSION: sign-in page buttons`), so the next real sign-out confirms or corrects them.
+
+| Item | Read as |
+|---|---|
+| Teams banner | *We need you to sign in again. This could be a request from your IT department or Teams, or the result of a password update.*, a **Sign in** button (whole text, `TEXTS.signInButton`) and *Learn more about sign-in requests* (PWAsForFirefox issue 704). Its button opens the Microsoft identity platform with `window.open` (teams-for-linux issue 2621): a popup, which the browser opens for a trusted click only |
+| Microsoft sign-in page | host `login.microsoftonline.com`, `login.live.com` or `login.microsoft.com`, in that popup or in the Teams tab itself. Any field to type in (`SEL.fields`: password, code, email; not checkboxes or buttons) means nothing is pressed |
+| Account picker | *Pick an account*: one tile per account, `[role="button"]` with the name and the email, `data-test-id` the email, a menu of sign-out options inside it, and *Use another account*. The tile pressed is the one whose `data-test-id` is this account's email (`me` row) or whose text holds it as a whole word, never a longer email that contains it; a point of the tile itself, not of the menu inside it |
+| Sign in, Continue | the one button, link or submit of a page that asks for nothing whose whole text is *Sign in* or *Continue* (`TEXTS.microsoftButton`). *Stay signed in?* (Yes, No) is not pressed |
