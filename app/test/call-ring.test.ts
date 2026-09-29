@@ -227,6 +227,51 @@ describe("call ring where the page may play sound (installed app)", () => {
     await setCalls(c, []);
   });
 
+  it("offers Mute from Teams' own mute where the sound is not in the app, and shows the call muted in Teams", async () => {
+    const active = { acc: 2, caller: "Anna Rossi", since: 1_790_000_150_000, active: true };
+    const mutes = (m: object) => run(c, `window.setMutes(${JSON.stringify({ 2: m })})`);
+    await setCalls(c, [active]);
+    await until(c, "In call with Anna Rossi");
+    // Teams' state unknown and no sound here: nothing the app could mute
+    await mutes({ source: false, want: null });
+    await until(c, "Mute", false);
+    await mutes({ teams: false, source: false, want: null });
+    await until(c, "Mute");
+    await click(c, "[role=alert] button", "Mute");
+    expect(await run(c, "window.muted")).toEqual([2, true]);
+    await mutes({ teams: true, source: false, want: null });
+    await until(c, "Muted (Contoso Srl)");
+    await click(c, "[role=alert] button", "Unmute");
+    expect(await run(c, "window.muted")).toEqual([2, false]);
+    await run(c, "window.setMutes({})");
+    await setCalls(c, []);
+    expect(c.errors).toEqual([]);
+  });
+
+  it("says a call answered here is muted on this device only while Teams is not muted, a press on its way counting as muted", async () => {
+    const active = { acc: 2, caller: "Anna Rossi", since: 1_790_000_160_000, active: true };
+    const audio = (a: object) => run(c, `window.setAudio(${JSON.stringify({ 2: { mic: "on", muted: true, needsTap: false, ...a } })})`);
+    const mutes = (m: object) => run(c, `window.setMutes(${JSON.stringify({ 2: m })})`);
+    await setCalls(c, [active]);
+    await audio({ link: "live" });
+    await mutes({ teams: false, source: true, want: null });
+    await until(c, "Sound in the app, muted here only");
+    await mutes({ teams: false, source: true, want: true });
+    await until(c, "Sound in the app, muted (Contoso Srl)");
+    await mutes({ teams: true, source: true, want: null });
+    await until(c, "Sound in the app, muted (Contoso Srl)");
+    // the desktop took the sound: Teams' state alone
+    await audio({ link: "desktop", mic: "off" });
+    await until(c, "Sound on the desktop, muted");
+    await mutes({ teams: false, source: true, want: null });
+    await until(c, "Sound on the desktop (Contoso Srl)");
+    await until(c, "Mute");
+    await run(c, "window.setAudio({})");
+    await run(c, "window.setMutes({})");
+    await setCalls(c, []);
+    expect(c.errors).toEqual([]);
+  });
+
   it("rings the bell of a message once, without a click, then rests again", async () => {
     await until(c, "Luca Bianchi is calling", false);
     const r = await bell(c);

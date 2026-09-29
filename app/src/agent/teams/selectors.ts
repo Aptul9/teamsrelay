@@ -91,6 +91,16 @@ export const SEL = {
   callText: '[id^="cn-calling-main-content-"]',
   // clicked only to answer from the app, only this button of the toast
   callAccept: '[data-testid="calling-notification"] [data-testid="calling-actions"] button[aria-label="Accept with audio"]',
+  // the microphone button of the call in progress, full screen and in the floating call monitor alike; Teams can leave
+  // a hidden one in the page after the call. Its state shows twice: data-state (callMicMuted, callMicLive) and the
+  // action a click takes, data-track-action-scenario (callMicUnmute while muted, callMicMute while live). Seen on slot 2
+  // on 2026-09-29: live "mic-volume-renderer" and "callMuteAudio", muted "mic-off" and "callUnmuteAudio"; "mic" is the
+  // live state of other builds. Clicked only to mute from the app where its shortcut changed nothing.
+  callMic: "#microphone-button",
+  callMicMuted: ["mic-off"],
+  callMicLive: ["mic", "mic-volume-renderer"],
+  callMicUnmute: "callUnmuteAudio",
+  callMicMute: "callMuteAudio",
 
   // Activity feed: the id of an item is in the id of its title, named by aria-labelledby
   feedItem: '[data-tid="activity-feed-list-item"]',

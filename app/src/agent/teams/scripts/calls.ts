@@ -1,6 +1,7 @@
 // Page scripts of calls: Teams web shows an incoming call as a toast in the page, with the buttons to answer and
-// decline, and plays its ringtone until the call stops; a call in progress records from the microphone. Nothing here
-// clicks: the answer asked from the app is a click of the agent (../call-actions.ts).
+// decline, and plays its ringtone until the call stops; a call in progress records from the microphone and shows its
+// microphone button, muted or not. Nothing here clicks: the answer and the mute asked from the app are input of the
+// agent (../call-actions.ts).
 // They run inside the Teams page: self-contained, type imports only.
 import type { Selectors, Texts } from "../selectors";
 
@@ -44,4 +45,24 @@ export function micLive(): boolean {
   const live = (w.__teamsMicTracks || []).filter((t) => t.readyState === "live");
   w.__teamsMicTracks = live;
   return live.length > 0;
+}
+
+// Teams' own mute of the call shown in this frame: true muted, false live, null when it cannot be told. A microphone
+// button tells it twice, by its data-state and by the action a click takes (data-track-action-scenario): one mark
+// known is enough, two that disagree tell nothing. Only the buttons on screen count (Teams can leave a hidden one after
+// a call); none, one with no known mark, or two that disagree give null, and nothing is pressed on null.
+export function micMuted(s: Selectors): boolean | null {
+  const reads = new Set<boolean | null>();
+  for (const b of document.querySelectorAll<HTMLElement>(s.callMic)) {
+    const r = b.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) continue;
+    const state = b.getAttribute("data-state") || "";
+    const byState = s.callMicMuted.includes(state) ? true : s.callMicLive.includes(state) ? false : null;
+    const action = b.getAttribute("data-track-action-scenario");
+    const byAction = action === s.callMicUnmute ? true : action === s.callMicMute ? false : null;
+    reads.add(byState !== null && byAction !== null && byState !== byAction ? null : (byState ?? byAction));
+  }
+  if (reads.size !== 1) return null;
+  const [muted] = reads;
+  return muted ?? null;
 }

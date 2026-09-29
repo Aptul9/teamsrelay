@@ -27,7 +27,7 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 
 | Method | Path | Answer |
 |---|---|---|
-| GET | `/api/events?a=N&chat=<name>` | server-sent events: `accounts`, `health`, `chats`, `activity`, `calllog` (`[{caller, since, seconds}]`, the calls the agent saw ring, newest first, `since` in ms), `messages` (`{chat, rows}`), each sent when its content changes; `calls` (`[{acc, caller, since}]`) lists the calls ringing now in every account of the user, whichever `a` names |
+| GET | `/api/events?a=N&chat=<name>` | server-sent events: `accounts`, `health`, `chats`, `activity`, `calllog` (`[{caller, since, seconds}]`, the calls the agent saw ring, newest first, `since` in ms), `messages` (`{chat, rows}`), each sent when its content changes; `calls` (`[{acc, caller, since, active?, muted?}]`) lists the calls ringing now in every account of the user and the calls in progress (`active`), whichever `a` names; `muted` is the mute of Teams for a call in progress, absent while the agent cannot read it |
 | GET | `/api/chats` | `name, preview, tm, unread, mention, muted, av` |
 | GET | `/api/messages?name=<chat>` | per message `mid, author, text, mine, reacts` and, when present, `html, quote, images, files, reactions, status, readby, edited, deleted, mentionsMe, av` |
 | GET | `/api/activity` | `{ts, items}`, items with `id, kind, actor, title, emoji, preview, tm, chat, channel, unread, av`; `kind` is `reaction`, `mention`, `reply`, `task`, `team`, `call`, `meeting` or `message` |
@@ -56,6 +56,7 @@ better-auth endpoints under `/api/auth/*`, used by the web app: `POST /api/auth/
 | POST | `/api/recheck` | full check, outcome sent as a push |
 | POST | `/api/call/answer` | `{since}`: answers the call ringing now on the account, named by when it started ringing (the `since` of the event stream and of the call notification); `{ok, id, desktop}`, `desktop` the remote desktop of the account, which carries the sound where the app cannot (a browser without WebCodecs, a desktop on another site). 409 when that call no longer rings, for a stopped or checked account and for an account on another computer. A second request while the answer still waits gets the same `id` |
 | POST | `/api/call/hangup` | ends the call in progress on the account; 409 without one. A second request while the hang-up still waits gets the same `id` |
+| POST | `/api/call/mute` | `{on}`: the mute of Teams for the call in progress on the account, `true` muted, `false` not; the agent presses the mute shortcut of Teams only when Teams shows the other state. `{ok, id}`; 400 without a boolean `on`, 409 without a call in progress and for an account on another computer. A second request for the same state while the first still waits gets the same `id` |
 
 ## Push
 
