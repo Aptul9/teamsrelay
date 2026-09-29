@@ -1,0 +1,46 @@
+<!-- Pages of the Microsoft sign-in (login.microsoftonline.com), REBUILT BY HAND, NOT CAPTURED: none was ever read on an account here. Pick an account: one tile per account, a role=button holding the name and the email, data-test-id the email (as automation scripts address it), its menu of sign-out options, and Use another account. The password page: a password field and Sign in as an input submit. The other pages are made up to cover the cases of the agent: a lone Continue, Stay signed in (Yes and No), a code to enter. Names, emails and structure invented. The next real sign-out logs the buttons it shows (SESSION: sign-in page buttons) to confirm them. Each page is a template, picked by its id. -->
+<template id="pick-account">
+  <div id="loginHeader" role="heading" aria-level="1">Pick an account</div>
+  <div id="tilesHolder" role="list">
+    <div class="tile-container" role="listitem">
+      <div class="table" role="button" tabindex="0" data-test-id="test.user@contoso.example">
+        <div class="table-cell">Test User</div>
+        <div class="table-cell"><small>test.user@contoso.example</small></div>
+        <div role="button" aria-label="Sign out options" class="tile-menu">...</div>
+      </div>
+    </div>
+    <div class="tile-container" role="listitem">
+      <div class="table" role="button" tabindex="0" data-test-id="xtest.user@contoso.example">
+        <div class="table-cell">Someone Else</div>
+        <div class="table-cell"><small>xtest.user@contoso.example</small></div>
+      </div>
+    </div>
+    <div class="tile-container" role="listitem">
+      <div class="table" role="button" tabindex="0" id="otherTile"><div class="table-cell">Use another account</div></div>
+    </div>
+  </div>
+</template>
+<template id="password">
+  <div role="heading" aria-level="1">Enter password</div>
+  <div>test.user@contoso.example</div>
+  <input name="passwd" type="password" placeholder="Password" />
+  <a href="#">Forgot my password</a>
+  <input type="submit" id="idSIButton9" value="Sign in" />
+</template>
+<template id="continue">
+  <div role="heading" aria-level="1">Continue to Microsoft Teams</div>
+  <p>Signed in as test.user@contoso.example</p>
+  <button type="button" id="idSIButton9">Continue</button>
+  <a href="#">Cancel</a>
+</template>
+<template id="stay-signed-in">
+  <div role="heading" aria-level="1">Stay signed in?</div>
+  <label><input type="checkbox" name="DontShowAgain" /> Don't show this again</label>
+  <input type="button" id="idBtn_Back" value="No" />
+  <input type="submit" id="idSIButton9" value="Yes" />
+</template>
+<template id="code">
+  <div role="heading" aria-level="1">Enter code</div>
+  <input name="otc" type="tel" autocomplete="one-time-code" placeholder="Code" />
+  <input type="submit" id="idSubmit_SAOTCC_Continue" value="Verify" />
+</template>

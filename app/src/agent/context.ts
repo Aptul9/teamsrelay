@@ -19,6 +19,10 @@ export type AgentSettings = {
     // seconds a problem lasts before its push: Teams signed out, browser not starting
     signInAfter: number;
     browserAfter: number;
+    // seconds signed out before the one press of Sign in, and seconds it has to bring Teams back before the push
+    // (SIGN_IN_TRY_AFTER and SIGN_IN_TRY_WAIT when not given)
+    signInTryAfter?: number;
+    signInTryWait?: number;
     // how to sign in again, and which browser does not start: the first sentence of those pushes
     signIn: string;
     browserDown: string;

@@ -1,4 +1,5 @@
-import { STATE, Watch, parseState, type AgentHealth, type TeamsState } from "@/shared/slot-db/state";
+import { SIGN_IN_TRY_WAIT } from "@/shared/sign-in";
+import { SignInTry, STATE, Watch, parseState, type AgentHealth, type TeamsState } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
 import { computeHealth, watchProblem, type PageProbe } from "../logic/health";
 import { isTeamsUrl } from "../logic/hosts";
@@ -70,18 +71,24 @@ async function saveHealth(a: Agent, h: AgentHealth): Promise<AgentHealth> {
 
 // One push when Teams has been signed out for a minute (session expired, or Teams in reduced mode: nothing the agent
 // can renew by itself), one more when it is back. Only for an account signed in once: before the first sign-in there
-// is nothing to lose.
+// is nothing to lose. When the one press of Sign in of that sign-out pressed something (jobs/sign-in.ts), the push
+// waits until that press had its minute, and says it did not help; a press that brought Teams back pushes nothing.
 async function watchSignIn(a: Agent, teams: TeamsState) {
   const state = teams === "login" ? "problem" : teams === "ok" ? "fine" : "unknown";
   const w = parseState(Watch, a.store.getState(STATE.loginWatch), { since: 0, alerted: false });
-  const { next, push } = watchProblem(state, w, { armed: !!a.store.getState(STATE.me), after: a.config.alerts.signInAfter, now: nowSeconds() });
+  const tried = parseState(SignInTry, a.store.getState(STATE.signInTry), { at: 0, pressed: [], microsoft: false });
+  const pressed = w.since > 0 && tried.at >= w.since && tried.pressed.length > 0;
+  const after = pressed ? Math.max(a.config.alerts.signInAfter, tried.at - w.since + (a.config.alerts.signInTryWait ?? SIGN_IN_TRY_WAIT)) : a.config.alerts.signInAfter;
+  const { next, push } = watchProblem(state, w, { armed: !!a.store.getState(STATE.me), after, now: nowSeconds() });
   a.store.setState(STATE.loginWatch, JSON.stringify(next));
   if (push === "problem") {
-    log.warn("SESSION", "Teams signed out: alert pushed");
-    await a.notifier.alert("Teams signed out", `${a.config.alerts.signIn}: no messages until then.`);
+    log.warn("SESSION", pressed ? "Teams still signed out after the Sign in button: alert pushed" : "Teams signed out: alert pushed");
+    await a.notifier.alert("Teams signed out", `${pressed ? "The Sign in button did not help. " : ""}${a.config.alerts.signIn}: no messages until then.`);
   } else if (push === "fine") {
     log.info("SESSION", "Teams signed in again");
     await a.notifier.alert("Teams back", "Signed in again: messages are relayed.");
+  } else if (state === "fine" && pressed) {
+    log.info("SESSION", "Teams signed in again after the Sign in button: nothing pushed", { pressed: tried.pressed.join(",") });
   }
 }
 

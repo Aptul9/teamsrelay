@@ -1,3 +1,5 @@
+import type { Page } from "playwright-core";
+
 // One sequence of real input at a time per page. Playwright keeps one mouse position and one set of held keys per page:
 // two sequences at once (the presence keeper of the loop, a click or a shortcut of the call watch) mix their moves and
 // keys, and a click lands where the other sequence left the mouse.
@@ -34,4 +36,17 @@ export async function asAgent<T>(page: object, fn: () => Promise<T>): Promise<T>
 // Input at `at` (ms) on that page came from the agent
 export function byAgent(page: object, at: number): boolean {
   return (spans.get(page) ?? []).some((s) => at >= s.from && at <= s.to + TAIL_MS);
+}
+
+// A real click at a point of the page: CDP mouse events there, with no wait for anything to hold still. The page takes
+// it as a click of a person (trusted, with user activation: a popup it opens is allowed). To run inside withInput.
+export async function cdpClick(page: Page, at: { x: number; y: number }): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "left", buttons: 1, clickCount: 1 });
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "left", buttons: 0, clickCount: 1 });
+  } finally {
+    await cdp.detach().catch(() => undefined);
+  }
 }

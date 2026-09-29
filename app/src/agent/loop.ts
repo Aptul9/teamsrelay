@@ -13,6 +13,7 @@ import { FeedAfterCalls, pushMissedCalls } from "./jobs/missed-calls";
 import { awayFromChats, backToChats, drainHook, keepActive, ownerUses, park, preparePage, wanted } from "./jobs/page-setup";
 import { prefetchReadBy } from "./jobs/read-by";
 import { scheduledSelfCheck, selfCheckDue } from "./jobs/self-check";
+import { trySignIn } from "./jobs/sign-in";
 import { hostOf, isTeamsUrl, pickTeamsPage } from "./logic/hosts";
 import { errorText, log } from "./log";
 import { Scheduler, type Job } from "./scheduler";
@@ -94,6 +95,15 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     },
     { name: "identity", every: { rounds: 300, offset: 7 }, force: () => !a.store.getState(STATE.me), when: teamsOk, run: () => saveIdentity(a) },
     { name: "health", every: { rounds: 5 }, anyPage: true, run: () => updateHealth(a) },
+    // a sign-out: Teams' own Sign in pressed once, and once more on Microsoft's page (a Teams tab sent there included);
+    // not while the owner uses Teams, who may be signing in by hand, nor while a call rings or runs
+    {
+      name: "sign-in",
+      every: { rounds: 1 },
+      anyPage: true,
+      when: () => a.health?.teams === "login" && !a.inCall && !a.ringing && !ownerUses(a),
+      run: () => trySignIn(a),
+    },
     {
       name: "conversation",
       every: { rounds: 1 },

@@ -34,6 +34,8 @@ export const STATE = {
   // JSON Desktop: when the owner opened the remote desktop of the account from the app (/api/desktop/N); the agent
   // leaves Teams to the owner for a while (src/agent/logic/owner.ts)
   desktop: "desktop",
+  // JSON SignInTry: the one press of Sign in of the last sign-out (src/agent/jobs/sign-in.ts)
+  signInTry: "sign_in_try",
 } as const;
 
 // JSON result of command <id>, e.g. DownloadResult
@@ -54,6 +56,16 @@ export type Desktop = z.infer<typeof Desktop>;
 
 export const Watch = z.object({ since: z.number().catch(0), alerted: z.boolean().catch(false) });
 export type Watch = z.infer<typeof Watch>;
+
+// The attempt of a sign-out: when it started (Unix s, 0 none), what it pressed (teams: Teams' own Sign in, account: the
+// tile of this account on Microsoft's page, button: Sign in or Continue there), whether Microsoft's page was dealt with
+// (pressed, or it asked for something to type, or the owner was on it)
+export const SignInTry = z.object({
+  at: z.number().catch(0),
+  pressed: z.array(z.enum(["teams", "account", "button"])).catch([]),
+  microsoft: z.boolean().catch(false),
+});
+export type SignInTry = z.infer<typeof SignInTry>;
 
 // People of a chat as Teams names them, for the @ of the app; ts: Unix seconds of the read
 export const Members = z.object({ ts: z.number().catch(0), names: z.array(z.string()).catch([]) });
