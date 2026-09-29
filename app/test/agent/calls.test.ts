@@ -3,13 +3,13 @@
 // slot database for the web app, which rings while it is open.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/agent/context";
-import { CallWatch, MIC_LOOK_EVERY } from "@/agent/jobs/calls";
+import { CallWatch, MIC_LOOK_EVERY, MUTE_KEY_TRIES } from "@/agent/jobs/calls";
 import { preparePage } from "@/agent/jobs/page-setup";
 import { CALL_END_AFTER, CALL_RING_EVERY, CALL_RING_FOR, CallTracker } from "@/agent/logic/calls";
 import * as callActions from "@/agent/teams/call-actions";
 import { CALL_SEEN_EVERY, STATE } from "@/shared/slot-db/state";
 
-vi.mock("@/agent/teams/call-actions", () => ({ acceptCall: vi.fn(), acceptShortcut: vi.fn(), hangUp: vi.fn() }));
+vi.mock("@/agent/teams/call-actions", () => ({ acceptCall: vi.fn(), acceptShortcut: vi.fn(), hangUp: vi.fn(), muteShortcut: vi.fn(), clickMic: vi.fn() }));
 
 describe("call tracker", () => {
   let now = 1_790_000_000_000;
@@ -269,16 +269,19 @@ describe("answer and hang-up asked from the app", () => {
     vi.mocked(callActions.acceptCall).mockReset();
     vi.mocked(callActions.acceptShortcut).mockReset();
     vi.mocked(callActions.hangUp).mockReset();
+    vi.mocked(callActions.muteShortcut).mockReset();
+    vi.mocked(callActions.clickMic).mockReset();
   });
 
-  // The page shows the toast of the caller while toast.on and records from the microphone while mic.on; the store keeps
-  // the commands queued (pending until finished) and the state rows. Waits of the watch move the clock on.
+  // The page shows the toast of the caller while toast.on and records from the microphone while mic.on; its microphone
+  // button reads mic.muted (null: none on screen, or unknown). The store keeps the commands queued (pending until
+  // finished) and the state rows. Waits of the watch move the clock on.
   function phone(o: { answerCalls?: boolean } = {}) {
     const toast = { on: false, caller: "Anna Rossi" };
-    const mic = { on: false };
+    const mic: { on: boolean; muted: boolean | null } = { on: false, muted: null };
     const commands: { id: number; type: string; arg1: string; arg2: string; status: string }[] = [];
     const states = new Map<string, string>();
-    const frame = { evaluate: vi.fn(async (fn: { name: string }) => (fn.name === "micLive" ? mic.on : null)) };
+    const frame = { evaluate: vi.fn(async (fn: { name: string }) => (fn.name === "micLive" ? mic.on : fn.name === "micMuted" ? mic.muted : null)) };
     const page = {
       url: () => "https://teams.microsoft.com/v2/",
       isClosed: () => false,
@@ -453,7 +456,7 @@ describe("answer and hang-up asked from the app", () => {
 
   it("reads the microphone of the frames at every look while a call rings, was just answered or is in progress, else every few seconds", async () => {
     const p = phone();
-    const reads = () => p.frame.evaluate.mock.calls.length;
+    const reads = () => p.frame.evaluate.mock.calls.filter(([fn]) => fn.name === "micLive").length;
     await p.tick();
     expect(reads()).toBe(1);
     for (let i = 1; i < MIC_LOOK_EVERY; i++) await p.tick();
@@ -505,6 +508,183 @@ describe("answer and hang-up asked from the app", () => {
     const stays = p.queue("hangup");
     await p.tick();
     expect(p.status(stays)).toBe("failed");
+  });
+
+  it("hangs up a call muted in Teams that let the microphone go: done once its microphone button goes", async () => {
+    const p = phone();
+    p.mic.on = true;
+    p.mic.muted = true;
+    await p.tick();
+    p.mic.on = false;
+    await p.tick();
+    vi.mocked(callActions.hangUp).mockImplementationOnce(async () => void (p.mic.muted = null));
+    const id = p.queue("hangup");
+    await p.tick();
+    expect(callActions.hangUp).toHaveBeenCalledWith(p.page);
+    expect(p.status(id)).toBe("done");
+    expect(p.inCall()).toMatchObject({ active: false });
+  });
+
+  describe("Teams' own mute", () => {
+    // a call in progress whose microphone button reads muted (null: cannot be read)
+    async function talking(muted: boolean | null) {
+      const p = phone();
+      p.mic.on = true;
+      p.mic.muted = muted;
+      await p.tick();
+      return p;
+    }
+    const mute = (on: unknown) => JSON.stringify({ on });
+
+    it("presses nothing when Teams already shows the state asked: done", async () => {
+      const p = await talking(true);
+      const id = p.queue("mute", mute(true));
+      await p.tick();
+      expect(p.status(id)).toBe("done");
+      expect(callActions.muteShortcut).not.toHaveBeenCalled();
+      expect(callActions.clickMic).not.toHaveBeenCalled();
+    });
+
+    it("mutes with the shortcut of Teams when it shows the other state, done once its button reads muted, and tells the web app at once", async () => {
+      const p = await talking(false);
+      vi.mocked(callActions.muteShortcut).mockImplementationOnce(async () => void (p.mic.muted = true));
+      const id = p.queue("mute", mute(true));
+      await p.tick();
+      expect(callActions.muteShortcut).toHaveBeenCalledTimes(1);
+      expect(callActions.muteShortcut).toHaveBeenCalledWith(p.page);
+      expect(callActions.clickMic).not.toHaveBeenCalled();
+      expect(p.status(id)).toBe("done");
+      expect(p.inCall()).toMatchObject({ active: true, muted: true });
+    });
+
+    it("unmutes the same way", async () => {
+      const p = await talking(true);
+      vi.mocked(callActions.muteShortcut).mockImplementationOnce(async () => void (p.mic.muted = false));
+      const id = p.queue("mute", mute(false));
+      await p.tick();
+      expect(p.status(id)).toBe("done");
+      expect(p.inCall()).toMatchObject({ muted: false });
+    });
+
+    it("never presses on a state it cannot read: failed", async () => {
+      const p = await talking(null);
+      const id = p.queue("mute", mute(true));
+      await p.tick();
+      expect(p.status(id)).toBe("failed");
+      expect(callActions.muteShortcut).not.toHaveBeenCalled();
+      expect(callActions.clickMic).not.toHaveBeenCalled();
+    });
+
+    it("reads two microphone buttons that disagree (two frames, a call window beside the main one) as unknown: nothing pressed", async () => {
+      const p = await talking(false);
+      const other = { evaluate: vi.fn(async (fn: { name: string }) => (fn.name === "micMuted" ? true : fn.name === "micLive" ? p.mic.on : null)) };
+      p.page.frames = () => [p.frame, other];
+      await p.tick();
+      expect(p.inCall()).not.toHaveProperty("muted");
+      const id = p.queue("mute", mute(true));
+      await p.tick();
+      expect(p.status(id)).toBe("failed");
+      expect(callActions.muteShortcut).not.toHaveBeenCalled();
+      expect(callActions.clickMic).not.toHaveBeenCalled();
+    });
+
+    it("presses nothing without a call in progress, or for a command that asks for no state: failed", async () => {
+      const p = phone();
+      p.mic.muted = false;
+      const none = p.queue("mute", mute(true));
+      await p.tick();
+      p.mic.on = true;
+      await p.tick();
+      const junk = [p.queue("mute", mute("yes")), p.queue("mute", "{}"), p.queue("mute", "")];
+      await p.tick();
+      expect([none, ...junk].map(p.status)).toEqual(["failed", "failed", "failed", "failed"]);
+      expect(callActions.muteShortcut).not.toHaveBeenCalled();
+      expect(callActions.clickMic).not.toHaveBeenCalled();
+    });
+
+    it("clicks the microphone button once where the shortcut changed nothing: done once it reads as asked", async () => {
+      const p = await talking(false);
+      vi.mocked(callActions.clickMic).mockImplementationOnce(async () => {
+        p.mic.muted = true;
+        return true;
+      });
+      const id = p.queue("mute", mute(true));
+      await p.tick();
+      expect(callActions.muteShortcut).toHaveBeenCalledTimes(1);
+      expect(callActions.clickMic).toHaveBeenCalledTimes(1);
+      expect(callActions.clickMic).toHaveBeenCalledWith(p.page);
+      expect(p.status(id)).toBe("done");
+    });
+
+    it("fails when neither the shortcut nor the click change Teams' state, or no part of the button can be clicked", async () => {
+      const p = await talking(false);
+      vi.mocked(callActions.clickMic).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      const stays = p.queue("mute", mute(true));
+      await p.tick();
+      const covered = p.queue("mute", mute(true));
+      await p.tick();
+      expect([p.status(stays), p.status(covered)]).toEqual(["failed", "failed"]);
+      expect(callActions.muteShortcut).toHaveBeenCalledTimes(2);
+      expect(callActions.clickMic).toHaveBeenCalledTimes(2);
+      expect(p.inCall()).toMatchObject({ muted: false });
+    });
+
+    // Teams toggles on the shortcut and on the click: one taking late must not be undone by the other
+    it("never clicks after a shortcut that took late: the state is read again right before the click", async () => {
+      const p = await talking(false);
+      let reads = 0;
+      vi.mocked(callActions.muteShortcut).mockImplementationOnce(async () => {
+        p.frame.evaluate.mockImplementation(async (fn: { name: string }) => {
+          if (fn.name !== "micMuted") return fn.name === "micLive" ? p.mic.on : null;
+          // muted once the reads of the wait after the shortcut are over
+          if (++reads > MUTE_KEY_TRIES) p.mic.muted = true;
+          return p.mic.muted;
+        });
+      });
+      const id = p.queue("mute", mute(true));
+      await p.tick();
+      expect(p.status(id)).toBe("done");
+      expect(callActions.clickMic).not.toHaveBeenCalled();
+    });
+
+    it("keeps Teams' mute state of the call for the web app: at once when it changes in the desktop, nothing while it cannot be read", async () => {
+      const p = await talking(false);
+      expect(p.inCall()).toMatchObject({ active: true, muted: false });
+      p.mic.muted = true;
+      await p.tick();
+      expect(p.inCall()).toMatchObject({ active: true, muted: true });
+      p.mic.muted = null;
+      await p.tick();
+      expect(p.inCall()).toMatchObject({ active: true });
+      expect(p.inCall()).not.toHaveProperty("muted");
+    });
+
+    it("keeps a call muted in Teams in progress though Teams let the microphone go, and ends it once the button goes", async () => {
+      const p = await talking(true);
+      p.mic.on = false;
+      await p.tick();
+      expect(p.inCall()).toMatchObject({ active: true, muted: true });
+      expect(p.a.inCall).toBe(true);
+      p.mic.muted = null;
+      await p.tick();
+      expect(p.inCall()).toMatchObject({ active: false });
+      expect(p.a.inCall).toBe(false);
+    });
+
+    it("starts no call in progress from a muted button alone, with no microphone ever live", async () => {
+      const p = phone();
+      p.mic.muted = true;
+      for (let i = 0; i < MIC_LOOK_EVERY + 1; i++) await p.tick();
+      expect(p.inCall()).toBeNull();
+      expect(p.a.inCall).toBeFalsy();
+    });
+
+    it("ends as over a call whose button reads live without a microphone", async () => {
+      const p = await talking(false);
+      p.mic.on = false;
+      await p.tick();
+      expect(p.inCall()).toMatchObject({ active: false });
+    });
   });
 
   it("answers nothing and follows no call in progress for a relay: its calls ring on its own computer", async () => {
