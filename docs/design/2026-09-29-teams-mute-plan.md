@@ -72,10 +72,10 @@ Spec: [2026-09-29-teams-mute.md](2026-09-29-teams-mute.md). Branch `feat/teams-s
 
 **Produces:**
 - `type MuteView = { teams?: boolean; source: boolean; want: boolean | null }`; `shownMuted(v: MuteView, sourceLive: boolean): boolean`.
-- `class CallMutes { constructor(o: { onChange(acc: number, v: MuteView): void; confirmFor?: number; later?: (fn: () => void, ms: number) => unknown }); press(acc, on); teams(acc, v?: boolean); settled(acc, ok: boolean); forget(acc); view(acc): MuteView }`.
+- `class CallMutes { constructor(o: { onChange(acc: number, v: MuteView): void; later?: (fn: () => void, ms: number) => unknown; cancel?: (t: unknown) => void }); call(acc, since, teams?: boolean); press(acc, on); settled(acc, ok: boolean); view(acc): MuteView }`: one entry per account, started again from Teams' state when `since` names another call.
 - `CallBanner` props `mutes?: Record<number, MuteView>`; Mute shown for an active call where the sound is live in the app or `mutes[acc].teams` is known.
 
-- [ ] Tests node: press sets source and want at once; stream equal to want clears it; a stream change without want sets source; failed keeps source, clears want; done keeps want until the stream shows it or the timer runs; `shownMuted` with and without source. Chrome: Mute on a call with Teams' state and no sound, the press gives `[acc, true]`; lines *muted here only*, *Sound in the app, muted*, *Muted*.
+- [ ] Tests node: press sets source and want at once; stream equal to want clears it; a stream change without want sets source; failed keeps source, clears want; done keeps want until the stream shows it or the timer runs; a new call starts from Teams' state; `shownMuted` with and without source. Chrome: Mute on a call with Teams' state and no sound, the press gives `[acc, true]`; lines *muted here only*, *Sound in the app, muted*, *Muted*.
 - [ ] `npx vitest run test/call-audio-mute.test.ts test/call-ring.test.ts`: fails.
 - [ ] Implement, wire App (`onMute` runs the command, `calls` feed `teams`, `source` goes to `answered.mute`); passes. Commit `feat(app): Mute follows Teams' own mute`.
 

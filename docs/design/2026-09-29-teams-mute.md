@@ -38,7 +38,7 @@ Date: 2026-09-29. Follows [2026-09-29-call-audio-in-app.md](2026-09-29-call-audi
 
 ## App
 
-- `CallMutes` (`app/src/lib/call-audio/mute.ts`), per account: `teams` (from the event stream), `source` (the device's own mute), `want` (a press not yet shown by Teams).
+- `CallMutes` (`app/src/lib/call-audio/mute.ts`), per account: `teams` (from the event stream), `source` (the device's own mute), `want` (a press not yet shown by Teams). A new call of the account (another `since`) starts again from Teams' state, so no call inherits the mute of the one before.
   - Press `on`: `source = on`, `want = on`, then `POST /api/call/mute` and the command followed as Hang up is.
   - Event stream: Teams' state equal to `want` clears it. Without `want`, a change of Teams' state sets `source` to it (a press in the desktop, an organizer).
   - Command done: `want` is cleared once the stream shows it, or 5 s later. Failed: `want` cleared, `source` kept; a toast when Teams' state is known.
