@@ -70,19 +70,21 @@ About one round per second. Each step is a job of a small scheduler (`app/src/ag
 
 | When | What |
 |---|---|
-| every round | page visible and focused, Teams notification hook installed |
-| every 60 s | real mouse and keyboard input, so Teams keeps you Available |
-| every 5 rounds, no commands | the chat the app shows, or the self chat (parking) |
+| every round | page visible and focused, Teams notification hook installed, clicks, keys and wheel turns of the owner read (see below) |
+| every 60 s, not while the owner uses Teams | real mouse and keyboard input, so Teams keeps you Available |
+| every 5 rounds, no commands, not while the owner uses Teams | the chat the app shows, or the self chat (parking) |
 | every round | notifications caught by the hook (secondary source), queued commands (the chat list is read after each one) |
-| every 300 rounds, Teams connected | full chat list, scrolled from top to bottom |
+| every 300 rounds, Teams connected, not while the owner uses Teams | full chat list, scrolled from top to bottom |
 | every 3 rounds | visible chat list: pictures, previews, unread, muted; new message detection and push |
-| every 150 rounds, Teams connected and its side bar clickable; after a start, as soon as it is | Activity feed (switches to the Activity view and back; the mouse goes first to a part of the side bar button nothing covers, such as the tooltip of the app launcher). While Teams starts (sign-in redirects, then loading) the side bar shows after the chat list and its loading bar covers it a few seconds more: a refresh asked then stays queued until the health check finds the side bar clickable, at most the 2 minutes a command may wait. A read that failed is tried once more 30 s later. Not in the local relay |
+| every 150 rounds, Teams connected and its side bar clickable, not while the owner uses Teams; after a start, as soon as it is | Activity feed (switches to the Activity view and back; the mouse goes first to a part of the side bar button nothing covers, such as the tooltip of the app launcher). While Teams starts (sign-in redirects, then loading) the side bar shows after the chat list and its loading bar covers it a few seconds more: a refresh asked then stays queued until the health check finds the side bar clickable, at most the 2 minutes a command may wait. A read that failed is tried once more 30 s later. Not in the local relay |
 | every 300 rounds, or while unknown | identity: name, email, organization, picture |
 | every 5 rounds, sign-in page included | health, and whether the Activity button of the side bar can be clicked (a menu or dialog over it counts as clickable: the Activity job closes it first); a push when Teams stays signed out for a minute, another when it is back |
 | every round | open conversation |
-| every 2 rounds, no commands | "Read by" of one of your recent messages in the open group chat; not in the local relay |
+| every 2 rounds, no commands, not while the owner uses Teams | "Read by" of one of your recent messages in the open group chat; not in the local relay |
 | every 300 rounds, the first time 31 rounds after a start | files of the media folder no row names any more removed: pictures of chats that left the list, of items gone from the feed, images of messages no longer kept |
 | 8-11 and 17-20 | automatic check with a push of the outcome, once Teams shows its page (a start or a reload inside the window loads first; Teams still not ready 5 minutes into the window is reported); not on an account checked every few hours |
+
+**The owner in Teams.** While the owner clicks, types or scrolls in Teams (the remote desktop, the window of the local relay), and for 3 minutes after, the jobs that move Teams on their own wait: presence keeper, parking, back to the chats, full list sweep, Activity feed, Read by; commands of the app, reads, the call watch and the automatic check go on. The page records the times of its trusted `pointerdown`, `keydown` and `wheel` events (`watchInput`, init script and every round); the agent sends its own input through CDP, which the page sees as trusted too, so every job and command that sends input runs in a span of the agent (`asAgent`, `withInput` in `app/src/agent/teams/input.ts`), and input inside a span or up to 1 s after it is the agent's. Mouse moves do not count: Chrome sends trusted moves of its own when the page moves under a still pointer. `/api/desktop/N` writes `desktop` (`{ts}`) in the slot database: opening the remote desktop of an account from the app pauses it for 3 minutes as well, before any click. The health row carries `desktop: "in-use"` meanwhile, shown in the status panel. Teams sets Away after about 5 minutes without input: the presence keeper runs again at most a minute after a pause, and the owner's own input keeps Available meanwhile. The sound of a call in the app opens the websocket of the desktop without any input: it pauses nothing.
 
 A message is new when the preview or the time of a chat changes with an incoming text, or when the chat turns unread. A time that turns into a date with the same preview is the same message getting older (the list shows the time of the last message for about a day). Muted chats and the chat with yourself do not notify; identical notifications within 150 s are dropped.
 
