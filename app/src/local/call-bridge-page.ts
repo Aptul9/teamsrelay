@@ -48,6 +48,7 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
   const k = c as Ctors;
   const call = (m: BridgeMsg) => (w[binding] as (m: BridgeMsg) => Promise<unknown>)(m);
   const original = devices.getUserMedia.bind(devices);
+  const listed = devices.enumerateDevices.bind(devices);
 
   const toBase64 = (b: Uint8Array) => {
     let s = "";
@@ -199,6 +200,15 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
     const tracks: MediaStreamTrack[] = [current.mic()];
     if (constraints.video) tracks.push(...(await original({ video: constraints.video })).getVideoTracks());
     return new MediaStream(tracks);
+  };
+  // A computer with no microphone (a virtual machine with no audio device): Teams would take a call without asking for
+  // one, and the bridge would never start. It lists one of its own then; asked for while the call is not the app's, it
+  // gets what the computer answers.
+  devices.enumerateDevices = async () => {
+    const all = await listed();
+    if (all.some((d) => d.kind === "audioinput")) return all;
+    const mic = { deviceId: "default", groupId: "teamsrelay", kind: "audioinput" as const, label: "TeamsRelay" };
+    return [...all, { ...mic, toJSON: () => mic } as MediaDeviceInfo];
   };
   w.__teamsCallBridge = true;
   if (location.host) void call({ op: "ready", host: location.host }).catch(() => undefined);

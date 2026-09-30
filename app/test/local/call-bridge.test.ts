@@ -282,3 +282,37 @@ describe("call sound of an account on another computer, loopback", () => {
     expect(checks).toContain("app");
   }, 30_000);
 });
+
+describe("a computer with no audio device", () => {
+  it("lists a microphone of its own, so Teams asks for one: the app's while the call is the app's, none otherwise", async () => {
+    const context = await browser.newContext();
+    // the computer answers as one with no audio device does, under the hook of the relay
+    await context.addInitScript(() => {
+      const md = navigator.mediaDevices;
+      md.enumerateDevices = async () => [];
+      md.getUserMedia = async () => {
+        throw new DOMException("Requested device not found", "NotFoundError");
+      };
+    });
+    const other = new CallBridge({ url: base, token: TOKEN });
+    await other.attach(context);
+    const page = await context.newPage();
+    await page.goto(`${base}/teams`);
+    const ask = () =>
+      page.evaluate(async () => {
+        const mics = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput").map((d) => d.label);
+        try {
+          const t = (await navigator.mediaDevices.getUserMedia({ audio: true })).getAudioTracks()[0];
+          return { mics, got: t.readyState };
+        } catch (e) {
+          return { mics, got: (e as Error).name };
+        }
+      });
+    expect(await ask()).toEqual({ mics: ["TeamsRelay"], got: "NotFoundError" });
+    other.arm();
+    expect(await ask()).toEqual({ mics: ["TeamsRelay"], got: "live" });
+    expect(other.live).toBe(true);
+    other.stop();
+    await context.close();
+  }, 30_000);
+});
