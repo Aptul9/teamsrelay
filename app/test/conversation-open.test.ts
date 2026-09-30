@@ -57,8 +57,8 @@ beforeEach(async () => {
 });
 
 const saved: Message[] = [{ mid: "1790670000000", author: "Anna Rossi", text: "saved at the last visit", mine: 0, reacts: "" }];
-const setView = (rows: Message[] | null, open: OpenStatus | null, stopped = false, callable = false) =>
-  page.evaluate((v) => (window as unknown as { setView: (x: unknown) => void }).setView(v), { rows, open, stopped, callable });
+const setView = (rows: Message[] | null, open: OpenStatus | null, stopped = false, callable = false, presence = "") =>
+  page.evaluate((v) => (window as unknown as { setView: (x: unknown) => void }).setView(v), { rows, open, stopped, callable, presence });
 const shows = (text: string) => page.evaluate((t) => document.body.innerText.includes(t), text);
 const until = (text: string, shown = true) => expect.poll(() => shows(text), { timeout: 5000 }).toBe(shown);
 
@@ -187,6 +187,26 @@ describe("calling the person of the chat", () => {
     await until("Call Anna Rossi?", false);
     expect(await called()).toBe(1);
     expect(errors).toEqual([]);
+  });
+});
+
+// The picture in the header of the open chat carries the dot the chat list shows on the picture of the person
+describe("the picture in the header of the open chat", () => {
+  const dot = () => page.locator("header [data-presence]");
+
+  it("carries the dot of the presence of the person, and follows it", async () => {
+    await setView(saved, { id: 41, status: "done" }, false, false, "away");
+    await expect.poll(() => dot().getAttribute("data-presence")).toBe("away");
+    await setView(saved, { id: 41, status: "done" }, false, false, "busy");
+    await expect.poll(() => dot().getAttribute("data-presence")).toBe("busy");
+    expect(await page.locator("header").getByRole("img", { name: "Busy" }).count()).toBe(1);
+    expect(errors).toEqual([]);
+  });
+
+  it("has no dot when the list shows no presence for the chat", async () => {
+    await setView(saved, { id: 41, status: "done" });
+    await until("saved at the last visit");
+    expect(await dot().count()).toBe(0);
   });
 });
 
