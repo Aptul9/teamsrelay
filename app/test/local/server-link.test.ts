@@ -17,7 +17,7 @@ import * as mediaRoute from "@/app/api/relay/media/[file]/route";
 import * as pushRoute from "@/app/api/relay/push/route";
 import * as syncRoute from "@/app/api/relay/sync/route";
 import * as uploadsRoute from "@/app/api/relay/uploads/[file]/route";
-import { appDb, migrateAppSchema, relayAccount, slotRow } from "@/lib/appdb";
+import { appDb, migrateAppSchema, relayAccount, releaseSlot, slotRow } from "@/lib/appdb";
 import { relayDigest } from "@/lib/relay";
 import { withSlot } from "@/lib/slotdb";
 import { addRelayAccount, renewRelayToken } from "@/lib/slots";
@@ -294,6 +294,10 @@ describe("relay joined to a server", () => {
     await until("five commands in relay.db", () => j.store.pendingCommands().length === 5);
     // armed before each marked command went to the agent: what the agent had then
     expect(armed).toEqual(["", "answer,answer"]);
+    // its slot back for the accounts of the tests after it
+    await j.stop();
+    joined.splice(joined.indexOf(j), 1);
+    releaseSlot(appDb(), j.slot);
   });
 
   it("fetches the image of a sendimage command before queueing it", async () => {
