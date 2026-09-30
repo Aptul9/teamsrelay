@@ -146,7 +146,7 @@ describe("notifier", () => {
   it("tags a message with its chat, so the device keeps one notification per chat", async () => {
     await notifier().message("Anna Rossi", "are you there?", "Anna Rossi");
     expect(sent).toEqual([
-      { endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" }, ttl: PUSH_TTL, urgency: "high" },
+      { endpoint: "https://push/u1-phone", payload: { title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi", ts: expect.any(Number) }, ttl: PUSH_TTL, urgency: "high" },
     ]);
   });
 
@@ -287,7 +287,7 @@ describe("notifier", () => {
     await n.message("Anna Rossi", "are you there?", "Anna Rossi");
     now += 60_000;
     await n.message("Anna Rossi", "Are you there?", "Anna Rossi");
-    expect(sent.map((s) => s.payload)).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" }]);
+    expect(sent.map((s) => s.payload)).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi", ts: expect.any(Number) }]);
     expect(store.lastNotificationTs()).toBeGreaterThan(0);
   });
 
@@ -394,7 +394,7 @@ describe("notifier through web-push to a push service", () => {
     await notifier().message("Anna Rossi", "ciao", "Anna Rossi");
     expect(service.received).toEqual([
       {
-        payload: { title: "Anna Rossi", body: "ciao", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" },
+        payload: { title: "Anna Rossi", body: "ciao", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi", ts: expect.any(Number) },
         ttl: "86400",
         urgency: "high",
         topic: undefined,
@@ -479,7 +479,7 @@ describe("notifier to the phones of the Android app (FCM)", () => {
     expect(web).toHaveLength(1);
     expect(fcmSent).toMatchObject([{ token: TOKEN, ttl: PUSH_TTL, high: true, data: { v: "1" } }]);
     expect(opened(0)).toEqual(web[0].payload);
-    expect(opened(0)).toEqual({ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi" });
+    expect(opened(0)).toEqual({ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", acc: 1, tag: "chat-1-Anna Rossi", ts: expect.any(Number) });
   });
 
   it("rings the phone when a call starts and turns it quiet when it ends, nothing in between: the phone loops the ringtone itself", async () => {

@@ -76,12 +76,13 @@ export class Notifier {
   }
 
   // A new Teams message: the same text within 150 s is notified once. On the device it replaces the notification
-  // of the same chat, which keeps the last lines (sw.js); the notification opens the app on `chat`, when known.
+  // of the same chat, unless that one shows a newer message (ts, the time it was sent: sw.js); the notification opens
+  // the app on `chat`, when known.
   async message(title: string, body: string, chat = "") {
     if (!this.recent.allow(body)) return;
     this.o.store.addNotification(title, body);
     await this.ntfy(title, body);
-    await this.push(title, body, chat, "high", title);
+    await this.push(title, body, chat, "high", title, (this.o.clock ?? Date.now)());
   }
 
   // About the relay itself (Teams signed out, outcome of a check): push and ntfy, no history
@@ -96,10 +97,10 @@ export class Notifier {
 
   // Push to every device. Urgency high unless the caller says it can wait: a phone on low battery asks its push
   // service for high only (RFC 8030 section 5.3), and web-push sends normal unless told. Pushes of one `group` (a
-  // chat) share one notification on the device.
-  async push(title: string, body: string, chat = "", urgency: webpush.Urgency = "high", group = ""): Promise<number> {
+  // chat) share one notification on the device, which keeps the newest (ts, ms).
+  async push(title: string, body: string, chat = "", urgency: webpush.Urgency = "high", group = "", ts = 0): Promise<number> {
     // tag: the chat it belongs to, per account (the local relay has one, 0)
-    return this.deliver((acc) => ({ title, body: body || "", chat, ...(group && { tag: chatTag(acc, group) }) }), { urgency, ttl: PUSH_TTL, retry: true });
+    return this.deliver((acc) => ({ title, body: body || "", chat, ...(group && { tag: chatTag(acc, group) }), ...(ts && { ts }) }), { urgency, ttl: PUSH_TTL, retry: true });
   }
 
   // An incoming Teams call, on a notification of its own per account: "ringing" when it starts, "again" every few

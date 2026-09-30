@@ -126,7 +126,7 @@ describe("relay against a Teams page", () => {
   it("pushes a new incoming message to the phone, encrypted, with its chat", async () => {
     await teams().evaluate(() => (window as unknown as { fakeTeams: { incoming(n: string, t: string): void } }).fakeTeams.incoming("Luca Bianchi", "can you check the deploy?"));
     const p = await until("the push of the message", () => payloads().find((x) => x.body === "can you check the deploy?"));
-    expect(p).toEqual({ title: "Luca Bianchi", body: "can you check the deploy?", chat: "Luca Bianchi", tag: "chat-0-Luca Bianchi" });
+    expect(p).toEqual({ title: "Luca Bianchi", body: "can you check the deploy?", chat: "Luca Bianchi", tag: "chat-0-Luca Bianchi", ts: expect.any(Number) });
     expect(push.received.at(-1)?.vapid).toMatchObject({ aud: "https://push.test", sub: "mailto:relay@example.com" });
   }, 60_000);
 

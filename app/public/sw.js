@@ -1,9 +1,6 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
-// lines of a chat kept in its notification
-const LINES = 5;
-
 // pushes arriving together (a phone back online) are shown one after the other: two of one chat read and write
 // the same notification
 let queue = Promise.resolve();
@@ -26,9 +23,11 @@ async function badge(d) {
   try { await self.navigator.setAppBadge(); } catch (_) {}
 }
 
-// A chat has one notification: a new message replaces it, alerts again and keeps the last lines. A line it already
-// holds (the same push sent again) changes nothing. A push without a tag (checks, missed calls, session expired) gets
-// a notification of its own. What alerts rings the bell of the app when a window of it plays one, quietly then.
+// A chat has one notification, with its newest message only: a new message replaces it and alerts again, with the
+// time it was sent (ts). The same message sent again (a retry) changes nothing; an older one (a retry, or a push
+// service that delivers out of order) leaves the newer one there, quiet. A push without a tag (checks, missed calls,
+// session expired) gets a notification of its own. What alerts rings the bell of the app when a window of it plays
+// one, quietly then.
 async function show(d) {
   const title = d.title || 'TeamsRelay';
   const base = { icon: '/static/icon-192.png', badge: '/static/icon-192.png' };
@@ -38,11 +37,13 @@ async function show(d) {
     return self.registration.showNotification(title, { ...base, body: d.body || '', tag: 'teams-' + Date.now(), data: d, ...(quiet && { silent: true }) });
   }
   const [shown] = await self.registration.getNotifications({ tag: d.tag });
-  const before = (shown && shown.data && shown.data.lines) || [];
-  const again = !!d.body && before.includes(d.body);
-  const lines = again ? before : [...before, d.body || ''].filter(Boolean).slice(-LINES);
+  const old = shown && shown.data;
+  if (old && (old.ts || 0) > (d.ts || 0)) {
+    return self.registration.showNotification(shown.title, { ...base, body: shown.body, tag: d.tag, data: old, renotify: false, silent: true, ...(old.ts && { timestamp: old.ts }) });
+  }
+  const again = !!old && !!d.body && shown.body === d.body;
   const quiet = !again && (await bellRung());
-  return self.registration.showNotification(title, { ...base, body: lines.join('\n'), tag: d.tag, renotify: !again, data: { ...d, lines }, ...(quiet && { silent: true }) });
+  return self.registration.showNotification(title, { ...base, body: d.body || '', tag: d.tag, renotify: !again, data: d, ...(d.ts && { timestamp: d.ts }), ...(quiet && { silent: true }) });
 }
 
 // milliseconds a window of the app has to say whether it played the bell
