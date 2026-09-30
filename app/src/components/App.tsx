@@ -325,6 +325,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     const qs = new URLSearchParams();
     if (acc) qs.set("a", String(acc));
     if (acc && openChat && onScreen) qs.set("chat", openChat);
+    // this app tells the chat on screen itself (lib/viewing.ts)
+    qs.set("told", "1");
     const es = new EventSource(`/api/events?${qs}`);
     const on = <T,>(name: string, fn: (d: T) => void) => es.addEventListener(name, (e) => fn(JSON.parse((e as MessageEvent).data)));
     // a stream opened for another account (first load, or a switch in progress) still delivers a few events:
