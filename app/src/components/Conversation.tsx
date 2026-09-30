@@ -49,6 +49,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ApiError, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message, type OpenReason, type OpenStatus } from "@/lib/client";
+import { useInUse } from "@/lib/in-use";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
 import { dayLabel, fullTime, placeMessages, sentAt, timeLabel } from "@/lib/message-times";
 
@@ -88,8 +89,8 @@ const OPEN_FAILED: Record<OpenReason, string> = {
 const NO_ANSWER = "Teams did not get to it in time.";
 
 // Away from the app this long, the chat is opened in Teams again on return, with its progress on screen. Teams leaves
-// the chat as soon as the app is hidden (lib/viewing.ts) and the agent opens it again at its first round after the
-// app marks it on return; after a longer absence another chat may be the one open in Teams by then.
+// the chat as soon as the app is out of use (lib/in-use.ts, lib/viewing.ts) and the agent opens it again at its first
+// round after the app marks it on return; after a longer absence another chat may be the one open in Teams by then.
 const REOPEN_AFTER = 60_000;
 
 // text as shown, as Teams will show it; raw and mentions as typed, for a retry
@@ -192,23 +193,20 @@ export function Conversation({
       gone = true;
     };
   }, [chat, acc, stopped, asks]);
-  // Back on screen after REOPEN_AFTER or more away (another tab or window, a phone in the pocket), Teams may show
-  // another chat than this one by then. The chat is opened again, as when it was chosen, and the messages saved
-  // meanwhile show as such until Teams has it open.
+  // Back in use after REOPEN_AFTER or more away (another tab or window, another application in front, a phone in the
+  // pocket), Teams may show another chat than this one by then. The chat is opened again, as when it was chosen, and
+  // the messages saved meanwhile show as such until Teams has it open.
+  const inUse = useInUse();
+  const awayAt = useRef(0);
   useEffect(() => {
     if (stopped) return;
-    let hiddenAt = document.visibilityState === "hidden" ? Date.now() : 0;
-    const onChange = () => {
-      if (document.visibilityState === "hidden") {
-        hiddenAt ||= Date.now();
-        return;
-      }
-      if (hiddenAt && Date.now() - hiddenAt >= REOPEN_AFTER) setAsks((n) => n + 1);
-      hiddenAt = 0;
-    };
-    document.addEventListener("visibilitychange", onChange);
-    return () => document.removeEventListener("visibilitychange", onChange);
-  }, [stopped]);
+    if (!inUse) {
+      awayAt.current ||= Date.now();
+      return;
+    }
+    if (awayAt.current && Date.now() - awayAt.current >= REOPEN_AFTER) setAsks((n) => n + 1);
+    awayAt.current = 0;
+  }, [inUse, stopped]);
   const mine = asked?.ask === asks ? asked : null;
   // saved: a stopped account, nothing asked; live once the open of this visit (or a later one) is done
   const openState: "saved" | "opening" | "live" | "failed" = stopped

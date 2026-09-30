@@ -92,6 +92,7 @@ import {
   type RingingCall,
   type Unread,
 } from "@/lib/client";
+import { useInUse } from "@/lib/in-use";
 import { closeChatNotification, enablePush, pushState } from "@/lib/push";
 import { Ringer } from "@/lib/ring";
 import { showViewing } from "@/lib/viewing";
@@ -103,8 +104,8 @@ type User = { name: string; email: string; role: string };
 const noSubscribe = () => () => {};
 const isPcNow = () => window.matchMedia("(hover:hover) and (pointer:fine)").matches && !("ontouchstart" in window);
 
-// The app on screen: a background tab or a phone in the pocket no longer counts as reading the open chat, and the agent
-// takes Teams back to the self chat at once (lib/viewing.ts)
+// The app on screen: the event stream names the open chat, whose messages it brings. Reading it takes the window in use
+// as well (lib/in-use.ts)
 const onVisibility = (cb: () => void) => {
   document.addEventListener("visibilitychange", cb);
   return () => document.removeEventListener("visibilitychange", cb);
@@ -179,6 +180,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   // the Android app opened this server: the account menu offers Change server
   const appPage = useAppStart();
   const onScreen = useSyncExternalStore(onVisibility, visibleNow, () => true);
+  const inUse = useInUse();
 
   const deskUrl = useCallback((n: number) => desktopUrl.replace("{n}", String(n)), [desktopUrl]);
 
@@ -362,9 +364,9 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     };
   }, [acc, openChat, onScreen, applyAccounts, noteActivity, reconnects]);
 
-  // the chat on screen, told to the agent of its account while the app shows it: Teams holds it open (and reads what
-  // arrives there) only meanwhile
-  const chatShown = pane === "main" && onScreen && acc > 0 ? openChat : null;
+  // the chat on screen, told to the agent of its account while the app shows it in a window in use (focused): Teams
+  // holds it open (and reads what arrives there) only meanwhile
+  const chatShown = pane === "main" && inUse && acc > 0 ? openChat : null;
   useEffect(() => {
     if (chatShown) return showViewing(acc, chatShown);
   }, [acc, chatShown]);
