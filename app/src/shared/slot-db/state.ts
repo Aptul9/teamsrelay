@@ -36,6 +36,9 @@ export const STATE = {
   desktop: "desktop",
   // JSON SignInTry: the one press of Sign in of the last sign-out (src/agent/jobs/sign-in.ts)
   signInTry: "sign_in_try",
+  // 1: the relay of an account on another computer carries the sound of a call answered or placed from the app to the
+  // app (src/local/call-bridge.ts); a relay of before never writes it
+  callAudio: "call_audio",
 } as const;
 
 // JSON result of command <id>, e.g. DownloadResult

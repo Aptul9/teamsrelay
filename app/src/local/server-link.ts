@@ -27,7 +27,7 @@ import {
   type ServerCommand,
   type SyncBody,
 } from "@/shared/relay-sync";
-import { DownloadResult, ImageArgs, parseArgs, UPLOAD_NAME, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
+import { DownloadResult, ImageArgs, parseArgs, UPLOAD_NAME, WithAudio, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
 import { FILE_NAME, MEDIA_NAME, type MessageExtra } from "@/shared/slot-db/rows";
 import { cmdResultKey, Identity, parseState, STATE, Viewing } from "@/shared/slot-db/state";
 
@@ -110,6 +110,8 @@ export type ServerLinkOptions = {
   fetch?: typeof fetch;
   // wall clock for the age of the notifications waiting their turn (ms)
   clock?: () => number;
+  // an answer or a call of the app whose sound goes to the app, before the agent gets it
+  onCallAudio?: () => void;
 };
 
 const pause = (ms: number, signal: AbortSignal) =>
@@ -594,6 +596,8 @@ export class ServerLink {
         }
       }
     }
+    // the sound of that call goes to the app: the bridge takes the microphone Teams asks for next
+    if ((c.type === "answer" || c.type === "call") && parseArgs(WithAudio, c.arg2).audio) this.o.onCallAudio?.();
     this.o.store.enqueue(c.type as CommandType, c.arg1, c.arg2, serverCommandKey(this.added, c.id), c.ts - (this.offset ?? 0));
     this.after = Math.max(this.after, c.id);
   }

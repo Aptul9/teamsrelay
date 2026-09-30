@@ -1,3 +1,4 @@
+import { CALL_AUDIO_PATH } from "@/shared/relay-sync";
 import { type CallDevices, playOn, playingOn } from "./devices";
 import { OPUS_RATE } from "./frames";
 import { MicSender } from "./mic";
@@ -20,6 +21,11 @@ export type CallAudioState = {
 // The websocket of the remote desktop (Selkies, under /desktop/ on the site of the app)
 export function callAudioUrl(loc: { protocol: string; host: string }): string {
   return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/desktop/api/websockets`;
+}
+
+// The websocket of the sound an account on another computer sends through the server (src/server/call-audio-hub.ts)
+export function relayCallAudioUrl(loc: { protocol: string; host: string }, acc: number): string {
+  return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}${CALL_AUDIO_PATH}?a=${acc}`;
 }
 
 // The browser plays and records a call in the app: WebCodecs for the Opus, worklets, a microphone

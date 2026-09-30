@@ -11,7 +11,8 @@ const CALL_OVER_GRACE_MS = 10_000;
 export class AnsweredCalls<S extends CallSound = CallSound> {
   private calls = new Map<number, { sound: S; inProgress: boolean; timer?: ReturnType<typeof setTimeout> }>();
 
-  constructor(private readonly o: { make: (acc: number) => S; onStop?: (acc: number) => void }) {}
+  // make: the sound of the call of an account, from the websocket at url when not the default one
+  constructor(private readonly o: { make: (acc: number, url?: string) => S; onStop?: (acc: number) => void }) {}
 
   has(acc: number) {
     return this.calls.has(acc);
@@ -22,10 +23,10 @@ export class AnsweredCalls<S extends CallSound = CallSound> {
     return this.calls.get(acc)?.sound;
   }
 
-  start(acc: number) {
+  start(acc: number, url?: string) {
     if (this.calls.has(acc)) return;
     for (const other of [...this.calls.keys()]) this.stop(other);
-    const sound = this.o.make(acc);
+    const sound = this.o.make(acc, url);
     this.calls.set(acc, { sound, inProgress: false, timer: setTimeout(() => this.stop(acc), ANSWER_GRACE_MS) });
     sound.start();
   }

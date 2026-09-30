@@ -12,10 +12,12 @@ import { ringingCall } from "@/shared/slot-db/state";
 // where the sound stays.
 export const POST = route(async (req) => {
   const { slot } = await requireSlot(req);
-  const { since } = await body(req);
+  const { since, audio } = await body(req);
   if (typeof since !== "number" || !Number.isSafeInteger(since) || since <= 0) throw new HttpError(400, "Missing call");
   const ringing = withSlot(slot, (r) => ringingCall(r.call(), Date.now()));
   if (!ringing || ringing.since !== since) throw new HttpError(409, "Call no longer ringing");
-  const id = queueOnce(slot, "answer", ringing.caller, JSON.stringify({ since }));
-  return Response.json({ ok: true, id, desktop: slotRow(appDb(), slot)?.relay ? null : desktopUrlOf(slot) });
+  const relay = !!slotRow(appDb(), slot)?.relay;
+  // audio: the page opened the sound of the call; the relay of an account on another computer then sends it there
+  const id = queueOnce(slot, "answer", ringing.caller, JSON.stringify({ since, ...(relay && audio === true ? { audio: true } : {}) }));
+  return Response.json({ ok: true, id, desktop: relay ? null : desktopUrlOf(slot) });
 });

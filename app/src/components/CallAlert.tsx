@@ -25,8 +25,12 @@ function callLine(a: CallAudioState | undefined, m: MuteView | undefined, muted:
   return "Sound in the app";
 }
 
-// A call of an account on another computer: its sound stays in the Teams window there, the app carries none
-const relayCallLine = (host: string, muted: boolean) => (muted ? `Muted, sound on ${host}` : `Sound on ${host}`);
+// A call of an account on another computer: its sound in the app while its relay sends it there (a), otherwise in the
+// Teams window of that computer only (a relay of before, a sound that did not come)
+function relayCallLine(host: string, a: CallAudioState | undefined, m: MuteView | undefined, muted: boolean): string {
+  if (a && (a.link === "live" || a.link === "connecting" || a.link === "retrying")) return callLine(a, m, muted);
+  return muted ? `Muted, sound on ${host} only` : `Sound on ${host} only`;
+}
 
 const callKey = (c: RingingCall) => `${c.acc}:${c.since}${c.active ? ":in" : ""}`;
 
@@ -139,7 +143,7 @@ export function CallBanner({
           const sourceLive = sound?.link === "live";
           const muted = mute ? shownMuted(mute, sourceLive) : !!sound?.muted;
           const ending = busyOf(key) === "hangup";
-          const line = ending ? "Ending the call" : other ? relayCallLine(relayHost(other), muted) : callLine(sound, mute, muted);
+          const line = ending ? "Ending the call" : other ? relayCallLine(relayHost(other), sound, mute, muted) : callLine(sound, mute, muted);
           const devicesOpen = devicesOf === key && !!devicesPanel;
           return (
             <div key={key} role="alert" className="pointer-events-auto w-full max-w-md rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">

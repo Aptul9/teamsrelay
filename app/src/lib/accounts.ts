@@ -36,6 +36,8 @@ export type AccountSummary = {
   relay: boolean;
   host: string;
   relaySeen: number;
+  // its relay sends the sound of a call answered or placed from the app to the app (a relay of before does not)
+  callAudio: boolean;
 };
 
 // The grace for a browser still starting runs from the last start, not from the day the account was added: a start
@@ -58,8 +60,9 @@ export function accountSummary(s: Slot): AccountSummary {
   let missedCalls: string[] | null = null;
   let activityIds: string[] | null = null;
   let link: RelayLink = { host: "", seen: 0 };
+  let callAudio = false;
   try {
-    ({ me, health, unread, unreadActivity, missedCalls, activityIds, link } = withSlot(s.slot, (r) => ({
+    ({ me, health, unread, unreadActivity, missedCalls, activityIds, link, callAudio } = withSlot(s.slot, (r) => ({
       me: r.identity(),
       health: r.health(upSince(s)),
       unread: r.unreadCount(),
@@ -67,6 +70,7 @@ export function accountSummary(s: Slot): AccountSummary {
       missedCalls: r.missedCalls(),
       activityIds: r.activityIds(),
       link: RelayLink.catch({ host: "", seen: 0 }).parse(r.state<unknown>(STATE.relay, {})),
+      callAudio: r.state<unknown>(STATE.callAudio, 0) === 1,
     })));
   } catch (e) {
     if (!(e instanceof SlotNotReady)) throw e;
@@ -97,6 +101,7 @@ export function accountSummary(s: Slot): AccountSummary {
     relay: !!s.relay,
     host: link.host,
     relaySeen: link.seen,
+    callAudio: !!s.relay && callAudio,
   };
 }
 

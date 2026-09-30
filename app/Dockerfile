@@ -6,7 +6,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# web app (.next/standalone), agent (dist/agent.cjs) and supervisor (dist/supervisor.cjs)
+# web app (.next/standalone), agent (dist/agent.cjs), supervisor (dist/supervisor.cjs) and the socket of the sound of the
+# calls of accounts on another computer (dist/call-audio.cjs), loaded before the server of the web app
 RUN npm run build
 # What the agent loads at runtime besides its bundle. The standalone output traces only the web app, so these
 # are copied explicitly: playwright-core whole (no dependencies), better-sqlite3 without its sources and with
@@ -41,5 +42,6 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=8090 HOSTNAME=0.0.0.0
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
+COPY --from=build /app/dist/call-audio.cjs ./
 EXPOSE 8090
-CMD ["node", "server.js"]
+CMD ["node", "--require", "./call-audio.cjs", "server.js"]

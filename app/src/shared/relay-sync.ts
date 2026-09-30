@@ -13,6 +13,10 @@ export const SERVER_COMMAND_KEY = /^srv-(\d+)-(\d+)$/;
 // Longest wait of GET /api/relay/commands before it answers with nothing
 export const COMMANDS_WAIT_MS = 25_000;
 
+// The websocket of the sound of a call answered or placed from the app on an account on another computer: the relay
+// (src/local/call-bridge.ts) and the page of the app open it on the server (src/server/call-audio-hub.ts)
+export const CALL_AUDIO_PATH = "/api/call/audio/socket";
+
 const int = z.number().int();
 const text = (max: number) => z.string().max(max);
 

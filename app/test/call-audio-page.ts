@@ -5,7 +5,7 @@
 import { CallAudio, callAudioUrl, type CallAudioState } from "@/lib/call-audio/call-audio";
 
 type TestWindow = Window & {
-  startCall?: () => void;
+  startCall?: (url?: string) => void;
   call?: CallAudio;
   states?: CallAudioState[];
   micTracks?: MediaStreamTrack[];
@@ -23,9 +23,9 @@ navigator.mediaDevices.getUserMedia = async (c) => {
   return stream;
 };
 
-w.startCall = () => {
+w.startCall = (url?: string) => {
   w.call = new CallAudio({
-    url: callAudioUrl(location),
+    url: url ?? callAudioUrl(location),
     onState: (s) => w.states?.push(s),
     output: (ctx) => {
       analyser = ctx.createAnalyser();

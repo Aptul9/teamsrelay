@@ -28,6 +28,8 @@ const Env = z.object({
   // the app showed when the account was added (docs/design/2026-09-27-relay-joins-server.md)
   SERVER_URL: z.url({ protocol: /^https?$/ }).optional(),
   SERVER_TOKEN: z.string().min(32, "must be the token the web app showed").optional(),
+  // tests only: more command-line switches of the browser, separated by spaces (a fake microphone, for one)
+  BROWSER_ARGS: z.string().default(""),
 });
 
 // The token goes in every request: plain HTTP only to a server on this machine
@@ -49,6 +51,7 @@ export type Config = AgentSettings & {
   hostLabel: string;
   // the server joined, null for a relay on its own
   server: { url: string; token: string } | null;
+  browserArgs: string[];
 };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env, cwd = process.cwd()): Config {
@@ -76,6 +79,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     tokenFile: path.join(stateDir, "token"),
     lockFile: path.join(stateDir, "relay.lock"),
     channel: e.BROWSER_CHANNEL,
+    browserArgs: e.BROWSER_ARGS.split(/\s+/).filter(Boolean),
     teamsUrl: e.TEAMS_URL,
     api: {
       bind: e.RELAY_BIND,
