@@ -1105,7 +1105,7 @@ export function Conversation({
             <AlertDialogTitle>Call {chat}?</AlertDialogTitle>
             <AlertDialogDescription>
               {callHost
-                ? `A Teams audio call from this account. The sound of the call stays in the Teams window on ${callHost}.`
+                ? `A Teams audio call from this account. The sound of the call stays in the Teams window on ${callHost} only.`
                 : "A Teams audio call from this account. The sound of the call comes to this app."}
             </AlertDialogDescription>
           </AlertDialogHeader>

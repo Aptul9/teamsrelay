@@ -972,7 +972,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}
               onCall={callable(openChat) ? () => void placeCall(acc, openChat) : undefined}
-              callHost={current?.relay ? relayHost(current) : undefined}
+              callHost={current?.relay && !current.callAudio ? relayHost(current) : undefined}
             />
           ) : (
             <Empty className="flex-1">
