@@ -5,11 +5,13 @@ import path from "node:path";
 import type Database from "better-sqlite3";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as answer } from "@/app/api/call/answer/route";
+import { GET as audioSide } from "@/app/api/call/audio/route";
 import { POST as hangup } from "@/app/api/call/hangup/route";
 import { POST as mute } from "@/app/api/call/mute/route";
 import { POST as start } from "@/app/api/call/start/route";
 import { appDb, claimSlot, migrateAppSchema, setCheckEvery, setRelayToken, setSlotStopped } from "@/lib/appdb";
 import { HttpError } from "@/lib/http";
+import { relayDigest } from "@/lib/relay";
 import { requireSlot } from "@/lib/session";
 import { CALL_FRESH_FOR, STATE } from "@/shared/slot-db/state";
 import { createSlotDb, tempDir } from "./helpers";
@@ -171,6 +173,65 @@ describe("POST /api/call/hangup", () => {
     expect((await second.json()).id).toBe((await first.json()).id);
     expect(relayCommands()).toEqual([{ type: "hangup", arg1: "Anna Rossi", arg2: "" }]);
     expect(commands()).toEqual([]);
+  });
+});
+
+describe("the sound of a call of an account on another computer in the app", () => {
+  it("marks the answer for the relay only when the page opened the sound and the account is on another computer", async () => {
+    const since = Date.now() - 3000;
+    ring(since, {}, relayDb);
+    asRelay();
+    expect((await post(answer, { since, audio: true })).status).toBe(200);
+    expect(relayCommands()).toEqual([{ type: "answer", arg1: "Anna Rossi", arg2: JSON.stringify({ since, audio: true }) }]);
+    vi.mocked(requireSlot).mockResolvedValue({ user, slot, added: 0 });
+    ring(since);
+    expect((await post(answer, { since, audio: true })).status).toBe(200);
+    expect(commands()).toEqual([{ type: "answer", arg1: "Anna Rossi", arg2: JSON.stringify({ since }) }]);
+  });
+
+  it("answers without the mark when the page did not open the sound (a relay of before, a browser that cannot)", async () => {
+    const since = Date.now() - 3000;
+    ring(since, {}, relayDb);
+    asRelay();
+    expect((await post(answer, { since })).status).toBe(200);
+    expect(relayCommands()).toEqual([{ type: "answer", arg1: "Anna Rossi", arg2: JSON.stringify({ since }) }]);
+  });
+
+  it("marks a call placed from the app on an account on another computer", async () => {
+    relayDb.prepare("INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("Anna Rossi", "", 0, 0, "", 0, 0, 0, "", "", "one");
+    asRelay();
+    expect((await post(start, { name: "Anna Rossi", audio: true })).status).toBe(200);
+    expect(relayCommands()).toEqual([{ type: "call", arg1: "Anna Rossi", arg2: JSON.stringify({ audio: true }) }]);
+  });
+
+  describe("GET /api/call/audio: who opens the socket", () => {
+    const APP = "https://localhost:8090";
+    const ask = (headers: Record<string, string>, a = relaySlot) => audioSide(new Request(`http://127.0.0.1:8090/api/call/audio?a=${a}`, { headers }), undefined);
+
+    it("the relay by its token, never from a web page", async () => {
+      const token = "t".repeat(43);
+      setRelayToken(appDb(), relaySlot, relayDigest(token));
+      try {
+        const r = await ask({ authorization: `Bearer ${token}` });
+        expect([r.status, await r.json()]).toEqual([200, { slot: relaySlot, side: "relay" }]);
+        expect((await ask({ authorization: `Bearer ${"x".repeat(43)}` })).status).toBe(401);
+        expect((await ask({ authorization: `Bearer ${token}`, origin: APP })).status).toBe(403);
+      } finally {
+        setRelayToken(appDb(), relaySlot, "0".repeat(64));
+      }
+    });
+
+    it("the page of the app of the owner, from the site of the app, for an account on another computer", async () => {
+      asRelay();
+      const r = await ask({ origin: APP });
+      expect([r.status, await r.json()]).toEqual([200, { slot: relaySlot, side: "app" }]);
+      expect((await ask({ origin: "https://evil.example" })).status).toBe(403);
+      expect((await ask({})).status).toBe(403);
+      vi.mocked(requireSlot).mockResolvedValue({ user, slot, added: 0 });
+      expect((await ask({ origin: APP }, slot)).status).toBe(409);
+      vi.mocked(requireSlot).mockRejectedValueOnce(new HttpError(401, "Not signed in"));
+      expect((await ask({ origin: APP })).status).toBe(401);
+    });
   });
 });
 

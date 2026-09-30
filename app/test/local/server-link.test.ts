@@ -276,6 +276,26 @@ describe("relay joined to a server", () => {
     expect(fs.readFileSync(path.join(dataDir, String(slot), "files", "00112233445566ff.xlsx"), "utf8")).toBe("sheet");
   });
 
+  it("arms the sound in the app for an answer or a call the app marked, before its agent gets it, and for nothing else", async () => {
+    const armed: string[] = [];
+    const j = await join("owner-audio", {
+      onCallAudio: () => armed.push(j.store.pendingCommands().map((c) => c.type).join(",")),
+    });
+    j.start();
+    await until("joined", () => j.link.devices >= 0 && syncsOf.get(j.token)?.length);
+    const now = Math.floor(Date.now() / 1000);
+    const q = (type: string, arg2: string) =>
+      onServerAt(j.slot, (db) => db.prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?, ?, 'Anna Rossi', ?)").run(now, type, arg2));
+    q("answer", JSON.stringify({ since: 1, audio: true }));
+    q("answer", JSON.stringify({ since: 2 }));
+    q("call", JSON.stringify({ audio: true }));
+    q("call", "");
+    q("mute", JSON.stringify({ on: true, audio: true }));
+    await until("five commands in relay.db", () => j.store.pendingCommands().length === 5);
+    // armed before each marked command went to the agent: what the agent had then
+    expect(armed).toEqual(["", "answer,answer"]);
+  });
+
   it("fetches the image of a sendimage command before queueing it", async () => {
     const uploads = path.join(dataDir, String(slot), "uploads");
     fs.mkdirSync(uploads, { recursive: true });
