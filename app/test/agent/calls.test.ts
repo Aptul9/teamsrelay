@@ -3,7 +3,7 @@
 // slot database for the web app, which rings while it is open.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/agent/context";
-import { CallWatch, MIC_LOOK_EVERY, MUTE_KEY_TRIES } from "@/agent/jobs/calls";
+import { CALL_LOOK_MS, CallWatch, MIC_LOOK_CALL, MIC_LOOK_EVERY, MUTE_KEY_TRIES } from "@/agent/jobs/calls";
 import { preparePage } from "@/agent/jobs/page-setup";
 import { CALL_END_AFTER, CALL_RING_EVERY, CALL_RING_FOR, CallTracker } from "@/agent/logic/calls";
 import * as callActions from "@/agent/teams/call-actions";
@@ -245,18 +245,19 @@ describe("call watch", () => {
     expect(calls).toEqual([]);
   });
 
-  it("looks every second on a timer of its own, one look at a time, until stopped", async () => {
+  it("looks five times a second on a timer of its own, one look at a time, until stopped", async () => {
     vi.useFakeTimers();
+    expect(CALL_LOOK_MS).toBe(200);
     const { w, evaluate } = watch(["Anna Rossi"]);
     let release = () => {};
     evaluate.mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve({ caller: "Anna Rossi" }))));
     const stop = new AbortController();
     w.start(stop.signal);
-    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3 * CALL_LOOK_MS);
     // the first look hangs: the next ones wait for it
     expect(evaluate).toHaveBeenCalledTimes(1);
     release();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(2 * CALL_LOOK_MS);
     expect(evaluate).toHaveBeenCalledTimes(3);
     stop.abort();
     await vi.advanceTimersByTimeAsync(5000);
@@ -307,8 +308,9 @@ describe("answer and hang-up asked from the app", () => {
     } as unknown as Agent;
     let now = 1_790_000_000_000;
     const w = new CallWatch(a, () => now, () => now, undefined, async (ms) => void (now += ms));
-    const tick = async () => {
-      now += 1000;
+    // a look `seconds` after the one before
+    const tick = async (seconds = 1) => {
+      now += seconds * 1000;
       await w.tick();
       await w.settled();
     };
@@ -318,8 +320,9 @@ describe("answer and hang-up asked from the app", () => {
     };
     const status = (id: number) => commands.find((c) => c.id === id)?.status;
     const inCall = () => JSON.parse(states.get(STATE.inCall) ?? "null");
-    const ringingSince = (): number => JSON.parse(states.get(STATE.call) ?? "null")?.since;
-    return { a, toast, mic, page, frame, pushes, store, tick, queue, status, inCall, ringingSince };
+    const call = () => JSON.parse(states.get(STATE.call) ?? "null");
+    const ringingSince = (): number => call()?.since;
+    return { a, toast, mic, page, frame, pushes, store, tick, queue, status, inCall, call, ringingSince };
   }
 
   it("answers the call ringing now: one real click on Accept, done once the toast is gone, never running on the way", async () => {
@@ -422,6 +425,60 @@ describe("answer and hang-up asked from the app", () => {
     p.toast.on = false;
     for (let i = 0; i < CALL_END_AFTER + 1; i++) await p.tick();
     expect(p.a.ringing).toBe(false);
+  });
+
+  // the app rings and offers Answer while the call reads ringing: an answer that waited for the toast to be gone
+  // CALL_END_AFTER seconds kept both on for seconds after the tap (prod, 2026-09-29)
+  it("writes a call answered here as no longer ringing in the look that answers it, and in progress, though its toast lingers", async () => {
+    const p = phone();
+    p.toast.on = true;
+    await p.tick();
+    const since = p.ringingSince();
+    vi.mocked(callActions.acceptCall).mockImplementationOnce(async () => {
+      p.mic.on = true;
+      return true;
+    });
+    const id = p.queue("answer", JSON.stringify({ since }));
+    await p.tick(CALL_LOOK_MS / 1000);
+    expect(p.status(id)).toBe("done");
+    expect(p.call()).toMatchObject({ caller: "Anna Rossi", since, ringing: false });
+    expect(p.a.ringing).toBe(false);
+    expect(p.inCall()).toMatchObject({ caller: "Anna Rossi", since, active: true });
+    // the toast still shows for a while: nothing rings again, nothing is pushed as ringing
+    for (let i = 0; i < 40; i++) await p.tick(CALL_LOOK_MS / 1000);
+    expect(p.call()).toMatchObject({ since, ringing: false });
+    expect(p.a.ringing).toBe(false);
+    expect(p.pushes.map((x) => x[1])).toEqual(["ringing"]);
+    p.toast.on = false;
+    for (let i = 0; i < CALL_END_AFTER + 1; i++) await p.tick();
+    expect(p.pushes.at(-1)).toEqual(["Anna Rossi", "ended", since, expect.any(Number), true]);
+  });
+
+  it("reads the microphone once a second while a call rings or is in progress, though it looks for the toast five times as often", async () => {
+    const reads = (p: ReturnType<typeof phone>) => p.frame.evaluate.mock.calls.filter(([fn]) => fn.name === "micLive").length;
+    const per = (1000 * MIC_LOOK_CALL) / CALL_LOOK_MS;
+    const ringing = phone();
+    ringing.toast.on = true;
+    for (let i = 0; i < 2 * per; i++) await ringing.tick(CALL_LOOK_MS / 1000);
+    expect(ringing.page.evaluate.mock.calls.filter(([fn]) => fn.name === "readIncomingCall")).toHaveLength(2 * per);
+    expect(reads(ringing)).toBe(2);
+    const talking = phone();
+    talking.mic.on = true;
+    for (let i = 0; i < 2 * per; i++) await talking.tick(CALL_LOOK_MS / 1000);
+    expect(talking.a.inCall).toBe(true);
+    expect(reads(talking)).toBe(2);
+  });
+
+  it("writes the call over in the look that hangs it up", async () => {
+    const p = phone();
+    p.mic.on = true;
+    await p.tick();
+    vi.mocked(callActions.hangUp).mockImplementationOnce(async () => void (p.mic.on = false));
+    const id = p.queue("hangup");
+    await p.tick(CALL_LOOK_MS / 1000);
+    expect(p.status(id)).toBe("done");
+    expect(p.inCall()).toMatchObject({ active: false });
+    expect(p.a.inCall).toBe(false);
   });
 
   it("ends the notification of a call answered here as answered, not as missed", async () => {

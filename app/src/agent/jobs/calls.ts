@@ -10,8 +10,9 @@ import { acceptCall, acceptShortcut, clickMic, hangUp, muteShortcut } from "../t
 import { micLive, micMuted, readIncomingCall } from "../teams/scripts/calls";
 import { SEL, TEXTS } from "../teams/selectors";
 
-// Seconds between two looks for a call
-export const CALL_WATCH_EVERY = 1;
+// Milliseconds between two looks for a call and for the answers, hang-ups and mutes the app asks for. A look is one read
+// of the page, 1.5 ms on prod (2026-09-30): the timer is what the ring in the app and a tap on Answer wait for.
+export const CALL_LOOK_MS = 200;
 // An answer, a hang-up or a mute shows on the page within CONFIRM_TRIES looks CONFIRM_EVERY ms apart (5 s), or it failed
 export const CONFIRM_TRIES = 20;
 export const CONFIRM_EVERY = 250;
@@ -19,10 +20,12 @@ export const CONFIRM_EVERY = 250;
 const SHORTCUT_AFTER = 6;
 // looks after the mute shortcut that changed nothing before the click on the microphone button (1.5 s)
 export const MUTE_KEY_TRIES = 6;
-// Seconds between two reads of the microphone of every frame while no call rings, was just answered here or is in
-// progress: a call answered in the desktop shows in progress within that time
+// Seconds between two reads of the microphone of every frame while a call rings, was just answered here or is in
+// progress (at once after an answer or a hang-up), and while none does: a call answered in the desktop shows in
+// progress within that time
+export const MIC_LOOK_CALL = 1;
 export const MIC_LOOK_EVERY = 5;
-// Seconds a call answered here keeps the microphone read at every look, until Teams records
+// Seconds a call answered here keeps the microphone read every MIC_LOOK_CALL, until Teams records
 export const ANSWERED_WATCH = 60;
 
 type Outcome = "done" | "failed";
@@ -64,7 +67,7 @@ export class CallWatch {
   }
 
   start(signal?: AbortSignal) {
-    const timer = setInterval(() => void this.tick(), CALL_WATCH_EVERY * 1000);
+    const timer = setInterval(() => void this.tick(), CALL_LOOK_MS);
     signal?.addEventListener("abort", () => clearInterval(timer));
   }
 
@@ -97,8 +100,11 @@ export class CallWatch {
 
   private async lookAtToast(page: Page) {
     const event = this.tracker.update(await this.readToast(page));
+    // a call answered here rings no more, though Teams may keep its toast a moment
+    const shown = this.tracker.current();
+    const taken = !!shown && shown.since === this.answered;
     // the loop keeps off the page while a call rings: an answer clicks there
-    this.a.ringing = !!this.tracker.current();
+    this.a.ringing = !!shown && !taken;
     if (event?.kind === "ringing") {
       if (event.replaced) {
         this.logCall(event.replaced);
@@ -108,7 +114,7 @@ export class CallWatch {
         log.info("call", "ringing", { caller: event.caller });
         this.keep({ caller: event.caller, since: event.since, seen: this.wall(), ringing: true });
       }
-      this.push(event.caller, event.again ? "again" : "ringing", event.since);
+      if (!(event.again && event.since === this.answered)) this.push(event.caller, event.again ? "again" : "ringing", event.since);
     } else if (event) {
       const answered = event.since === this.answered;
       log.info("call", "ended", { caller: event.caller, seconds: event.seconds, answered: answered || undefined });
@@ -119,9 +125,8 @@ export class CallWatch {
       this.ended();
     }
     // still ringing: seen again, for the web app
-    const now = this.tracker.current();
-    if (now) this.last = now;
-    if (now && event?.kind !== "ended" && this.clock() - this.written >= CALL_SEEN_EVERY * 1000) this.keep({ ...now, seen: this.wall(), ringing: true });
+    if (shown) this.last = shown;
+    if (shown && !taken && event?.kind !== "ended" && this.clock() - this.written >= CALL_SEEN_EVERY * 1000) this.keep({ ...shown, seen: this.wall(), ringing: true });
   }
 
   private readToast(page: Page) {
@@ -160,6 +165,11 @@ export class CallWatch {
         this.answered = since;
         this.answeredAt = this.clock();
         log.info("call", "answered", { caller: ringing.caller, by: shortcut ? "shortcut" : "click" });
+        // the app stops ringing now, not once the toast has been gone CALL_END_AFTER seconds, and gets the call in
+        // progress from the read of the microphone right after
+        this.keep({ caller: ringing.caller, since, seen: this.wall(), ringing: false });
+        this.a.ringing = false;
+        this.micLooked = -Infinity;
         return "done";
       }
       if (!shortcut && i + 1 === SHORTCUT_AFTER) {
@@ -186,6 +196,8 @@ export class CallWatch {
     for (let i = 0; i < CONFIRM_TRIES; i++) {
       if (recording ? !(await this.recordingPage(page)) : !(await this.callMic(page))) {
         log.info("call", "hung up");
+        // the read of the microphone right after writes the call over
+        this.micLooked = -Infinity;
         return "done";
       }
       await this.wait(CONFIRM_EVERY);
@@ -286,12 +298,12 @@ export class CallWatch {
     return found;
   }
 
-  // Every frame of every Teams page is read at every look while a call rings, was just answered here or is in progress;
-  // otherwise every MIC_LOOK_EVERY seconds
+  // Every frame of every Teams page is read every MIC_LOOK_CALL seconds while a call rings, was just answered here or is
+  // in progress, otherwise every MIC_LOOK_EVERY seconds: not at every look, which a call in progress would pay for
   private microphoneDue(): boolean {
     const now = this.clock();
     const watching = !!this.inCall || !!this.tracker.current() || now - this.answeredAt < ANSWERED_WATCH * 1000;
-    if (!watching && now - this.micLooked < MIC_LOOK_EVERY * 1000) return false;
+    if (now - this.micLooked < (watching ? MIC_LOOK_CALL : MIC_LOOK_EVERY) * 1000) return false;
     this.micLooked = now;
     return true;
   }
