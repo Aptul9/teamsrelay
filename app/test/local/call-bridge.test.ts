@@ -28,7 +28,7 @@ window.offer = async () => {
   const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   window.mic = s.getAudioTracks()[0];
   const pc = (window.pc = new RTCPeerConnection());
-  pc.ontrack = (e) => { const a = new Audio(); a.muted = true; a.srcObject = new MediaStream([e.track]); a.play().catch(() => undefined); };
+  pc.ontrack = (e) => { const a = (window.speaker = new Audio()); a.srcObject = new MediaStream([e.track]); a.play().catch(() => undefined); };
   pc.addTrack(window.mic, s);
   await pc.setLocalDescription(await pc.createOffer());
   await gathered(pc);
@@ -133,7 +133,7 @@ async function until<T>(check: () => T | Promise<T>, what: string, timeout = 15_
 }
 
 type AppWin = Window & { startCall(url: string): void; call: { mute(on: boolean): void }; states: { link: string; mic: string }[]; peak(): number };
-type TeamsWin = Window & { offer(): Promise<RTCSessionDescriptionInit>; finish(a: RTCSessionDescriptionInit): Promise<void>; gum(): Promise<string>; mic: MediaStreamTrack; originalCalls: number; __teamsMicTracks?: MediaStreamTrack[] };
+type TeamsWin = Window & { speaker: HTMLAudioElement; offer(): Promise<RTCSessionDescriptionInit>; finish(a: RTCSessionDescriptionInit): Promise<void>; gum(): Promise<string>; mic: MediaStreamTrack; originalCalls: number; __teamsMicTracks?: MediaStreamTrack[] };
 type FarWin = Window & { answer(o: RTCSessionDescriptionInit, hz: number): Promise<RTCSessionDescriptionInit>; samples(ms: number): Promise<number[]> };
 
 const appState = () => appPage.evaluate(() => (window as unknown as AppWin).states.at(-1));
@@ -245,6 +245,8 @@ describe("call sound of an account on another computer, loopback", () => {
     await teamsPage.evaluate((a) => (window as unknown as TeamsWin).finish(a), answer);
     expect(bridge.live).toBe(true);
     expect(await teamsPage.evaluate(() => (window as unknown as TeamsWin).originalCalls)).toBe(0);
+    // the speakers of the computer play nothing of a call that is the app's
+    await until(() => teamsPage.evaluate(() => (window as unknown as TeamsWin).speaker?.muted), "speaker of the computer silent");
     // the call watch of the agent sees a call in progress
     expect(await teamsPage.evaluate(() => ((window as unknown as TeamsWin).__teamsMicTracks ?? []).filter((t) => t.readyState === "live").length)).toBe(1);
 
@@ -275,6 +277,8 @@ describe("call sound of an account on another computer, loopback", () => {
     await teamsPage.evaluate(() => (window as unknown as TeamsWin).mic.stop());
     await until(() => !bridge.live, "bridge over");
     await until(async () => (await appState())?.mic === "off", "app microphone released");
+    // the speakers of the computer back as Teams left them
+    expect(await teamsPage.evaluate(() => (window as unknown as TeamsWin).speaker.muted)).toBe(false);
     // a call answered in the Teams window, not from the app: the microphone of the computer, untouched
     expect(await teamsPage.evaluate(() => (window as unknown as TeamsWin).gum())).toContain("Fake");
     expect(await teamsPage.evaluate(() => (window as unknown as TeamsWin).originalCalls)).toBe(1);

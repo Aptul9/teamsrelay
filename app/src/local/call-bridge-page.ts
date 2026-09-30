@@ -64,7 +64,21 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
 
   // the sound of the others: the newest live audio track the peer connections of this frame received
   const received: MediaStreamTrack[] = [];
-  let session: { tap(track: MediaStreamTrack): void } | null = null;
+  let session: { tap(track: MediaStreamTrack): void; silence(): void } | null = null;
+  // the elements Teams plays a stream on: the speakers of the computer
+  const players = new Set<HTMLMediaElement>();
+  const source = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "srcObject");
+  if (source?.set && source.get) {
+    Object.defineProperty(HTMLMediaElement.prototype, "srcObject", {
+      ...source,
+      set(this: HTMLMediaElement, v: MediaProvider | null) {
+        source.set!.call(this, v);
+        if (v) players.add(this);
+        else players.delete(this);
+        session?.silence();
+      },
+    });
+  }
   const Original = window.RTCPeerConnection;
   window.RTCPeerConnection = new Proxy(Original, {
     construct(target, args: unknown[], newTarget) {
@@ -88,6 +102,17 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
     let reader: ReadableStreamDefaultReader<Frame> | null = null;
     let encoder: Encoder | null = null;
     let ts = 0;
+    // the elements playing the call on the speakers of the computer, muted while the call is the app's, with how Teams
+    // had them
+    const silenced = new Map<HTMLMediaElement, boolean>();
+    const silence = () => {
+      for (const el of players) {
+        const tracks = el.srcObject instanceof MediaStream ? el.srcObject.getAudioTracks() : [];
+        if (!tracks.some((t) => received.includes(t))) continue;
+        if (!silenced.has(el)) silenced.set(el, el.muted);
+        el.muted = true;
+      }
+    };
 
     const decoder = new k.AudioDecoder({
       output: (d) => {
@@ -108,6 +133,7 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
       over = true;
       session = null;
       clearInterval(watch);
+      for (const [el, muted] of silenced) el.muted = muted;
       void reader?.cancel().catch(() => undefined);
       for (const x of [decoder, encoder]) if (x && x.state !== "closed") x.close();
       void call({ op: "end" }).catch(() => undefined);
@@ -115,6 +141,7 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
     // Teams stops its microphone when the call ends; a track it cloned or dropped ends as well
     const watch = setInterval(() => {
       if (mics.every((m) => m.readyState === "ended")) end();
+      else silence();
     }, 500);
 
     const pull = async () => {
@@ -137,6 +164,7 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
     const tap = (track: MediaStreamTrack) => {
       if (over || track === tapped || track.readyState !== "live") return;
       tapped = track;
+      silence();
       void reader?.cancel().catch(() => undefined);
       const r = new k.MediaStreamTrackProcessor({ track }).readable.getReader();
       reader = r;
@@ -175,7 +203,7 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
       return g;
     };
 
-    session = { tap };
+    session = { tap, silence };
     const live = received.filter((t) => t.readyState === "live");
     if (live.length) tap(live[live.length - 1]);
     void pull();
