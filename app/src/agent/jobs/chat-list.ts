@@ -13,7 +13,7 @@ export const readList = async (a: Agent): Promise<ListRow[]> =>
 
 // A list read saved without copying pictures: the known ones stay
 export const withoutPictures = (rows: readonly ListRow[]): ChatEntry[] =>
-  rows.map(({ name, preview, time, unread, mention, muted, presence }) => ({ name, preview, time, unread, mention, muted, av: "", presence }));
+  rows.map(({ name, preview, time, unread, mention, muted, presence, kind }) => ({ name, preview, time, unread, mention, muted, av: "", presence, kind }));
 
 // New messages found in a list read: history, ntfy, push
 export async function notifyNew(a: Agent, rows: readonly ListRow[]) {

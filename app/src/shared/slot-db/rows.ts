@@ -1,7 +1,12 @@
 // Rows of data/N/messages.db as the web app reads them and the PWA receives them.
 
-// presence: a word of shared/presence, "" when the list shows none
-export type Chat = { name: string; preview: string; tm: string; unread: number; mention: number; muted: number; av: string; presence: string };
+// presence: a word of shared/presence, "" when the list shows none; kind: a ChatKind, "" when the list shows none
+export type Chat = { name: string; preview: string; tm: string; unread: number; mention: number; muted: number; av: string; presence: string; kind: string };
+
+// The kinds of chat the Teams list marks: a 1:1 chat with a person (the only one the app can call), a group chat, the
+// chat of a meeting
+export const CHAT_KINDS = ["one", "group", "meeting"] as const;
+export type ChatKind = (typeof CHAT_KINDS)[number];
 
 export type Reaction = { e: string; n: number; mine: boolean };
 export type ReadBy = { label: string; names: string[] };

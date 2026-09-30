@@ -32,6 +32,11 @@ export const SEL = {
   presence: '[data-tid="me-control-avatar-presence"]',
   // the presence of the person of a chat row, on their picture: aria-label "Available", "Away", "Out of office"...
   rowPresence: '[data-tid="presence-badge"]',
+  // the kind of a chat row, among the ids its aria-labelledby names: a 1:1 chat with a person, a group chat, the chat
+  // of a meeting
+  rowOneOnOne: "one-on-one-chat-support-text",
+  rowGroup: "chat-group-support-text",
+  rowMeeting: "chat-meeting-support-text",
   meAvatar: '[data-tid="me-control-avatar"] img',
   editor: '[data-tid="ckeditor"]',
   textbox: '[role="textbox"]',

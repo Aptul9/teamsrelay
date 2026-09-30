@@ -50,6 +50,7 @@ function useRingAllowed(ringer: Ringer | null) {
 // or until onAnswer or onHangUp settle with false (not done), which offers the button again.
 export function CallBanner({
   calls,
+  placing = null,
   accounts,
   ringer,
   onSelect,
@@ -63,6 +64,8 @@ export function CallBanner({
   devicesPanel,
 }: {
   calls: RingingCall[];
+  // a call placed from the app, from the tap on Call until the account shows a call in progress: no ring, no button
+  placing?: { acc: number; name: string } | null;
   accounts: Account[] | null;
   ringer: Ringer | null;
   onSelect: (acc: number) => void;
@@ -103,12 +106,23 @@ export function CallBanner({
   }, [loud, ringer]);
   useEffect(() => () => ringer?.stop(), [ringer]);
 
-  if (!calls.length) return null;
+  // the call placed goes on under its own banner once the account shows it in progress
+  const calling = placing && !calls.some((c) => c.acc === placing.acc && c.active) ? placing : null;
+  if (!calls.length && !calling) return null;
   // an account on another computer: its calls ring there, where its sound is
   const inContainer = (acc: number) => !accounts?.find((a) => a.slot === acc)?.relay;
   const button = "h-9 shrink-0 md:h-8";
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-2 px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
+      {calling && (
+        <div role="status" className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
+          <Spinner className="size-5 shrink-0 text-primary" />
+          <button type="button" onClick={() => onSelect(calling.acc)} className="min-w-0 flex-1 text-left outline-none focus-visible:underline">
+            <span className="block truncate text-sm font-semibold">Calling {calling.name}</span>
+            <span className="block truncate text-xs text-muted-foreground">({accountLabel(accounts?.find((a) => a.slot === calling.acc), calling.acc)})</span>
+          </button>
+        </div>
+      )}
       {calls.map((c) => {
         const key = callKey(c);
         const off = muted.includes(key);

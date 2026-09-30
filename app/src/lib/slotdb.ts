@@ -74,11 +74,12 @@ export class SlotReader {
   }
 
   chats(): Chat[] {
-    return this.all<Chat>("SELECT name, preview, tm, unread, mention, muted, av, presence FROM chats ORDER BY pos").map((c) => ({
+    return this.all<Chat>("SELECT name, preview, tm, unread, mention, muted, av, presence, kind FROM chats ORDER BY pos").map((c) => ({
       ...c,
       muted: c.muted ?? 0,
       av: c.av ?? "",
       presence: c.presence ?? "",
+      kind: c.kind ?? "",
     }));
   }
 

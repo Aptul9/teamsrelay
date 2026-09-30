@@ -56,6 +56,9 @@ export type Agent = {
   ringing?: boolean;
   // when the last call in progress ended (ms): Teams shows a call in its main window and may leave a post-meeting page
   callOverAt?: number;
+  // the call placed from the app (src/agent/commands/call.ts): the chat called and when (ms); the call watch names the
+  // call in progress after it, and forgets it once that call is over
+  outgoing?: { callee: string; since: number };
   // since when the side bar of Teams shows without the chat list (ms), and the tries to go back to it (backToChats)
   loadingSince?: number;
   backTries?: number;

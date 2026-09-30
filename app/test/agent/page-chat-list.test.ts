@@ -37,7 +37,7 @@ describe("chat list page scripts", () => {
     await chrome.page.setContent(LIST);
     const chats = await chrome.page.evaluate(readChatList, { s: SEL, t: TEXTS });
     expect(chats.map((c) => c.name)).toEqual(["Luca Bianchini", "Luca Bianchi", "Anna Rossi", "Project Alpha", "Project Alpha Ops"]);
-    expect(chats[2]).toEqual({ name: "Anna Rossi", preview: "You: ok", time: "9:15", unread: false, mention: false, muted: false, avsrc: "", presence: "" });
+    expect(chats[2]).toEqual({ name: "Anna Rossi", preview: "You: ok", time: "9:15", unread: false, mention: false, muted: false, avsrc: "", presence: "", kind: "" });
   });
 
   it("opens the exact chat when another name extends it", async () => {

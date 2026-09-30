@@ -2,8 +2,9 @@
 // imports only, selectors and texts come in as argument.
 import type { Selectors, Texts } from "../selectors";
 
-// presence: the label of the badge on the picture of the person ("Away"), "" on a group chat
-export type ListRow = { name: string; preview: string; time: string; unread: boolean; mention: boolean; muted: boolean; avsrc: string; presence: string };
+// presence: the label of the badge on the picture of the person ("Away"), "" on a group chat; kind: one (1:1), group,
+// meeting, "" where the row names none
+export type ListRow = { name: string; preview: string; time: string; unread: boolean; mention: boolean; muted: boolean; avsrc: string; presence: string; kind: string };
 type ListArgs = { s: Selectors; t: Texts };
 
 // Chats are the level-2 rows of the Chats and Favorites sections; Quick views (Mentions, Drafts) are not.
@@ -45,7 +46,9 @@ export function readChatList({ s, t }: ListArgs): ListRow[] {
     const avatar = e.querySelector<HTMLImageElement>(s.avatar);
     const avsrc = avatar && avatar.naturalWidth ? avatar.currentSrc || avatar.src : "";
     const presence = (e.querySelector(s.rowPresence)?.getAttribute("aria-label") || "").trim().slice(0, 60);
-    out.push({ name: name.slice(0, 60), preview: preview.slice(0, 120), time, unread, mention, muted, avsrc, presence });
+    const ids = (e.getAttribute("aria-labelledby") || "").split(/\s+/);
+    const kind = ids.includes(s.rowOneOnOne) ? "one" : ids.includes(s.rowGroup) ? "group" : ids.includes(s.rowMeeting) ? "meeting" : "";
+    out.push({ name: name.slice(0, 60), preview: preview.slice(0, 120), time, unread, mention, muted, avsrc, presence, kind });
     if (out.length >= 40) break;
   }
   return out;

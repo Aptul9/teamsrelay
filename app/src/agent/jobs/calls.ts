@@ -29,7 +29,25 @@ export const MIC_LOOK_EVERY = 5;
 export const ANSWERED_WATCH = 60;
 
 type Outcome = "done" | "failed";
-type Watched = Pick<Agent, "notifier" | "store" | "inCall" | "ringing" | "callOverAt"> & { tp?: Agent["tp"]; config?: Pick<Agent["config"], "answerCalls"> };
+type Watched = Pick<Agent, "notifier" | "store" | "inCall" | "ringing" | "callOverAt" | "outgoing"> & { tp?: Agent["tp"]; config?: Pick<Agent["config"], "answerCalls"> };
+
+// The Teams pages of the browser: the one the agent drives and the others (a call window of its own)
+function teamsPages(page: Page): Page[] {
+  return page
+    .context()
+    .pages()
+    .filter((p) => p === page || (!p.isClosed() && isTeamsUrl(p.url())));
+}
+
+// The Teams page of the browser that records from the microphone now, in any of its frames: a call is in progress
+export async function recordingPage(page: Page): Promise<Page | null> {
+  for (const p of teamsPages(page)) {
+    for (const frame of p.frames()) {
+      if (await frame.evaluate(micLive).catch(() => false)) return p;
+    }
+  }
+  return null;
+}
 
 // An incoming call, pushed as soon as its toast shows and followed until it stops (logic/calls.ts). Teams web rings
 // a few seconds only, so the watch runs on a timer of its own, beside the loop: a round can take many seconds (the
@@ -265,29 +283,15 @@ export class CallWatch {
     return "done";
   }
 
-  // The Teams pages of the browser: the one the agent drives and the others (a call window of its own)
-  private teamsPages(page: Page): Page[] {
-    return page
-      .context()
-      .pages()
-      .filter((p) => p === page || (!p.isClosed() && isTeamsUrl(p.url())));
-  }
-
-  // The Teams page of the browser that records from the microphone now, in any of its frames
-  private async recordingPage(page: Page): Promise<Page | null> {
-    for (const p of this.teamsPages(page)) {
-      for (const frame of p.frames()) {
-        if (await frame.evaluate(micLive).catch(() => false)) return p;
-      }
-    }
-    return null;
+  private recordingPage(page: Page): Promise<Page | null> {
+    return recordingPage(page);
   }
 
   // Teams' own mute of the call, from the microphone button on screen in any frame of any Teams page: the page that
   // shows it and whether it reads muted. Null where none shows one, or where two read differently.
   private async callMic(page: Page): Promise<{ page: Page; muted: boolean } | null> {
     let found: { page: Page; muted: boolean } | null = null;
-    for (const p of this.teamsPages(page)) {
+    for (const p of teamsPages(page)) {
       for (const frame of p.frames()) {
         const muted = await frame.evaluate(micMuted, SEL).catch(() => null);
         if (muted === null) continue;
@@ -299,13 +303,23 @@ export class CallWatch {
   }
 
   // Every frame of every Teams page is read every MIC_LOOK_CALL seconds while a call rings, was just answered here or is
-  // in progress, otherwise every MIC_LOOK_EVERY seconds: not at every look, which a call in progress would pay for
+  // in progress, otherwise every MIC_LOOK_EVERY seconds: not at every look, which a call in progress would pay for. A
+  // call being placed from the app is read at every look until it shows in progress, for ANSWERED_WATCH at most.
   private microphoneDue(): boolean {
     const now = this.clock();
+    const out = this.a.outgoing;
+    if (out && !this.inCall && this.wall() - out.since >= ANSWERED_WATCH * 1000) this.a.outgoing = undefined;
+    const placing = !!this.a.outgoing && !this.inCall;
     const watching = !!this.inCall || !!this.tracker.current() || now - this.answeredAt < ANSWERED_WATCH * 1000;
-    if (now - this.micLooked < (watching ? MIC_LOOK_CALL : MIC_LOOK_EVERY) * 1000) return false;
+    if (!placing && now - this.micLooked < (watching ? MIC_LOOK_CALL : MIC_LOOK_EVERY) * 1000) return false;
     this.micLooked = now;
     return true;
+  }
+
+  // The call a call in progress is named after: the one placed from the app when it came after the last one that rang
+  private named(): { caller: string; since: number } | null {
+    const out = this.a.outgoing;
+    return out && out.since > (this.last?.since ?? 0) ? { caller: out.callee, since: out.since } : this.last;
   }
 
   // The call in progress for the web app: seen again every CALL_SEEN_EVERY seconds while the page records, once more
@@ -320,8 +334,9 @@ export class CallWatch {
     this.a.inCall = live;
     if (live) {
       const muted = mic?.muted;
-      if (!was) log.info("call", "in progress", { caller: this.last?.caller || undefined, mute: muted === undefined ? "unreadable" : muted ? "on" : "off" });
-      const c = was ?? { caller: this.last?.caller ?? "", since: this.last?.since ?? this.wall(), written: -Infinity, muted };
+      const from = this.named();
+      if (!was) log.info("call", "in progress", { caller: from?.caller || undefined, mute: muted === undefined ? "unreadable" : muted ? "on" : "off" });
+      const c = was ?? { caller: from?.caller ?? "", since: from?.since ?? this.wall(), written: -Infinity, muted };
       this.inCall = c;
       if (!recording && !c.held) {
         c.held = true;
@@ -339,6 +354,8 @@ export class CallWatch {
     } else if (was) {
       this.inCall = null;
       this.a.callOverAt = this.wall();
+      // the call placed from the app, if it was this one, is over too
+      this.a.outgoing = undefined;
       log.info("call", "over", { caller: was.caller || undefined });
       this.keepInCall({ caller: was.caller, since: was.since, seen: this.wall(), active: false });
     }

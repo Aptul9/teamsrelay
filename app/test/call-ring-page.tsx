@@ -27,6 +27,7 @@ type TestWindow = Window & {
   setMutes?: (m: Record<number, MuteView>) => void;
   bell?: () => Promise<boolean>;
   settle?: (ok: boolean) => void;
+  setPlacing?: (p: { acc: number; name: string } | null) => void;
 };
 const w = window as TestWindow;
 
@@ -75,16 +76,19 @@ function Page() {
   const [calls, setCalls] = useState<RingingCall[]>([]);
   const [audio, setAudio] = useState<Record<number, CallAudioState>>({});
   const [mutes, setMutes] = useState<Record<number, MuteView>>({});
+  const [placing, setPlacing] = useState<{ acc: number; name: string } | null>(null);
   useEffect(() => {
     w.setCalls = setCalls;
     w.setAudio = setAudio;
     w.setMutes = setMutes;
+    w.setPlacing = setPlacing;
   }, []);
   return (
     <>
       <RingHint ringer={ringer} show />
       <CallBanner
         calls={calls}
+        placing={placing}
         accounts={[account, relay]}
         ringer={ringer}
         onSelect={(n) => (w.selected = n)}

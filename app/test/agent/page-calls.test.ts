@@ -1,8 +1,8 @@
 // The incoming call toast of Teams web, read in Chrome: who calls, and the click of the answer asked from the app.
 // The microphone the page records from tells the call in progress; the microphone button of the call, Teams' own mute.
 import { describe, expect, it } from "vitest";
-import { acceptCall, acceptShortcut, clickMic, hangUp, muteShortcut } from "@/agent/teams/call-actions";
-import { installMicHook, micLive, micMuted, readIncomingCall } from "@/agent/teams/scripts/calls";
+import { acceptCall, acceptShortcut, clickMic, hangUp, muteShortcut, startAudioCall } from "@/agent/teams/call-actions";
+import { groupChatShown, installMicHook, micLive, micMuted, readIncomingCall } from "@/agent/teams/scripts/calls";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
 import { fixture, withChrome } from "./chrome";
 
@@ -97,6 +97,36 @@ describe("answering from the app", () => {
     await count();
     await hangUp(chrome.page);
     expect(await chrome.page.evaluate(() => (window as unknown as Counted).keys)).toContain("Ctrl+Shift+H");
+  });
+});
+
+describe("calling from the app", () => {
+  const keys = () => chrome.page.evaluate(() => (window as unknown as Counted).keys);
+
+  it("starts an audio call with the shortcut of Teams web, Alt+Shift+A, once it read that nothing rings", async () => {
+    await chrome.page.setContent("<main>chat</main>");
+    await count();
+    expect(await startAudioCall(chrome.page, async () => true)).toBe(true);
+    expect(await keys()).toContain("Alt+Shift+A");
+  });
+
+  // the same keys accept a call ringing as a video call
+  it("presses nothing when a call rings right before the keys", async () => {
+    await chrome.page.setContent(fixture("call-toast.html"));
+    await count();
+    expect(await startAudioCall(chrome.page, async () => !(await read()))).toBe(false);
+    expect(await keys()).toEqual([]);
+    expect(await clicks()).toEqual({});
+  });
+
+  it("tells a group chat by the participant count in its header", async () => {
+    const group = () => chrome.page.evaluate(groupChatShown, SEL);
+    await chrome.page.setContent('<h2 data-tid="chat-title">Project Alpha</h2><button data-tid="chat-header-participant-count" aria-label="Add people, 10 participants">10</button>');
+    expect(await group()).toBe(true);
+    await chrome.page.setContent('<h2 data-tid="chat-title">Anna Rossi</h2>');
+    expect(await group()).toBe(false);
+    await chrome.page.setContent('<h2 data-tid="chat-title">Anna Rossi</h2><button data-tid="chat-header-participant-count" style="display:none">10</button>');
+    expect(await group()).toBe(false);
   });
 });
 

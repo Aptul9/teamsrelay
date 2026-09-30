@@ -1,5 +1,6 @@
 // Browser-side helpers of the PWA: API calls, command follow-up, formatting.
 
+import type { CallReason } from "@/shared/slot-db/commands";
 import { hasTeamsId, type ActivityItem } from "@/shared/slot-db/rows";
 
 export type Account = {
@@ -80,6 +81,26 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // them within a second, so their outcome is read every CALL_CMD_EVERY ms, for about ten seconds
 export const CALL_CMD_EVERY = 150;
 export const CALL_CMD_TRIES = 70;
+// A call placed from the app waits for a round of the loop, which opens the chat first: followed for 45 s, longer than
+// the agent may still place it (CALL_MAX_AGE, src/agent/commands/call.ts), so a call never starts after a failure shown
+export const CALL_START_TRIES = 300;
+
+// Why a call asked from the app was not placed, as the agent tells it (CallResult); a call failed without one waited
+// too long for the agent, or was cut by its restart
+const CALL_PROBLEMS: Record<CallReason, string> = {
+  late: "Teams got to it too late: try again.",
+  busy: "A call rings or is on in this account.",
+  "signed-out": "Teams is signed out: sign in again, then try again.",
+  "not-listed": "Teams has no chat with this name in its list.",
+  "not-shown": "Teams did not show the chat.",
+  "not-one": "Only a 1:1 chat can be called.",
+  "no-call": "Teams did not start the call: try again, or call from the remote Teams.",
+};
+
+export function callProblem(result: unknown): string {
+  const reason = (result as { reason?: unknown } | null)?.reason;
+  return typeof reason === "string" && Object.hasOwn(CALL_PROBLEMS, reason) ? CALL_PROBLEMS[reason as CallReason] : "Teams did not get to it in time.";
+}
 
 // Waits until the agent confirms the change on Teams (done) or gives up (failed), polling `tries` times `every` ms apart
 export async function followCmd(id: number, acc: number, tries = 45, every = 700): Promise<CommandResult> {

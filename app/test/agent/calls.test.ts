@@ -3,7 +3,7 @@
 // slot database for the web app, which rings while it is open.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/agent/context";
-import { CALL_LOOK_MS, CallWatch, MIC_LOOK_CALL, MIC_LOOK_EVERY, MUTE_KEY_TRIES } from "@/agent/jobs/calls";
+import { ANSWERED_WATCH, CALL_LOOK_MS, CallWatch, MIC_LOOK_CALL, MIC_LOOK_EVERY, MUTE_KEY_TRIES } from "@/agent/jobs/calls";
 import { preparePage } from "@/agent/jobs/page-setup";
 import { CALL_END_AFTER, CALL_RING_EVERY, CALL_RING_FOR, CallTracker } from "@/agent/logic/calls";
 import * as callActions from "@/agent/teams/call-actions";
@@ -322,8 +322,48 @@ describe("answer and hang-up asked from the app", () => {
     const inCall = () => JSON.parse(states.get(STATE.inCall) ?? "null");
     const call = () => JSON.parse(states.get(STATE.call) ?? "null");
     const ringingSince = (): number => call()?.since;
-    return { a, toast, mic, page, frame, pushes, store, tick, queue, status, inCall, call, ringingSince };
+    return { a, toast, mic, page, frame, pushes, store, tick, queue, status, inCall, call, ringingSince, wall: () => now };
   }
+
+  // a call placed from the app (src/agent/commands/call.ts): the loop sets outgoing before its keys
+  it("names a call placed from the app after the person called, reads the microphone at every look until it records, and forgets it once over", async () => {
+    const p = phone();
+    const reads = () => p.frame.evaluate.mock.calls.filter(([fn]) => fn.name === "micLive").length;
+    await p.tick();
+    const since = p.wall();
+    p.a.outgoing = { callee: "Luca Bianchi", since };
+    const before = reads();
+    await p.tick(CALL_LOOK_MS / 1000);
+    await p.tick(CALL_LOOK_MS / 1000);
+    expect(reads()).toBe(before + 2);
+    p.mic.on = true;
+    await p.tick(CALL_LOOK_MS / 1000);
+    expect(p.inCall()).toMatchObject({ caller: "Luca Bianchi", since, active: true });
+    expect(p.a.inCall).toBe(true);
+    p.mic.on = false;
+    await p.tick(MIC_LOOK_CALL);
+    expect(p.inCall()).toMatchObject({ caller: "Luca Bianchi", active: false });
+    expect(p.a.outgoing).toBeUndefined();
+    // a call that rings next is named after its caller
+    p.toast.on = true;
+    await p.tick();
+    p.toast.on = false;
+    p.mic.on = true;
+    for (let i = 0; i < MIC_LOOK_EVERY; i++) await p.tick();
+    expect(p.inCall()).toMatchObject({ caller: "Anna Rossi", active: true });
+  });
+
+  it("stops reading the microphone at every look for a call placed that never showed in progress", async () => {
+    const p = phone();
+    const reads = () => p.frame.evaluate.mock.calls.filter(([fn]) => fn.name === "micLive").length;
+    await p.tick();
+    p.a.outgoing = { callee: "Luca Bianchi", since: p.wall() };
+    await p.tick(ANSWERED_WATCH);
+    expect(p.a.outgoing).toBeUndefined();
+    const after = reads();
+    for (let i = 0; i < 10; i++) await p.tick(CALL_LOOK_MS / 1000);
+    expect(reads()).toBe(after);
+  });
 
   it("answers the call ringing now: one real click on Accept, done once the toast is gone, never running on the way", async () => {
     const p = phone();

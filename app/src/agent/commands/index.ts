@@ -5,6 +5,7 @@ import { errorText, log } from "../log";
 import type { PendingCommand } from "../store/slot-store";
 import { asAgent } from "../teams/input";
 import { activity } from "./activity";
+import { call } from "./call";
 import { check } from "./check";
 import { deleteCommand } from "./delete";
 import { download } from "./download";
@@ -49,6 +50,7 @@ export const HANDLERS: Record<CommandType, Handler> = {
   answer: byCallWatch,
   hangup: byCallWatch,
   mute: byCallWatch,
+  call,
 };
 
 // resync and recheck end as done whatever happened on Teams, like in the Python agent; an unknown type ends as done
@@ -81,8 +83,9 @@ export async function runPendingCommands(a: Agent) {
     // while Teams starts (sign-in redirects, then its loading bar) the clicks would time out
     if ((cmd.type === "activity" || cmd.type === "check") && !a.railReady) continue;
     // an open stays pending while Teams shows no chat list yet (starting, a page a call left, a page not read): the app
-    // says the chat is opening meanwhile; signed out, the open fails at once with its reason
-    if (cmd.type === "open" && a.health?.teams !== "ok" && a.health?.teams !== "login") continue;
+    // says the chat is opening meanwhile; signed out, the open fails at once with its reason. So does a call, which
+    // opens its chat first, for as long as it may still be placed.
+    if ((cmd.type === "open" || cmd.type === "call") && a.health?.teams !== "ok" && a.health?.teams !== "login") continue;
     log.info("CMD", cmd.type, { id: cmd.id, arg: cmd.type === "download" ? undefined : cmd.arg1 });
     a.store.startCommand(cmd.id);
     // the page sees the input of a command as trusted input, as the owner's: it is the agent's own

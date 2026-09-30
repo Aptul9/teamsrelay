@@ -14,6 +14,11 @@ export function readIncomingCall({ s, t }: { s: Selectors; t: Texts }): { caller
   return { caller: m ? m[1].replace(t.externalMark, "").trim() : "" };
 }
 
+// The chat open is a group: its header shows the count of its participants (a 1:1 chat has none)
+export function groupChatShown(s: Selectors): boolean {
+  return [...document.querySelectorAll<HTMLElement>(s.participantCount)].some((e) => e.getClientRects().length > 0);
+}
+
 type MicWindow = Window & { __teamsMicHook?: boolean; __teamsMicTracks?: MediaStreamTrack[] };
 
 // Keeps the audio tracks the page gets from getUserMedia: Teams web records from the microphone for as long as a call

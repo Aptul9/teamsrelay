@@ -32,6 +32,8 @@ const ADDED_COLUMNS = [
   ["commands", "key", "TEXT"],
   // the presence of the person of a 1:1 chat as the list shows it (shared/presence), "" otherwise
   ["chats", "presence", "TEXT"],
+  // the kind of chat as the list marks it: one (1:1), group, meeting; "" where it shows none (shared/slot-db/rows)
+  ["chats", "kind", "TEXT"],
 ] as const;
 
 export const SLOT_TABLES = ["messages", "chats", "chat_messages", "commands", "state", "readby", "activity", "calls"] as const;

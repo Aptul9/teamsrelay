@@ -26,6 +26,8 @@ export const COMMAND_TYPES = [
   "hangup",
   // Teams' own mute of the call in progress (arg1 the caller, MuteArgs), run by the call watch as well
   "mute",
+  // a 1:1 audio call to the person of the chat arg1: run by the loop, which opens the chat (src/agent/commands/call.ts)
+  "call",
 ] as const;
 export type CommandType = (typeof COMMAND_TYPES)[number];
 
@@ -103,6 +105,15 @@ export const OPEN_REASONS = ["signed-out", ...OPEN_PROBLEMS, "unreadable"] as co
 export type OpenReason = (typeof OPEN_REASONS)[number];
 export const OpenResult = z.object({ reason: z.enum(OPEN_REASONS) });
 export type OpenResult = z.infer<typeof OpenResult>;
+
+// Why a call asked from the app was not placed, in the state row cmd_result:<id>: asked too long ago, a call ringing
+// or in progress (one ringing right before the keys included), Teams signed out, the chat not shown (as for open), not
+// a 1:1 chat, or Teams did not start the call (the page never recorded). A call failed without one waited too long in
+// the queue or was cut by a restart of the agent.
+export const CALL_REASONS = ["late", "busy", "signed-out", ...OPEN_PROBLEMS, "not-one", "no-call"] as const;
+export type CallReason = (typeof CALL_REASONS)[number];
+export const CallResult = z.object({ reason: z.enum(CALL_REASONS) });
+export type CallResult = z.infer<typeof CallResult>;
 // The last open of a chat as the app follows it, in the messages event of the event stream (src/lib/slotdb.ts)
 export type OpenStatus = { id: number; status: "pending" | "done" | "failed"; reason?: OpenReason };
 

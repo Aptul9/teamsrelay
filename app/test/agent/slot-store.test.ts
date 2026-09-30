@@ -7,7 +7,7 @@ import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
 import { STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
-const chat = (name: string, extra: Partial<ChatEntry> = {}): ChatEntry => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av: "", presence: "", ...extra });
+const chat = (name: string, extra: Partial<ChatEntry> = {}): ChatEntry => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av: "", presence: "", kind: "", ...extra });
 
 let file: string;
 let store: SlotStore;
@@ -33,14 +33,14 @@ describe("agent store", () => {
   });
 
   it("writes the chat list the web app shows", () => {
-    store.saveChats([chat("Anna Rossi", { preview: "ciao", time: "10:30", unread: true, av: "0123456789abcdef.png" }), chat("Release notes", { muted: true })]);
+    store.saveChats([chat("Anna Rossi", { preview: "ciao", time: "10:30", unread: true, av: "0123456789abcdef.png", kind: "one" }), chat("Release notes", { muted: true, kind: "group" })]);
     expect(reader((r) => r.chats())).toEqual([
-      { name: "Anna Rossi", preview: "ciao", tm: "10:30", unread: 1, mention: 0, muted: 0, av: "0123456789abcdef.png", presence: "" },
-      { name: "Release notes", preview: "", tm: "", unread: 0, mention: 0, muted: 1, av: "", presence: "" },
+      { name: "Anna Rossi", preview: "ciao", tm: "10:30", unread: 1, mention: 0, muted: 0, av: "0123456789abcdef.png", presence: "", kind: "one" },
+      { name: "Release notes", preview: "", tm: "", unread: 0, mention: 0, muted: 1, av: "", presence: "", kind: "group" },
     ]);
     store.saveChats([]);
     expect(reader((r) => r.chats())).toHaveLength(2);
-    expect(store.chats()[0]).toEqual(chat("Anna Rossi", { preview: "ciao", time: "10:30", unread: true, av: "0123456789abcdef.png" }));
+    expect(store.chats()[0]).toEqual(chat("Anna Rossi", { preview: "ciao", time: "10:30", unread: true, av: "0123456789abcdef.png", kind: "one" }));
   });
 
   it("replaces the messages of one chat and leaves the others", () => {
@@ -65,13 +65,16 @@ describe("agent store", () => {
     expect(store.readByCache([])).toEqual(new Map());
   });
 
-  it("hands out pending commands in order and records their outcome", () => {
+  it("hands out pending commands in order, with when they were queued, and records their outcome", () => {
+    const queued = Math.floor(Date.now() / 1000);
     const ids = ["open", "react"].map((type) => reader((r) => r.enqueue(type as "open", "Anna Rossi", type === "react" ? '{"mid":"a2","emoji":"like"}' : "")));
     expect(store.hasPendingCommands()).toBe(true);
-    expect(store.pendingCommands()).toEqual([
-      { id: ids[0], type: "open", arg1: "Anna Rossi", arg2: "" },
-      { id: ids[1], type: "react", arg1: "Anna Rossi", arg2: '{"mid":"a2","emoji":"like"}' },
+    const pending = store.pendingCommands();
+    expect(pending).toEqual([
+      { id: ids[0], type: "open", arg1: "Anna Rossi", arg2: "", ts: expect.any(Number) },
+      { id: ids[1], type: "react", arg1: "Anna Rossi", arg2: '{"mid":"a2","emoji":"like"}', ts: expect.any(Number) },
     ]);
+    for (const c of pending) expect(c.ts).toBeGreaterThanOrEqual(queued);
     store.finishCommand(ids[0], "done");
     store.finishCommand(ids[1], "failed");
     expect(reader((r) => [r.commandStatus(ids[0])?.status, r.commandStatus(ids[1])?.status])).toEqual(["done", "failed"]);

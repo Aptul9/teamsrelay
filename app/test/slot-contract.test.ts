@@ -4,7 +4,7 @@ import { AgentHealth, cmdResultKey, Identity, Members, membersKey, oneToOneKey, 
 
 describe("command types", () => {
   it("keeps the names of earlier releases, new ones at the end", () => {
-    expect(COMMAND_TYPES).toEqual(["open", "send", "reply", "react", "edit", "delete", "undodelete", "download", "activity", "resync", "recheck", "sendimage", "members", "sendmentions", "check", "answer", "hangup", "mute"]);
+    expect(COMMAND_TYPES).toEqual(["open", "send", "reply", "react", "edit", "delete", "undodelete", "download", "activity", "resync", "recheck", "sendimage", "members", "sendmentions", "check", "answer", "hangup", "mute", "call"]);
   });
 });
 

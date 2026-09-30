@@ -38,15 +38,26 @@ describe("chat list merge", () => {
       ["B", ""],
     ]);
   });
+
+  // a chat stays 1:1 or group: out of this read it keeps its kind, and a read that could not tell it too
+  it("keeps the kind of every chat, in this read or not", () => {
+    const known = [{ ...chat("A"), kind: "one" }, { ...chat("B"), kind: "group" }];
+    expect(mergeChats([{ ...chat("C"), kind: "meeting" }, { ...chat("A"), kind: "" }], known, false).map((c) => [c.name, c.kind])).toEqual([
+      ["C", "meeting"],
+      ["A", "one"],
+      ["B", "group"],
+    ]);
+  });
 });
 
 describe("chat list saved by the agent", () => {
-  it("keeps the presence of each chat", () => {
+  it("keeps the presence and the kind of each chat", () => {
     const store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
-    store.saveChats([chat("Anna Rossi", "", "away"), chat("Team, +2")]);
-    expect(store.chats().map((c) => [c.name, c.presence])).toEqual([
-      ["Anna Rossi", "away"],
-      ["Team, +2", ""],
+    store.saveChats([{ ...chat("Anna Rossi", "", "away"), kind: "one" }, { ...chat("Team, +2"), kind: "group" }, chat("Old row")]);
+    expect(store.chats().map((c) => [c.name, c.presence, c.kind])).toEqual([
+      ["Anna Rossi", "away", "one"],
+      ["Team, +2", "", "group"],
+      ["Old row", "", ""],
     ]);
   });
 });
