@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { Agent, fetch as undiciFetch } from "undici";
 import type webpush from "web-push";
 import type { z } from "zod";
 import { errorText, log } from "@/agent/log";
@@ -145,8 +146,13 @@ export class ServerLink {
   private pushes: Promise<unknown> = Promise.resolve();
   // the stop of the relay: every request ends with it
   private signal: AbortSignal | undefined;
+  // HTTP/1.1, a connection for each request in flight: Node 26's fetch takes the HTTP/2 Caddy offers and sends every
+  // request down one connection, where the sync and the notifications wait for the long poll of the commands
+  private readonly agent = new Agent({ allowH2: false });
+  private readonly fetch: typeof fetch;
 
   constructor(private readonly o: ServerLinkOptions) {
+    this.fetch = o.fetch ?? (((input: string, init: RequestInit) => undiciFetch(input, { ...(init as object), dispatcher: this.agent })) as unknown as typeof fetch);
     this.db = new Database(o.dbPath, { fileMustExist: true });
     this.db.pragma("busy_timeout = 8000");
   }
@@ -160,6 +166,7 @@ export class ServerLink {
       this.loop("commands", signal, () => this.pollCommands()),
     ]);
     this.db.close();
+    await this.agent.close().catch(() => undefined);
   }
 
   // A step again and again: after an error it waits longer each time, up to 30 s, and logs each new error once
@@ -190,7 +197,7 @@ export class ServerLink {
     const headers: Record<string, string> = { Authorization: `Bearer ${this.o.token}` };
     if (o.json !== undefined) headers["Content-Type"] = "application/json";
     if (o.body) headers["Content-Type"] = "application/octet-stream";
-    const r = await (this.o.fetch ?? fetch)(this.o.url + p, {
+    const r = await this.fetch(this.o.url + p, {
       method,
       headers,
       body: o.json !== undefined ? JSON.stringify(o.json) : o.body,
