@@ -56,13 +56,13 @@ describe("SlotReader", () => {
     expect(() => SlotReader.open(path.join(tempDir(), "9", "messages.db"))).toThrow(SlotNotReady);
   });
 
-  it("reads chats in list order, with the presence of the person when the agent saw one", () => {
+  it("reads chats in list order, with the presence of the person and the kind of chat when the agent saw them", () => {
     raw.prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av) VALUES(?,?,?,?,?,?,?,?,?)").run("B", "hi", 1, 0, "10:00", 0, 0, 0, "");
-    raw.prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av,presence) VALUES(?,?,?,?,?,?,?,?,?,?)").run("A", "yo", 0, 0, "10:01", 1, 0, 1, "f.png", "away");
+    raw.prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av,presence,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("A", "yo", 0, 0, "10:01", 1, 0, 1, "f.png", "away", "one");
     const r = SlotReader.open(file);
     expect(r.chats()).toEqual([
-      { name: "A", preview: "yo", tm: "10:01", unread: 1, mention: 0, muted: 1, av: "f.png", presence: "away" },
-      { name: "B", preview: "hi", tm: "10:00", unread: 0, mention: 0, muted: 0, av: "", presence: "" },
+      { name: "A", preview: "yo", tm: "10:01", unread: 1, mention: 0, muted: 1, av: "f.png", presence: "away", kind: "one" },
+      { name: "B", preview: "hi", tm: "10:00", unread: 0, mention: 0, muted: 0, av: "", presence: "", kind: "" },
     ]);
     r.close();
   });

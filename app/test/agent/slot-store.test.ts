@@ -7,7 +7,7 @@ import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
 import { STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
-const chat = (name: string, extra: Partial<ChatEntry> = {}): ChatEntry => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av: "", presence: "", ...extra });
+const chat = (name: string, extra: Partial<ChatEntry> = {}): ChatEntry => ({ name, preview: "", time: "", unread: false, mention: false, muted: false, av: "", presence: "", kind: "", ...extra });
 
 let file: string;
 let store: SlotStore;
@@ -33,14 +33,14 @@ describe("agent store", () => {
   });
 
   it("writes the chat list the web app shows", () => {
-    store.saveChats([chat("Anna Rossi", { preview: "ciao", time: "10:30", unread: true, av: "0123456789abcdef.png" }), chat("Release notes", { muted: true })]);
+    store.saveChats([chat("Anna Rossi", { preview: "ciao", time: "10:30", unread: true, av: "0123456789abcdef.png", kind: "one" }), chat("Release notes", { muted: true, kind: "group" })]);
     expect(reader((r) => r.chats())).toEqual([
-      { name: "Anna Rossi", preview: "ciao", tm: "10:30", unread: 1, mention: 0, muted: 0, av: "0123456789abcdef.png", presence: "" },
-      { name: "Release notes", preview: "", tm: "", unread: 0, mention: 0, muted: 1, av: "", presence: "" },
+      { name: "Anna Rossi", preview: "ciao", tm: "10:30", unread: 1, mention: 0, muted: 0, av: "0123456789abcdef.png", presence: "", kind: "one" },
+      { name: "Release notes", preview: "", tm: "", unread: 0, mention: 0, muted: 1, av: "", presence: "", kind: "group" },
     ]);
     store.saveChats([]);
     expect(reader((r) => r.chats())).toHaveLength(2);
-    expect(store.chats()[0]).toEqual(chat("Anna Rossi", { preview: "ciao", time: "10:30", unread: true, av: "0123456789abcdef.png" }));
+    expect(store.chats()[0]).toEqual(chat("Anna Rossi", { preview: "ciao", time: "10:30", unread: true, av: "0123456789abcdef.png", kind: "one" }));
   });
 
   it("replaces the messages of one chat and leaves the others", () => {

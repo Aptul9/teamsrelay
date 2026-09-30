@@ -1,15 +1,22 @@
 // A chat of the Teams list, as the agent keeps it (tm in the chats table is time here)
-// presence: a word of shared/presence, "" or absent when the list shows none
-export type ChatEntry = { name: string; preview: string; time: string; unread: boolean; mention: boolean; muted: boolean; av: string; presence?: string };
+// presence: a word of shared/presence, "" or absent when the list shows none; kind: a ChatKind of shared/slot-db/rows,
+// "" or absent when the list shows none
+export type ChatEntry = { name: string; preview: string; time: string; unread: boolean; mention: boolean; muted: boolean; av: string; presence?: string; kind?: string };
 
 export const CHAT_LIMIT = 40;
 
 // Teams virtualizes the list: only the rows that fit the window are in the page, and the window changes with
 // whoever looks at the remote desktop. The visible chats go first, in Teams order; the others stay, in their
-// order. A picture not copied in this round keeps the one already known. replace: the list is complete.
+// order. A picture not copied in this round keeps the one already known, and so does a kind this read could not tell.
+// replace: the list is complete.
 export function mergeChats(visible: readonly ChatEntry[], stored: readonly ChatEntry[], replace: boolean): ChatEntry[] {
   const knownAv = new Map(stored.filter((c) => c.av).map((c) => [c.name, c.av]));
-  const rows = visible.map((c) => (!c.av && knownAv.has(c.name) ? { ...c, av: knownAv.get(c.name) ?? "" } : c));
+  const knownKind = new Map(stored.filter((c) => c.kind).map((c) => [c.name, c.kind]));
+  const rows = visible.map((c) => ({
+    ...c,
+    ...(!c.av && knownAv.has(c.name) ? { av: knownAv.get(c.name) ?? "" } : {}),
+    ...(!c.kind && knownKind.has(c.name) ? { kind: knownKind.get(c.name) } : {}),
+  }));
   if (replace) return rows;
   const seen = new Set(visible.map((c) => c.name));
   // a presence is as old as the read that saw it: none rather than a stale one for the chats out of this read

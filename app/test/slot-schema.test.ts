@@ -28,11 +28,11 @@ const PYTHON_LAYOUT = {
   activity: ["id TEXT PK", "pos INTEGER", "kind TEXT", "actor TEXT", "title TEXT", "emoji TEXT", "preview TEXT", "tm TEXT", "chat TEXT", "unread INTEGER", "ts INTEGER", "channel INTEGER", "av TEXT"],
 };
 
-// Added by the TypeScript agent: the presence of the person of a chat; the key an app gives a command, queued once per
-// key; the calls it saw ring
+// Added by the TypeScript agent: the presence of the person of a chat and the kind of chat; the key an app gives a
+// command, queued once per key; the calls it saw ring
 const LAYOUT = {
   ...PYTHON_LAYOUT,
-  chats: [...PYTHON_LAYOUT.chats, "presence TEXT"],
+  chats: [...PYTHON_LAYOUT.chats, "presence TEXT", "kind TEXT"],
   commands: [...PYTHON_LAYOUT.commands, "key TEXT"],
   calls: ["id INTEGER PK", "since INTEGER", "caller TEXT", "seconds INTEGER"],
 };

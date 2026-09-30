@@ -52,6 +52,19 @@ describe("chat list captured from Teams", () => {
     for (const g of groups) expect(g.presence, g.name).toBe("");
   });
 
+  // only a 1:1 chat can be called from the app
+  it("reads the kind of every chat: 1:1 with a person, group or meeting", async () => {
+    await chrome.page.setContent(fixture("chat-list.html"));
+    const rows = await chrome.page.evaluate(readChatList, { s: SEL, t: TEXTS });
+    for (const r of rows) expect(["one", "group", "meeting"], r.name).toContain(r.kind);
+    expect(rows[0]).toMatchObject({ name: expect.stringMatching(/\(You\)$/), kind: "one" });
+    for (const r of rows.filter((r) => r.presence)) expect(r.kind, r.name).toBe("one");
+    const groups = rows.filter((r) => /, \+\d+$/.test(r.name));
+    expect(groups.length).toBeGreaterThan(0);
+    for (const g of groups) expect(g.kind, g.name).toBe("group");
+    expect(rows.filter((r) => r.kind === "meeting").length).toBeGreaterThan(0);
+  });
+
   it("clicks the row of every name it reads", async () => {
     await chrome.page.setContent(fixture("chat-list.html"));
     const rows = await chrome.page.evaluate(readChatList, { s: SEL, t: TEXTS });

@@ -22,7 +22,7 @@ const db = new Database(file);
 db.pragma("journal_mode = WAL");
 db.exec(`
   CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, source TEXT, title TEXT, body TEXT);
-  CREATE TABLE IF NOT EXISTS chats(name TEXT PRIMARY KEY, preview TEXT, pos INTEGER, ts INTEGER, tm TEXT, unread INTEGER, mention INTEGER, muted INTEGER DEFAULT 0, av TEXT, presence TEXT);
+  CREATE TABLE IF NOT EXISTS chats(name TEXT PRIMARY KEY, preview TEXT, pos INTEGER, ts INTEGER, tm TEXT, unread INTEGER, mention INTEGER, muted INTEGER DEFAULT 0, av TEXT, presence TEXT, kind TEXT);
   CREATE TABLE IF NOT EXISTS chat_messages(chat TEXT, idx INTEGER, mid TEXT, author TEXT, text TEXT, mine INTEGER, reacts TEXT, extra TEXT);
   CREATE TABLE IF NOT EXISTS commands(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, type TEXT, arg1 TEXT, arg2 TEXT, status TEXT DEFAULT 'pending', key TEXT);
   CREATE UNIQUE INDEX IF NOT EXISTS commands_key ON commands(key) WHERE key IS NOT NULL;
@@ -34,11 +34,11 @@ db.exec(`
 
 const now = Math.floor(Date.now() / 1000);
 const chats = [
-  ["Luca Bianchini", "See you at noon", "10:32", 1, 0, 0, "busy"],
-  ["Luca Bianchi", "Ciao, the report is ready", "10:30", 0, 0, 0, "available"],
-  ["Project Alpha", "Anna: @you can you check the deploy?", "9:58", 1, 1, 0, ""],
-  ["Release notes", "Bot: build 1.4.2 published", "9/24", 0, 0, 1, ""],
-  ["Anna Rossi (You)", "notes to self", "9/20", 0, 0, 0, "away"],
+  ["Luca Bianchini", "See you at noon", "10:32", 1, 0, 0, "busy", "one"],
+  ["Luca Bianchi", "Ciao, the report is ready", "10:30", 0, 0, 0, "available", "one"],
+  ["Project Alpha", "Anna: @you can you check the deploy?", "9:58", 1, 1, 0, "", "group"],
+  ["Release notes", "Bot: build 1.4.2 published", "9/24", 0, 0, 1, "", "group"],
+  ["Anna Rossi (You)", "notes to self", "9/20", 0, 0, 0, "away", "one"],
 ];
 const msgs = {
   "Luca Bianchi": [
@@ -60,8 +60,10 @@ const msgs = {
 
 db.transaction(() => {
   db.exec("DELETE FROM chats; DELETE FROM chat_messages; DELETE FROM activity; DELETE FROM calls;");
-  chats.forEach(([name, preview, tm, unread, mention, muted, presence], i) =>
-    db.prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av,presence) VALUES(?,?,?,?,?,?,?,?,?,?)").run(name, preview, i, now, tm, unread, mention, muted, "", presence),
+  chats.forEach(([name, preview, tm, unread, mention, muted, presence, kind], i) =>
+    db
+      .prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av,presence,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
+      .run(name, preview, i, now, tm, unread, mention, muted, "", presence, kind),
   );
   for (const [chat, rows] of Object.entries(msgs)) {
     rows.forEach(([mid, author, text, mine, extra], i) =>
