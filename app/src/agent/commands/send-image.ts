@@ -9,7 +9,7 @@ import type { Handler } from "./index";
 
 // arg1: chat, arg2: {file, text}. The image the web app left in data/N/uploads, with the text as caption. The
 // upload is deleted whatever happened: the app sends it again on a retry.
-export const sendImageCommand: Handler = async (a, { arg1: chat, arg2 }) => {
+export const sendImageCommand: Handler = async (a, { ts, arg1: chat, arg2 }) => {
   const { file, text } = parseArgs(ImageArgs, arg2);
   if (!UPLOAD_NAME.test(file)) {
     log.warn("image", "not an upload", { file: file.slice(0, 60) });
@@ -26,7 +26,7 @@ export const sendImageCommand: Handler = async (a, { arg1: chat, arg2 }) => {
   try {
     const ext = path.extname(file).slice(1) as ImageExt;
     const sent = await sendImage(a.tp, chat, { name: `image.${ext}`, type: IMAGE_TYPES[ext], data }, text, () => saveOpenChat(a, chat));
-    return await afterMessageAction(a, chat, sent);
+    return await afterMessageAction(a, chat, sent, ts);
   } finally {
     fs.rmSync(upload, { force: true });
   }

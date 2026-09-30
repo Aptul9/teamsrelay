@@ -4,7 +4,7 @@ import { afterMessageAction } from "./finish";
 import type { Handler } from "./index";
 
 // arg1: chat, arg2: {mid}
-export const undoDelete: Handler = async (a, { arg1: chat, arg2 }) => {
+export const undoDelete: Handler = async (a, { ts, arg1: chat, arg2 }) => {
   const { mid } = parseArgs(MessageArgs, arg2);
-  return afterMessageAction(a, chat, await undoOnTeams(a.tp, chat, mid));
+  return afterMessageAction(a, chat, await undoOnTeams(a.tp, chat, mid), ts);
 };

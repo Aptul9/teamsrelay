@@ -4,7 +4,7 @@ import { afterMessageAction } from "./finish";
 import type { Handler } from "./index";
 
 // arg1: chat, arg2: {mid, text}. Own messages only.
-export const edit: Handler = async (a, { arg1: chat, arg2 }) => {
+export const edit: Handler = async (a, { ts, arg1: chat, arg2 }) => {
   const { mid, text } = parseArgs(TextArgs, arg2);
-  return afterMessageAction(a, chat, await editMessage(a.tp, chat, mid, text));
+  return afterMessageAction(a, chat, await editMessage(a.tp, chat, mid, text), ts);
 };

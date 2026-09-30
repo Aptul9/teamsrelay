@@ -1,4 +1,4 @@
-import { STATE } from "@/shared/slot-db/state";
+import { parseState, STATE, Viewing } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
 import { imageKey } from "../logic/files";
 import { extraOf } from "../logic/messages";
@@ -7,8 +7,12 @@ import { readMessages } from "../teams/scripts/conversation";
 import { SEL, TEXTS } from "../teams/selectors";
 import type { SavedMessage } from "../store/slot-store";
 
-// The chat is on screen in the app: without a mark the agent parks Teams on the self chat after PARK_AFTER seconds
-export function markViewing(a: Agent, chat: string) {
+// The chat is on screen in the app: without a mark the agent parks Teams on the self chat after PARK_AFTER seconds. A
+// command marks the chat it acts on, unless the app stopped showing a chat after queueing it (since: when it was
+// queued, Unix s): Teams then leaves the chat as the app did.
+export function markViewing(a: Agent, chat: string, since = 0) {
+  const shown = parseState(Viewing, a.store.getState(STATE.viewing), { chat: "", ts: 0 });
+  if (since && !shown.chat && shown.ts >= since) return;
   a.store.setState(STATE.viewing, JSON.stringify({ chat, ts: nowSeconds() }));
 }
 

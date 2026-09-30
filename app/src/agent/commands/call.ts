@@ -29,7 +29,7 @@ export const call: Handler = async (a, { id, arg1: chat, ts }) => {
   if (a.ringing || a.inCall) return failed(a, id, chat, "busy");
   if (a.health?.teams === "login") return failed(a, id, chat, "signed-out");
   if (SELF_CHAT.test(chat) || a.store.chats().find((c) => c.name === chat)?.kind !== "one") return failed(a, id, chat, "not-one");
-  markViewing(a, chat);
+  markViewing(a, chat, ts);
   const problem = await a.tp.showChat(chat);
   if (problem) return failed(a, id, chat, problem);
   a.store.setState(STATE.activeChat, chat);
