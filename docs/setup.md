@@ -121,7 +121,7 @@ npm ci
 npm run lint && npm run typecheck && npm test && npm run build
 ```
 
-`npm test` covers the web app and the agent: unit tests, the page scripts in the local Google Chrome on pages captured from Teams, and the agent bundle run as a process against a local Chrome (about two minutes: it waits for the real 60 s exit). The tests of the supervisor that need process groups, user ids and unix sockets run on Linux and macOS only. `npm run build` builds the web app, the agent (`dist/agent.cjs`), the supervisor (`dist/supervisor.cjs`) and the local relay (`dist/relay.cjs`).
+`npm test` covers the web app and the agent: unit tests, the page scripts in the local Google Chrome on pages captured from Teams, and the agent bundle run as a process against a local Chrome (about two minutes: it waits for the real 60 s exit). The tests of the supervisor that need process groups, user ids and unix sockets run on Linux and macOS only. `npm run build` builds the web app, the agent (`dist/agent.cjs`), the supervisor (`dist/supervisor.cjs`), the local relay (`dist/relay.cjs`) and the socket of the sound of the calls of accounts on another computer (`dist/call-audio.cjs`), which the web app process loads before its server: `node --require ./call-audio.cjs server.js` in the image. `npm run dev` and `npm start` run without it: a call of an account on another computer then keeps its sound on that computer.
 
 After a change, `docker compose ... up -d --build` rebuilds both images and recreates what changed; a new browsers image restarts every account. The code of agent and supervisor is inside the image, nothing is mounted.
 
@@ -208,6 +208,7 @@ The account then works like the others in the app, with these differences:
 - No remote desktop: the sign-in happens in the relay window on that computer, and the app says so when Teams asks for one.
 - Its status is its relay's: **Active** while the relay syncs, **Not connected** a minute after it stopped; no **Stopped** or **Checked every N h** modes.
 - Notifications go from this server to the devices of its owner, with the push keys of the server (`vapid/`, mounted in the web app; `VAPID_SUBJECT` and `NTFY_*` of `.env` apply), and to the phones of the Android app with the Firebase key of the server (`fcm/`).
+- The sound of a call answered or placed from the app comes to the app, both ways, with a relay of this release: the relay takes the microphone and the sound of Teams in its own browser and sends them over a websocket to the web app (`/api/call/audio/socket`, opened by the relay with its token, over the same HTTPS as the sync; Caddy passes it as it is). The microphone of that computer is not opened for such a call, so a machine with no audio device (a VM nobody hears) works. A call answered in the relay window keeps the microphone and the speakers of that computer. A relay of an earlier release keeps the sound in its window, and the app says *Sound on* the name of that computer *only*.
 - **Settings** → **Teams accounts** → **New token** replaces the token: the relay stops syncing until its `relay.env` gets the new one.
 - Removing the account deletes its data here and its token; the relay keeps its own Teams session until it is stopped there.
 
