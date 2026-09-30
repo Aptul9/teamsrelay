@@ -76,10 +76,15 @@ export function post<T>(path: string, body: unknown, acc: number): Promise<T> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Waits until the agent confirms the change on Teams (done) or gives up (failed), polling `tries` times
-export async function followCmd(id: number, acc: number, tries = 45): Promise<CommandResult> {
+// The commands of a call (answer, hang-up, mute): the agent takes them within a look of its call watch and Teams shows
+// them within a second, so their outcome is read every CALL_CMD_EVERY ms, for about ten seconds
+export const CALL_CMD_EVERY = 150;
+export const CALL_CMD_TRIES = 70;
+
+// Waits until the agent confirms the change on Teams (done) or gives up (failed), polling `tries` times `every` ms apart
+export async function followCmd(id: number, acc: number, tries = 45, every = 700): Promise<CommandResult> {
   for (let i = 0; i < tries; i++) {
-    await sleep(700);
+    await sleep(every);
     try {
       const r = await call<CommandResult>(`/api/cmd/${id}`, undefined, acc);
       if (r.status === "done" || r.status === "failed") return r;
@@ -90,10 +95,10 @@ export async function followCmd(id: number, acc: number, tries = 45): Promise<Co
   return { status: "failed", result: null };
 }
 
-export async function runCmd(path: string, body: unknown, acc: number, tries?: number): Promise<CommandResult> {
+export async function runCmd(path: string, body: unknown, acc: number, tries?: number, every?: number): Promise<CommandResult> {
   try {
     const { id } = await post<{ id: number }>(path, body, acc);
-    return await followCmd(id, acc, tries);
+    return await followCmd(id, acc, tries, every);
   } catch {
     return { status: "failed", result: null };
   }

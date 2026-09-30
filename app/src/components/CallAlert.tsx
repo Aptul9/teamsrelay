@@ -3,6 +3,7 @@
 import { MicIcon, MicOffIcon, MonitorIcon, PhoneIcon, PhoneIncomingIcon, PhoneOffIcon, SlidersHorizontalIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { useAppStart } from "@/lib/android-app";
 import type { CallAudioState } from "@/lib/call-audio/call-audio";
 import { type MuteView, shownMuted } from "@/lib/call-audio/mute";
@@ -25,6 +26,10 @@ function callLine(a: CallAudioState | undefined, m: MuteView | undefined, muted:
 
 const callKey = (c: RingingCall) => `${c.acc}:${c.since}${c.active ? ":in" : ""}`;
 
+// A tap on Answer or Hang up on its way to Teams, by call
+type Busy = Record<string, "answer" | "hangup">;
+const without = (b: Busy, key: string): Busy => Object.fromEntries(Object.entries(b).filter(([k]) => k !== key));
+
 // The account a call rings in, as its notifications name it: organization, otherwise email
 export const accountLabel = (a: Account | undefined, acc: number) => (a && (a.tenant || a.email || a.name)) || `Account ${acc}`;
 
@@ -40,7 +45,9 @@ function useRingAllowed(ringer: Ringer | null) {
 // on an account of the browsers container; its sound comes to the app (audio), or goes through the remote desktop. A
 // call in progress (active) rings no more and offers the state of its sound, its microphone and speaker
 // (devicesPanel), the desktop and Hang up, and Mute: Teams' own mute where its state is known (mutes), wherever the
-// sound is, and the microphone of this device while it carries the sound.
+// sound is, and the microphone of this device while it carries the sound. A tap on Answer silences the ring and says
+// the call is being answered, one on Hang up says it is ending, at once: until the call moves on (in progress, over),
+// or until onAnswer or onHangUp settle with false (not done), which offers the button again.
 export function CallBanner({
   calls,
   accounts,
@@ -59,8 +66,8 @@ export function CallBanner({
   accounts: Account[] | null;
   ringer: Ringer | null;
   onSelect: (acc: number) => void;
-  onAnswer?: (c: RingingCall) => void;
-  onHangUp?: (c: RingingCall) => void;
+  onAnswer?: (c: RingingCall) => unknown;
+  onHangUp?: (c: RingingCall) => unknown;
   onDesktop?: (acc: number) => void;
   audio?: Record<number, CallAudioState>;
   mutes?: Record<number, MuteView>;
@@ -71,11 +78,23 @@ export function CallBanner({
   const [muted, setMuted] = useState<string[]>([]);
   // the call whose microphone and speaker panel is open
   const [devicesOf, setDevicesOf] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Busy>({});
   const allowed = useRingAllowed(ringer);
   // inside the Android app the phone rings the call itself, with the ringtone of the app's Calls channel until it ends
   // (mobile/plugin): the page adds no ring of its own
   const inApp = !!useAppStart();
-  const loud = !inApp && calls.some((c) => !c.active && !muted.includes(callKey(c)));
+  // a call that moved on (answered: in progress; hung up: over) is no longer on its way
+  const live = new Set(calls.map(callKey));
+  const busyOf = (key: string) => (live.has(key) ? busy[key] : undefined);
+  const loud = !inApp && calls.some((c) => !c.active && !muted.includes(callKey(c)) && !busyOf(callKey(c)));
+
+  function act(c: RingingCall, kind: "answer" | "hangup", fn?: (c: RingingCall) => unknown) {
+    const key = callKey(c);
+    // the taps of calls that moved on go with the next one
+    setBusy((b) => ({ ...Object.fromEntries(Object.entries(b).filter(([k]) => live.has(k))), [key]: kind }));
+    const again = () => setBusy((b) => (b[key] === kind ? without(b, key) : b));
+    void Promise.resolve(fn?.(c)).then((done) => done === false && again(), again);
+  }
 
   useEffect(() => {
     if (!ringer) return;
@@ -99,7 +118,8 @@ export function CallBanner({
           const mute = mutes?.[c.acc];
           const sourceLive = sound?.link === "live";
           const muted = mute ? shownMuted(mute, sourceLive) : !!sound?.muted;
-          const line = callLine(sound, mute, muted);
+          const ending = busyOf(key) === "hangup";
+          const line = ending ? "Ending the call" : callLine(sound, mute, muted);
           const devicesOpen = devicesOf === key && !!devicesPanel;
           return (
             <div key={key} role="alert" className="pointer-events-auto w-full max-w-md rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
@@ -143,13 +163,24 @@ export function CallBanner({
                   </Button>
                 )}
                 {onHangUp && (
-                  <Button size="sm" variant="destructive" className={button} onClick={() => onHangUp(c)}>
-                    <PhoneOffIcon />
+                  <Button size="sm" variant="destructive" className={button} disabled={ending} onClick={() => act(c, "hangup", onHangUp)}>
+                    {ending ? <Spinner /> : <PhoneOffIcon />}
                     Hang up
                   </Button>
                 )}
               </div>
               {devicesOpen && <div className="mt-2.5 border-t pt-2.5">{devicesPanel(c.acc)}</div>}
+            </div>
+          );
+        }
+        if (busyOf(key) === "answer") {
+          return (
+            <div key={key} role="alert" className="pointer-events-auto flex w-full max-w-md items-center gap-2 rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
+              <Spinner className="size-5 shrink-0 text-primary" />
+              <button type="button" onClick={() => onSelect(c.acc)} className="min-w-0 flex-1 text-left outline-none focus-visible:underline">
+                <span className="block truncate text-sm font-semibold">{c.caller ? `Answering ${c.caller}` : "Answering the call"}</span>
+                <span className="block truncate text-xs text-muted-foreground">({label})</span>
+              </button>
             </div>
           );
         }
@@ -164,7 +195,7 @@ export function CallBanner({
               </span>
             </button>
             {onAnswer && inContainer(c.acc) && (
-              <Button size="sm" className={button} onClick={() => onAnswer(c)}>
+              <Button size="sm" className={button} onClick={() => act(c, "answer", onAnswer)}>
                 <PhoneIcon />
                 Answer
               </Button>

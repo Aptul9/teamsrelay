@@ -56,10 +56,13 @@ import {
   appBadgeCount,
   bellOn,
   call,
+  CALL_CMD_EVERY,
+  CALL_CMD_TRIES,
   callsSnapshot,
   checkLine,
   clock,
   desktopTarget,
+  followCmd,
   hours,
   idleChecked,
   isMissedCall,
@@ -202,7 +205,9 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     [answered, deskUrl],
   );
   // the call answered here goes on while it is in progress, and its sound ends with it
+  const callsRef = useRef<RingingCall[]>([]);
   useEffect(() => {
+    callsRef.current = calls;
     answered?.inProgress(calls.filter((c) => c.active).map((c) => c.acc));
   }, [answered, calls]);
   useEffect(() => () => answered?.stopAll(), [answered]);
@@ -429,26 +434,40 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   // Answer from the app: the sound of the call comes to the app, started from this tap (a page may play from a tap);
   // where it cannot, the remote desktop, which carries the sound, opens at once (a window opened after the request
-  // would count as a popup). The agent clicks Accept with audio in Teams within a second.
-  function answerCall(c: RingingCall) {
+  // would count as a popup). The agent clicks Accept with audio in Teams at its next look. False when Teams did not
+  // take the call: the banner offers Answer again while it rings, and the sound stops unless the call is in progress.
+  async function answerCall(c: RingingCall): Promise<boolean> {
     if (!startCallAudio(c.acc)) openDesktop(c.acc);
-    post("/api/call/answer", { since: c.since }, c.acc).catch((e: unknown) => {
-      answered?.stop(c.acc);
-      toast.error("Call not answered", { description: e instanceof ApiError ? e.message : "The server could not be reached" });
-    });
+    const failed = (description: string) => {
+      if (!callsRef.current.some((x) => x.acc === c.acc && x.active)) answered?.stop(c.acc);
+      toast.error("Call not answered", { description });
+      return false;
+    };
+    let id: number;
+    try {
+      ({ id } = await post<{ id: number }>("/api/call/answer", { since: c.since }, c.acc));
+    } catch (e) {
+      return failed(e instanceof ApiError ? e.message : "The server could not be reached");
+    }
+    const r = await followCmd(id, c.acc, CALL_CMD_TRIES, CALL_CMD_EVERY);
+    return r.status === "done" || failed("Teams did not take the call: it may have stopped ringing");
   }
 
-  async function hangUpCall(c: RingingCall) {
-    const r = await runCmd("/api/call/hangup", {}, c.acc, 15);
-    if (r.status === "done") answered?.stop(c.acc);
-    else toast.error("Call not ended", { description: "End it in Teams, in the remote desktop of the account." });
+  async function hangUpCall(c: RingingCall): Promise<boolean> {
+    const r = await runCmd("/api/call/hangup", {}, c.acc, CALL_CMD_TRIES, CALL_CMD_EVERY);
+    if (r.status === "done") {
+      answered?.stop(c.acc);
+      return true;
+    }
+    toast.error("Call not ended", { description: "End it in Teams, in the remote desktop of the account." });
+    return false;
   }
 
   // Mute from the banner: the microphone of this device at once, Teams' own mute by the agent within a second or two.
   // Where Teams is not changed the device stays as pressed.
   async function muteCall(n: number, on: boolean) {
     callMutes.press(n, on);
-    const r = await runCmd("/api/call/mute", { on }, n, 15);
+    const r = await runCmd("/api/call/mute", { on }, n, CALL_CMD_TRIES, CALL_CMD_EVERY);
     callMutes.settled(n, r.status === "done");
     if (r.status !== "done" && callMutes.view(n).teams !== undefined)
       toast.error(on ? "Teams did not mute" : "Teams did not unmute", {
@@ -636,7 +655,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
         ringer={ringer}
         onSelect={selectAccount}
         onAnswer={answerCall}
-        onHangUp={(c) => void hangUpCall(c)}
+        onHangUp={hangUpCall}
         onDesktop={callToDesktop}
         audio={callAudio}
         mutes={mutes}
