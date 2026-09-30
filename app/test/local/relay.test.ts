@@ -14,6 +14,8 @@ import { Media } from "@/agent/media";
 import { Notifier } from "@/agent/push/notifier";
 import { loadVapidKeys } from "@/agent/push/vapid";
 import { SlotStore } from "@/agent/store/slot-store";
+import { openChatTitle } from "@/agent/teams/scripts/chat-list";
+import { SEL } from "@/agent/teams/selectors";
 import { STATE } from "@/shared/slot-db/state";
 import { BrowserKeeper, launchBrowser } from "@/local/browser";
 import { loadConfig, type Config } from "@/local/config";
@@ -186,6 +188,10 @@ describe("relay against a Teams page", () => {
   // the owner in the window of the relay: the agent's own sends, reads and presence keeper never count as the owner's
   // input, a click it did not send does, and the agent then leaves Teams as it is
   it("leaves Teams to the owner after a click the agent did not send, and says so in its health", async () => {
+    // Teams parked first: a click while the agent itself clicks counts as its own (CI 2026-09-30: the park due 30 s
+    // after the send above came with the click)
+    store.setState(STATE.viewing, JSON.stringify({ chat: "", ts: Math.floor(Date.now() / 1000) }));
+    await until("Teams on the self chat", async () => (await teams().evaluate(openChatTitle, SEL)) === store.selfChat());
     const since = Math.floor(Date.now() / 1000);
     const h = await until("a fresh health", async () => {
       const health = (await api("/api/state")).json.health;
