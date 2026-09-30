@@ -176,6 +176,21 @@ describe("command handlers", () => {
     expect(opened).toEqual(["Anna Rossi"]);
   });
 
+  // a call opens its chat first: the loop runs it, not the call watch
+  it("keeps a call pending while Teams shows no chat list yet, like an open, then runs it in the loop", async () => {
+    const a = agent();
+    const id = store.enqueue("call", "Anna Rossi");
+    a.health = { cdp: "ok", ts: 0, teams: "loading", overall: "yellow" };
+    await runPendingCommands(a);
+    expect(store.commandStatus(id)).toBe("pending");
+    a.health = { cdp: "ok", ts: 0, teams: "ok", overall: "green" };
+    await runPendingCommands(a);
+    // the list does not say this chat is 1:1: refused before Teams is touched
+    expect(store.commandStatus(id)).toBe("failed");
+    expect(JSON.parse(store.getState(cmdResultKey(id)))).toEqual({ reason: "not-one" });
+    expect(opened).toEqual([]);
+  });
+
   it("send: done once Teams shows the message, failed when it does not, the conversation saved either way", async () => {
     expect(await runCommand(agent(), cmd("send", "Anna Rossi", "hello"))).toBe("done");
     expect(actions.sendText).toHaveBeenCalledWith(expect.anything(), "Anna Rossi", "hello", expect.any(Function));

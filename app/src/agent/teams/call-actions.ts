@@ -38,6 +38,17 @@ export async function muteShortcut(page: Page): Promise<void> {
   await withInput(page, () => page.keyboard.press("Control+Shift+M"));
 }
 
+// A call asked from the app: the shortcut of Teams web that starts an audio call from the open chat, Alt+Shift+A (same
+// table). While a call rings the same keys accept it as a video call: `clear` reads that none rings, inside the input
+// lock, right before the keys. False when it read one: nothing pressed.
+export async function startAudioCall(page: Page, clear: () => Promise<boolean>): Promise<boolean> {
+  return withInput(page, async () => {
+    if (!(await clear())) return false;
+    await page.keyboard.press("Alt+Shift+KeyA");
+    return true;
+  });
+}
+
 // The microphone button of the call, clicked where the shortcut changed nothing. False when it does not show, or when
 // all of it is covered.
 export async function clickMic(page: Page): Promise<boolean> {

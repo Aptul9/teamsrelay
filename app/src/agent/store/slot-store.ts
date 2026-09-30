@@ -10,7 +10,8 @@ import { mergeChats, type ChatEntry } from "../logic/chats";
 // The agent side of data/N/messages.db (src/shared/slot-db), or of relay.db for the local relay, where the API
 // reads it and queues commands through the same connection: one connection for the life of the process.
 
-export type PendingCommand = { id: number; type: string; arg1: string; arg2: string };
+// ts: when the app queued it (Unix seconds)
+export type PendingCommand = { id: number; type: string; arg1: string; arg2: string; ts?: number };
 export type SavedMessage = { mid: string; author: string; text: string; mine: boolean; reacts: string; extra: MessageExtra | null };
 export type ActivityEntry = {
   id: string;
@@ -184,7 +185,7 @@ export class SlotStore {
 
   pendingCommands(): PendingCommand[] {
     return this.db
-      .prepare("SELECT id, type, COALESCE(arg1, '') AS arg1, COALESCE(arg2, '') AS arg2 FROM commands WHERE status='pending' ORDER BY id")
+      .prepare("SELECT id, type, COALESCE(arg1, '') AS arg1, COALESCE(arg2, '') AS arg2, COALESCE(ts, 0) AS ts FROM commands WHERE status='pending' ORDER BY id")
       .all() as PendingCommand[];
   }
 

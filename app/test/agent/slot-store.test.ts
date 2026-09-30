@@ -65,13 +65,16 @@ describe("agent store", () => {
     expect(store.readByCache([])).toEqual(new Map());
   });
 
-  it("hands out pending commands in order and records their outcome", () => {
+  it("hands out pending commands in order, with when they were queued, and records their outcome", () => {
+    const queued = Math.floor(Date.now() / 1000);
     const ids = ["open", "react"].map((type) => reader((r) => r.enqueue(type as "open", "Anna Rossi", type === "react" ? '{"mid":"a2","emoji":"like"}' : "")));
     expect(store.hasPendingCommands()).toBe(true);
-    expect(store.pendingCommands()).toEqual([
-      { id: ids[0], type: "open", arg1: "Anna Rossi", arg2: "" },
-      { id: ids[1], type: "react", arg1: "Anna Rossi", arg2: '{"mid":"a2","emoji":"like"}' },
+    const pending = store.pendingCommands();
+    expect(pending).toEqual([
+      { id: ids[0], type: "open", arg1: "Anna Rossi", arg2: "", ts: expect.any(Number) },
+      { id: ids[1], type: "react", arg1: "Anna Rossi", arg2: '{"mid":"a2","emoji":"like"}', ts: expect.any(Number) },
     ]);
+    for (const c of pending) expect(c.ts).toBeGreaterThanOrEqual(queued);
     store.finishCommand(ids[0], "done");
     store.finishCommand(ids[1], "failed");
     expect(reader((r) => [r.commandStatus(ids[0])?.status, r.commandStatus(ids[1])?.status])).toEqual(["done", "failed"]);

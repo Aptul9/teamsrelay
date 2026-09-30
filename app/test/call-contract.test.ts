@@ -1,14 +1,21 @@
 // What the web app and the agent agree on to answer, hang up and mute a call: three command types the call watch runs,
 // the call a command answers, the mute state a command asks for, and the call in progress as the slot database keeps it.
 import { describe, expect, it } from "vitest";
-import { AnswerArgs, CALL_COMMANDS, COMMAND_TYPES, MuteArgs, parseArgs } from "@/shared/slot-db/commands";
+import { AnswerArgs, CALL_COMMANDS, CALL_REASONS, CallResult, COMMAND_TYPES, MuteArgs, parseArgs } from "@/shared/slot-db/commands";
 import { CALL_FRESH_FOR, InCall, inCallOf, STATE } from "@/shared/slot-db/state";
 
 describe("call commands", () => {
   it("come last, after every earlier type, which keeps its name", () => {
-    expect(COMMAND_TYPES.slice(-3)).toEqual(["answer", "hangup", "mute"]);
-    expect(COMMAND_TYPES.indexOf("check")).toBe(COMMAND_TYPES.length - 4);
+    expect(COMMAND_TYPES.slice(-4)).toEqual(["answer", "hangup", "mute", "call"]);
+    expect(COMMAND_TYPES.indexOf("check")).toBe(COMMAND_TYPES.length - 5);
+    // a call placed from the app opens its chat: the loop runs it, not the call watch
     expect(CALL_COMMANDS).toEqual(["answer", "hangup", "mute"]);
+  });
+
+  it("a call not placed says why in its result; anything else reads as no reason", () => {
+    expect(CALL_REASONS).toEqual(["late", "busy", "signed-out", "not-listed", "not-shown", "not-one", "no-call"]);
+    for (const reason of CALL_REASONS) expect(CallResult.safeParse({ reason }).success, reason).toBe(true);
+    expect(CallResult.safeParse({ reason: "unreadable" }).success).toBe(false);
   });
 
   it("answer names the call by when it started ringing; junk names none", () => {

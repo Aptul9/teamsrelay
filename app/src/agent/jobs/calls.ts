@@ -29,7 +29,25 @@ export const MIC_LOOK_EVERY = 5;
 export const ANSWERED_WATCH = 60;
 
 type Outcome = "done" | "failed";
-type Watched = Pick<Agent, "notifier" | "store" | "inCall" | "ringing" | "callOverAt"> & { tp?: Agent["tp"]; config?: Pick<Agent["config"], "answerCalls"> };
+type Watched = Pick<Agent, "notifier" | "store" | "inCall" | "ringing" | "callOverAt" | "outgoing"> & { tp?: Agent["tp"]; config?: Pick<Agent["config"], "answerCalls"> };
+
+// The Teams pages of the browser: the one the agent drives and the others (a call window of its own)
+function teamsPages(page: Page): Page[] {
+  return page
+    .context()
+    .pages()
+    .filter((p) => p === page || (!p.isClosed() && isTeamsUrl(p.url())));
+}
+
+// The Teams page of the browser that records from the microphone now, in any of its frames: a call is in progress
+export async function recordingPage(page: Page): Promise<Page | null> {
+  for (const p of teamsPages(page)) {
+    for (const frame of p.frames()) {
+      if (await frame.evaluate(micLive).catch(() => false)) return p;
+    }
+  }
+  return null;
+}
 
 // An incoming call, pushed as soon as its toast shows and followed until it stops (logic/calls.ts). Teams web rings
 // a few seconds only, so the watch runs on a timer of its own, beside the loop: a round can take many seconds (the
@@ -265,29 +283,15 @@ export class CallWatch {
     return "done";
   }
 
-  // The Teams pages of the browser: the one the agent drives and the others (a call window of its own)
-  private teamsPages(page: Page): Page[] {
-    return page
-      .context()
-      .pages()
-      .filter((p) => p === page || (!p.isClosed() && isTeamsUrl(p.url())));
-  }
-
-  // The Teams page of the browser that records from the microphone now, in any of its frames
-  private async recordingPage(page: Page): Promise<Page | null> {
-    for (const p of this.teamsPages(page)) {
-      for (const frame of p.frames()) {
-        if (await frame.evaluate(micLive).catch(() => false)) return p;
-      }
-    }
-    return null;
+  private recordingPage(page: Page): Promise<Page | null> {
+    return recordingPage(page);
   }
 
   // Teams' own mute of the call, from the microphone button on screen in any frame of any Teams page: the page that
   // shows it and whether it reads muted. Null where none shows one, or where two read differently.
   private async callMic(page: Page): Promise<{ page: Page; muted: boolean } | null> {
     let found: { page: Page; muted: boolean } | null = null;
-    for (const p of this.teamsPages(page)) {
+    for (const p of teamsPages(page)) {
       for (const frame of p.frames()) {
         const muted = await frame.evaluate(micMuted, SEL).catch(() => null);
         if (muted === null) continue;
