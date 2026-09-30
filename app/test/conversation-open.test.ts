@@ -57,8 +57,8 @@ beforeEach(async () => {
 });
 
 const saved: Message[] = [{ mid: "1790670000000", author: "Anna Rossi", text: "saved at the last visit", mine: 0, reacts: "" }];
-const setView = (rows: Message[] | null, open: OpenStatus | null, stopped = false) =>
-  page.evaluate((v) => (window as unknown as { setView: (x: unknown) => void }).setView(v), { rows, open, stopped });
+const setView = (rows: Message[] | null, open: OpenStatus | null, stopped = false, callable = false) =>
+  page.evaluate((v) => (window as unknown as { setView: (x: unknown) => void }).setView(v), { rows, open, stopped, callable });
 const shows = (text: string) => page.evaluate((t) => document.body.innerText.includes(t), text);
 const until = (text: string, shown = true) => expect.poll(() => shows(text), { timeout: 5000 }).toBe(shown);
 
@@ -159,6 +159,34 @@ describe("a chat opening in Teams", () => {
     await visibility("visible");
     await new Promise((r) => setTimeout(r, 500));
     expect(asked).toEqual([]);
+  });
+});
+
+// A 1:1 chat of an account of the browsers container: the header offers to call the person, and asks first
+describe("calling the person of the chat", () => {
+  const called = () => page.evaluate(() => (window as unknown as { called?: number }).called ?? 0);
+  const callButton = () => page.locator('header button[aria-label="Call Anna Rossi"]');
+
+  it("offers Call only where the app can call", async () => {
+    await setView(saved, { id: 41, status: "done" });
+    await until("saved at the last visit");
+    expect(await callButton().count()).toBe(0);
+    await setView(saved, { id: 41, status: "done" }, false, true);
+    await expect.poll(() => callButton().count()).toBe(1);
+  });
+
+  it("asks before calling: Call calls once, Cancel calls nobody", async () => {
+    await setView(saved, { id: 41, status: "done" }, false, true);
+    await callButton().click();
+    await until("Call Anna Rossi?");
+    await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+    await until("Call Anna Rossi?", false);
+    expect(await called()).toBe(0);
+    await callButton().click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Call", exact: true }).click();
+    await until("Call Anna Rossi?", false);
+    expect(await called()).toBe(1);
+    expect(errors).toEqual([]);
   });
 });
 

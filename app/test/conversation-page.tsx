@@ -1,14 +1,15 @@
 // The open chat of the web app on a page of its own, for test/conversation-open.test.ts: window.setView gives it the
 // messages and the last open of the chat as the event stream sends them; its requests to /api/open go to the routes of
-// the test. ?stopped: the account is stopped from the start.
+// the test. ?stopped: the account is stopped from the start. callable: the app offers to call the person of the chat,
+// each call asked counted in window.called.
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Conversation } from "@/components/Conversation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Message, OpenStatus } from "@/lib/client";
 
-type View = { rows: Message[] | null; open: OpenStatus | null; stopped?: boolean };
-type TestWindow = Window & { setView?: (v: View) => void };
+type View = { rows: Message[] | null; open: OpenStatus | null; stopped?: boolean; callable?: boolean };
+type TestWindow = Window & { setView?: (v: View) => void; called?: number };
 const w = window as TestWindow;
 
 function Page() {
@@ -28,6 +29,7 @@ function Page() {
           others={0}
           onBack={() => undefined}
           onOpenDesktop={() => undefined}
+          onCall={view.callable ? () => (w.called = (w.called ?? 0) + 1) : undefined}
         />
       </div>
     </TooltipProvider>

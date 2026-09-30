@@ -58,6 +58,8 @@ import {
   call,
   CALL_CMD_EVERY,
   CALL_CMD_TRIES,
+  CALL_START_TRIES,
+  callProblem,
   callsSnapshot,
   checkLine,
   clock,
@@ -453,6 +455,32 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     return r.status === "done" || failed("Teams did not take the call: it may have stopped ringing");
   }
 
+  // A call to the person of the open chat, from the tap on Call in its confirmation: the sound of the call starts here
+  // as for an answer (a page may play from a tap), and the agent opens the chat in Teams and places the call. The banner
+  // says Calling until the account shows the call in progress; a call not placed says why.
+  const [placing, setPlacing] = useState<{ acc: number; name: string } | null>(null);
+  async function placeCall(n: number, name: string) {
+    const mine = { acc: n, name };
+    const done = () => setPlacing((p) => (p?.acc === n && p.name === name ? null : p));
+    setPlacing(mine);
+    if (!startCallAudio(n)) openDesktop(n);
+    const failed = (description: string) => {
+      done();
+      if (!callsRef.current.some((x) => x.acc === n && x.active)) answered?.stop(n);
+      toast.error(`${name} not called`, { description });
+    };
+    let id: number;
+    try {
+      ({ id } = await post<{ id: number }>("/api/call/start", { name }, n));
+    } catch (e) {
+      return failed(e instanceof ApiError ? e.message : "The server could not be reached");
+    }
+    const r = await followCmd(id, n, CALL_START_TRIES, CALL_CMD_EVERY);
+    if (r.status !== "done") return failed(callProblem(r.result));
+    // placed: the event stream brings the call in progress within a look, and the banner of the call takes over
+    setTimeout(done, 10_000);
+  }
+
   async function hangUpCall(c: RingingCall): Promise<boolean> {
     const r = await runCmd("/api/call/hangup", {}, c.acc, CALL_CMD_TRIES, CALL_CMD_EVERY);
     if (r.status === "done") {
@@ -573,6 +601,17 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const chatOf = (name: string) => (chats ?? []).find((c) => c.name === name)?.name ?? null;
 
   const current = accounts?.find((a) => a.slot === acc);
+  // the person of a 1:1 chat can be called from an account of the browsers container that runs, with no call on it and
+  // none being placed
+  const callable = (name: string) =>
+    !!current &&
+    !current.relay &&
+    !current.stopped &&
+    !current.checkEvery &&
+    !isSelf(name) &&
+    (chats ?? []).find((c) => c.name === name)?.kind === "one" &&
+    !calls.some((c) => c.acc === acc) &&
+    !placing;
   const unreadChats = (chats ?? []).filter((c) => c.unread && !c.muted && !isSelf(c.name)).length;
   const unreadActivity = unseenActivity(activity?.items ?? [], seenAct[acc] ?? null);
   const unreadCalls = unseenCalls(activity?.items ?? [], seenAct[acc] ?? null);
@@ -651,6 +690,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     <div className="flex h-dvh overflow-hidden bg-background">
       <CallBanner
         calls={calls}
+        placing={placing}
         accounts={accounts}
         ringer={ringer}
         onSelect={selectAccount}
@@ -904,6 +944,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               otherCalls={otherCalls}
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}
+              onCall={callable(openChat) ? () => void placeCall(acc, openChat) : undefined}
             />
           ) : (
             <Empty className="flex-1">

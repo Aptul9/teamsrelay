@@ -220,6 +220,21 @@ describe("call ring where the page may play sound (installed app)", () => {
     expect(c.errors).toEqual([]);
   });
 
+  // a call placed from the app: Teams starts it at the next round of the agent, the stream brings it in progress
+  it("says it is calling from the tap until the call shows in progress, without a ring", async () => {
+    await run(c, `window.setPlacing(${JSON.stringify({ acc: 2, name: "Luca Bianchi" })})`);
+    await until(c, "Calling Luca Bianchi");
+    expect(await shows(c, "(Contoso Srl)")).toBe(true);
+    expect(await loudest(c)).toBeLessThan(0.001);
+    await setCalls(c, [{ acc: 2, caller: "Luca Bianchi", since: 1_790_000_400_000, active: true } as ReturnType<typeof call>]);
+    await until(c, "In call with Luca Bianchi");
+    await until(c, "Calling Luca Bianchi", false);
+    await run(c, "window.setPlacing(null)");
+    await setCalls(c, []);
+    await until(c, "In call with Luca Bianchi", false);
+    expect(c.errors).toEqual([]);
+  });
+
   it("offers no Answer for a call of an account on another computer: it rings there", async () => {
     await setCalls(c, [{ acc: 3, caller: "Luca Bianchi", since: 1_790_000_110_000 }]);
     await until(c, "Luca Bianchi is calling");

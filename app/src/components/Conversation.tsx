@@ -13,6 +13,7 @@ import {
   MessageSquareDashedIcon,
   MoreHorizontalIcon,
   PencilIcon,
+  PhoneIcon,
   RefreshCwIcon,
   ReplyIcon,
   SendHorizontalIcon,
@@ -24,6 +25,16 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { toast } from "sonner";
 import { cn } from "cn";
 import { Avatar } from "./Avatar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -108,6 +119,7 @@ export function Conversation({
   otherCalls = 0,
   onBack,
   onOpenDesktop,
+  onCall,
 }: {
   acc: number;
   chat: string;
@@ -125,8 +137,12 @@ export function Conversation({
   otherCalls?: number;
   onBack: () => void;
   onOpenDesktop: () => void;
+  // a Teams audio call to the person of this chat, given only where the app can place one (a 1:1 chat of an account of
+  // the browsers container, no call on it): the header offers Call, and asks before calling
+  onCall?: () => void;
 }) {
   const [text, setText] = useState("");
+  const [askCall, setAskCall] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
   const [localReacts, setLocalReacts] = useState<Record<string, string[]>>({});
   const [pillPending, setPillPending] = useState<Record<string, Record<string, boolean>>>({});
@@ -746,6 +762,16 @@ export function Conversation({
           <h2 className="truncate text-[0.9375rem] font-semibold">{chat}</h2>
           {entry?.muted ? <p className="text-xs text-muted-foreground">Muted in Teams</p> : null}
         </div>
+        {onCall && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-10 md:size-9" onClick={() => setAskCall(true)} aria-label={`Call ${chat}`}>
+                <PhoneIcon />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Call {chat}</TooltipContent>
+          </Tooltip>
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button variant="ghost" size="icon" className="size-10 md:size-9" onClick={() => void refresh()} disabled={stopped} aria-label="Refresh from Teams">
@@ -1069,6 +1095,22 @@ export function Conversation({
           )}
         </SheetContent>
       </Sheet>
+
+      <AlertDialog open={askCall && !!onCall} onOpenChange={setAskCall}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Call {chat}?</AlertDialogTitle>
+            <AlertDialogDescription>A Teams audio call from this account. The sound of the call comes to this app.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => onCall?.()}>
+              <PhoneIcon />
+              Call
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

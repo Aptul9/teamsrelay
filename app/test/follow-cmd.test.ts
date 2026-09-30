@@ -2,7 +2,8 @@
 // Teams shows it within a second, so the app reads its outcome every CALL_CMD_EVERY ms, for about ten seconds, and the
 // other commands as before.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CALL_CMD_EVERY, CALL_CMD_TRIES, followCmd } from "@/lib/client";
+import { CALL_CMD_EVERY, CALL_CMD_TRIES, CALL_START_TRIES, callProblem, followCmd } from "@/lib/client";
+import { CALL_REASONS } from "@/shared/slot-db/commands";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -40,6 +41,19 @@ describe("following a command", () => {
     expect(fetch).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     await expect(outcome).resolves.toMatchObject({ status: "done" });
+  });
+
+  // the agent refuses a call asked 25 s ago or more: the app waits longer, so it never says a call failed that starts
+  it("follows a call placed from the app for longer than the agent may still place it", () => {
+    expect(CALL_START_TRIES * CALL_CMD_EVERY).toBeGreaterThanOrEqual(45_000);
+  });
+
+  it("says why a call was not placed, and a reason of its own for a call that got no answer", () => {
+    const texts = CALL_REASONS.map((reason) => callProblem({ reason }));
+    expect(new Set(texts).size).toBe(CALL_REASONS.length);
+    expect(callProblem({ reason: "not-one" })).toBe("Only a 1:1 chat can be called.");
+    expect(callProblem({ reason: "busy" })).toBe("A call rings or is on in this account.");
+    for (const none of [null, {}, { reason: "unreadable" }, "busy"]) expect(callProblem(none)).toBe("Teams did not get to it in time.");
   });
 
   it("gives up as failed after its tries", async () => {
