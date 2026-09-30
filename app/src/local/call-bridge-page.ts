@@ -13,11 +13,11 @@ type MicAnswer = { bridge?: boolean } | null;
 type PullAnswer = { p?: string[]; end?: boolean } | null;
 
 // WebCodecs and the insertable streams of Chrome, which the DOM types of TypeScript do not all carry
-type Frame = { numberOfChannels: number; sampleRate: number; close(): void };
+type Frame = { numberOfChannels: number; numberOfFrames: number; sampleRate: number; close(): void };
 type Chunk = { byteLength: number; copyTo(dest: Uint8Array): void };
 type Coder = { configure(c: object): void; close(): void; state: string };
 type Encoder = Coder & { encode(d: Frame): void };
-type Decoder = Coder & { decode(c: unknown): void };
+type Decoder = Coder & { decode(c: unknown): void; decodeQueueSize: number };
 type Generator = MediaStreamTrack & { writable: WritableStream<Frame> };
 type Processor = { readable: ReadableStream<Frame> };
 type Ctors = {
@@ -29,6 +29,11 @@ type Ctors = {
 };
 
 export function installCallBridge(binding: string): "already" | "installed" | "unavailable" {
+  // The sound of the app handed to Teams at most this far ahead of the clock: what comes in a burst beyond it is
+  // dropped, so a page that falls behind (a slow computer) keeps a short delay instead of a growing one. And packets
+  // waiting in the decoder at most. (Inside: the function reaches the page as source text.)
+  const AHEAD_MS = 200;
+  const DECODE_QUEUE = 10;
   const w = window as unknown as Record<string, unknown>;
   if (w.__teamsCallBridge) return "already";
   const c = globalThis as unknown as Partial<Ctors>;
@@ -114,10 +119,15 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
       }
     };
 
+    // the time up to which the sound handed to Teams plays
+    let until = 0;
     const decoder = new k.AudioDecoder({
       output: (d) => {
+        const now = performance.now();
+        until = Math.max(until, now);
         let left = writers.length;
-        if (!left) return d.close();
+        if (!left || until - now > AHEAD_MS) return d.close();
+        until += (d.numberOfFrames / d.sampleRate) * 1000;
         // every microphone Teams holds gets the same sound; the last one takes the frame itself
         for (const wr of writers) {
           const frame = --left ? (d as unknown as { clone(): Frame }).clone() : d;
@@ -154,7 +164,7 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
         }
         if (!a || a.end) return end();
         for (const p of a.p ?? []) {
-          if (decoder.state !== "configured") continue;
+          if (decoder.state !== "configured" || decoder.decodeQueueSize > DECODE_QUEUE) continue;
           decoder.decode(new k.EncodedAudioChunk({ type: "key", timestamp: ts, data: fromBase64(p) }));
           ts += 20_000;
         }
