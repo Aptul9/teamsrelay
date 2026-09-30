@@ -6,6 +6,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as answer } from "@/app/api/call/answer/route";
 import { POST as hangup } from "@/app/api/call/hangup/route";
 import { POST as mute } from "@/app/api/call/mute/route";
+import { POST as start } from "@/app/api/call/start/route";
 import { appDb, claimSlot, migrateAppSchema, setCheckEvery, setRelayToken, setSlotStopped } from "@/lib/appdb";
 import { HttpError } from "@/lib/http";
 import { ON_ANOTHER_COMPUTER } from "@/lib/relay";
@@ -146,6 +147,66 @@ describe("POST /api/call/hangup", () => {
     vi.mocked(requireSlot).mockResolvedValueOnce({ user, slot: relaySlot, added: 0 });
     const r = await post(hangup, {});
     expect([r.status, await detail(r)]).toEqual([409, ON_ANOTHER_COMPUTER]);
+  });
+});
+
+describe("POST /api/call/start", () => {
+  // the chat list as the agent keeps it, with the kind of each chat
+  const chat = (name: string, kind: string) =>
+    slotDb.prepare("INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(name, "", 0, 0, "", 0, 0, 0, "", "", kind);
+  beforeEach(() => {
+    slotDb.exec("DELETE FROM chats");
+    chat("Anna Rossi", "one");
+    chat("Project Alpha", "group");
+    chat("Weekly sync", "meeting");
+    chat("MARITATO Antonio (You)", "one");
+  });
+
+  it("queues the call of a 1:1 chat, once for two taps, and names the desktop", async () => {
+    const first = await post(start, { name: "Anna Rossi" });
+    const second = await post(start, { name: "Anna Rossi" });
+    expect(first.status).toBe(200);
+    const a = await first.json();
+    expect(a).toEqual({ ok: true, id: expect.any(Number), desktop: `/api/desktop/${slot}` });
+    expect((await second.json()).id).toBe(a.id);
+    expect(commands()).toEqual([{ type: "call", arg1: "Anna Rossi", arg2: "" }]);
+  });
+
+  it("refuses a group or meeting chat, a chat not in the list and the self chat: 409, nothing queued", async () => {
+    for (const name of ["Project Alpha", "Weekly sync", "Nobody Here", "MARITATO Antonio (You)"]) {
+      const r = await post(start, { name });
+      expect([r.status, await detail(r)], name).toEqual([409, "Only a 1:1 chat can be called"]);
+    }
+    expect(commands()).toEqual([]);
+  });
+
+  it("refuses while a call rings or is in progress on the account: 409, nothing queued", async () => {
+    ring(Date.now() - 1000);
+    const ringing = await post(start, { name: "Anna Rossi" });
+    expect([ringing.status, await detail(ringing)]).toEqual([409, "A call is on: end it first"]);
+    slotDb.exec("DELETE FROM state");
+    talk(Date.now() - 60_000);
+    expect((await post(start, { name: "Anna Rossi" })).status).toBe(409);
+    expect(commands()).toEqual([]);
+  });
+
+  it("refuses an account on another computer, a stopped one and one only checked every few hours: 409", async () => {
+    vi.mocked(requireSlot).mockResolvedValueOnce({ user, slot: relaySlot, added: 0 });
+    const relay = await post(start, { name: "Anna Rossi" });
+    expect([relay.status, await detail(relay)]).toEqual([409, ON_ANOTHER_COMPUTER]);
+    setSlotStopped(appDb(), slot, true);
+    expect((await post(start, { name: "Anna Rossi" })).status).toBe(409);
+    setSlotStopped(appDb(), slot, false);
+    setCheckEvery(appDb(), slot, 3600, 0);
+    expect((await post(start, { name: "Anna Rossi" })).status).toBe(409);
+    expect(commands()).toEqual([]);
+  });
+
+  it("refuses a request that names no chat: 400, and answers 404 for an account of someone else", async () => {
+    for (const b of [{}, { name: "" }, { name: 5 }]) expect((await post(start, b)).status, JSON.stringify(b)).toBe(400);
+    expect(commands()).toEqual([]);
+    vi.mocked(requireSlot).mockRejectedValueOnce(new HttpError(404, "Account not found"));
+    expect((await post(start, { name: "Anna Rossi" })).status).toBe(404);
   });
 });
 
