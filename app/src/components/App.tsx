@@ -157,6 +157,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [callLog, setCallLog] = useState<CallLogEntry[] | null>(null);
   // the calls ringing now in every account of the user, whichever is on screen, and the calls in progress (active)
   const [calls, setCalls] = useState<RingingCall[]>([]);
+  // a call placed from here, from the tap on Call until its account shows it in progress (placeCall)
+  const [placing, setPlacing] = useState<{ acc: number; name: string } | null>(null);
   const [seenAct, setSeenAct] = useState<Record<number, string[]>>({});
   // the notifications of the account seen here when the Calls list opened: its missed calls not seen then keep their
   // dot while it stays open, and the ones of the new account when the account changes under it
@@ -330,7 +332,11 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       if (accRef.current === acc) fn(d);
     };
     on("accounts", applyAccounts);
-    on<RingingCall[]>("calls", setCalls);
+    on<RingingCall[]>("calls", (c) => {
+      setCalls(c);
+      // a call placed from here is in progress: its own banner takes over, and stays gone once it is over
+      setPlacing((p) => (p && c.some((x) => x.acc === p.acc && x.active) ? null : p));
+    });
     on<Health>("health", own(setHealth));
     on<Chat[]>("chats", own(setChats));
     on<{ ts: number; items: ActivityItem[] }>("activity", own((d) => noteActivity(acc, d, listRef.current)));
@@ -458,7 +464,6 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   // A call to the person of the open chat, from the tap on Call in its confirmation: the sound of the call starts here
   // as for an answer (a page may play from a tap), and the agent opens the chat in Teams and places the call. The banner
   // says Calling until the account shows the call in progress; a call not placed says why.
-  const [placing, setPlacing] = useState<{ acc: number; name: string } | null>(null);
   async function placeCall(n: number, name: string) {
     const mine = { acc: n, name };
     const done = () => setPlacing((p) => (p?.acc === n && p.name === name ? null : p));
