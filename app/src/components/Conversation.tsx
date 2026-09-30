@@ -757,7 +757,7 @@ export function Conversation({
           )}
           {otherCalls > 0 && <span aria-hidden className="absolute bottom-1 left-6 size-2.5 rounded-full bg-destructive ring-2 ring-background" />}
         </Button>
-        <Avatar name={chat} av={entry?.av} acc={acc} muted={!!entry?.muted} className="size-9" />
+        <Avatar name={chat} av={entry?.av} acc={acc} muted={!!entry?.muted} presence={entry?.presence} className="size-9" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[0.9375rem] font-semibold">{chat}</h2>
           {entry?.muted ? <p className="text-xs text-muted-foreground">Muted in Teams</p> : null}
