@@ -71,6 +71,10 @@ const until = (c: Chrome, text: string, shown = true) => expect.poll(() => shows
 
 const call = (caller: string, since = Date.now()) => ({ acc: 2, caller, since });
 const setCalls = (c: Chrome, calls: ReturnType<typeof call>[]) => run(c, `window.setCalls(${JSON.stringify(calls)})`);
+// the texts of the buttons of the banner, and whether the one holding `text` is disabled
+const buttons = (c: Chrome) => run<string[]>(c, `[...document.querySelectorAll("[role=alert] button")].map((b) => b.textContent.trim())`);
+const disabled = (c: Chrome, text: string) =>
+  run<boolean>(c, `[...document.querySelectorAll("[role=alert] button")].find((b) => b.textContent.includes(${JSON.stringify(text)}))?.disabled ?? null`);
 
 // A real click (trusted input) in the middle of the element matching `selector` whose text holds `text`
 async function click(c: Chrome, selector: string, text: string) {
@@ -166,6 +170,54 @@ describe("call ring where the page may play sound (installed app)", () => {
     await click(c, "[role=alert] button", "Answer");
     expect(await run(c, "window.answered")).toEqual({ acc: 2, caller: "Anna Rossi", since: 1_790_000_100_000 });
     await setCalls(c, []);
+  });
+
+  // the agent answers within a look, the stream brings the call in progress a moment later: until then the tap shows
+  it("stops the ring and says it is answering at once on Answer, until the call shows in progress", async () => {
+    const ringing = call("Anna Rossi", 1_790_000_300_000);
+    await setCalls(c, [ringing]);
+    await until(c, "Anna Rossi is calling");
+    expect(await loudest(c)).toBeGreaterThan(0.05);
+    await click(c, "[role=alert] button", "Answer");
+    await until(c, "Answering Anna Rossi");
+    expect(await loudest(c)).toBeLessThan(0.001);
+    expect((await buttons(c)).filter((b) => b === "Answer" || b === "Mute")).toEqual([]);
+    await run(c, "window.settle(true)");
+    await setCalls(c, [{ ...ringing, active: true } as ReturnType<typeof call>]);
+    await until(c, "In call with Anna Rossi");
+    await until(c, "Answering Anna Rossi", false);
+    await setCalls(c, []);
+    expect(c.errors).toEqual([]);
+  });
+
+  it("rings again and offers Answer again when the answer did not work while the call still rings", async () => {
+    await setCalls(c, [call("Luca Bianchi", 1_790_000_310_000)]);
+    await click(c, "[role=alert] button", "Answer");
+    await until(c, "Answering Luca Bianchi");
+    await run(c, "window.settle(false)");
+    await until(c, "Luca Bianchi is calling");
+    expect(await buttons(c)).toContain("Answer");
+    expect(await loudest(c)).toBeGreaterThan(0.05);
+    await setCalls(c, []);
+    expect(c.errors).toEqual([]);
+  });
+
+  it("says the call is ending at once on Hang up, and offers Hang up again when it did not work", async () => {
+    const active = { acc: 2, caller: "Anna Rossi", since: 1_790_000_320_000, active: true };
+    await setCalls(c, [active]);
+    await until(c, "In call with Anna Rossi");
+    await click(c, "[role=alert] button", "Hang up");
+    await until(c, "Ending the call");
+    expect(await disabled(c, "Hang up")).toBe(true);
+    await run(c, "window.settle(false)");
+    await until(c, "Ending the call", false);
+    expect(await disabled(c, "Hang up")).toBe(false);
+    await click(c, "[role=alert] button", "Hang up");
+    await until(c, "Ending the call");
+    await run(c, "window.settle(true)");
+    await setCalls(c, []);
+    await until(c, "In call with Anna Rossi", false);
+    expect(c.errors).toEqual([]);
   });
 
   it("offers no Answer for a call of an account on another computer: it rings there", async () => {

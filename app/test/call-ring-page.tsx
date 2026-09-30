@@ -3,7 +3,9 @@
 // send them, a click on the banner lands in window.selected, Answer, Hang up and Desktop in window.answered,
 // window.hungUp and window.desktop, the sound of a call answered here from window.setAudio (Mute in window.muted, Tap
 // to hear in window.tapped), Teams' own mute of a call in progress from window.setMutes, and window.bell rings the bell
-// of a message as the page does when the service worker asks it (App.tsx). Account 3 runs on another computer.
+// of a message as the page does when the service worker asks it (App.tsx). Account 3 runs on another computer. An
+// answer or a hang-up goes on until the test settles it with window.settle(true) (done) or window.settle(false)
+// (failed), as the app does once the agent ran it.
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CallBanner, RingHint } from "@/components/CallAlert";
@@ -24,8 +26,12 @@ type TestWindow = Window & {
   setAudio?: (a: Record<number, CallAudioState>) => void;
   setMutes?: (m: Record<number, MuteView>) => void;
   bell?: () => Promise<boolean>;
+  settle?: (ok: boolean) => void;
 };
 const w = window as TestWindow;
+
+// an answer or a hang-up the test settles
+const pending = () => new Promise<boolean>((resolve) => (w.settle = resolve));
 
 const account: Account = {
   slot: 2,
@@ -82,8 +88,14 @@ function Page() {
         accounts={[account, relay]}
         ringer={ringer}
         onSelect={(n) => (w.selected = n)}
-        onAnswer={(c) => (w.answered = c)}
-        onHangUp={(c) => (w.hungUp = c)}
+        onAnswer={(c) => {
+          w.answered = c;
+          return pending();
+        }}
+        onHangUp={(c) => {
+          w.hungUp = c;
+          return pending();
+        }}
         onDesktop={(n) => (w.desktop = n)}
         audio={audio}
         mutes={mutes}

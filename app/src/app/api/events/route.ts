@@ -8,10 +8,14 @@ import { healthOf, SlotNotReady, SlotReader } from "@/lib/slotdb";
 
 export const dynamic = "force-dynamic";
 
+// Milliseconds between two reads of the calls: the app rings, and shows a tap on Answer or Hang up taken, one read
+// after the agent wrote it. A read is one state row per account.
+export const CALLS_EVERY_MS = 250;
+
 // One stream per open app, replacing the polling timers of the previous PWA. Every second the server
 // reads health, chats, activity, the call log and the messages of the open chat of the selected account
-// with its last open (and the account list every 5 s), and the calls ringing in every account of the user;
-// an event goes out only for the parts whose content changed.
+// with its last open (and the account list every 5 s); every CALLS_EVERY_MS the calls ringing and in progress
+// in every account of the user. An event goes out only for the parts whose content changed.
 export const GET = route(async (req) => {
   const user = await requireUser(req);
   const url = new URL(req.url);
@@ -23,12 +27,16 @@ export const GET = route(async (req) => {
   const last = new Map<string, string>();
   let reader: SlotReader | null = null;
   const calls = new CallReaders();
+  // the accounts of the user as the last read found them, for the reads of the calls in between
+  let mine = owned;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let callTimer: ReturnType<typeof setInterval> | undefined;
   let ticks = 0;
   let closed = false;
   const release = () => {
     closed = true;
     clearInterval(timer);
+    clearInterval(callTimer);
     reader?.close();
     reader = null;
     calls.close();
@@ -56,7 +64,7 @@ export const GET = route(async (req) => {
         ticks++;
         try {
           // read every tick: the account can be stopped, started or removed while the stream is open
-          const mine = slotsOf(appDb(), user.id);
+          mine = slotsOf(appDb(), user.id);
           const own = slot ? mine.find((s) => s.slot === slot) : undefined;
           // a revoked session or a removed account ends the stream; the app reconnects or signs in again
           if (ticks % 60 === 0) {
@@ -93,8 +101,17 @@ export const GET = route(async (req) => {
           if (!closed) console.error("events:", e);
         }
       };
+      const callTick = () => {
+        if (closed) return;
+        try {
+          send("calls", calls.ringing(mine));
+        } catch (e) {
+          if (!closed) console.error("events:", e);
+        }
+      };
       void tick();
       timer = setInterval(() => void tick(), 1000);
+      callTimer = setInterval(callTick, CALLS_EVERY_MS);
       req.signal.addEventListener("abort", close);
     },
     cancel: release,

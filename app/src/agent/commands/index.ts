@@ -75,7 +75,7 @@ export async function runPendingCommands(a: Agent) {
     const expired = a.store.expirePendingCommands(COMMAND_MAX_AGE);
     if (expired) log.warn("cmd", "waited too long, not run", { commands: expired });
     if (a.store.commandStatus(cmd.id) !== "pending") continue;
-    // the call watch takes them at its next look, within a second: a call rings a few seconds only
+    // the call watch takes them at its next look, within CALL_LOOK_MS: a call rings a few seconds only
     if (CALL_COMMANDS.includes(cmd.type as CommandType)) continue;
     // a refresh of the Activity feed, or a check, stays pending until the health check finds the side bar clickable:
     // while Teams starts (sign-in redirects, then its loading bar) the clicks would time out
