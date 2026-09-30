@@ -8,7 +8,7 @@
 // Teams web (2026-09-30): one RTCPeerConnection per call in the main frame, the sound of the others on one audio track
 // of it; getUserMedia({audio}) in the main frame when a call is answered or placed.
 
-type BridgeMsg = { op: "mic" } | { op: "down"; p: string } | { op: "format"; channels: number } | { op: "pull" } | { op: "end" };
+type BridgeMsg = { op: "ready"; host: string } | { op: "mic" } | { op: "down"; p: string } | { op: "format"; channels: number } | { op: "pull" } | { op: "end" };
 type MicAnswer = { bridge?: boolean } | null;
 type PullAnswer = { p?: string[]; end?: boolean } | null;
 
@@ -201,5 +201,6 @@ export function installCallBridge(binding: string): "already" | "installed" | "u
     return new MediaStream(tracks);
   };
   w.__teamsCallBridge = true;
+  if (location.host) void call({ op: "ready", host: location.host }).catch(() => undefined);
   return "installed";
 }

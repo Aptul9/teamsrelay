@@ -22,7 +22,7 @@ const QUEUE_MAX = 25;
 // a socket lost during a call opens again after this long
 const RECONNECT_MS = 1_000;
 
-type Msg = { op?: unknown; p?: unknown; channels?: unknown };
+type Msg = { op?: unknown; p?: unknown; channels?: unknown; host?: unknown };
 
 // What the bridge needs of a websocket: undici's, or a fake in the tests
 export type BridgeSocket = {
@@ -53,6 +53,10 @@ export class CallBridge {
   private waiting: (() => void) | null = null;
   private channels = 0;
   private stopped = false;
+  // the sites whose pages have the hook, logged once each
+  private readonly hooked = new Set<string>();
+  // packets of the call now: sent to the app, and taken from it by the page
+  private counts = { down: 0, up: 0 };
   private readonly agent = new Agent({ allowH2: false });
 
   constructor(private readonly o: CallBridgeOptions) {}
@@ -100,19 +104,29 @@ export class CallBridge {
   // the app's packets, the end of the call
   private async fromPage(m: Msg): Promise<unknown> {
     switch (m.op) {
+      case "ready":
+        if (typeof m.host === "string" && !this.hooked.has(m.host)) {
+          this.hooked.add(m.host);
+          log.info("bridge", "call sound hook in the page", { site: m.host });
+        }
+        return null;
       case "mic": {
         const armed = this.armedAt && this.now() - this.armedAt <= ARM_MS;
         if (this.active || !armed) return { bridge: false };
         this.armedAt = 0;
         this.active = true;
         this.queue = [];
+        this.counts = { down: 0, up: 0 };
         this.connect();
         this.text("CAPTURE_DEMAND microphone 1");
         log.info("bridge", "call in progress: its sound goes to the app");
         return { bridge: true };
       }
       case "down":
-        if (this.active && typeof m.p === "string") this.send(new Uint8Array(Buffer.from(m.p, "base64")));
+        if (this.active && typeof m.p === "string") {
+          this.send(new Uint8Array(Buffer.from(m.p, "base64")));
+          this.counts.down++;
+        }
         return null;
       case "format":
         if (typeof m.channels === "number" && m.channels !== this.channels) {
@@ -148,6 +162,7 @@ export class CallBridge {
     if (!this.active) return { end: true };
     const p = this.queue.map((b) => Buffer.from(b).toString("base64"));
     this.queue = [];
+    this.counts.up += p.length;
     return { p };
   }
 
@@ -224,6 +239,6 @@ export class CallBridge {
       if (was && s.readyState === 1) s.send("CAPTURE_DEMAND microphone 0");
       s.close();
     }
-    if (was && why) log.info("bridge", `call sound in the app over: ${why}`);
+    if (was && why) log.info("bridge", `call sound in the app over: ${why}`, { sent: this.counts.down, received: this.counts.up });
   }
 }
