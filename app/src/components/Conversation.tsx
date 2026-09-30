@@ -87,9 +87,9 @@ const OPEN_FAILED: Record<OpenReason, string> = {
 };
 const NO_ANSWER = "Teams did not get to it in time.";
 
-// Away from the app this long, the chat is opened in Teams again on return. The event stream marks the chat on screen
-// every 10 s and the agent keeps it in Teams while that mark is under 90 s old (PARK_AFTER), so for at least 80 s
-// after the app is hidden the messages it shows on return are current.
+// Away from the app this long, the chat is opened in Teams again on return, with its progress on screen. Teams leaves
+// the chat as soon as the app is hidden (lib/viewing.ts) and the agent opens it again at its first round after the
+// app marks it on return; after a longer absence another chat may be the one open in Teams by then.
 const REOPEN_AFTER = 60_000;
 
 // text as shown, as Teams will show it; raw and mentions as typed, for a retry
@@ -192,9 +192,9 @@ export function Conversation({
       gone = true;
     };
   }, [chat, acc, stopped, asks]);
-  // Back on screen after REOPEN_AFTER or more away (another tab or window, a phone in the pocket), Teams may be on the
-  // self chat: the agent goes back there 90 s after the app stops showing the chat. The chat is opened again, as when it
-  // was chosen, and the messages saved meanwhile show as such until Teams has it open.
+  // Back on screen after REOPEN_AFTER or more away (another tab or window, a phone in the pocket), Teams may show
+  // another chat than this one by then. The chat is opened again, as when it was chosen, and the messages saved
+  // meanwhile show as such until Teams has it open.
   useEffect(() => {
     if (stopped) return;
     let hiddenAt = document.visibilityState === "hidden" ? Date.now() : 0;

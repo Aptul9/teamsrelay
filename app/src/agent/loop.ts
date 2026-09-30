@@ -44,6 +44,9 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
   // the page sees the input of these jobs as trusted input, as the owner's: it is the agent's own (teams/input.ts)
   const own = <T>(fn: () => Promise<T>) => asAgent(a.tp.page, fn);
   const active = () => a.store.getState(STATE.activeChat);
+  // the chat parking last ran for: once the chat to show changes (the app stopped showing its chat, or shows it
+  // again), parking runs at the next round it can, not at the next fifth one, while Teams reads what arrives
+  let parkedFor: string | undefined;
   // a feed read that failed is tried once more ACTIVITY_RETRY seconds later, not 150 rounds later
   let retryAt = 0;
   const activity = async () => {
@@ -81,7 +84,16 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     // the side bar without the chat list (the page a call leaves in the main window): back to the chats
     { name: "back-to-chats", every: { rounds: 1 }, when: () => awayFromChats(a), run: () => backToChats(a) },
     // no chat to open before Teams shows its list: right after a start, or with a sign-in to do
-    { name: "parking", every: { rounds: 5, offset: 2 }, when: free, run: (r) => own(() => park(a, r.want)) },
+    {
+      name: "parking",
+      every: { rounds: 5, offset: 2 },
+      force: (r) => r.want !== parkedFor,
+      when: free,
+      run: (r) => {
+        parkedFor = r.want;
+        return own(() => park(a, r.want));
+      },
+    },
     { name: "hook", every: { rounds: 1 }, run: () => drainHook(a) },
     { name: "commands", every: { rounds: 1 }, run: () => runPendingCommands(a) },
     // until Teams is connected (sign-in to do, session expired) there is nothing to scroll or read

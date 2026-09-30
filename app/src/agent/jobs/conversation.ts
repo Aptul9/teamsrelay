@@ -7,7 +7,7 @@ import { readMessages } from "../teams/scripts/conversation";
 import { SEL, TEXTS } from "../teams/selectors";
 import type { SavedMessage } from "../store/slot-store";
 
-// The chat is on screen in the app: without this mark the agent parks Teams on the self chat after 90 s
+// The chat is on screen in the app: without a mark the agent parks Teams on the self chat after PARK_AFTER seconds
 export function markViewing(a: Agent, chat: string) {
   a.store.setState(STATE.viewing, JSON.stringify({ chat, ts: nowSeconds() }));
 }

@@ -233,6 +233,16 @@ describe("the wait for commands", () => {
     expect((await waitForRelayCommands(caller(token), { after: 1, vts: 50, waitMs: 300 })).viewing).toBeNull();
     expect((await waitForRelayCommands(caller(token), { after: 1, vts: 39, waitMs: 300 })).viewing).toEqual({ chat: "Anna Rossi", ts: 40 });
   });
+
+  // the relay takes its Teams back to the self chat as the agents here do, at once
+  it("passes on that the app stopped showing its chat", async () => {
+    const { slot, token } = await addRelayAccount("c3", opts());
+    const db = slotDb(slot);
+    db.prepare("INSERT INTO state(k, v) VALUES(?, ?)").run(STATE.viewing, JSON.stringify({ chat: "", ts: 60 }));
+    db.close();
+    expect((await waitForRelayCommands(caller(token), { after: 0, vts: 40, waitMs: 300 })).viewing).toEqual({ chat: "", ts: 60 });
+    expect((await waitForRelayCommands(caller(token), { after: 0, vts: 60, waitMs: 300 })).viewing).toBeNull();
+  });
 });
 
 describe("the files of a relay", () => {

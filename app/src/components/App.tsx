@@ -92,8 +92,9 @@ import {
   type RingingCall,
   type Unread,
 } from "@/lib/client";
-import { enablePush, pushState } from "@/lib/push";
+import { closeChatNotification, enablePush, pushState } from "@/lib/push";
 import { Ringer } from "@/lib/ring";
+import { showViewing } from "@/lib/viewing";
 
 type ListTab = "chats" | "activity" | "calls";
 type User = { name: string; email: string; role: string };
@@ -102,8 +103,8 @@ type User = { name: string; email: string; role: string };
 const noSubscribe = () => () => {};
 const isPcNow = () => window.matchMedia("(hover:hover) and (pointer:fine)").matches && !("ontouchstart" in window);
 
-// The event stream names the open chat only while the app is on screen: a background tab or a phone in the
-// pocket no longer counts as reading it, and the agent takes Teams back to the self chat
+// The app on screen: a background tab or a phone in the pocket no longer counts as reading the open chat, and the agent
+// takes Teams back to the self chat at once (lib/viewing.ts)
 const onVisibility = (cb: () => void) => {
   document.addEventListener("visibilitychange", cb);
   return () => document.removeEventListener("visibilitychange", cb);
@@ -358,6 +359,17 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       es.close();
     };
   }, [acc, openChat, onScreen, applyAccounts, noteActivity, reconnects]);
+
+  // the chat on screen, told to the agent of its account while the app shows it: Teams holds it open (and reads what
+  // arrives there) only meanwhile
+  const chatShown = pane === "main" && onScreen && acc > 0 ? openChat : null;
+  useEffect(() => {
+    if (chatShown) return showViewing(acc, chatShown);
+  }, [acc, chatShown]);
+  // and its notification on this device goes, what it said is on screen (a message too, come before the agent knew)
+  useEffect(() => {
+    if (chatShown) void closeChatNotification(acc, chatShown);
+  }, [acc, chatShown, messages]);
 
   // notification tapped while the app is open: switch to the account it comes from. A message that alerts: the service
   // worker asks whether this page rings the bell, and shows the notification quiet when it does (sw.js)

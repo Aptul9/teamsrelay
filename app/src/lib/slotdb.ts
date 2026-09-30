@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { OpenResult, type CommandType, type OpenStatus } from "@/shared/slot-db/commands";
 import { HAS_TEAMS_ID, type ActivityItem, type CallLogEntry, type Chat, type Message, type MessageExtra } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
-import { CallState, cmdResultKey, InCall, Members, membersKey, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
+import { CallState, cmdResultKey, InCall, Members, membersKey, parseState, STATE, Viewing, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
 
 // data/N/messages.db is created and written by the agent of slot N; the web app reads it and
@@ -212,6 +212,16 @@ export class SlotReader {
     this.db
       .prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)")
       .run(STATE.viewing, JSON.stringify({ chat, ts: Math.floor(Date.now() / 1000) }));
+  }
+
+  // The app stopped showing this chat: the agent goes back to the self chat at once. Not when the app shows another
+  // chat since, marked before this leave arrived (a switch from one chat to the next).
+  leaveViewing(chat: string) {
+    this.db.transaction(() => {
+      const shown = parseState(Viewing, this.db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.viewing) as string | undefined, { chat: "", ts: 0 });
+      if (shown.chat !== chat) return;
+      this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.viewing, JSON.stringify({ chat: "", ts: Math.floor(Date.now() / 1000) }));
+    })();
   }
 
   // The owner opens the remote desktop of the account: its agent leaves Teams as it is for a while
