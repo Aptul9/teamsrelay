@@ -34,6 +34,8 @@ export const ChatRow = z.object({
   av: text(100).nullable(),
   // relays of earlier releases send none
   presence: text(20).nullable().optional(),
+  // one (1:1), group or meeting: the Call button and /api/call/start need it; relays of earlier releases send none
+  kind: text(50).nullable().optional(),
 });
 export type ChatRow = z.infer<typeof ChatRow>;
 

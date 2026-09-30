@@ -120,6 +120,7 @@ export function Conversation({
   onBack,
   onOpenDesktop,
   onCall,
+  callHost,
 }: {
   acc: number;
   chat: string;
@@ -140,6 +141,8 @@ export function Conversation({
   // a Teams audio call to the person of this chat, given only where the app can place one (a 1:1 chat of an account of
   // the browsers container, no call on it): the header offers Call, and asks before calling
   onCall?: () => void;
+  // the computer whose Teams window carries the sound of a call from this account, when it is not this app
+  callHost?: string;
 }) {
   const [text, setText] = useState("");
   const [askCall, setAskCall] = useState(false);
@@ -1100,7 +1103,11 @@ export function Conversation({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Call {chat}?</AlertDialogTitle>
-            <AlertDialogDescription>A Teams audio call from this account. The sound of the call comes to this app.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {callHost
+                ? `A Teams audio call from this account. The sound of the call stays in the Teams window on ${callHost}.`
+                : "A Teams audio call from this account. The sound of the call comes to this app."}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

@@ -108,7 +108,7 @@ describe("a notification of an account on another computer", () => {
     expect(open(key, m.data)).toMatchObject({ body: "Are you there?", chat: "Anna Rossi", acc: slot });
   });
 
-  it("rings the phones for a call, without Answer: the sound of the call is on the other computer", async () => {
+  it("rings the phones for a call with Answer: its relay takes the call in Teams there, the sound stays on that computer", async () => {
     process.env.FCM_CREDENTIALS = keyFile;
     const sentTo = google();
     const key = await phone("phone-token-relay-call-bbbbbbb");
@@ -116,8 +116,7 @@ describe("a notification of an account on another computer", () => {
     await relayPush(caller, { op: "call", caller: "Anna Rossi", state: "ringing", since: 1_790_000_000_000, seconds: 0 });
     const [m] = sentTo("phone-token-relay-call-bbbbbbb");
     const content = open(key, m.data);
-    expect(content).toMatchObject({ call: "ringing", ts: 1_790_000_000_000, acc: slot });
-    expect(content).not.toHaveProperty("answer");
+    expect(content).toMatchObject({ call: "ringing", ts: 1_790_000_000_000, acc: slot, answer: true });
   });
 
   it("goes to no phone while the server has no service account key, and forgets none", async () => {

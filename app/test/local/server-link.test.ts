@@ -173,8 +173,8 @@ beforeAll(async () => {
 
   store = SlotStore.open(path.join(relayDir, "relay.db"));
   store.saveChats([
-    { name: "Test User (You)", preview: "You: note", time: "25/09", unread: false, mention: false, muted: false, av: "" },
-    { name: "Anna Rossi", preview: "ciao", time: "12:19", unread: true, mention: false, muted: false, av: "0123456789abcdef.png" },
+    { name: "Test User (You)", preview: "You: note", time: "25/09", unread: false, mention: false, muted: false, av: "", kind: "one" },
+    { name: "Anna Rossi", preview: "ciao", time: "12:19", unread: true, mention: false, muted: false, av: "0123456789abcdef.png", kind: "one" },
   ]);
   store.saveChatMessages("Anna Rossi", [{ mid: "1790431664072", author: "Anna Rossi", text: "ciao", mine: false, reacts: "", extra: { html: "<p>ciao</p>" } }]);
   store.saveChatMessages("Test User (You)", [{ mid: "1790431664999", author: "Test User", text: "note", mine: true, reacts: "", extra: { status: "Sent" } }]);
@@ -213,7 +213,7 @@ describe("relay joined to a server", () => {
   it("mirrors relay.db into the slot database of the server, images first", async () => {
     await until("chats on the server", () => withSlot(slot, (r) => r.chats().length === 2));
     const seen = withSlot(slot, (r) => ({
-      chats: r.chats().map((c) => [c.name, c.preview, c.tm, c.unread, c.av]),
+      chats: r.chats().map((c) => [c.name, c.preview, c.tm, c.unread, c.av, c.kind]),
       anna: r.messages("Anna Rossi").map((m) => [m.mid, m.text, m.html]),
       me: r.identity(),
       activity: r.activity().items.map((a) => a.id),
@@ -222,8 +222,8 @@ describe("relay joined to a server", () => {
     }));
     expect(seen).toEqual({
       chats: [
-        ["Test User (You)", "You: note", "25/09", 0, ""],
-        ["Anna Rossi", "ciao", "12:19", 1, "0123456789abcdef.png"],
+        ["Test User (You)", "You: note", "25/09", 0, "", "one"],
+        ["Anna Rossi", "ciao", "12:19", 1, "0123456789abcdef.png", "one"],
       ],
       anna: [["1790431664072", "ciao", "<p>ciao</p>"]],
       me: { name: "Test User", email: "test.user@contoso.example", tenant: "Contoso" },
@@ -444,7 +444,7 @@ describe("the pictures a chat shows", () => {
 });
 
 describe("a sync whose files take a while", () => {
-  it("sends the health and the call as they are when its rows go", async () => {
+  it("sends the health, the call and the call in progress as they are when its rows go", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     let holding = false;
@@ -463,18 +463,23 @@ describe("a sync whose files take a while", () => {
       r.store.saveChats([{ name: "Anna Rossi", preview: "", time: "", unread: false, mention: false, muted: false, av: "cdcdcdcdcdcdcdcd.png" }]);
       r.store.setState(STATE.health, JSON.stringify({ cdp: "ok", ts: now - 30, teams: "ok", overall: "green" }));
       r.store.setState(STATE.call, JSON.stringify({ caller: "Anna Rossi", since: now * 1000 - 20_000, seen: now * 1000 - 15_000, ringing: true }));
+      r.store.setState(STATE.inCall, JSON.stringify({ caller: "Anna Rossi", since: now * 1000 - 60_000, seen: now * 1000 - 15_000, active: true }));
     });
     j.start();
     await until("the picture on its way", () => holding);
     // written by the agent while the picture goes
     const health = JSON.stringify({ cdp: "ok", ts: Math.floor(Date.now() / 1000), teams: "ok", overall: "green" });
     const call = JSON.stringify({ caller: "Anna Rossi", since: now * 1000 - 20_000, seen: Date.now(), ringing: true });
+    // the call in progress is read every second while it lasts: the app hangs it up only while it is fresh
+    const talking = JSON.stringify({ caller: "Anna Rossi", since: now * 1000 - 60_000, seen: Date.now(), active: true, muted: true });
     j.store.setState(STATE.health, health);
     j.store.setState(STATE.call, call);
+    j.store.setState(STATE.inCall, talking);
     release();
     const first = await until("the first sync", () => syncsOf.get(j.token)?.[0]);
     expect((first.state as Record<string, string>)[STATE.health]).toBe(health);
     expect((first.state as Record<string, string>)[STATE.call]).toBe(call);
+    expect((first.state as Record<string, string>)[STATE.inCall]).toBe(talking);
     await j.stop();
   });
 

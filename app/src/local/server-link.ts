@@ -45,8 +45,8 @@ const SYNC_EVERY_MS = 1000;
 const PUSH_STALE_MS = 120_000;
 const PUSH_TIMEOUT_MS = 10_000;
 // read right before the rows go (live()): the server takes them by their age, and the files before the rows may take a
-// while; neither names a file
-const LIVE: readonly string[] = [STATE.health, STATE.call];
+// while; none names a file. The call in progress is one of them: the app offers Hang up and Mute only while it is fresh
+const LIVE: readonly string[] = [STATE.health, STATE.call, STATE.inCall];
 
 const hash = (json: string) => crypto.createHash("sha1").update(json).digest("base64");
 const digest = (v: unknown) => hash(JSON.stringify(v));
@@ -250,7 +250,7 @@ export class ServerLink {
     const all = <T>(sql: string, ...args: unknown[]) => this.db.prepare(sql).all(...args) as T[];
     let complete = true;
 
-    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av, presence FROM chats ORDER BY pos")
+    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind FROM chats ORDER BY pos")
       .filter((c) => this.fits(ChatRow, c, `chat ${c.name}`))
       .slice(0, 2000);
     const chatsDigest = digest(chats);

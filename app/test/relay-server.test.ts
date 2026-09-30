@@ -17,7 +17,7 @@ import { applySync, missingRelayFiles, relayJson, requireRelay, saveRelayFile, w
 import { withSlot } from "@/lib/slotdb";
 import { addRelayAccount, keepSlotsUp, removeAccount, renewRelayToken, setAccountRunning, setCheckMode } from "@/lib/slots";
 import { HaveBody, type SyncBody } from "@/shared/relay-sync";
-import { ringingCall, STATE } from "@/shared/slot-db/state";
+import { inCallOf, ringingCall, STATE } from "@/shared/slot-db/state";
 import { held, tempDir } from "./helpers";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
@@ -185,6 +185,25 @@ describe("a sync", () => {
     const stale = JSON.stringify({ caller: "Luca Bianchi", since: relayNow - 3_600_000, seen: relayNow - 3_590_000, ringing: true });
     expect((await post({ state: { [STATE.call]: stale } })).status).toBe(200);
     expect(withSlot(slot, (r) => ringingCall(r.call(), Date.now()))).toBeNull();
+  });
+
+  it("reads the call in progress of the relay by the clock of the server as well: the app hangs it up from there", async () => {
+    const { slot, token } = await addRelayAccount("s4", opts());
+    // the clock of the other computer is 1000 s behind the server's
+    const relayNow = Date.now() - 1_000_000;
+    const post = (b: object) =>
+      syncRoute.POST(
+        new Request("http://localhost:8090/api/relay/sync", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ host: "pc", now: relayNow, ...b }) }),
+        undefined,
+      );
+    const talking = JSON.stringify({ caller: "Anna Rossi", since: relayNow - 60_000, seen: relayNow - 1000, active: true, muted: false });
+    expect((await post({ state: { [STATE.inCall]: talking } })).status).toBe(200);
+    expect(withSlot(slot, (r) => inCallOf(r.inCall(), Date.now()))).toEqual({ caller: "Anna Rossi", since: relayNow - 60_000, muted: false });
+
+    // a call the relay saw an hour ago, sent again when it starts: no call in progress
+    const old = JSON.stringify({ caller: "Luca Bianchi", since: relayNow - 3_700_000, seen: relayNow - 3_600_000, active: true });
+    expect((await post({ state: { [STATE.inCall]: old } })).status).toBe(200);
+    expect(withSlot(slot, (r) => inCallOf(r.inCall(), Date.now()))).toBeNull();
   });
 
   it("replaces the rows of a chat, and drops them for a chat gone", async () => {
@@ -362,6 +381,20 @@ describe("the files of a relay", () => {
     expect(withSlot(slot, (r) => r.chats().map((c) => [c.name, c.presence]))).toEqual([
       ["Anna Rossi", "busy"],
       ["Luca Bianchi", ""],
+    ]);
+  });
+
+  it("keep the kind of each chat a relay reads (1:1, group, meeting), none from a relay that does not send it: Call needs it", async () => {
+    const { token, slot } = await addRelayAccount("f9", opts());
+    applySync(caller(token), {
+      host: "pc",
+      now: Date.now(),
+      chats: [{ ...chatRow("Anna Rossi", ""), kind: "one" }, { ...chatRow("Project Alpha", ""), pos: 1, kind: "group" }, { ...chatRow("Old Relay Chat", ""), pos: 2 }],
+    });
+    expect(withSlot(slot, (r) => r.chats().map((c) => [c.name, c.kind]))).toEqual([
+      ["Anna Rossi", "one"],
+      ["Project Alpha", "group"],
+      ["Old Relay Chat", ""],
     ]);
   });
 

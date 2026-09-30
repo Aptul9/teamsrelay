@@ -91,8 +91,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     uploadsDir: path.join(stateDir, "uploads"),
     activity: !!server,
     readBy: !!server,
-    // a call is answered on the computer of the relay, where its sound is
-    answerCalls: false,
+    // a call is answered on the computer of the relay, where its sound is: by hand in its window, and from the app of the
+    // server joined, whose commands (answer, hang up, mute) the call watch then runs in that window
+    answerCalls: !!server,
     alerts: {
       signInAfter: 60,
       browserAfter: 300,

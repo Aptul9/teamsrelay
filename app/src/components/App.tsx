@@ -203,11 +203,16 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const startCallAudio = useCallback(
     (n: number): boolean => {
       if (!answered || !callAudioSupported() || new URL(deskUrl(n), window.location.href).origin !== window.location.origin) return false;
+      // an account on another computer: its sound stays in the Teams window there, there is no audio link to open
+      if (accounts?.find((a) => a.slot === n)?.relay) return false;
       answered.start(n);
       return true;
     },
-    [answered, deskUrl],
+    [accounts, answered, deskUrl],
   );
+  // where the sound of the call of an account goes: to this app or to the remote desktop, or nowhere here for an
+  // account on another computer, whose call is taken in Teams there (no audio link, no desktop to open)
+  const carriesSound = (n: number) => !accounts?.find((a) => a.slot === n)?.relay;
   // the call answered here goes on while it is in progress, and its sound ends with it
   const callsRef = useRef<RingingCall[]>([]);
   useEffect(() => {
@@ -232,9 +237,13 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     const q = new URLSearchParams(window.location.search);
     return q.get("call") === "1" ? Number(q.get("a")) || 0 : 0;
   });
+  // once the accounts are known: whether the account is on another computer decides if there is a sound to start
+  const callOnLoadDone = useRef(false);
   useEffect(() => {
-    if (callOnLoad) startCallAudio(callOnLoad);
-  }, [callOnLoad, startCallAudio]);
+    if (!callOnLoad || !accounts || callOnLoadDone.current) return;
+    callOnLoadDone.current = true;
+    startCallAudio(callOnLoad);
+  }, [accounts, callOnLoad, startCallAudio]);
 
   // the ring of the calls: learns at once whether the page may play sound, else the first click allows it
   const [ringer] = useState(() => (typeof window === "undefined" ? null : new Ringer()));
@@ -445,7 +454,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   // would count as a popup). The agent clicks Accept with audio in Teams at its next look. False when Teams did not
   // take the call: the banner offers Answer again while it rings, and the sound stops unless the call is in progress.
   async function answerCall(c: RingingCall): Promise<boolean> {
-    if (!startCallAudio(c.acc)) openDesktop(c.acc);
+    if (carriesSound(c.acc) && !startCallAudio(c.acc)) openDesktop(c.acc);
     const failed = (description: string) => {
       if (!callsRef.current.some((x) => x.acc === c.acc && x.active)) answered?.stop(c.acc);
       toast.error("Call not answered", { description });
@@ -468,7 +477,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     const mine = { acc: n, name };
     const done = () => setPlacing((p) => (p?.acc === n && p.name === name ? null : p));
     setPlacing(mine);
-    if (!startCallAudio(n)) openDesktop(n);
+    if (carriesSound(n) && !startCallAudio(n)) openDesktop(n);
     const failed = (description: string) => {
       done();
       if (!callsRef.current.some((x) => x.acc === n && x.active)) answered?.stop(n);
@@ -606,11 +615,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const chatOf = (name: string) => (chats ?? []).find((c) => c.name === name)?.name ?? null;
 
   const current = accounts?.find((a) => a.slot === acc);
-  // the person of a 1:1 chat can be called from an account of the browsers container that runs, with no call on it and
-  // none being placed
+  // the person of a 1:1 chat can be called from an account that runs (in the browsers container or on another
+  // computer), with no call on it and none being placed
   const callable = (name: string) =>
     !!current &&
-    !current.relay &&
     !current.stopped &&
     !current.checkEvery &&
     !isSelf(name) &&
@@ -950,6 +958,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}
               onCall={callable(openChat) ? () => void placeCall(acc, openChat) : undefined}
+              callHost={current?.relay ? relayHost(current) : undefined}
             />
           ) : (
             <Empty className="flex-1">
