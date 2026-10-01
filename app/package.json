@@ -18,8 +18,10 @@
     "relay:setup": "node scripts/relay-setup.mjs"
   },
   "dependencies": {
+    "@better-auth/mcp": "1.7.7",
     "@modelcontextprotocol/server": "2.1.0",
-    "better-auth": "1.7.6",
+    "@playwright/mcp": "0.0.83",
+    "better-auth": "1.7.7",
     "better-sqlite3": "13.0.3",
     "class-variance-authority": "0.7.1",
     "cn": "0.4.0",
