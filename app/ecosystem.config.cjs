@@ -5,11 +5,13 @@
 // Fleet remote management (optional): set FLEET_VM (the hub VM's ssh alias) and FLEET_PORT (the VM loopback port this
 // host's cmdapi is published on) in relay.env, and this file also starts cmdapi and the reverse tunnel that carries it.
 // pm2 keeps both alive and brings them back at logon with the relay. See docs/design/2026-10-01-fleet-remote-management.md.
-const fs = require("node:fs");
-const path = require("node:path");
-
-const envFile = path.join(__dirname, "relay.env");
-if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
+// relay.env next to this file (pm2 does not load it on its own); a missing file is fine, the process environment is
+// then the only source
+try {
+  process.loadEnvFile(`${__dirname}/relay.env`);
+} catch {
+  // no relay.env: rely on the process environment
+}
 
 const apps = [
   {
