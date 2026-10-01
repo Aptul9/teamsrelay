@@ -10,6 +10,7 @@ import path from "node:path";
 import { Server, utils, type AuthContext, type Connection, type ParsedKey } from "ssh2";
 import { errorText, log } from "@/agent/log";
 import { defaultShell, run } from "@/fleet/cmdapi/runner";
+import { generateEd25519, parsesAsKey } from "./keys";
 import { wireSftp } from "./sftp";
 
 export interface SshServerOptions {
@@ -37,14 +38,22 @@ function parseAuthorized(lines: string[]): ParsedKey[] {
   });
 }
 
-// Generate an ed25519 host key on first use and persist it (0600), so the host identity is stable across restarts.
+// Generate an ed25519 host key on first use and persist it (0600), so the host identity is stable across restarts. A
+// file that does not parse (an older ssh2 keygen could write one) is moved to `<file>.bad` and replaced: the server
+// could never start on it.
 export function loadOrCreateHostKey(file: string): string {
+  let existing: string | null = null;
   try {
-    return fs.readFileSync(file, "utf8");
+    existing = fs.readFileSync(file, "utf8");
   } catch {
     // make one below
   }
-  const pair = (utils.generateKeyPairSync as (t: string) => { private: string; public: string })("ed25519");
+  if (existing !== null) {
+    if (parsesAsKey(existing)) return existing;
+    log.warn("ssh", `host key ${file} does not parse; moved to ${file}.bad, generating a new one`);
+    fs.renameSync(file, `${file}.bad`);
+  }
+  const pair = generateEd25519();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, pair.private, { mode: 0o600 });
   return pair.private;
