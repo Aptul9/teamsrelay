@@ -10,9 +10,11 @@
   },
   "ssh": {
     "enabled": false,
+    "mode": "library",
     "vmPort": 8822,
     "localPort": 2022,
     "hostKeyFile": "state/fleet/ssh_host_key",
-    "authorizedKeys": ["ssh-ed25519 AAAA...your public key... you@laptop"]
+    "authorizedKeys": ["ssh-ed25519 AAAA...your public key... you@laptop"],
+    "_mode_note": "library = embedded ssh2 server (no admin); system = tunnel to this host's own sshd (default localPort 22, needs sshd installed, no authorizedKeys needed)"
   }
 }

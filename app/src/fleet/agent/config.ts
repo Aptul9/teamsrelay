@@ -20,10 +20,14 @@ const Cmdapi = z.object({
 
 const Ssh = z.object({
   enabled: z.boolean().default(false),
+  // "library": the embedded ssh2 server (no admin, no OpenSSH Server). "system": a tunnel to the host's own sshd on
+  // localPort (default 22), a real OS login shell, which needs sshd installed on the host.
+  mode: z.enum(["library", "system"]).default("library"),
   vmPort: Port.optional(),
-  localPort: Port.default(2022),
+  // the local port the tunnel targets; the agent defaults it by mode (2022 for library, 22 for system)
+  localPort: Port.optional(),
   hostKeyFile: z.string().default("state/fleet/ssh_host_key"),
-  // OpenSSH public key lines allowed to log in; public-key auth only
+  // OpenSSH public key lines allowed to log in (library mode; system mode leaves auth to the host's sshd)
   authorizedKeys: z.array(z.string()).default([]),
 });
 
@@ -42,7 +46,10 @@ const Schema = z
     }
     if (c.ssh.enabled) {
       if (!c.ssh.vmPort) ctx.addIssue({ code: "custom", message: "ssh.vmPort is required when ssh.enabled", path: ["ssh", "vmPort"] });
-      if (c.ssh.authorizedKeys.length === 0) ctx.addIssue({ code: "custom", message: "ssh.authorizedKeys needs at least one key when ssh.enabled", path: ["ssh", "authorizedKeys"] });
+      // library mode runs our own server and needs the keys; system mode leaves auth to the host's sshd
+      if (c.ssh.mode === "library" && c.ssh.authorizedKeys.length === 0) {
+        ctx.addIssue({ code: "custom", message: "ssh.authorizedKeys needs at least one key in library mode", path: ["ssh", "authorizedKeys"] });
+      }
     }
   });
 

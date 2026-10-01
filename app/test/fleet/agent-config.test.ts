@@ -16,13 +16,19 @@ describe("agent config", () => {
     expect(c.ssh.enabled).toBe(false);
   });
 
-  it("fills defaults for an enabled ssh", () => {
+  it("defaults an enabled ssh to the library (embedded ssh2) mode", () => {
     const c = parseAgentConfig({ vm: "oracle-vm", ssh: { enabled: true, vmPort: 8822, authorizedKeys: [KEY] } });
     expect(c.ssh.enabled).toBe(true);
+    expect(c.ssh.mode).toBe("library");
     expect(c.ssh.vmPort).toBe(8822);
-    expect(c.ssh.localPort).toBe(2022);
     expect(c.ssh.hostKeyFile).toBe("state/fleet/ssh_host_key");
     expect(c.ssh.authorizedKeys).toEqual([KEY]);
+  });
+
+  it("accepts system mode (tunnel to the host's own sshd) without authorized keys", () => {
+    const c = parseAgentConfig({ vm: "oracle-vm", ssh: { enabled: true, mode: "system", vmPort: 8822 } });
+    expect(c.ssh.mode).toBe("system");
+    expect(c.ssh.enabled).toBe(true);
   });
 
   it("allows every component disabled (agent idles)", () => {

@@ -34,16 +34,18 @@ async function start(config: AgentConfig): Promise<void> {
   }
 
   if (config.ssh.enabled) {
-    const hostKey = loadOrCreateHostKey(path.resolve(process.cwd(), config.ssh.hostKeyFile));
-    const server: SshServer = await startSshServer({
-      port: config.ssh.localPort,
-      host: "127.0.0.1",
-      hostKey,
-      authorizedKeys: config.ssh.authorizedKeys,
-    });
-    log.info("fleet", `ssh: listening on 127.0.0.1:${server.port} (${config.ssh.authorizedKeys.length} key(s))`);
-    closers.push(() => server.close());
-    tunnels.push(superviseTunnel("ssh", config.vm, config.ssh.vmPort as number, config.ssh.localPort));
+    // library: run the embedded ssh2 server on localPort (default 2022). system: no server, tunnel straight to the
+    // host's own sshd (default :22), a real OS login shell that the host's sshd authenticates.
+    const localPort = config.ssh.localPort ?? (config.ssh.mode === "system" ? 22 : 2022);
+    if (config.ssh.mode === "library") {
+      const hostKey = loadOrCreateHostKey(path.resolve(process.cwd(), config.ssh.hostKeyFile));
+      const server: SshServer = await startSshServer({ port: localPort, host: "127.0.0.1", hostKey, authorizedKeys: config.ssh.authorizedKeys });
+      log.info("fleet", `ssh: embedded server on 127.0.0.1:${server.port} (${config.ssh.authorizedKeys.length} key(s))`);
+      closers.push(() => server.close());
+    } else {
+      log.info("fleet", `ssh: system mode, tunnel to the host's sshd on 127.0.0.1:${localPort}`);
+    }
+    tunnels.push(superviseTunnel("ssh", config.vm, config.ssh.vmPort as number, localPort));
   }
 
   if (!config.cmdapi.enabled && !config.ssh.enabled) {

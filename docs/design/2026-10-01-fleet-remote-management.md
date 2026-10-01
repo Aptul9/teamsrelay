@@ -25,9 +25,9 @@ The hub VM is the same box as the TeamsRelay production server (`oracle-vm`), so
 
 `python-proxy` kept its proxy, SSH exposure and command API under one control process over a reverse tunnel. This mirrors that: the agent is one process that runs cmdapi and the ssh2 server in-process and owns (spawns, redials) the ssh tunnels, so a host runs the relay plus exactly one fleet process, toggled with two npm commands (`npm run relay`, `npm run fleet:agent`). pm2 supervises the agent; the agent supervises its tunnels.
 
-### Why ssh2, not the OS OpenSSH Server
+### SSH: embedded by default, OS server optional
 
-An inbound shell needs an SSH server. The OS OpenSSH Server on Windows needs admin to install (`Add-WindowsCapability`), enable the service and open the firewall, which a locked VDI blocks. The agent instead embeds a pure-Node SSH server, **`ssh2`**: MIT, Node >= 10.16, latest 1.17.0 (2025-08-20, maintained). Its runtime deps (`asn1`, `bcrypt-pbkdf`) are pure JavaScript; its only native pieces (`cpu-features`, `nan`) are optional and skipped under the project's `npm ci --ignore-scripts`, so it installs with no compiler and no admin. The reverse tunnel keeps using the OS OpenSSH **client**, which ships with Windows 10/11 and macOS and also needs no admin. The trade is that the project owns the SSH server surface (host key, public-key auth, the shell it exposes).
+An inbound shell needs an SSH server, and both options are offered so the choice is the host's, not the design's. The default is `library`: a pure-Node SSH server, **`ssh2`**, embedded in the agent, which needs no admin, no OS feature and no firewall change (a locked VDI can use it). `ssh2` is MIT, Node >= 10.16, latest 1.17.0 (2025-08-20, maintained); its runtime deps (`asn1`, `bcrypt-pbkdf`) are pure JavaScript and its only native pieces (`cpu-features`, `nan`) are optional and skipped under `npm ci --ignore-scripts`, so it installs with no compiler. The trade is that the project owns the server surface (host key, public-key auth, the shell it exposes), and there is no pty. Where the host already runs the OS OpenSSH Server (or admin can install it), `system` mode tunnels straight to it for a full OS shell with pty and sftp. Either way the reverse tunnel uses the OS OpenSSH **client**, which ships with Windows 10/11 and macOS and needs no admin.
 
 ## Components
 
@@ -41,7 +41,9 @@ All in `app/`, bundled with esbuild like the relay.
   - `runner.ts` runs one command: a string through a shell (PowerShell on Windows, `/bin/sh` on POSIX) or `args` with no shell; a deadline kills the whole process tree; output is capped; partial output is kept.
   - `config.ts` refuses a non-loopback bind with no token.
   - `server.ts` serves `GET /health` (no auth) and `GET|POST /command` (bearer token). A non-zero exit stays HTTP 200 with the exit code; 4xx is a request declined before anything ran.
-- SSH server, `src/fleet/ssh/server.ts`: an `ssh2` server, public-key auth only (keys from `fleet.config.json`), host key generated and persisted on first run. An `exec` request runs the command through the cmdapi runner; a `shell` request spawns an interactive shell piped to the channel (no pseudo-tty: a real one needs a native module, so line editing and full-screen programs are limited; `exec`, and so remote commands and updates, are unaffected).
+- SSH, two modes chosen by `ssh.mode` in `fleet.config.json`:
+  - `library` (default, no admin): the embedded `ssh2` server, `src/fleet/ssh/server.ts`. Public-key auth only (keys from the config), host key generated and persisted on first run. An `exec` request runs the command through the cmdapi runner; a `shell` request spawns an interactive shell piped to the channel (no pseudo-tty: a real one needs a native module, so line editing and full-screen programs are limited; `exec`, and so remote commands and updates, are unaffected).
+  - `system`: no embedded server; the agent tunnels straight to the host's own OpenSSH Server on `localPort` (default 22), giving a real OS login shell with full pty and sftp. It needs sshd installed and running on the host (admin to install on Windows), and the host's sshd owns authentication, so no keys live in the fleet config.
 - Control CLI, `src/fleet/cli/` → `dist/fleet.cjs` (`npm run fleet`): `exec <host|all> <command...>`, `update <host|all>`, `status <host|all>`, over `fleet.hosts.json`.
 
 ## Configuration
