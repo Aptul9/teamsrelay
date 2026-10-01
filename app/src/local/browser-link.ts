@@ -120,7 +120,9 @@ export class BrowserLink {
     const screened = screenRequest(msg);
     if (!screened.ok) {
       const name = (msg as { params?: { name?: unknown } })?.params?.name;
-      log.warn("ai-browser", "refused", { method: String((msg as { method?: unknown })?.method ?? ""), tool: typeof name === "string" ? name : undefined });
+      const reply = screened.reply as { result?: { content?: { text?: unknown }[] }; error?: { message?: unknown } } | null;
+      const why = reply?.result?.content?.[0]?.text ?? reply?.error?.message;
+      log.warn("ai-browser", "refused", { method: String((msg as { method?: unknown })?.method ?? ""), tool: typeof name === "string" ? name : undefined, why: typeof why === "string" ? why : undefined });
       if (screened.reply) this.send(s, screened.reply);
       return;
     }
