@@ -5,7 +5,8 @@
 //   npx esbuild scripts/capture-fixture.ts --bundle --platform=node --format=cjs --external:playwright-core --outfile=<dir>/capture.cjs
 //   docker run --rm --network container:teams-browsers -e CDP=http://127.0.0.1:9223 -v "$PWD:/w" -v "<dir>:/t" -w /w node:24-slim node /t/capture.cjs <part>
 // (CDP: DevTools of the browser of account N, port 9221+N; 9223 is account 2)
-// <part>: chat-list, conversation, toolbar-mine, toolbar-other, activity, roster (members list of the open group
+// <part>: chat-list, conversation, toolbar-mine, toolbar-other, activity, chat-header (the header of the chat open now:
+// title, people, tabs, call buttons, participant count; nothing clicked), roster (members list of the open group
 // chat: opened by its participant count, closed with Escape, nothing inside clicked), mention-popup and
 // mention-picked (an @ typed in the empty compose box of the open chat, then the first person picked: never sent,
 // the box is emptied and checked empty afterwards; they take the name of the open chat and, optionally, letters
@@ -15,22 +16,23 @@ import { pickTeamsPage } from "../src/agent/logic/hosts";
 import { composerText } from "../src/agent/teams/scripts/message-actions";
 import { SEL, TEXTS, type Selectors } from "../src/agent/teams/selectors";
 
-type Part = "chat-list" | "conversation" | "toolbar-mine" | "toolbar-other" | "activity" | "roster" | "mention-popup" | "mention-picked";
-const PARTS: Part[] = ["chat-list", "conversation", "toolbar-mine", "toolbar-other", "activity", "roster", "mention-popup", "mention-picked"];
+type Part = "chat-list" | "conversation" | "toolbar-mine" | "toolbar-other" | "activity" | "chat-header" | "roster" | "mention-popup" | "mention-picked";
+const PARTS: Part[] = ["chat-list", "conversation", "toolbar-mine", "toolbar-other", "activity", "chat-header", "roster", "mention-popup", "mention-picked"];
 
 // Interface words kept as they are: the page scripts read them, and they say nothing about the user
-const KEEP = `Chats Chat Favorites Quick views Recent Drafts Copilot Meet now Activity Unread Mentions Teams channels Calendar Calls Files
+export const KEEP = `Chats Chat Favorites Quick views Recent Drafts Copilot Meet now Activity Unread Mentions Teams channels Calendar Calls Files
 You You: Available Away Busy Offline Do not disturb Be right back Presence unknown Out of office Edited Seen Sent Sending by everyone Read of
 Undo This message has been deleted reacted to your message messages mentioned you replied added assigned a task Missed call from In chat with
 posted in updated Yesterday Today Mon Tue Wed Thu Fri Sat Sun Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec AM PM Like Heart Laugh Surprised
 Sad Angry reaction reactions More options Reply quote Edit Delete Pin Forward Copy link Translate Mark as unread Save Hide Mute Remove history
 Call External unfamiliar Team owner General and the an is are was it for on at team Everyone Mentioned New conversation Type Send Emoji GIF
-Format Open Close Back Scheduled Delivered Failed`
+Format Open Close Back Scheduled Delivered Failed View add participant participants including external Audio Meet now Name group
+Find details More options Screen sharing Add tab Change profile picture Shared Storyline Notes Recap`
   .split(/\s+/)
   // plus every word the page scripts match on (feed actions, statuses, expired session...)
   .concat(Object.values(TEXTS).flatMap((v) => (v instanceof RegExp ? v.source : v).match(/[A-Za-z]{2,}/g) ?? []));
 
-function capture({ part, s, keep, limit, hovered }: { part: Part; s: Selectors; keep: string[]; limit: number; hovered: string }): string {
+export function capture({ part, s, keep, limit, hovered }: { part: Part; s: Selectors; keep: string[]; limit: number; hovered: string }): string {
   const KEEP = new Set(keep);
   const TIME = /^(\d{1,2}:\d{2}|\d{1,2}\/\d{1,2}(\/\d{2,4})?|AM|PM)$/;
   const SYL = ["kar", "lom", "miv", "ren", "dus", "saf", "vel", "tor", "nix", "bep", "ulm", "raz", "zen", "fiq", "mox", "taj", "geb", "lin", "pav", "sor"];
@@ -157,6 +159,7 @@ function capture({ part, s, keep, limit, hovered }: { part: Part; s: Selectors; 
   if (part === "chat-list") add(document.querySelector(s.chatRow)?.closest('[role="tree"]') ?? null);
   if (part === "activity") add(holder(s.feedItem));
   if (part === "roster") add(document.querySelector(s.rosterName)?.closest('[role="dialog"]') ?? null);
+  if (part === "chat-header") add(document.querySelector(s.chatTitle)?.closest(s.chatHeader) ?? null);
   if (part === "mention-popup") add(document.querySelector(s.mentionPopup));
   if (part === "mention-picked") add([...document.querySelectorAll(s.editor)].find((x) => !x.closest(s.item) && (x as HTMLElement).offsetParent !== null) ?? null);
   if (part === "conversation") {
@@ -263,7 +266,8 @@ async function main() {
   }
 }
 
-main().catch((e: unknown) => {
+// run as a script; imported (a harness that evaluates capture itself), nothing runs
+if (require.main === module) main().catch((e: unknown) => {
   console.error(e instanceof Error ? e.message : e);
   process.exit(1);
 });

@@ -25,6 +25,8 @@ export const SEL = {
   mutedItemType: "muted-chat",
   avatar: "img.fui-Avatar__image",
   chatTitle: '[data-tid="chat-title"]',
+  // the header of the open chat: title, people, tabs, call buttons, participant count
+  chatHeader: '[data-tid="entity-header"]',
 
   // side bar and header
   activityView: 'button[aria-label^="Activity"]',
@@ -77,8 +79,13 @@ export const SEL = {
   overlays: '[role="menu"],[role="dialog"],[role="alertdialog"]',
   sendButton: '[data-tid="sendMessageCommands-send"]',
   // members of a group chat: the participant count in the header opens a list of them. Every row also holds a
-  // remove button: nothing inside the list is ever clicked.
+  // remove button: nothing inside the list is ever clicked. Since 2026-10 Teams web shows the count in a 1:1 chat as
+  // well, as 0 ("View and add participants, 0 participants").
   participantCount: '[data-tid="chat-header-participant-count"]',
+  // the "Audio call" button Teams shows in the header of a 1:1 chat only: a group chat has Meet now instead
+  oneOnOneCall: '[data-tid="default-chat-call-audio-button"]',
+  // marks of a group chat in its header: its Meet now button, the field that names the chat, its picture
+  groupHeaderMarks: '[data-tid="audio-drop-in-button"],[data-tid="chat-title-name-group-chat"],[data-tid="tfw-group-chat-avatar-button"]',
   rosterName: '[id^="chat-roster-item-name-"]',
   // members named in the header of 1:1 chats and of group chats without a name
   topicParticipant: '[data-tid="chat-topic-menu"] [id^="chat-topic-person-"]',
@@ -149,6 +156,9 @@ export const PICKER_REACTIONS: Partial<Record<ReactionName, string>> = { cry: "e
 export const TEXTS = {
   // the chat with yourself is listed as "Name (You)"
   selfChat: "(You)",
+  // the participant count of a chat header, in its label or text: "View and add participants, 3 participants including
+  // external participants"
+  participantCount: /(\d+)\s+participants?\b/i,
   // preview of a chat whose last message is yours
   outbound: /^(you|tu):/i,
   // "Read by X of Y" entry of the message menu, in group chats
