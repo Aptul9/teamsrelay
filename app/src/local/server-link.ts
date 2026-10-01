@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { Agent, fetch as undiciFetch } from "undici";
 import type webpush from "web-push";
 import type { z } from "zod";
 import { errorText, log } from "@/agent/log";
@@ -26,7 +27,7 @@ import {
   type ServerCommand,
   type SyncBody,
 } from "@/shared/relay-sync";
-import { DownloadResult, ImageArgs, parseArgs, UPLOAD_NAME, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
+import { DownloadResult, ImageArgs, parseArgs, UPLOAD_NAME, WithAudio, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
 import { FILE_NAME, MEDIA_NAME, type MessageExtra } from "@/shared/slot-db/rows";
 import { cmdResultKey, Identity, parseState, STATE, Viewing } from "@/shared/slot-db/state";
 
@@ -45,8 +46,8 @@ const SYNC_EVERY_MS = 1000;
 const PUSH_STALE_MS = 120_000;
 const PUSH_TIMEOUT_MS = 10_000;
 // read right before the rows go (live()): the server takes them by their age, and the files before the rows may take a
-// while; neither names a file
-const LIVE: readonly string[] = [STATE.health, STATE.call];
+// while; none names a file. The call in progress is one of them: the app offers Hang up and Mute only while it is fresh
+const LIVE: readonly string[] = [STATE.health, STATE.call, STATE.inCall];
 
 const hash = (json: string) => crypto.createHash("sha1").update(json).digest("base64");
 const digest = (v: unknown) => hash(JSON.stringify(v));
@@ -109,6 +110,8 @@ export type ServerLinkOptions = {
   fetch?: typeof fetch;
   // wall clock for the age of the notifications waiting their turn (ms)
   clock?: () => number;
+  // an answer or a call of the app whose sound goes to the app, before the agent gets it
+  onCallAudio?: () => void;
 };
 
 const pause = (ms: number, signal: AbortSignal) =>
@@ -145,8 +148,13 @@ export class ServerLink {
   private pushes: Promise<unknown> = Promise.resolve();
   // the stop of the relay: every request ends with it
   private signal: AbortSignal | undefined;
+  // HTTP/1.1, a connection for each request in flight: Node 26's fetch takes the HTTP/2 Caddy offers and sends every
+  // request down one connection, where the sync and the notifications wait for the long poll of the commands
+  private readonly agent = new Agent({ allowH2: false });
+  private readonly fetch: typeof fetch;
 
   constructor(private readonly o: ServerLinkOptions) {
+    this.fetch = o.fetch ?? (((input: string, init: RequestInit) => undiciFetch(input, { ...(init as object), dispatcher: this.agent })) as unknown as typeof fetch);
     this.db = new Database(o.dbPath, { fileMustExist: true });
     this.db.pragma("busy_timeout = 8000");
   }
@@ -160,6 +168,7 @@ export class ServerLink {
       this.loop("commands", signal, () => this.pollCommands()),
     ]);
     this.db.close();
+    await this.agent.close().catch(() => undefined);
   }
 
   // A step again and again: after an error it waits longer each time, up to 30 s, and logs each new error once
@@ -190,7 +199,7 @@ export class ServerLink {
     const headers: Record<string, string> = { Authorization: `Bearer ${this.o.token}` };
     if (o.json !== undefined) headers["Content-Type"] = "application/json";
     if (o.body) headers["Content-Type"] = "application/octet-stream";
-    const r = await (this.o.fetch ?? fetch)(this.o.url + p, {
+    const r = await this.fetch(this.o.url + p, {
       method,
       headers,
       body: o.json !== undefined ? JSON.stringify(o.json) : o.body,
@@ -250,7 +259,7 @@ export class ServerLink {
     const all = <T>(sql: string, ...args: unknown[]) => this.db.prepare(sql).all(...args) as T[];
     let complete = true;
 
-    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av, presence FROM chats ORDER BY pos")
+    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind FROM chats ORDER BY pos")
       .filter((c) => this.fits(ChatRow, c, `chat ${c.name}`))
       .slice(0, 2000);
     const chatsDigest = digest(chats);
@@ -587,6 +596,8 @@ export class ServerLink {
         }
       }
     }
+    // the sound of that call goes to the app: the bridge takes the microphone Teams asks for next
+    if ((c.type === "answer" || c.type === "call") && parseArgs(WithAudio, c.arg2).audio) this.o.onCallAudio?.();
     this.o.store.enqueue(c.type as CommandType, c.arg1, c.arg2, serverCommandKey(this.added, c.id), c.ts - (this.offset ?? 0));
     this.after = Math.max(this.after, c.id);
   }

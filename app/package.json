@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 8090",
-    "build": "next build && npm run build:agent && npm run build:supervisor && npm run build:relay",
+    "build": "next build && npm run build:agent && npm run build:supervisor && npm run build:relay && npm run build:hub",
     "start": "next start -p 8090",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
@@ -11,6 +11,7 @@
     "build:agent": "esbuild src/agent/main.ts --bundle --platform=node --target=node24 --format=cjs --sourcemap --external:playwright-core --external:better-sqlite3 --outfile=dist/agent.cjs --log-level=warning",
     "build:supervisor": "esbuild src/supervisor/main.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/supervisor.cjs --log-level=warning",
     "build:relay": "esbuild src/local/main.ts --bundle --platform=node --target=node24 --format=cjs --external:playwright-core --external:better-sqlite3 --outfile=dist/relay.cjs --log-level=warning",
+    "build:hub": "esbuild src/server/call-audio-preload.ts --bundle --platform=node --target=node24 --format=cjs --external:bufferutil --external:utf-8-validate --outfile=dist/call-audio.cjs --log-level=warning",
     "agent": "node --enable-source-maps dist/agent.cjs",
     "relay": "node dist/relay.cjs",
     "relay:login": "node dist/relay.cjs login",
@@ -34,7 +35,9 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "sonner": "2.0.8",
+    "undici": "7.30.0",
     "web-push": "3.6.7",
+    "ws": "8.21.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
@@ -45,6 +48,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@types/web-push": "3.6.4",
+    "@types/ws": "8.18.2",
     "esbuild": "0.28.2",
     "eslint": "10.11.0",
     "eslint-config-next": "16.3.6",

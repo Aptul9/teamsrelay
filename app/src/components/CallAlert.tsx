@@ -9,6 +9,7 @@ import type { CallAudioState } from "@/lib/call-audio/call-audio";
 import { type MuteView, shownMuted } from "@/lib/call-audio/mute";
 import type { Account, RingingCall } from "@/lib/client";
 import type { Ringer } from "@/lib/ring";
+import { relayHost } from "./RelayToken";
 
 // The sound of a call in progress and its mute, in words. Muted with Teams not muted (nor a press on its way to it):
 // the microphone of this device is silent, the others see no mute mark. Without Teams' state (m), the device's alone.
@@ -22,6 +23,13 @@ function callLine(a: CallAudioState | undefined, m: MuteView | undefined, muted:
   if (a.mic === "on") return "Sound in the app, microphone on";
   if (a.mic === "denied") return "Sound in the app, microphone blocked";
   return "Sound in the app";
+}
+
+// A call of an account on another computer: its sound in the app while its relay sends it there (a), otherwise in the
+// Teams window of that computer only (a relay of before, a sound that did not come)
+function relayCallLine(host: string, a: CallAudioState | undefined, m: MuteView | undefined, muted: boolean): string {
+  if (a && (a.link === "live" || a.link === "connecting" || a.link === "retrying")) return callLine(a, m, muted);
+  return muted ? `Muted, sound on ${host} only` : `Sound on ${host} only`;
 }
 
 const callKey = (c: RingingCall) => `${c.acc}:${c.since}${c.active ? ":in" : ""}`;
@@ -42,10 +50,11 @@ function useRingAllowed(ringer: Ringer | null) {
 
 // The calls ringing now in every account of the user, on top of the app, with the ring while one of them is not muted.
 // A tap on a call opens its account; Mute silences that call only, and the next one rings again. Answer takes the call
-// on an account of the browsers container; its sound comes to the app (audio), or goes through the remote desktop. A
-// call in progress (active) rings no more and offers the state of its sound, its microphone and speaker
-// (devicesPanel), the desktop and Hang up, and Mute: Teams' own mute where its state is known (mutes), wherever the
-// sound is, and the microphone of this device while it carries the sound. A tap on Answer silences the ring and says
+// in Teams; on an account of the browsers container its sound comes to the app (audio), or goes through the remote
+// desktop, on one of another computer it stays in the Teams window there. A call in progress (active) rings no more
+// and offers the state of its sound, its microphone and speaker (devicesPanel), the desktop (not for an account on
+// another computer) and Hang up, and Mute: Teams' own mute where its state is known (mutes), wherever the sound is,
+// and the microphone of this device while it carries the sound. A tap on Answer silences the ring and says
 // the call is being answered, one on Hang up says it is ending, at once: until the call moves on (in progress, over),
 // or until onAnswer or onHangUp settle with false (not done), which offers the button again.
 export function CallBanner({
@@ -109,8 +118,8 @@ export function CallBanner({
   // the call placed goes on under its own banner once the account shows it in progress
   const calling = placing && !calls.some((c) => c.acc === placing.acc && c.active) ? placing : null;
   if (!calls.length && !calling) return null;
-  // an account on another computer: its calls ring there, where its sound is
-  const inContainer = (acc: number) => !accounts?.find((a) => a.slot === acc)?.relay;
+  // an account on another computer: no remote desktop, its sound stays in the Teams window there
+  const relayOf = (acc: number) => accounts?.find((a) => a.slot === acc && a.relay);
   const button = "h-9 shrink-0 md:h-8";
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-2 px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
@@ -127,13 +136,14 @@ export function CallBanner({
         const key = callKey(c);
         const off = muted.includes(key);
         const label = accountLabel(accounts?.find((a) => a.slot === c.acc), c.acc);
+        const other = relayOf(c.acc);
         if (c.active) {
           const sound = audio?.[c.acc];
           const mute = mutes?.[c.acc];
           const sourceLive = sound?.link === "live";
           const muted = mute ? shownMuted(mute, sourceLive) : !!sound?.muted;
           const ending = busyOf(key) === "hangup";
-          const line = ending ? "Ending the call" : callLine(sound, mute, muted);
+          const line = ending ? "Ending the call" : other ? relayCallLine(relayHost(other), sound, mute, muted) : callLine(sound, mute, muted);
           const devicesOpen = devicesOf === key && !!devicesPanel;
           return (
             <div key={key} role="alert" className="pointer-events-auto w-full max-w-md rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
@@ -170,7 +180,7 @@ export function CallBanner({
                     <span className="sr-only">Devices</span>
                   </Button>
                 )}
-                {onDesktop && (
+                {onDesktop && !other && (
                   <Button size="sm" variant="secondary" className={button} onClick={() => onDesktop(c.acc)}>
                     <MonitorIcon />
                     Desktop
@@ -208,7 +218,7 @@ export function CallBanner({
                 {!allowed && !off ? " · Click to allow the ring" : ""}
               </span>
             </button>
-            {onAnswer && inContainer(c.acc) && (
+            {onAnswer && (
               <Button size="sm" className={button} onClick={() => act(c, "answer", onAnswer)}>
                 <PhoneIcon />
                 Answer

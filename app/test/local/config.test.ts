@@ -78,6 +78,11 @@ describe("a server to join", () => {
     expect(c).toMatchObject({ server: { url: "https://teams.example.com", token: TOKEN }, activity: true, readBy: true, filesDir: path.join(CWD, "state", "files") });
   });
 
+  it("takes the calls the app asks for (answer, hang up, mute), which a relay on its own does not", () => {
+    expect(loadConfig({}, CWD).answerCalls).toBe(false);
+    expect(loadConfig({ SERVER_URL: "https://teams.example.com/", SERVER_TOKEN: TOKEN }, CWD).answerCalls).toBe(true);
+  });
+
   it("wants both, a real token, and HTTPS unless the server is on this machine", () => {
     expect(() => loadConfig({ SERVER_URL: "https://teams.example.com" }, CWD)).toThrow(/go together/);
     expect(() => loadConfig({ SERVER_TOKEN: TOKEN }, CWD)).toThrow(/go together/);

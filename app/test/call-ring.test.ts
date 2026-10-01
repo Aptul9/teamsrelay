@@ -235,11 +235,64 @@ describe("call ring where the page may play sound (installed app)", () => {
     expect(c.errors).toEqual([]);
   });
 
-  it("offers no Answer for a call of an account on another computer: it rings there", async () => {
-    await setCalls(c, [{ acc: 3, caller: "Luca Bianchi", since: 1_790_000_110_000 }]);
+  it("offers Answer for a call of an account on another computer: Teams there takes it, the sound stays there", async () => {
+    const ringing = { acc: 3, caller: "Luca Bianchi", since: 1_790_000_110_000 };
+    await setCalls(c, [ringing]);
     await until(c, "Luca Bianchi is calling");
-    expect(await run(c, `[...document.querySelectorAll("[role=alert] button")].some((b) => b.textContent.includes("Answer"))`)).toBe(false);
+    await click(c, "[role=alert] button", "Answer");
+    expect(await run(c, "window.answered")).toEqual(ringing);
+    await until(c, "Answering Luca Bianchi");
+    await run(c, "window.settle(true)");
     await setCalls(c, []);
+  });
+
+  it("brings the sound of a call of an account on another computer to the app when its relay sends it, no Desktop", async () => {
+    const active = { acc: 3, caller: "Anna Rossi", since: 1_790_000_160_000, active: true };
+    const audio = (a: object) =>
+      run(c, `window.setAudio(${JSON.stringify({ 3: { link: "live", mic: "on", muted: false, needsTap: false, micFallback: false, speakerFallback: false, ...a } })})`);
+    await setCalls(c, [active]);
+    await audio({ link: "connecting", mic: "off" });
+    await until(c, "Connecting the sound (Fabrikam)");
+    await audio({});
+    await until(c, "Sound in the app, microphone on (Fabrikam)");
+    expect(await buttons(c)).not.toContain("Desktop");
+    expect(await buttons(c)).toContain("Hang up");
+    expect(await buttons(c)).toContain("Mute");
+    expect(await buttons(c)).toContain("Devices");
+    await click(c, "[role=alert] button", "Mute");
+    expect(await run(c, "window.muted")).toEqual([3, true]);
+    await audio({ muted: true });
+    await until(c, "Sound in the app, muted (Fabrikam)");
+    // the relay sent no sound (a socket down, the page hook missing): the call goes on in Teams there
+    await audio({ link: "unavailable", reason: "The relay of the account sends no sound", mic: "off" });
+    await until(c, "Sound on office-pc only (Fabrikam)");
+    expect(await buttons(c)).not.toContain("Desktop");
+    await run(c, "window.setAudio({})");
+    await setCalls(c, []);
+    await until(c, "In call with Anna Rossi", false);
+    expect(c.errors).toEqual([]);
+  });
+
+  it("shows a call in progress of an account on another computer with Mute and Hang up, no Desktop, and where its sound is", async () => {
+    const active = { acc: 3, caller: "Anna Rossi", since: 1_790_000_140_000, active: true };
+    await setCalls(c, [active]);
+    await until(c, "In call with Anna Rossi");
+    await until(c, "Sound on office-pc only (Fabrikam)");
+    expect(await buttons(c)).not.toContain("Desktop");
+    expect(await buttons(c)).toContain("Hang up");
+    // Teams' own mute, where the agent reads it: pressed here, the device has no sound to silence
+    await run(c, `window.setMutes(${JSON.stringify({ 3: { teams: false, source: false, want: null } })})`);
+    await click(c, "[role=alert] button", "Mute");
+    expect(await run(c, "window.muted")).toEqual([3, true]);
+    await run(c, `window.setMutes(${JSON.stringify({ 3: { teams: true, source: false, want: null } })})`);
+    await until(c, "Muted, sound on office-pc only (Fabrikam)");
+    await click(c, "[role=alert] button", "Hang up");
+    expect(await run(c, "window.hungUp")).toEqual(active);
+    await run(c, "window.settle(true)");
+    await run(c, "window.setMutes({})");
+    await setCalls(c, []);
+    await until(c, "In call with Anna Rossi", false);
+    expect(c.errors).toEqual([]);
   });
 
   it("shows a call in progress with Desktop and Hang up, without a ring", async () => {

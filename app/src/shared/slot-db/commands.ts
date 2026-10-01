@@ -79,6 +79,8 @@ export type MentionArgs = z.infer<typeof MentionArgs>;
 // answer: the call, by when it started ringing (since of the call state, ms)
 export const AnswerArgs = z.object({ since: z.number().catch(0) });
 export type AnswerArgs = z.infer<typeof AnswerArgs>;
+// an answer or a call of an account on another computer whose sound goes to the app (src/local/call-bridge.ts)
+export const WithAudio = z.object({ audio: z.boolean().catch(false) });
 
 // mute: the state asked for, muted (true) or not; the shortcut of Teams toggles, so a state, never a toggle. Anything
 // else is null, which the agent refuses: a broken command never unmutes.

@@ -1,8 +1,9 @@
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { accountSummary, healthFor } from "@/lib/accounts";
-import { appDb, beginCheck, claimSlot, endCheck, migrateAppSchema, releaseSlot, setCheckEvery, setSlotStopped, slotsOf } from "@/lib/appdb";
+import { appDb, beginCheck, claimSlot, endCheck, migrateAppSchema, releaseSlot, setCheckEvery, setRelayToken, setSlotStopped, slotsOf } from "@/lib/appdb";
 import { queue } from "@/lib/commands";
+import { STATE } from "@/shared/slot-db/state";
 import { createSlotDb, tempDir } from "./helpers";
 
 // accounts and commands read data/app.db and data/N through the configuration: one data directory per file
@@ -67,6 +68,21 @@ describe("the unread counts of an account", () => {
     releaseSlot(appDb(), n);
     expect(claimSlot(appDb(), "u4", { slotCount: 4, perUser: 4 })).toBe(n);
     expect(summary("u4", n).added).toBeGreaterThan(1790000000);
+  });
+});
+
+describe("the sound of a call of an account on another computer", () => {
+  it("comes to the app only when its relay says it sends it: a relay of before says nothing", () => {
+    const n = claimSlot(appDb(), "u9", { slotCount: 16, perUser: 4 });
+    setRelayToken(appDb(), n, "1".repeat(64));
+    const db = createSlotDb(path.join(dataDir, String(n), "messages.db"));
+    expect(summary("u9", n)).toMatchObject({ relay: true, callAudio: false });
+    db.prepare("INSERT INTO state(k, v) VALUES(?, '1')").run(STATE.callAudio);
+    expect(summary("u9", n)).toMatchObject({ relay: true, callAudio: true });
+    // an account of the browsers container has its sound through its remote desktop, whatever its database says
+    const m = claimSlot(appDb(), "u9", { slotCount: 16, perUser: 4 });
+    createSlotDb(path.join(dataDir, String(m), "messages.db")).prepare("INSERT INTO state(k, v) VALUES(?, '1')").run(STATE.callAudio);
+    expect(summary("u9", m)).toMatchObject({ relay: false, callAudio: false });
   });
 });
 

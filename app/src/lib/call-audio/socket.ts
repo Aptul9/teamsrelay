@@ -110,6 +110,8 @@ export class AudioLink {
   private text(t: string) {
     if (t === "AUDIO_STARTED") return this.live();
     if (t === "AUDIO_DISABLED") return this.end("unavailable", "The remote desktop plays no sound");
+    // the server of the sound of a call of an account on another computer: no sound will come (src/server/call-audio-hub.ts)
+    if (t.startsWith("UNAVAILABLE")) return this.end("unavailable", t.slice(12) || undefined);
     if (t === "MICROPHONE_DISABLED") return this.o.events.micDisabled();
     // a page of the desktop took the primary display, and the sound with it
     if (t.startsWith("KILL")) return this.end("desktop");

@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AnsweredCalls } from "@/lib/call-audio/answered";
-import { CallAudio, callAudioSupported, callAudioUrl, type CallAudioState } from "@/lib/call-audio/call-audio";
+import { CallAudio, callAudioSupported, callAudioUrl, relayCallAudioUrl, type CallAudioState } from "@/lib/call-audio/call-audio";
 import { type CallDevices as Chosen, saveDevices, savedDevices } from "@/lib/call-audio/devices";
 import { CallMutes, type MuteView } from "@/lib/call-audio/mute";
 import { Button } from "@/components/ui/button";
@@ -193,8 +193,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     typeof window === "undefined"
       ? null
       : new AnsweredCalls<CallAudio>({
-          make: (n) =>
-            new CallAudio({ url: callAudioUrl(window.location), devices: savedDevices(), onState: (st) => setCallAudio((m) => ({ ...m, [n]: st })) }),
+          make: (n, url) =>
+            new CallAudio({ url: url ?? callAudioUrl(window.location), devices: savedDevices(), onState: (st) => setCallAudio((m) => ({ ...m, [n]: st })) }),
           onStop: (n) =>
             setCallAudio((m) => {
               const next = { ...m };
@@ -206,11 +206,28 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const startCallAudio = useCallback(
     (n: number): boolean => {
       if (!answered || !callAudioSupported() || new URL(deskUrl(n), window.location.href).origin !== window.location.origin) return false;
+      // an account on another computer: its sound stays in the Teams window there, there is no audio link to open
+      if (accounts?.find((a) => a.slot === n)?.relay) return false;
       answered.start(n);
       return true;
     },
-    [answered, deskUrl],
+    [accounts, answered, deskUrl],
   );
+  // An account on another computer whose relay sends the sound of a call answered or placed from the app to the app
+  // (callAudio): the sound comes here, from the tap on Answer or Call. A relay of before, or a browser that cannot: the
+  // sound stays in the Teams window of that computer.
+  const startRelayAudio = useCallback(
+    (n: number): boolean => {
+      if (!answered || !callAudioSupported() || !accounts?.find((a) => a.slot === n)?.callAudio) return false;
+      // the sound its relay sends through the server (src/local/call-bridge.ts)
+      answered.start(n, relayCallAudioUrl(window.location, n));
+      return true;
+    },
+    [accounts, answered],
+  );
+  // where the sound of the call of an account goes: to this app or to the remote desktop, or nowhere here for an
+  // account on another computer, whose call is taken in Teams there (no audio link, no desktop to open)
+  const carriesSound = (n: number) => !accounts?.find((a) => a.slot === n)?.relay;
   // the call answered here goes on while it is in progress, and its sound ends with it
   const callsRef = useRef<RingingCall[]>([]);
   useEffect(() => {
@@ -235,9 +252,13 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     const q = new URLSearchParams(window.location.search);
     return q.get("call") === "1" ? Number(q.get("a")) || 0 : 0;
   });
+  // once the accounts are known: whether the account is on another computer decides if there is a sound to start
+  const callOnLoadDone = useRef(false);
   useEffect(() => {
-    if (callOnLoad) startCallAudio(callOnLoad);
-  }, [callOnLoad, startCallAudio]);
+    if (!callOnLoad || !accounts || callOnLoadDone.current) return;
+    callOnLoadDone.current = true;
+    startCallAudio(callOnLoad);
+  }, [accounts, callOnLoad, startCallAudio]);
 
   // the ring of the calls: learns at once whether the page may play sound, else the first click allows it
   const [ringer] = useState(() => (typeof window === "undefined" ? null : new Ringer()));
@@ -461,7 +482,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   // would count as a popup). The agent clicks Accept with audio in Teams at its next look. False when Teams did not
   // take the call: the banner offers Answer again while it rings, and the sound stops unless the call is in progress.
   async function answerCall(c: RingingCall): Promise<boolean> {
-    if (!startCallAudio(c.acc)) openDesktop(c.acc);
+    const relaySound = startRelayAudio(c.acc);
+    if (carriesSound(c.acc) && !startCallAudio(c.acc)) openDesktop(c.acc);
     const failed = (description: string) => {
       if (!callsRef.current.some((x) => x.acc === c.acc && x.active)) answered?.stop(c.acc);
       toast.error("Call not answered", { description });
@@ -469,7 +491,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     };
     let id: number;
     try {
-      ({ id } = await post<{ id: number }>("/api/call/answer", { since: c.since }, c.acc));
+      ({ id } = await post<{ id: number }>("/api/call/answer", { since: c.since, ...(relaySound ? { audio: true } : {}) }, c.acc));
     } catch (e) {
       return failed(e instanceof ApiError ? e.message : "The server could not be reached");
     }
@@ -484,7 +506,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     const mine = { acc: n, name };
     const done = () => setPlacing((p) => (p?.acc === n && p.name === name ? null : p));
     setPlacing(mine);
-    if (!startCallAudio(n)) openDesktop(n);
+    const relaySound = startRelayAudio(n);
+    if (carriesSound(n) && !startCallAudio(n)) openDesktop(n);
     const failed = (description: string) => {
       done();
       if (!callsRef.current.some((x) => x.acc === n && x.active)) answered?.stop(n);
@@ -492,7 +515,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     };
     let id: number;
     try {
-      ({ id } = await post<{ id: number }>("/api/call/start", { name }, n));
+      ({ id } = await post<{ id: number }>("/api/call/start", { name, ...(relaySound ? { audio: true } : {}) }, n));
     } catch (e) {
       return failed(e instanceof ApiError ? e.message : "The server could not be reached");
     }
@@ -622,11 +645,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const chatOf = (name: string) => (chats ?? []).find((c) => c.name === name)?.name ?? null;
 
   const current = accounts?.find((a) => a.slot === acc);
-  // the person of a 1:1 chat can be called from an account of the browsers container that runs, with no call on it and
-  // none being placed
+  // the person of a 1:1 chat can be called from an account that runs (in the browsers container or on another
+  // computer), with no call on it and none being placed
   const callable = (name: string) =>
     !!current &&
-    !current.relay &&
     !current.stopped &&
     !current.checkEvery &&
     !isSelf(name) &&
@@ -966,6 +988,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               onBack={() => setOpenChat(null)}
               onOpenDesktop={() => openDesktop(acc)}
               onCall={callable(openChat) ? () => void placeCall(acc, openChat) : undefined}
+              callHost={current?.relay && !current.callAudio ? relayHost(current) : undefined}
             />
           ) : (
             <Empty className="flex-1">

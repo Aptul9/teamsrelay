@@ -15,7 +15,7 @@ const KEEP_UPDATING = ["--disable-background-networking", "--disable-component-u
 const BLANK_TAB_MS = 5_000;
 const OTHER_PAGE_MS = 10 * 60_000;
 
-export type LaunchOptions = { profileDir: string; channel: string; headless?: boolean };
+export type LaunchOptions = { profileDir: string; channel: string; headless?: boolean; extraArgs?: string[] };
 
 // The browser of the relay, on a profile of its own. Never the profile of the everyday browser: since Chromium 136
 // remote debugging, the pipe Playwright drives it through included, is ignored on the default user data directory,
@@ -35,7 +35,7 @@ export async function launchBrowser(o: LaunchOptions): Promise<BrowserContext> {
     // Playwright adds --no-sandbox otherwise; this browser renders whatever arrives in Teams
     chromiumSandbox: true,
     ignoreDefaultArgs: KEEP_UPDATING,
-    args: ["--window-size=1280,1000", "--accept-lang=en-US"],
+    args: ["--window-size=1280,1000", "--accept-lang=en-US", ...(o.extraArgs ?? [])],
   });
   const browser = context.browser();
   if (browser) await grantNotifications(browser).catch(() => undefined);

@@ -108,17 +108,18 @@ function openSlotDb(slot: number): Database.Database {
 
 const viewingTs = (v: string | null | undefined) => parseState(Viewing, v, { chat: "", ts: 0 }).ts;
 
-// The health the agent of the relay rewrites every few seconds, and the call while it rings, go by the clock of the
-// server: the app judges both by their age, and the clock of the other computer may be off. Each keeps the age it had
-// on the relay when it was sent (`at`: a time of the relay, ms, on the server's clock).
+// The health the agent of the relay rewrites every few seconds, the call while it rings and the call in progress, go by
+// the clock of the server: the app judges each by its age, and the clock of the other computer may be off. Each keeps
+// the age it had on the relay when it was sent (`at`: a time of the relay, ms, on the server's clock).
 function onServerClock(k: string, v: string, at: (ms: number) => number): string {
-  if (k !== STATE.health && k !== STATE.call) return v;
+  if (k !== STATE.health && k !== STATE.call && k !== STATE.inCall) return v;
   try {
     const o = JSON.parse(v) as unknown;
     if (!o || typeof o !== "object" || Array.isArray(o)) return v;
     const row = o as Record<string, unknown>;
     if (k === STATE.health && typeof row.ts === "number") return JSON.stringify({ ...row, ts: Math.floor(at(row.ts * 1000) / 1000) });
     if (k === STATE.call && row.ringing === true && typeof row.seen === "number") return JSON.stringify({ ...row, seen: at(row.seen) });
+    if (k === STATE.inCall && row.active === true && typeof row.seen === "number") return JSON.stringify({ ...row, seen: at(row.seen) });
   } catch {
     // not JSON: kept as the relay sent it
   }
@@ -136,8 +137,8 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
     db.transaction(() => {
       if (b.chats) {
         db.prepare("DELETE FROM chats").run();
-        const insert = db.prepare("INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av, presence) VALUES(?,?,?,?,?,?,?,?,?,?)");
-        for (const c of b.chats) insert.run(c.name, c.preview, c.pos, c.ts, c.tm, c.unread, c.mention, c.muted, c.av, c.presence ?? null);
+        const insert = db.prepare("INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
+        for (const c of b.chats) insert.run(c.name, c.preview, c.pos, c.ts, c.tm, c.unread, c.mention, c.muted, c.av, c.presence ?? null, c.kind ?? "");
       }
       if (b.messages) {
         const clear = db.prepare("DELETE FROM chat_messages WHERE chat=?");
@@ -262,7 +263,7 @@ function relayNotifier(caller: RelayCaller): Notifier {
     remove: (endpoint) => app.remove(endpoint),
     account: (me) => app.account(me),
   };
-  const notifier = new Notifier({ store, devices, vapid, subject: config.vapidSubject, ntfy: config.ntfy, fcm });
+  const notifier = new Notifier({ store, devices, vapid, subject: config.vapidSubject, ntfy: config.ntfy, fcm, answerable: true });
   pushers().set(slot, { added, store, notifier });
   return notifier;
 }

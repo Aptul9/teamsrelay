@@ -29,7 +29,10 @@ import * as pageScripts from "@/agent/teams/scripts/page-state";
 import * as signInScripts from "@/agent/teams/scripts/sign-in";
 import { probePage, readIdentity } from "@/agent/teams/scripts/page-state";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
+import { STATE } from "@/shared/slot-db/state";
 import { BrowserKeeper, launchBrowser, openTeams } from "./browser";
+import { CallBridge } from "./call-bridge";
+import * as bridgeScripts from "./call-bridge-page";
 import { loadConfig, readToken, type Config } from "./config";
 import { RelayDevices } from "./devices";
 import { acquireLock, LOGIN_TIMEOUT_MS, LockError } from "./lock";
@@ -50,7 +53,7 @@ function check() {
   const sqlite = (db.prepare("SELECT sqlite_version() AS v").get() as { v: string }).v;
   db.close();
   let scripts = 0;
-  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts, callScripts, signInScripts]) {
+  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts, callScripts, signInScripts, bridgeScripts]) {
     for (const [name, fn] of Object.entries(scriptModule)) {
       if (typeof fn !== "function") continue;
       const source = fn.toString();
@@ -95,12 +98,30 @@ async function run(config: Config) {
   const devices = RelayDevices.open(config.dbPath);
   const vapid = loadVapidKeys(config.vapid.privateKeyFile, config.vapid.appKeyFile);
   if (!vapid) log.warn("push", "no VAPID private key: push notifications off, run npm run relay:setup", { file: config.vapid.privateKeyFile });
+  // joined to a server, the sound of a call answered or placed from its app goes to that app (call-bridge.ts)
+  const bridge = config.server ? new CallBridge(config.server) : null;
+  if (bridge) store.setState(STATE.callAudio, "1");
   // joined to a server, the account shows in its web app, which sends the notifications to the devices of its owner
   const link = config.server
-    ? new ServerLink({ ...config.server, host: config.hostLabel, dbPath: config.dbPath, store, mediaDir: config.mediaDir, filesDir: config.filesDir, uploadsDir: config.uploadsDir })
+    ? new ServerLink({
+        ...config.server,
+        host: config.hostLabel,
+        dbPath: config.dbPath,
+        store,
+        mediaDir: config.mediaDir,
+        filesDir: config.filesDir,
+        uploadsDir: config.uploadsDir,
+        onCallAudio: () => bridge?.arm(),
+      })
     : null;
   const notifier = link ? new ServerNotifier(link, store) : new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy });
-  const keeper = new BrowserKeeper(() => launchBrowser({ profileDir: config.profileDir, channel: config.channel }), config.teamsUrl);
+  // the hook of the bridge goes in before Teams loads, and before the microphone hook of the agent
+  const launch = async () => {
+    const context = await launchBrowser({ profileDir: config.profileDir, channel: config.channel, extraArgs: config.browserArgs });
+    await bridge?.attach(context).catch((e: unknown) => log.warn("bridge", `call sound hook: ${errorText(e)}`));
+    return context;
+  };
+  const keeper = new BrowserKeeper(launch, config.teamsUrl);
   const server = await startServer({ ...config.api, store, devices, token, vapidKey: vapid?.publicKey ?? "", webDir: WEB_DIR, publicDir: PUBLIC_DIR, mediaDir: config.mediaDir });
   log.info("relay", "start", { browser: config.channel, api: server.url, push: !!vapid, ntfy: !!config.ntfy, devices: devices.count(), server: config.server?.url });
   const stopped = new AbortController();
@@ -110,6 +131,7 @@ async function run(config: Config) {
   const linked = link?.run(stopped.signal);
   close = async () => {
     stopped.abort();
+    bridge?.stop();
     await keeper.close();
     await loop;
     await linked;

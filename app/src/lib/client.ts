@@ -31,6 +31,8 @@ export type Account = {
   relay: boolean;
   host: string;
   relaySeen: number;
+  // its relay sends the sound of a call answered or placed from the app to the app (absent: a relay of before)
+  callAudio?: boolean;
 };
 export type { ActivityItem, CallLogEntry, Chat, Message, Reaction } from "@/shared/slot-db/rows";
 export type { OpenReason, OpenStatus } from "@/shared/slot-db/commands";
