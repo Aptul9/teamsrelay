@@ -1,0 +1,16 @@
+{
+  "hosts": {
+    "zurich": {
+      "vm": "oracle-vm",
+      "port": 8766,
+      "token": "the cmdapi token of this host, from its relay.env CMDAPI_TOKEN",
+      "appDir": "C:/Users/you/teamsrelay/app"
+    },
+    "office": {
+      "vm": "oracle-vm",
+      "port": 8767,
+      "token": "a different token, this host's own",
+      "appDir": "/home/you/teamsrelay/app"
+    }
+  }
+}

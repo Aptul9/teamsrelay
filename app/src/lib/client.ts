@@ -9,6 +9,8 @@ export type Account = {
   email: string;
   tenant: string;
   av: string;
+  // the owner's own presence word (shared/presence), "" when unknown
+  presence: string;
   teams: string;
   overall: string;
   stopped: boolean;

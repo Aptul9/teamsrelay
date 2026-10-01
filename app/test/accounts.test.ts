@@ -114,3 +114,13 @@ describe("an account checked every N hours", () => {
     expect(() => queue(n, "resync")).toThrow(/only during its checks/);
   });
 });
+
+describe("the owner's own presence", () => {
+  it("surfaces the presence word the agent stored, empty when there is none", () => {
+    const n = claimSlot(appDb(), "pres", { slotCount: 24, perUser: 4 });
+    const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
+    expect(summary("pres", n).presence).toBe("");
+    slotDb.prepare("INSERT INTO state(k, v) VALUES('presence', ?)").run(JSON.stringify("available"));
+    expect(summary("pres", n).presence).toBe("available");
+  });
+});

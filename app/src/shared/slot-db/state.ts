@@ -7,6 +7,8 @@ export const STATE = {
   // Teams status last logged, and Teams state (ok, login...) at the previous health check
   presencePrev: "presence_prev",
   teamsStatusPrev: "teams_status_prev",
+  // the owner's own presence now, as a Presence word (shared/presence), "" when unknown: the dot on the owner's avatar
+  presence: "presence",
   // JSON Watch of the Teams sign-in and of the browser: since when the problem lasts, whether it was pushed
   loginWatch: "login_watch",
   browserWatch: "browser_watch",
