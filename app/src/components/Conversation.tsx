@@ -513,7 +513,7 @@ export function Conversation({
         data-mid={mid}
         className={cn("group/msg relative flex gap-2 outline-none", mine ? "justify-end" : "justify-start", first ? "mt-4" : "mt-0.5")}
       >
-        {!mine && (first ? <Avatar name={m.author || "?"} av={m.av} acc={acc} className="mt-5 size-8" /> : <div className="w-8 shrink-0" />)}
+        {!mine && (first ? <Avatar name={m.author || "?"} av={m.av} acc={acc} presence={entry?.presence} className="mt-5 size-8" /> : <div className="w-8 shrink-0" />)}
         <div className={cn("flex max-w-[min(36rem,82%)] min-w-0 flex-col", mine ? "items-end" : "items-start")}>
           {first && ((!mine && m.author) || at !== null) && (
             <div className={cn("mb-1 flex items-center gap-1.5 text-xs text-muted-foreground", mine ? "mr-1" : "ml-1")}>

@@ -45,6 +45,7 @@ const account = (extra: Partial<Account> = {}): Account => ({
   email: "anna.rossi@contoso.example",
   tenant: "Contoso",
   av: "",
+  presence: "",
   teams: "ok",
   overall: "green",
   stopped: false,
