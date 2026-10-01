@@ -76,7 +76,9 @@ export function defaultShell(): string {
 // on spawn's own shell handling, whose Windows path only reaches cmd.exe. This makes PowerShell the Windows default and
 // lets any shell be named on either platform.
 export function shellArgv(shell: string, command: string): string[] {
-  const name = path.basename(shell).toLowerCase();
+  // split on both separators: a Windows shell path must still be recognized when this runs on a POSIX host (tests),
+  // where path.basename would not treat a backslash as a separator
+  const name = (shell.split(/[\\/]/).pop() ?? shell).toLowerCase();
   if (POWERSHELL.has(name)) return [shell, "-NoProfile", "-NonInteractive", "-Command", command];
   if (name === "cmd" || name === "cmd.exe") return [shell, "/c", command];
   return [shell, "-c", command];

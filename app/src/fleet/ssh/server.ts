@@ -66,7 +66,7 @@ function authorize(ctx: AuthContext, allowed: ParsedKey[]): void {
 }
 
 function interactiveArgs(shell: string): string[] {
-  const name = path.basename(shell).toLowerCase();
+  const name = (shell.split(/[\\/]/).pop() ?? shell).toLowerCase();
   if (name.includes("pwsh") || name.includes("powershell")) return ["-NoLogo", "-NoProfile"];
   if (name === "cmd" || name === "cmd.exe") return [];
   return ["-i"];
