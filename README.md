@@ -61,6 +61,7 @@ Open `https://<DOMAIN>`, sign in as the administrator, add a Teams account and s
 | Deploy pipeline, updates, backup, troubleshooting | [docs/operations.md](docs/operations.md) |
 | Security model | [docs/security.md](docs/security.md) |
 | HTTP API | [docs/api.md](docs/api.md) |
+| Remote update and inspection of relay hosts (fleet) | [docs/setup.md](docs/setup.md#remote-management-of-relay-hosts) |
 | AI clients over MCP: setup, tools, limits | [docs/mcp.md](docs/mcp.md) |
 | Teams selectors used by the agent | [docs/teams-selectors.md](docs/teams-selectors.md) |
 | Known limitations | [docs/limitations.md](docs/limitations.md) |
