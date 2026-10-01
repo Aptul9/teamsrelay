@@ -174,7 +174,7 @@ export function AccountMenu({
           aria-label={others ? `Accounts and settings, ${others} unread in other accounts` : "Accounts and settings"}
           className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2 py-1.5 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:ring-3 focus-visible:ring-ring/50 data-[state=open]:bg-sidebar-accent"
         >
-          {current ? <Avatar name={accName(current)} av={current.av} acc={current.slot} className="size-9" /> : <LogoTile />}
+          {current ? <Avatar name={accName(current)} av={current.av} acc={current.slot} presence={current.presence} className="size-9" /> : <LogoTile />}
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold">{current ? current.tenant || accName(current) : "TeamsRelay"}</div>
             <div className="truncate text-xs text-muted-foreground">{current ? accSub(current).text : user.email}</div>

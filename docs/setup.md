@@ -255,3 +255,56 @@ Get-WinEvent -FilterHashtable @{LogName='System'; Id=1074,6008} -MaxEvents 20 | 
 # never sleep while on (a VDI usually already does not): sleep after, on AC then on battery, 0x00000000 = never
 powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE | Select-String '0x' | Select-Object -Last 2
 ```
+
+## Remote management of relay hosts
+
+A relay host (local relay, or an account on another computer, VDI included) can be updated, inspected and logged into from one place, with no inbound connection to the host and nothing admin-installed on it. The host runs a **fleet agent**, a process separate from the relay, that holds open reverse SSH tunnels to a hub VM and publishes a command API (and, if enabled, an SSH shell) on the VM's loopback. A `fleet` CLI on a control machine reaches them through the VM. Design: [design/2026-10-01-fleet-remote-management.md](design/2026-10-01-fleet-remote-management.md).
+
+The hub VM is any always-on host the relay machines can SSH and the control machine can SSH (the TeamsRelay server itself serves). It needs only its sshd; nothing is installed on it. The OpenSSH client used for the tunnels ships with Windows 10/11 and macOS and needs no admin.
+
+### On each relay host
+
+The agent is opt-in and runs as its own process. Two things turn it on.
+
+First, `app/fleet.config.json` (copy from `fleet.config.example.json`; untracked, it holds the token and the ssh keys) picks the components. Enable `cmdapi` (remote run and update) and, optionally, `ssh` (an interactive shell through a pure-Node server, no admin):
+
+```json
+{
+  "vm": "oracle-vm",
+  "cmdapi": { "enabled": true, "vmPort": 8766, "token": "<per-host token>" },
+  "ssh":    { "enabled": false, "vmPort": 8822, "authorizedKeys": ["ssh-ed25519 AAAA... you@laptop"] }
+}
+```
+
+Each `vmPort` is unique per host; generate the token with `node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))"`. The ssh host key is created on first run under `state/` and persisted.
+
+Second, `FLEET_AGENT=on` in `app/relay.env`, so pm2 starts the agent beside the relay:
+
+```bash
+npm run build:fleet-agent
+npx pm2 start ecosystem.config.cjs   # starts teamsrelay, and teamsrelay-fleet when FLEET_AGENT is set
+npx pm2 save
+```
+
+Or run it standalone (the second of the two npm commands) without the env flag: `npm run fleet:agent`. Toggle it under pm2 with `npx pm2 stop|start teamsrelay-fleet`, then `npx pm2 save` to keep the choice across logon. The host must be able to `ssh <vm>` non-interactively (key in `~/.ssh`, alias in `~/.ssh/config`). Nothing on the host listens for an inbound connection; cmdapi and the ssh server stay on loopback and are reached only through the tunnels.
+
+Once the `ssh` component is enabled, log in from a machine whose key is in `authorizedKeys`:
+
+```bash
+ssh -J oracle-vm -p 8822 fleet@127.0.0.1    # jump through the VM to the tunnel endpoint on its loopback
+```
+
+The username is ignored (auth is by key). That is `library` mode (the default, no admin, embedded ssh2): its shell has no pseudo-tty, so it suits commands and scripts more than full-screen terminal programs. File transfer works in library mode too, over the same connection: `sftp -J oracle-vm -P <vmPort> fleet@127.0.0.1`, or `scp -O -J oracle-vm -P <vmPort> <file> fleet@127.0.0.1:<path>`. For a full OS shell with pty and sftp, set `"mode": "system"` in the `ssh` block instead: the agent then tunnels to the host's own OpenSSH Server on port 22, which must be installed and running on the host and which owns authentication (so `authorizedKeys` is not used). Log in the same way, `ssh -J oracle-vm -p <vmPort> <your-os-user>@127.0.0.1`.
+
+### From the control machine
+
+From `app/`, copy `fleet.hosts.example.json` to `fleet.hosts.json` (untracked; it holds the tokens) and fill each host's `vm`, `port` (its `cmdapi.vmPort`), `token` and `appDir`. Then:
+
+```bash
+npm run build:fleet
+node dist/fleet.cjs status all                 # cmdapi reachable? relay online under pm2?
+node dist/fleet.cjs exec zurich 'git log -1'   # run a command on one host
+node dist/fleet.cjs update all                 # pull, npm ci, build the relay, restart it, every host
+```
+
+`update` runs `git pull --ff-only && npm ci --ignore-scripts && npm run build:relay && npx pm2 restart teamsrelay` in the host's `app/`. It does not sign in to Teams: if a host shows signed out, open its relay window over RDP and sign in there.

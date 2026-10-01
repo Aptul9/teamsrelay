@@ -10,6 +10,8 @@ export type AccountSummary = {
   email: string;
   tenant: string;
   av: string;
+  // the owner's own presence word (shared/presence), "" when unknown
+  presence: string;
   teams: string;
   overall: string;
   stopped: boolean;
@@ -61,8 +63,9 @@ export function accountSummary(s: Slot): AccountSummary {
   let activityIds: string[] | null = null;
   let link: RelayLink = { host: "", seen: 0 };
   let callAudio = false;
+  let presence = "";
   try {
-    ({ me, health, unread, unreadActivity, missedCalls, activityIds, link, callAudio } = withSlot(s.slot, (r) => ({
+    ({ me, health, unread, unreadActivity, missedCalls, activityIds, link, callAudio, presence } = withSlot(s.slot, (r) => ({
       me: r.identity(),
       health: r.health(upSince(s)),
       unread: r.unreadCount(),
@@ -71,6 +74,8 @@ export function accountSummary(s: Slot): AccountSummary {
       activityIds: r.activityIds(),
       link: RelayLink.catch({ host: "", seen: 0 }).parse(r.state<unknown>(STATE.relay, {})),
       callAudio: r.state<unknown>(STATE.callAudio, 0) === 1,
+      // the owner's own presence word, for the dot on their own avatar
+      presence: r.state<string>(STATE.presence, ""),
     })));
   } catch (e) {
     if (!(e instanceof SlotNotReady)) throw e;
@@ -83,6 +88,7 @@ export function accountSummary(s: Slot): AccountSummary {
     email: me.email ?? "",
     tenant: me.tenant ?? "",
     av: me.av ?? "",
+    presence,
     teams: String(health.teams ?? ""),
     overall: String(health.overall ?? ""),
     stopped: !!s.stopped,

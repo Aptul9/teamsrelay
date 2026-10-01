@@ -10,6 +10,7 @@ const base: Account = {
   email: "",
   tenant: "",
   av: "",
+  presence: "",
   teams: "ok",
   overall: "green",
   stopped: false,

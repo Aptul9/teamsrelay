@@ -60,6 +60,8 @@ A rollback to a release with the Python agent works on the same data: the tables
 
 Dependabot opens weekly pull requests for GitHub Actions, the images in `docker-compose.yml` and in `app/Dockerfile` (Chromium is pinned by digest there) and npm. Merging one deploys it. Keep the Chromium image current: it renders untrusted web content.
 
+A relay on another computer does not deploy with the server: it updates on its own host. Do it from one place with the fleet CLI (`node dist/fleet.cjs update <host|all>`), which pulls, installs, rebuilds the relay bundle and restarts it under pm2. Setup and the one-host proof before a rollout: [setup.md](setup.md#remote-management-of-relay-hosts), [design/2026-10-01-fleet-remote-management.md](design/2026-10-01-fleet-remote-management.md).
+
 ## Useful commands
 
 ```bash

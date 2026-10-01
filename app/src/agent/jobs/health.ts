@@ -1,3 +1,4 @@
+import { presenceOf } from "@/shared/presence";
 import { SIGN_IN_TRY_WAIT } from "@/shared/sign-in";
 import { SignInTry, STATE, Watch, parseState, type AgentHealth, type TeamsState } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
@@ -23,6 +24,8 @@ export async function updateHealth(a: Agent): Promise<AgentHealth> {
       rail = !!(await a.tp.page.evaluate(uncoveredPoint, SEL.activityView)) || (await a.tp.page.evaluate(openOverlays, SEL)) > 0;
     }
     if (onTeams && probe.presence) {
+      // the owner's own presence, mapped to a Presence word, for the dot on their own avatar in the app
+      a.store.setState(STATE.presence, presenceOf(probe.presence));
       const before = a.store.getState(STATE.presencePrev);
       if (probe.presence !== before) {
         log.info("presence", `${before || "-"} to ${probe.presence}`);

@@ -12,6 +12,7 @@ const account: Account = {
   email: "test.user@contoso.example",
   tenant: "Contoso Srl",
   av: "",
+  presence: "",
   teams: "ok",
   overall: "green",
   stopped: false,

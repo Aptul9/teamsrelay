@@ -1,0 +1,118 @@
+// fleet: drive the relay hosts from one place. node dist/fleet.cjs <command> <host|all> ...
+//   fleet exec   <host|all> <command...>   run a command on the host(s) through its cmdapi, print stdout/stderr/exit
+//   fleet update <host|all>                pull, npm ci, build the relay, restart it under pm2
+//   fleet status <host|all>                cmdapi reachable? relay online under pm2? how many restarts?
+// Hosts come from the inventory JSON (FLEET_INVENTORY, else fleet.hosts.json next to package.json). Fan-out is
+// sequential: a bad update is seen before it reaches the next host.
+import path from "node:path";
+import { exec, health, type RunRequest } from "./client";
+import { loadInventory, targets, type FleetHost } from "./inventory";
+import { updateRequest } from "./update";
+
+const USAGE = "usage: fleet <exec|update|status> <host|all> [command...]";
+
+function inventoryPath(): string {
+  return process.env.FLEET_INVENTORY || path.resolve(process.cwd(), "fleet.hosts.json");
+}
+
+function header(host: FleetHost): void {
+  console.log(`\n=== ${host.name} (${host.vm}:${host.port})`);
+}
+
+// Print a cmdapi result the way a shell would show it, and return true when the command succeeded
+function report(r: Awaited<ReturnType<typeof exec>>): boolean {
+  if (r.stdout) process.stdout.write(r.stdout.endsWith("\n") ? r.stdout : r.stdout + "\n");
+  if (r.stderr) process.stderr.write(r.stderr.endsWith("\n") ? r.stderr : r.stderr + "\n");
+  if (r.timedOut) console.error("(timed out)");
+  if (r.truncated) console.error("(output truncated)");
+  console.log(`exit ${r.exitCode}`);
+  return r.exitCode === 0 && !r.timedOut;
+}
+
+async function runExec(hosts: FleetHost[], request: RunRequest): Promise<boolean> {
+  let ok = true;
+  for (const host of hosts) {
+    header(host);
+    try {
+      ok = report(await exec(host, request)) && ok;
+    } catch (e) {
+      console.error((e as Error).message);
+      ok = false;
+    }
+  }
+  return ok;
+}
+
+async function runStatus(hosts: FleetHost[]): Promise<boolean> {
+  let ok = true;
+  for (const host of hosts) {
+    header(host);
+    if (!(await health(host))) {
+      console.log("cmdapi: unreachable");
+      ok = false;
+      continue;
+    }
+    console.log("cmdapi: ok");
+    try {
+      const r = await exec(host, { command: "npx pm2 jlist", cwd: host.appDir, timeout: 30 });
+      const relay = (JSON.parse(r.stdout) as Array<{ name: string; pm2_env?: { status?: string; restart_time?: number } }>).find((p) => p.name === "teamsrelay");
+      if (!relay) console.log("relay: not under pm2");
+      else {
+        console.log(`relay: ${relay.pm2_env?.status ?? "unknown"} (restarts ${relay.pm2_env?.restart_time ?? "?"})`);
+        if (relay.pm2_env?.status !== "online") ok = false;
+      }
+    } catch (e) {
+      console.error(`relay: ${(e as Error).message}`);
+      ok = false;
+    }
+  }
+  return ok;
+}
+
+async function main(): Promise<number> {
+  const [command, selector, ...rest] = process.argv.slice(2);
+  if (!command || !selector) {
+    console.error(USAGE);
+    return 2;
+  }
+  const hosts = targets(loadInventory(inventoryPath()), selector);
+
+  switch (command) {
+    case "exec": {
+      if (rest.length === 0) {
+        console.error("exec needs a command");
+        return 2;
+      }
+      return (await runExec(hosts, { command: rest.join(" ") })) ? 0 : 1;
+    }
+    case "update":
+      return (await updateAll(hosts)) ? 0 : 1;
+    case "status":
+      return (await runStatus(hosts)) ? 0 : 1;
+    default:
+      console.error(`unknown command ${command}\n${USAGE}`);
+      return 2;
+  }
+}
+
+async function updateAll(hosts: FleetHost[]): Promise<boolean> {
+  let ok = true;
+  for (const host of hosts) {
+    header(host);
+    try {
+      ok = report(await exec(host, updateRequest(host))) && ok;
+    } catch (e) {
+      console.error((e as Error).message);
+      ok = false;
+    }
+  }
+  return ok;
+}
+
+main().then(
+  (code) => process.exit(code),
+  (e: unknown) => {
+    console.error((e as Error).message);
+    process.exit(1);
+  },
+);
