@@ -26,12 +26,14 @@ export function LoginForm({ next }: { next: string }) {
     e.preventDefault();
     setBusy(true);
     setError("");
-    const { error } = await authClient.signIn.email({ email: email.trim(), password });
+    const { data, error } = await authClient.signIn.email({ email: email.trim(), password });
     setBusy(false);
     if (error) {
       setError(error.status === 429 ? "Too many attempts, try again in a few minutes" : "Wrong email or password");
       return;
     }
+    // an MCP client signing in (OAuth): the client of better-auth already follows it to the consent screen
+    if ((data as { redirect?: unknown } | null)?.redirect === true) return;
     // full navigation: the remote desktop is served by Caddy, outside the Next.js router
     window.location.href = next;
   }

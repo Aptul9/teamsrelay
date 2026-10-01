@@ -214,6 +214,8 @@ The account then works like the others in the app, with these differences:
 
 Joined, the relay keeps its own app on loopback, without devices of its own.
 
+**A browser for AI clients.** `RELAY_BROWSER=1` in `app/relay.env` gives the AI clients (MCP, OAuth sign-in) of the owner of the account a browser of their own on that computer ([mcp.md](mcp.md#browser-tools)): a second Chrome or Edge window on the profile `state/ai-profile`, opened at the first call and closed after `RELAY_BROWSER_IDLE` seconds unused (default 900). The relay opens one more websocket to the server (`/api/relay/browser/socket`); behind a corporate proxy that refuses the upgrade, the relay keeps trying every 30 s and the tools do not show. A site the AI should use signed in gets that sign-in once, by hand, in that window. Off by default; on a computer of a client environment, that environment's rules decide ([security.md](security.md#browser-of-a-relay-for-ai-clients)). The tools come from `@playwright/mcp`, which brings its own Playwright: `npm ci --ignore-scripts` installs it, no browser download needed.
+
 ## The relay on a VDI or RDP host
 
 Everything under [Local relay](#local-relay) and [An account on another computer](#an-account-on-another-computer) holds on a machine reached over RDP (a VDI, an Azure Virtual Desktop session host, a remote workstation) as well as on a physical one. The relay browser is a window of the interactive desktop session: the relay runs as long as that session exists, whether or not an RDP client is connected to it.

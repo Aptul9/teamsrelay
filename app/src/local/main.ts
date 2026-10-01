@@ -31,6 +31,8 @@ import { probePage, readIdentity } from "@/agent/teams/scripts/page-state";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
 import { STATE } from "@/shared/slot-db/state";
 import { BrowserKeeper, launchBrowser, openTeams } from "./browser";
+import { BrowserHost, loadPlaywrightMcp } from "./browser-host";
+import { BrowserLink } from "./browser-link";
 import { CallBridge } from "./call-bridge";
 import * as bridgeScripts from "./call-bridge-page";
 import { loadConfig, readToken, type Config } from "./config";
@@ -67,7 +69,15 @@ function check() {
   const files = appFiles(WEB_DIR, PUBLIC_DIR);
   const missing = files.filter((f) => !fs.existsSync(f));
   if (missing.length) throw new Error(`app files missing: ${missing.join(", ")}`);
-  log.info("relay", "check ok", { sqlite, playwright: typeof chromium.launchPersistentContext === "function", scripts, web: files.length });
+  // the browser for MCP clients: @playwright/mcp and the Playwright it brings, loaded only when RELAY_BROWSER=1
+  const mcp = loadPlaywrightMcp();
+  log.info("relay", "check ok", {
+    sqlite,
+    playwright: typeof chromium.launchPersistentContext === "function",
+    browserMcp: typeof mcp.createConnection === "function" && typeof mcp.launch === "function",
+    scripts,
+    web: files.length,
+  });
 }
 
 // The profile for the relay. While the sign-in holds it the relay waits (pm2 would otherwise restart it until it gave
@@ -123,15 +133,22 @@ async function run(config: Config) {
   };
   const keeper = new BrowserKeeper(launch, config.teamsUrl);
   const server = await startServer({ ...config.api, store, devices, token, vapidKey: vapid?.publicKey ?? "", webDir: WEB_DIR, publicDir: PUBLIC_DIR, mediaDir: config.mediaDir });
-  log.info("relay", "start", { browser: config.channel, api: server.url, push: !!vapid, ntfy: !!config.ntfy, devices: devices.count(), server: config.server?.url });
+  log.info("relay", "start", { browser: config.channel, api: server.url, push: !!vapid, ntfy: !!config.ntfy, devices: devices.count(), server: config.server?.url, mcpBrowser: !!config.browser });
   const stopped = new AbortController();
   // files/: the attachments a server joined asks for (the app of the relay sends no download command)
   const media = new Media(config.mediaDir, config.filesDir);
   const loop = runAgent({ config, store, notifier, media, detector: new NewMessageDetector() }, keeper, stopped.signal);
   const linked = link?.run(stopped.signal);
+  // RELAY_BROWSER=1: a browser of its own for the MCP clients of the server, driven over a socket the relay opens
+  const browserLink =
+    config.browser && config.server
+      ? new BrowserLink({ ...config.server, host: new BrowserHost({ ...config.browser, channel: config.channel }) })
+      : null;
+  browserLink?.start();
   close = async () => {
     stopped.abort();
     bridge?.stop();
+    await browserLink?.stop();
     await keeper.close();
     await loop;
     await linked;

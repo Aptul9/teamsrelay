@@ -91,7 +91,13 @@ Administrators only.
 | GET | `/api/desktop/{n}` | brings the browser window of account N to the front of the remote desktop, then 302 to `/desktop/`. Owner only, 404 otherwise; without a session, 302 to the login |
 | POST | `/api/desktop/{n}` | the same without the redirect, for the desktop already on screen (the switcher of `/remote`): `{ok, shown}`, `shown` false when the window could not be brought forward. Owner only, 404 otherwise; 409 for an account on another computer; 401 without a session |
 | GET | `/remote?account={n}` | the desktop tab: the one remote desktop on the whole page, opened on account N, with a small tab at the top whose arrow pulls down the accounts; the address follows the account in front. Without a session, 302 to the login |
-| POST | `/mcp` | MCP endpoint for AI clients, read only: `Authorization: Bearer <MCP_TOKEN>` instead of a session, 404 while `MCP_TOKEN` is empty. Tools: [mcp.md](mcp.md) |
+| POST | `/mcp` | MCP endpoint for AI clients: `Authorization: Bearer <MCP_TOKEN>` (read tools) or an OAuth access token of a user (read tools and the browser tools of the user's relays) instead of a session. 401 with a `WWW-Authenticate` naming `/.well-known/oauth-protected-resource/mcp` without a valid token, 403 with an `Origin` header, 404 when neither `MCP_TOKEN` nor OAuth is on. Tools: [mcp.md](mcp.md) |
+| GET | `/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server/api/auth` | *public*. OAuth discovery of `/mcp` (RFC 9728, RFC 8414); the endpoints of the authorization server are under `/api/auth/oauth2/` (`authorize`, `token`, `register`, `consent`), its keys at `/api/auth/jwks` |
+| GET | `/consent` | the consent screen of an MCP client signing in: the client, the user, Allow and Deny. Its query is signed by the server |
+| GET | `/api/oauth/clients` | `{clients: [{clientId, name, since}]}`: the MCP clients the session user allowed, newest first |
+| DELETE | `/api/oauth/clients/{id}` | revokes that client for the session user: its consent and tokens deleted, its next request to `/mcp` refused. `{ok}` |
+| GET | `/api/accounts/{n}/browser` | `{off, connected, actions}`: the browser of the relay of account N for AI clients, switched off or not, its relay connected with it on, and its last 50 calls (`ts, client, tool, host, outcome`). Owner only, 404 otherwise |
+| PATCH | `/api/accounts/{n}/browser` | `{off}`, `true` or `false`: takes that browser away from every AI client, or gives it back. Owner only (404), 409 for an account of the browsers container, 400 for another value. `{ok, off}` |
 
 ## Relay of an account on another computer
 
@@ -106,6 +112,7 @@ What the [local relay](architecture.md#local-relay) of an account on another com
 | PUT | `/api/relay/media/{16 hex}.{png,jpg,gif,webp}` | the image, raw: 415 when its bytes are not that type, 413 above 10 MB or past the room of the account (`RELAY_QUOTA_MB`, images and attachments together, uploads at the same time included), from `Content-Length` before the body when it says so. `{ok}` |
 | PUT | `/api/relay/files/{16 hex}.{ext}` | a downloaded attachment, raw, up to 100 MB and within the room of the account (413). `{ok}` |
 | GET | `/api/relay/uploads/{16 hex}.{png,jpg,gif,webp}` | the image of a `sendimage` command, left by the app in `data/N/uploads` |
+| GET | `/api/relay/browser` | `{slot}`: asked by the hub of the web app process with the `Authorization` of the upgrade of `/api/relay/browser/socket`, the websocket a relay with `RELAY_BROWSER=1` opens for the browser of the AI clients. On it the server sends JSON-RPC `tools/list` and `tools/call` requests and the relay answers each with the same id; anything else is refused by the relay. Messages up to 32 MB |
 
 ## Health (`/api/health`, `health` event)
 

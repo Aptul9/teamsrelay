@@ -1,12 +1,20 @@
+import { mcp } from "@better-auth/mcp";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
-import { admin } from "better-auth/plugins";
+import { admin, jwt } from "better-auth/plugins";
 import { appDb, forgetFcmDevicesOfSession } from "./appdb";
 import { config } from "./config";
 import { ENV_PASSWORD_MESSAGE, isEnvAdmin } from "./env-admin";
+import { mcpResource, nativeByDefault } from "./mcp/oauth";
 
-// The administrator of .env changes its password in .env only, not from Settings nor from Users
-const envPasswordGuard = createAuthMiddleware(async (ctx) => {
+// Before every request of better-auth. The administrator of .env changes its password in .env only, not from Settings
+// nor from Users. An MCP client registering itself with a loopback redirect and no application_type (MCP SDK 1.x) is a
+// native app: better-auth would take it for a web client, which may not use an http://localhost redirect.
+const before = createAuthMiddleware(async (ctx) => {
+  if (ctx.path === "/oauth2/register") {
+    const body = nativeByDefault(ctx.body);
+    return body === ctx.body ? undefined : { context: { body } };
+  }
   let email: string | undefined;
   if (ctx.path === "/change-password") email = (await getSessionFromCtx(ctx))?.user.email;
   else if (ctx.path === "/admin/set-user-password") {
@@ -15,6 +23,24 @@ const envPasswordGuard = createAuthMiddleware(async (ctx) => {
   } else return;
   if (isEnvAdmin(email)) throw new APIError("FORBIDDEN", { message: ENV_PASSWORD_MESSAGE });
 });
+
+// OAuth 2.1 for MCP clients (@better-auth/mcp, docs/mcp.md): tokens for /mcp, signed by the jwt plugin, given after the
+// sign-in of this app and a consent screen; clients register themselves. Off when the address of the app is plain HTTP
+// on a host other than this computer's, which the MCP resource may not be.
+function oauthPlugins() {
+  const resource = mcpResource();
+  if (!resource) return [];
+  return [
+    jwt(),
+    mcp({
+      loginPage: "/login",
+      consentPage: "/consent",
+      resource,
+      allowDynamicClientRegistration: true,
+      allowUnauthenticatedClientRegistration: true,
+    }),
+  ];
+}
 
 export function authOptions() {
   return {
@@ -34,8 +60,8 @@ export function authOptions() {
       expiresIn: 60 * 60 * 24 * 30,
       updateAge: 60 * 60 * 24,
     },
-    plugins: [admin()],
-    hooks: { before: envPasswordGuard },
+    plugins: [admin(), ...oauthPlugins()],
+    hooks: { before },
     // a phone of the Android app gets pushes as long as the session that registered it lasts: a lost phone stops with
     // "Sign out every other device" or a password change
     databaseHooks: {

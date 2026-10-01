@@ -95,6 +95,31 @@ describe("a server to join", () => {
   });
 });
 
+describe("browser for MCP clients", () => {
+  const SERVER = { SERVER_URL: "https://teams.example.com", SERVER_TOKEN: "t".repeat(43) };
+
+  it("is off unless RELAY_BROWSER=1", () => {
+    expect(loadConfig(SERVER, CWD).browser).toBeNull();
+    expect(loadConfig({ ...SERVER, RELAY_BROWSER: "0" }, CWD).browser).toBeNull();
+    expect(loadConfig({ ...SERVER, RELAY_BROWSER: "" }, CWD).browser).toBeNull();
+  });
+
+  it("has a profile and an output folder of its own under state/, closed after 15 minutes unused", () => {
+    expect(loadConfig({ ...SERVER, RELAY_BROWSER: "1" }, CWD).browser).toEqual({
+      profileDir: path.join(CWD, "state", "ai-profile"),
+      outputDir: path.join(CWD, "state", "ai-output"),
+      idleMs: 900_000,
+    });
+    expect(loadConfig({ ...SERVER, RELAY_BROWSER: "1", RELAY_BROWSER_IDLE: "5" }, CWD).browser?.idleMs).toBe(5000);
+  });
+
+  it("needs a server joined, and a known value", () => {
+    expect(() => loadConfig({ RELAY_BROWSER: "1" }, CWD)).toThrow(/RELAY_BROWSER=1 needs SERVER_URL and SERVER_TOKEN/);
+    expect(() => loadConfig({ ...SERVER, RELAY_BROWSER: "yes" }, CWD)).toThrow(/RELAY_BROWSER/);
+    expect(() => loadConfig({ ...SERVER, RELAY_BROWSER: "1", RELAY_BROWSER_IDLE: "0" }, CWD)).toThrow(/RELAY_BROWSER_IDLE/);
+  });
+});
+
 describe("API token", () => {
   it("is read from its file, without the line end", () => {
     const file = path.join(tempDir(), "token");

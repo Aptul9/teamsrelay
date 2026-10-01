@@ -38,17 +38,30 @@ const post = (headers: Record<string, string>) =>
   POST(new Request(MCP_URL, { method: "POST", body: initialize, headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers } }), undefined);
 
 describe("POST /mcp", () => {
-  it("is off without MCP_TOKEN: 404", async () => {
+  it("without MCP_TOKEN takes OAuth tokens only: 401 pointing to the OAuth metadata", async () => {
     delete process.env.MCP_TOKEN;
-    expect((await post({ Authorization: `Bearer ${TOKEN}` })).status).toBe(404);
+    const r = await post({ Authorization: `Bearer ${TOKEN}` });
+    expect(r.status).toBe(401);
+    expect(r.headers.get("www-authenticate")).toMatch(/^Bearer resource_metadata=".*\/\.well-known\/oauth-protected-resource\/mcp"/);
   });
 
-  it("wants the token: 401 with a Bearer challenge, session cookies ignored", async () => {
+  it("is off without MCP_TOKEN when OAuth cannot be: plain HTTP on another host, 404", async () => {
+    delete process.env.MCP_TOKEN;
+    process.env.APP_URL = "http://teams.lan:8090";
+    try {
+      expect((await post({ Authorization: `Bearer ${TOKEN}` })).status).toBe(404);
+    } finally {
+      delete process.env.APP_URL;
+    }
+  });
+
+  it("wants the token: 401 with a challenge, session cookies ignored", async () => {
     const refused: Record<string, string>[] = [{}, { Authorization: "Bearer wrong" }, { Authorization: TOKEN }, { Cookie: "better-auth.session_token=x" }];
     for (const headers of refused) {
       const r = await post(headers);
       expect(r.status, JSON.stringify(headers)).toBe(401);
-      expect(r.headers.get("www-authenticate")).toMatch(/^Bearer/);
+      // a value with no scheme gets the DPoP challenge of better-auth
+      expect(r.headers.get("www-authenticate")).toMatch(/^(Bearer|DPoP) /);
     }
   });
 
