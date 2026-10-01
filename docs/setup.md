@@ -253,3 +253,39 @@ Get-WinEvent -FilterHashtable @{LogName='System'; Id=1074,6008} -MaxEvents 20 | 
 # never sleep while on (a VDI usually already does not): sleep after, on AC then on battery, 0x00000000 = never
 powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE | Select-String '0x' | Select-Object -Last 2
 ```
+
+## Remote management of relay hosts
+
+A relay host (local relay, or an account on another computer, VDI included) can be updated and inspected from one place, without an inbound connection to the host and without a shell login on it. The host holds open a reverse SSH tunnel to a hub VM that publishes a loopback command API; a `fleet` CLI on a control machine reaches it through the VM. Design: [design/2026-10-01-fleet-remote-management.md](design/2026-10-01-fleet-remote-management.md).
+
+The hub VM is any always-on host the relay machines can SSH and the control machine can SSH (the TeamsRelay server itself serves). It needs only its sshd; nothing is installed on it.
+
+On each relay host, in `app/relay.env` (every host a unique `FLEET_PORT`, every host its own `CMDAPI_TOKEN`):
+
+```
+FLEET_VM=oracle-vm            # an ssh alias in this user's ~/.ssh/config, key-based, no password prompt
+FLEET_PORT=8766               # the VM loopback port this host's cmdapi is published on
+CMDAPI_TOKEN=<token>          # node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))"
+CMDAPI_CWD=                   # leave empty; the fleet update passes the app dir per command
+```
+
+Then build and start, which now also starts cmdapi and the tunnel:
+
+```bash
+npm run build:cmdapi
+npx pm2 start ecosystem.config.cjs
+npx pm2 save
+```
+
+The host must be able to `ssh <FLEET_VM>` non-interactively (key in `~/.ssh`, the alias in `~/.ssh/config`). Nothing else listens on the host; cmdapi stays on loopback and is reached only through the tunnel.
+
+On the control machine (a laptop, or the VM), from `app/`: copy `fleet.hosts.example.json` to `fleet.hosts.json` (untracked; it holds the tokens) and fill in each host's `vm`, `port`, `token` and `appDir` (the teamsrelay `app/` directory on that host). Then:
+
+```bash
+npm run build:fleet
+node dist/fleet.cjs status all                 # cmdapi reachable? relay online under pm2?
+node dist/fleet.cjs exec zurich 'git log -1'   # run a command on one host
+node dist/fleet.cjs update all                 # pull, npm ci, build the relay, restart it, every host
+```
+
+`update` runs `git pull --ff-only && npm ci --ignore-scripts && npm run build:relay && npx pm2 restart teamsrelay` in the host's `app/`. It does not sign in to Teams: if a host shows signed out, open its relay window over RDP and sign in there.

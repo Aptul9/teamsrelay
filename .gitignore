@@ -11,6 +11,8 @@ vapid/
 # Local relay: browser profile, database, images, push keys and API token (app/state), and its settings
 /app/state/
 /app/relay.env
+# Fleet inventory: hosts, VM ports and cmdapi tokens of the relay fleet
+/app/fleet.hosts.json
 caddy_data/
 caddy_config/
 
