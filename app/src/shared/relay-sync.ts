@@ -17,6 +17,12 @@ export const COMMANDS_WAIT_MS = 25_000;
 // (src/local/call-bridge.ts) and the page of the app open it on the server (src/server/call-audio-hub.ts)
 export const CALL_AUDIO_PATH = "/api/call/audio/socket";
 
+// The websocket of the browser of a relay for MCP clients: the relay (src/local/browser-link.ts) opens it on the server
+// (src/server/browser-hub.ts), which sends tools/list and tools/call down it. A screenshot of a whole page is a few MB:
+// a message is at most this large, both ways.
+export const RELAY_BROWSER_PATH = "/api/relay/browser/socket";
+export const MAX_BROWSER_MESSAGE = 32 * 1024 * 1024;
+
 const int = z.number().int();
 const text = (max: number) => z.string().max(max);
 

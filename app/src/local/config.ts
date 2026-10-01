@@ -30,6 +30,11 @@ const Env = z.object({
   SERVER_TOKEN: z.string().min(32, "must be the token the web app showed").optional(),
   // tests only: more command-line switches of the browser, separated by spaces (a fake microphone, for one)
   BROWSER_ARGS: z.string().default(""),
+  // 1: a browser of its own on this computer, driven by the MCP clients of the owner through the server joined
+  // (docs/design/2026-10-01-relay-browser-mcp.md); off unless set here
+  RELAY_BROWSER: z.enum(["0", "1"]).default("0"),
+  // seconds without a tool call after which that browser closes; the next call opens it again
+  RELAY_BROWSER_IDLE: z.coerce.number().int().min(1).max(86_400).default(900),
 });
 
 // The token goes in every request: plain HTTP only to a server on this machine
@@ -52,6 +57,8 @@ export type Config = AgentSettings & {
   // the server joined, null for a relay on its own
   server: { url: string; token: string } | null;
   browserArgs: string[];
+  // the browser for MCP clients: its profile, the folder its screenshots go to, its idle time; null when off
+  browser: { profileDir: string; outputDir: string; idleMs: number } | null;
 };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env, cwd = process.cwd()): Config {
@@ -64,6 +71,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const e = r.data;
   if (!!e.RELAY_TLS_CERT !== !!e.RELAY_TLS_KEY) throw new ConfigError("RELAY_TLS_CERT and RELAY_TLS_KEY go together");
   if (!!e.SERVER_URL !== !!e.SERVER_TOKEN) throw new ConfigError("SERVER_URL and SERVER_TOKEN go together");
+  if (e.RELAY_BROWSER === "1" && !e.SERVER_URL) throw new ConfigError("RELAY_BROWSER=1 needs SERVER_URL and SERVER_TOKEN: the browser is driven through the server joined");
   if (e.SERVER_URL && new URL(e.SERVER_URL).protocol === "http:" && !LOOPBACK.has(new URL(e.SERVER_URL).hostname)) {
     throw new ConfigError("SERVER_URL: https:// needed, the token must not travel in clear (http:// only for localhost)");
   }
@@ -80,6 +88,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     lockFile: path.join(stateDir, "relay.lock"),
     channel: e.BROWSER_CHANNEL,
     browserArgs: e.BROWSER_ARGS.split(/\s+/).filter(Boolean),
+    browser:
+      e.RELAY_BROWSER === "1" && server
+        ? { profileDir: path.join(stateDir, "ai-profile"), outputDir: path.join(stateDir, "ai-output"), idleMs: e.RELAY_BROWSER_IDLE * 1000 }
+        : null,
     teamsUrl: e.TEAMS_URL,
     api: {
       bind: e.RELAY_BIND,
