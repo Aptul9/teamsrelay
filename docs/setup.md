@@ -256,32 +256,47 @@ powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE | Select-String '0x' | Sele
 
 ## Remote management of relay hosts
 
-A relay host (local relay, or an account on another computer, VDI included) can be updated and inspected from one place, without an inbound connection to the host and without a shell login on it. The host holds open a reverse SSH tunnel to a hub VM that publishes a loopback command API; a `fleet` CLI on a control machine reaches it through the VM. Design: [design/2026-10-01-fleet-remote-management.md](design/2026-10-01-fleet-remote-management.md).
+A relay host (local relay, or an account on another computer, VDI included) can be updated, inspected and logged into from one place, with no inbound connection to the host and nothing admin-installed on it. The host runs a **fleet agent**, a process separate from the relay, that holds open reverse SSH tunnels to a hub VM and publishes a command API (and, if enabled, an SSH shell) on the VM's loopback. A `fleet` CLI on a control machine reaches them through the VM. Design: [design/2026-10-01-fleet-remote-management.md](design/2026-10-01-fleet-remote-management.md).
 
-The hub VM is any always-on host the relay machines can SSH and the control machine can SSH (the TeamsRelay server itself serves). It needs only its sshd; nothing is installed on it.
+The hub VM is any always-on host the relay machines can SSH and the control machine can SSH (the TeamsRelay server itself serves). It needs only its sshd; nothing is installed on it. The OpenSSH client used for the tunnels ships with Windows 10/11 and macOS and needs no admin.
 
-Fleet management is opt-in per component: nothing starts unless its flags are set. To turn cmdapi on, set these on each relay host in `app/relay.env` (every host a unique `FLEET_CMDAPI_PORT`, every host its own `CMDAPI_TOKEN`):
+### On each relay host
 
+The agent is opt-in and runs as its own process. Two things turn it on.
+
+First, `app/fleet.config.json` (copy from `fleet.config.example.json`; untracked, it holds the token and the ssh keys) picks the components. Enable `cmdapi` (remote run and update) and, optionally, `ssh` (an interactive shell through a pure-Node server, no admin):
+
+```json
+{
+  "vm": "oracle-vm",
+  "cmdapi": { "enabled": true, "vmPort": 8766, "token": "<per-host token>" },
+  "ssh":    { "enabled": false, "vmPort": 8822, "authorizedKeys": ["ssh-ed25519 AAAA... you@laptop"] }
+}
 ```
-FLEET_VM=oracle-vm            # an ssh alias in this user's ~/.ssh/config, key-based, no password prompt
-FLEET_CMDAPI_PORT=8766        # the VM loopback port this host's cmdapi is published on
-CMDAPI_TOKEN=<token>          # node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))"
-CMDAPI_CWD=                   # leave empty; the fleet update passes the app dir per command
-```
 
-Leave `FLEET_CMDAPI_PORT` empty to keep cmdapi off. The OpenSSH client used for the tunnel ships with Windows 10/11 and macOS and needs no install and no admin. `FLEET_SSH_PORT` and `FLEET_PROXY_PORT` are reserved for later components and do nothing yet.
+Each `vmPort` is unique per host; generate the token with `node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))"`. The ssh host key is created on first run under `state/` and persisted.
 
-Then build and start, which now also starts cmdapi and the tunnel:
+Second, `FLEET_AGENT=on` in `app/relay.env`, so pm2 starts the agent beside the relay:
 
 ```bash
-npm run build:cmdapi
-npx pm2 start ecosystem.config.cjs
+npm run build:fleet-agent
+npx pm2 start ecosystem.config.cjs   # starts teamsrelay, and teamsrelay-fleet when FLEET_AGENT is set
 npx pm2 save
 ```
 
-The host must be able to `ssh <FLEET_VM>` non-interactively (key in `~/.ssh`, the alias in `~/.ssh/config`). Nothing else listens on the host; cmdapi stays on loopback and is reached only through the tunnel. To toggle it on a host without editing `relay.env`: `npx pm2 stop teamsrelay-cmdapi teamsrelay-cmdapi-tunnel` (and `start` to bring it back), then `npx pm2 save` to keep the choice across logon.
+Or run it standalone (the second of the two npm commands) without the env flag: `npm run fleet:agent`. Toggle it under pm2 with `npx pm2 stop|start teamsrelay-fleet`, then `npx pm2 save` to keep the choice across logon. The host must be able to `ssh <vm>` non-interactively (key in `~/.ssh`, alias in `~/.ssh/config`). Nothing on the host listens for an inbound connection; cmdapi and the ssh server stay on loopback and are reached only through the tunnels.
 
-On the control machine (a laptop, or the VM), from `app/`: copy `fleet.hosts.example.json` to `fleet.hosts.json` (untracked; it holds the tokens) and fill in each host's `vm`, `port`, `token` and `appDir` (the teamsrelay `app/` directory on that host). Then:
+Once the `ssh` component is enabled, log in from a machine whose key is in `authorizedKeys`:
+
+```bash
+ssh -J oracle-vm -p 8822 fleet@127.0.0.1    # jump through the VM to the tunnel endpoint on its loopback
+```
+
+The username is ignored (auth is by key). The shell has no pseudo-tty, so it suits commands and scripts more than full-screen terminal programs.
+
+### From the control machine
+
+From `app/`, copy `fleet.hosts.example.json` to `fleet.hosts.json` (untracked; it holds the tokens) and fill each host's `vm`, `port` (its `cmdapi.vmPort`), `token` and `appDir`. Then:
 
 ```bash
 npm run build:fleet

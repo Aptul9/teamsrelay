@@ -1,37 +1,26 @@
-// The pm2 app set each relay host runs is flaggable per component: the relay always, cmdapi and its reverse tunnel only
-// when enabled. fleetApps() is the pure decision behind ecosystem.config.cjs, so it is tested without pm2.
+// The pm2 app set each relay host runs: the relay always, and the fleet agent as a separate process only when
+// FLEET_AGENT is set. fleetApps() is the pure decision behind ecosystem.config.cjs, so it is tested without pm2.
 import { describe, expect, it } from "vitest";
 
 const mod = (await import("../../ecosystem.config.cjs")) as unknown as {
-  default: { fleetApps: (env: Record<string, string | undefined>, dir: string) => Array<{ name: string; script?: string; args?: string[] }> };
+  default: { fleetApps: (env: Record<string, string | undefined>, dir: string) => Array<{ name: string; script?: string }> };
 };
 const fleetApps = mod.default.fleetApps;
 const DIR = "/srv/app";
 
 describe("fleetApps", () => {
-  it("runs only the relay when no fleet flags are set", () => {
+  it("runs only the relay when FLEET_AGENT is not set", () => {
     expect(fleetApps({}, DIR).map((a) => a.name)).toEqual(["teamsrelay"]);
   });
 
-  it("adds cmdapi and its reverse tunnel when the hub VM and the cmdapi port are both set", () => {
-    const apps = fleetApps({ FLEET_VM: "oracle-vm", FLEET_CMDAPI_PORT: "8766", CMDAPI_PORT: "8765" }, DIR);
-    const names = apps.map((a) => a.name);
-    expect(names).toContain("teamsrelay-cmdapi");
-    expect(names).toContain("teamsrelay-cmdapi-tunnel");
-    const tunnel = apps.find((a) => a.name === "teamsrelay-cmdapi-tunnel")!;
-    expect(tunnel.script).toBe("ssh");
-    expect(tunnel.args).toContain("-R");
-    expect(tunnel.args).toContain("127.0.0.1:8766:127.0.0.1:8765");
-    expect(tunnel.args).toContain("oracle-vm");
+  it("adds the fleet agent as its own process when FLEET_AGENT is set", () => {
+    const apps = fleetApps({ FLEET_AGENT: "on" }, DIR);
+    expect(apps.map((a) => a.name)).toEqual(["teamsrelay", "teamsrelay-fleet"]);
+    expect(apps.find((a) => a.name === "teamsrelay-fleet")!.script).toBe("dist/fleet-agent.cjs");
   });
 
-  it("keeps cmdapi off when only one of the hub VM or its port is set", () => {
-    expect(fleetApps({ FLEET_VM: "oracle-vm" }, DIR).map((a) => a.name)).toEqual(["teamsrelay"]);
-    expect(fleetApps({ FLEET_CMDAPI_PORT: "8766" }, DIR).map((a) => a.name)).toEqual(["teamsrelay"]);
-  });
-
-  it("targets cmdapi's default port 8765 on the host side when CMDAPI_PORT is unset", () => {
-    const tunnel = fleetApps({ FLEET_VM: "oracle-vm", FLEET_CMDAPI_PORT: "8766" }, DIR).find((a) => a.name === "teamsrelay-cmdapi-tunnel")!;
-    expect(tunnel.args).toContain("127.0.0.1:8766:127.0.0.1:8765");
+  it("keeps the relay as its own separate process", () => {
+    const relay = fleetApps({ FLEET_AGENT: "on" }, DIR).find((a) => a.name === "teamsrelay")!;
+    expect(relay.script).toBe("dist/relay.cjs");
   });
 });

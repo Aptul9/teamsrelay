@@ -1,0 +1,18 @@
+{
+  "vm": "oracle-vm",
+  "cmdapi": {
+    "enabled": true,
+    "vmPort": 8766,
+    "localPort": 8765,
+    "token": "per-host token: node -e \"console.log(require('node:crypto').randomBytes(24).toString('base64url'))\"",
+    "cwd": "",
+    "timeout": 600
+  },
+  "ssh": {
+    "enabled": false,
+    "vmPort": 8822,
+    "localPort": 2022,
+    "hostKeyFile": "state/fleet/ssh_host_key",
+    "authorizedKeys": ["ssh-ed25519 AAAA...your public key... you@laptop"]
+  }
+}
