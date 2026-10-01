@@ -260,14 +260,16 @@ A relay host (local relay, or an account on another computer, VDI included) can 
 
 The hub VM is any always-on host the relay machines can SSH and the control machine can SSH (the TeamsRelay server itself serves). It needs only its sshd; nothing is installed on it.
 
-On each relay host, in `app/relay.env` (every host a unique `FLEET_PORT`, every host its own `CMDAPI_TOKEN`):
+Fleet management is opt-in per component: nothing starts unless its flags are set. To turn cmdapi on, set these on each relay host in `app/relay.env` (every host a unique `FLEET_CMDAPI_PORT`, every host its own `CMDAPI_TOKEN`):
 
 ```
 FLEET_VM=oracle-vm            # an ssh alias in this user's ~/.ssh/config, key-based, no password prompt
-FLEET_PORT=8766               # the VM loopback port this host's cmdapi is published on
+FLEET_CMDAPI_PORT=8766        # the VM loopback port this host's cmdapi is published on
 CMDAPI_TOKEN=<token>          # node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))"
 CMDAPI_CWD=                   # leave empty; the fleet update passes the app dir per command
 ```
+
+Leave `FLEET_CMDAPI_PORT` empty to keep cmdapi off. The OpenSSH client used for the tunnel ships with Windows 10/11 and macOS and needs no install and no admin. `FLEET_SSH_PORT` and `FLEET_PROXY_PORT` are reserved for later components and do nothing yet.
 
 Then build and start, which now also starts cmdapi and the tunnel:
 
@@ -277,7 +279,7 @@ npx pm2 start ecosystem.config.cjs
 npx pm2 save
 ```
 
-The host must be able to `ssh <FLEET_VM>` non-interactively (key in `~/.ssh`, the alias in `~/.ssh/config`). Nothing else listens on the host; cmdapi stays on loopback and is reached only through the tunnel.
+The host must be able to `ssh <FLEET_VM>` non-interactively (key in `~/.ssh`, the alias in `~/.ssh/config`). Nothing else listens on the host; cmdapi stays on loopback and is reached only through the tunnel. To toggle it on a host without editing `relay.env`: `npx pm2 stop teamsrelay-cmdapi teamsrelay-cmdapi-tunnel` (and `start` to bring it back), then `npx pm2 save` to keep the choice across logon.
 
 On the control machine (a laptop, or the VM), from `app/`: copy `fleet.hosts.example.json` to `fleet.hosts.json` (untracked; it holds the tokens) and fill in each host's `vm`, `port`, `token` and `appDir` (the teamsrelay `app/` directory on that host). Then:
 

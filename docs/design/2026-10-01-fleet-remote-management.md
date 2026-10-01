@@ -39,7 +39,7 @@ All in `app/`, bundled with esbuild like the relay.
   - `runner.ts` runs one command: a string command through a shell (PowerShell on Windows, `/bin/sh` on POSIX), or `args` directly with no shell. A deadline kills the whole process tree (`taskkill /T` on Windows, a process-group kill on POSIX); output is capped per stream; partial output from a killed command is kept.
   - `server.ts` serves `GET /health` (no auth) and `GET|POST /command` (bearer token when set). A non-zero exit stays HTTP 200 with the exit code in the body; 4xx is a request declined before anything ran.
   - `main.ts` loads `relay.env`, prints the resolved posture, starts the server.
-- The reverse tunnel is a pm2 app in `ecosystem.config.cjs`: `ssh -N -R 127.0.0.1:<FLEET_PORT>:127.0.0.1:<CMDAPI_PORT> <FLEET_VM>`, added only when `FLEET_VM` and `FLEET_PORT` are set.
+- The reverse tunnel is a pm2 app in `ecosystem.config.cjs`: `ssh -N -R 127.0.0.1:<FLEET_CMDAPI_PORT>:127.0.0.1:<CMDAPI_PORT> <FLEET_VM>`, added only when `FLEET_VM` and `FLEET_CMDAPI_PORT` are set. The app set is decided by `fleetApps(env, dir)`, a pure function exported from the config file so it is unit-tested without pm2.
 - `src/fleet/cli/` runs on the control machine, bundled to `dist/fleet.cjs` (`npm run build:fleet`):
   - `inventory.ts` reads the hosts from `fleet.hosts.json` (untracked; holds the tokens).
   - `client.ts` builds the `ssh <vm> "curl ... /command"` invocation and parses the result.
@@ -48,7 +48,7 @@ All in `app/`, bundled with esbuild like the relay.
 
 ## Configuration
 
-Per host, in `relay.env` (see `relay.env.example`): `FLEET_VM` (the hub VM's ssh alias), `FLEET_PORT` (unique per host), and the `CMDAPI_*` knobs (`CMDAPI_TOKEN`, `CMDAPI_TIMEOUT=600`, `CMDAPI_CWD` set to `app/` so updates land there). With `FLEET_VM` and `FLEET_PORT` set, `ecosystem.config.cjs` starts cmdapi and the tunnel alongside the relay.
+Fleet management is opt-in and per component: nothing runs unless its flags are set. Per host, in `relay.env` (see `relay.env.example`): `FLEET_VM` (the hub VM's ssh alias, shared by every tunnel) and, to turn cmdapi on, `FLEET_CMDAPI_PORT` (unique per host) plus the `CMDAPI_*` knobs (`CMDAPI_TOKEN`, `CMDAPI_TIMEOUT=600`, `CMDAPI_CWD` set to `app/` so updates land there). `FLEET_SSH_PORT` and `FLEET_PROXY_PORT` are reserved for later components and inert today. At runtime a component is toggled with `npx pm2 stop|start teamsrelay-cmdapi` (and `-tunnel`) without editing `relay.env`.
 
 On the control machine, `fleet.hosts.json` (from `fleet.hosts.example.json`) maps each host name to its `vm`, `port`, `token` and `appDir`.
 
@@ -63,12 +63,12 @@ On the control machine, `fleet.hosts.json` (from `fleet.hosts.example.json`) map
 
 ## Out of scope
 
-- An interactive SSH shell or SOCKS into a host. That would need OpenSSH Server installed on each Windows VDI (admin, firewall) and a reverse tunnel of port 22. cmdapi covers remote update and inspection with none of that, so it is the only channel here.
+- An interactive SSH shell or SOCKS into a host, for now. cmdapi covers remote update and inspection without it. When it is added it will be a flagged component (`FLEET_SSH_PORT`) reached through its own reverse tunnel. Admin-installed software is ruled out, so the OS OpenSSH Server route (which needs `Add-WindowsCapability` and the sshd service, both admin) is rejected; the route is a pure-Node `ssh2` server embedded in the host process. `ssh2` is MIT, Node >= 10.16, latest 1.17.0 (2025-08-20, actively maintained); its runtime deps (`asn1`, `bcrypt-pbkdf`) are pure JavaScript and its only native pieces (`cpu-features`, `nan`) are optional and skipped under the project's `npm ci --ignore-scripts`, so it installs with no compiler and no admin. The cost is owning the SSH server surface (host key, public-key auth, pty/exec), which is why it is deferred rather than bundled in now.
 - Remote Teams re-sign-in. The sign-in happens in the relay's desktop browser window; `fleet status` flags a signed-out relay, and the fix is still an RDP session.
 - Central port allocation and host discovery. With a handful of hosts the inventory file and a hand-kept port map suffice.
 
 ## Verification
 
-- Unit: runner (exit codes, output cap, timeout tree-kill, shell wrapping), config (loopback/token refusal, shell and cwd resolution), server (health, the three input forms, token 401, exit passthrough), inventory parsing, the ssh+curl invocation, the update sequence.
+- Unit: runner (exit codes, output cap, timeout tree-kill, shell wrapping), config (loopback/token refusal, shell and cwd resolution), server (health, the three input forms, token 401, exit passthrough), inventory parsing, the ssh+curl invocation, the update sequence, and the per-component flag gating (`fleetApps`).
 - End to end: the cmdapi bundle built and run as a process, driven over HTTP (health, token enforced, a command run and its output returned). This proves the bundle runs and the whole request path works, not each piece in isolation.
 - Before a real rollout, the full path is proven on one host (cmdapi and tunnel under pm2, the tunnel bound on the VM loopback, `fleet exec` returning output, `fleet update` running the sequence and the relay coming back online), then hosts are updated one at a time.
