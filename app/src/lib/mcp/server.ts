@@ -26,8 +26,10 @@ async function answer(fn: () => Data | Promise<Data>) {
   }
 }
 
-// A new server for every request (createMcpHandler), bound to the user the token acts as
-export function mcpServer(userId: string): McpServer {
+// A new server for every request (createMcpHandler), bound to the user the token acts as; clientId: the OAuth client of
+// the token, none for MCP_TOKEN
+export function mcpServer(userId: string, o: { clientId?: string } = {}): McpServer {
+  void o;
   const server = new McpServer({ name: "teamsrelay", version: "1.0.0" });
   server.registerTool(
     "list_accounts",
