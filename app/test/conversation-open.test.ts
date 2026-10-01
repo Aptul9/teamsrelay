@@ -244,4 +244,25 @@ describe("a chat back on screen", () => {
     await until("Opening in Teams", false);
     expect(errors).toEqual([]);
   });
+
+  // user 2026-09-30: only a window clicked into counts as reading; one behind another application is away as well
+  it("counts a window without focus as away, the tab on screen or not", async () => {
+    await page.clock.install();
+    await expect.poll(() => asked).toEqual(["Anna Rossi"]);
+    await setView(saved, { id: 41, status: "done" });
+    await until("Opening in Teams", false);
+    answer = { status: 200, body: { ok: true, id: 42 } };
+    await focus(false);
+    await page.clock.fastForward("01:05");
+    await focus(true);
+    await expect.poll(() => asked).toEqual(["Anna Rossi", "Anna Rossi"]);
+    expect(errors).toEqual([]);
+  });
 });
+
+// the window of the page loses or takes the focus, as a click in another application or back in the page does
+const focus = (focused: boolean) =>
+  page.evaluate((f) => {
+    document.hasFocus = () => f;
+    window.dispatchEvent(new Event(f ? "focus" : "blur"));
+  }, focused);

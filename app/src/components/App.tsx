@@ -92,8 +92,10 @@ import {
   type RingingCall,
   type Unread,
 } from "@/lib/client";
-import { enablePush, pushState } from "@/lib/push";
+import { useInUse } from "@/lib/in-use";
+import { closeChatNotification, enablePush, pushState } from "@/lib/push";
 import { Ringer } from "@/lib/ring";
+import { showViewing } from "@/lib/viewing";
 
 type ListTab = "chats" | "activity" | "calls";
 type User = { name: string; email: string; role: string };
@@ -102,8 +104,8 @@ type User = { name: string; email: string; role: string };
 const noSubscribe = () => () => {};
 const isPcNow = () => window.matchMedia("(hover:hover) and (pointer:fine)").matches && !("ontouchstart" in window);
 
-// The event stream names the open chat only while the app is on screen: a background tab or a phone in the
-// pocket no longer counts as reading it, and the agent takes Teams back to the self chat
+// The app on screen: the event stream names the open chat, whose messages it brings. Reading it takes the window in use
+// as well (lib/in-use.ts)
 const onVisibility = (cb: () => void) => {
   document.addEventListener("visibilitychange", cb);
   return () => document.removeEventListener("visibilitychange", cb);
@@ -178,6 +180,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   // the Android app opened this server: the account menu offers Change server
   const appPage = useAppStart();
   const onScreen = useSyncExternalStore(onVisibility, visibleNow, () => true);
+  const inUse = useInUse();
 
   const deskUrl = useCallback((n: number) => desktopUrl.replace("{n}", String(n)), [desktopUrl]);
 
@@ -324,6 +327,8 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     const qs = new URLSearchParams();
     if (acc) qs.set("a", String(acc));
     if (acc && openChat && onScreen) qs.set("chat", openChat);
+    // this app tells the chat on screen itself (lib/viewing.ts)
+    qs.set("told", "1");
     const es = new EventSource(`/api/events?${qs}`);
     const on = <T,>(name: string, fn: (d: T) => void) => es.addEventListener(name, (e) => fn(JSON.parse((e as MessageEvent).data)));
     // a stream opened for another account (first load, or a switch in progress) still delivers a few events:
@@ -358,6 +363,17 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       es.close();
     };
   }, [acc, openChat, onScreen, applyAccounts, noteActivity, reconnects]);
+
+  // the chat on screen, told to the agent of its account while the app shows it in a window in use (focused): Teams
+  // holds it open (and reads what arrives there) only meanwhile
+  const chatShown = pane === "main" && inUse && acc > 0 ? openChat : null;
+  useEffect(() => {
+    if (chatShown) return showViewing(acc, chatShown);
+  }, [acc, chatShown]);
+  // and its notification on this device goes, what it said is on screen (a message too, come before the agent knew)
+  useEffect(() => {
+    if (chatShown) void closeChatNotification(acc, chatShown);
+  }, [acc, chatShown, messages]);
 
   // notification tapped while the app is open: switch to the account it comes from. A message that alerts: the service
   // worker asks whether this page rings the bell, and shows the notification quiet when it does (sw.js)

@@ -105,7 +105,7 @@ export type CommandsAnswer = {
   // when the account took its slot: the series of its command ids
   added: number;
   commands: ServerCommand[];
-  // the chat the app shows, when it shows one since later than vts
+  // the chat the app shows ("" once it stopped showing one), when that changed later than vts
   viewing: { chat: string; ts: number } | null;
   // devices of the owner the notifications go to
   devices: number;

@@ -121,6 +121,19 @@ describe("Parking", () => {
     expect(wantedChat("Anna Verdi", viewing("Anna Verdi", PARK_AFTER + 5), now(), SELF)).toBe(SELF);
   });
 
+  // the app says when it stops showing the chat (another tab, the list, the app closed): Teams would read meanwhile
+  // what arrives there, unseen
+  it("goes back to the self chat at once when the app stops showing the chat", () => {
+    expect(wantedChat("Anna Verdi", viewing("", 0), now(), SELF)).toBe(SELF);
+  });
+
+  // the app marks the chat every 10 s while it shows it: an app gone without a word (network lost) holds Teams for
+  // about three marks
+  it("waits about three marks of the app, not a minute and a half", () => {
+    expect(wantedChat("Anna Verdi", viewing("Anna Verdi", 25), now(), SELF)).toBe("Anna Verdi");
+    expect(wantedChat("Anna Verdi", viewing("Anna Verdi", 35), now(), SELF)).toBe(SELF);
+  });
+
   it("goes to the self chat when the app never showed a chat", () => {
     expect(wantedChat("Anna Verdi", "", now(), SELF)).toBe(SELF);
     expect(wantedChat("Anna Verdi", "{", now(), SELF)).toBe(SELF);

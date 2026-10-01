@@ -6,6 +6,7 @@ import { errorText, log } from "../log";
 import { sleep } from "../teams/page";
 import { readChatList, scrollChatList, type ListRow } from "../teams/scripts/chat-list";
 import { SEL, TEXTS } from "../teams/selectors";
+import { inApp } from "./page-setup";
 
 // The rows as Teams shows them, the presence of each person as one of the words the app knows
 export const readList = async (a: Agent): Promise<ListRow[]> =>
@@ -15,11 +16,12 @@ export const readList = async (a: Agent): Promise<ListRow[]> =>
 export const withoutPictures = (rows: readonly ListRow[]): ChatEntry[] =>
   rows.map(({ name, preview, time, unread, mention, muted, presence, kind }) => ({ name, preview, time, unread, mention, muted, av: "", presence, kind }));
 
-// New messages found in a list read: history, ntfy, push
+// New messages found in a list read: history, ntfy, push; none for the chat the app shows now, read there as it comes
 export async function notifyNew(a: Agent, rows: readonly ListRow[]) {
   for (const { chat, body } of a.detector.scan(rows)) {
-    log.info("NEWMSG", chat, { preview: body.slice(0, 50) });
-    await a.notifier.message(chat, body, chat);
+    const shown = inApp(a, chat);
+    log.info("NEWMSG", chat, { preview: body.slice(0, 50), inApp: shown || undefined });
+    if (!shown) await a.notifier.message(chat, body, chat);
   }
 }
 

@@ -40,7 +40,7 @@ describe("Web Push as the push service receives it", () => {
     await notifier().message("Anna Rossi", "are you there?", "Anna Rossi");
     expect(fake.received).toHaveLength(1);
     const [r] = fake.received;
-    expect(r.payload).toEqual({ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", tag: "chat-0-Anna Rossi" });
+    expect(r.payload).toEqual({ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", tag: "chat-0-Anna Rossi", ts: expect.any(Number) });
     expect(r.ttl).toBe("86400");
     // a phone on low battery takes only high from its push service
     expect(r.urgency).toBe("high");

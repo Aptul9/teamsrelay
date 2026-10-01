@@ -24,6 +24,21 @@ describe("SlotReader", () => {
     r.close();
   });
 
+  it("forgets the chat on screen once the app stops showing it, not a chat the app shows since", () => {
+    const r = SlotReader.open(file);
+    const viewing = () => JSON.parse(raw.prepare("SELECT v FROM state WHERE k='viewing'").pluck().get() as string);
+    const before = Math.floor(Date.now() / 1000);
+    r.markViewing("Anna Rossi");
+    r.leaveViewing("Anna Rossi");
+    expect(viewing()).toEqual({ chat: "", ts: expect.any(Number) });
+    expect(viewing().ts).toBeGreaterThanOrEqual(before);
+    // a switch: the new chat marked before the leave of the old one arrives
+    r.markViewing("Luca Bianchi");
+    r.leaveViewing("Anna Rossi");
+    expect(viewing().chat).toBe("Luca Bianchi");
+    r.close();
+  });
+
   it("gives the last open of a chat as the app follows it: pending while queued or running, done, failed with the agent's reason", () => {
     const r = SlotReader.open(file);
     const status = (id: number, s: string) => raw.prepare("UPDATE commands SET status=? WHERE id=?").run(s, id);

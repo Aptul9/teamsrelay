@@ -160,6 +160,25 @@ describe("command handlers", () => {
     expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("Anna Rossi");
   });
 
+  // a message sent from the app, then another tab at once: the send runs after the app left the chat, and Teams must
+  // not hold the chat open again, reading unseen what arrives there (user 2026-09-30)
+  it("send and open do not mark a chat the app stopped showing after asking", async () => {
+    const queued = Math.floor(Date.now() / 1000) - 2;
+    store.setState(STATE.viewing, JSON.stringify({ chat: "", ts: queued + 1 }));
+    await runCommand(agent(), { ...cmd("send", "Anna Rossi", "ciao"), ts: queued });
+    expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("");
+    expect(await runCommand(agent(), { ...cmd("open"), ts: queued })).toBe("done");
+    expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("");
+    expect(store.getState(STATE.activeChat)).toBe("Anna Rossi");
+  });
+
+  it("a command asked after the app last left a chat marks its chat", async () => {
+    const queued = Math.floor(Date.now() / 1000) - 2;
+    store.setState(STATE.viewing, JSON.stringify({ chat: "", ts: queued - 5 }));
+    expect(await runCommand(agent(), { ...cmd("open"), ts: queued })).toBe("done");
+    expect(JSON.parse(store.getState(STATE.viewing)).chat).toBe("Anna Rossi");
+  });
+
   // Teams starting, or the page a call leaves in its main window: no chat list yet, which the agent brings back soon
   it("keeps an open pending while Teams shows no chat list yet, and opens the chat once it does", async () => {
     const a = agent();

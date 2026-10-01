@@ -69,11 +69,13 @@ describe("list_chats", () => {
     expect(listChats("u1", { unread_only: true }).chats.map((c) => c.name)).toEqual(["BIANCHI Luca"]);
   });
 
-  it("marks the chat open in Teams: in use within 90 s, agent and Teams working", () => {
+  it("marks the chat open in Teams: in use within 30 s and not left, agent and Teams working", () => {
     setState("active_chat", "Cloud team");
     setState("viewing", JSON.stringify({ chat: "Cloud team", ts: now() }));
     expect(listChats("u1", {}).chats.filter((c) => c.open).map((c) => c.name)).toEqual(["Cloud team"]);
-    setState("viewing", JSON.stringify({ chat: "Cloud team", ts: now() - 91 }));
+    setState("viewing", JSON.stringify({ chat: "Cloud team", ts: now() - 31 }));
+    expect(listChats("u1", {}).chats.some((c) => c.open)).toBe(false);
+    setState("viewing", JSON.stringify({ chat: "", ts: now() }));
     expect(listChats("u1", {}).chats.some((c) => c.open)).toBe(false);
     setState("viewing", JSON.stringify({ chat: "Cloud team", ts: now() }));
     health("login");

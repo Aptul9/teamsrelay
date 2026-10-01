@@ -54,6 +54,28 @@ describe("new message detection", () => {
     expect(d.scan([row("Anna Rossi", "are you there?", "9/26"), row("Luca Bianchi", "deploy is green", "9/26")])).toEqual([]);
   });
 
+  // prod 2026-09-30: someone typing the next message makes the row show no preview for a while; the message already
+  // notified and read came back afterwards and went out again (2026-09-29: "Codrut: Noted" 5.5 h after it came)
+  it("does not notify a message again when the row shows it again after showing something else", () => {
+    const d = primed(row("MOSSO Diego", "ciao", "2:20 PM"));
+    expect(d.scan([row("MOSSO Diego", "cosa intendi?", "2:22 PM", true)])).toEqual([{ chat: "MOSSO Diego", body: "cosa intendi?" }]);
+    expect(d.scan([row("MOSSO Diego", "cosa intendi?", "2:22 PM")])).toEqual([]);
+    expect(d.scan([row("MOSSO Diego", "", "")])).toEqual([]);
+    expect(d.scan([row("MOSSO Diego", "cosa intendi?", "2:22 PM")])).toEqual([]);
+  });
+
+  it("does not notify an older message the row goes back to (the newer one deleted)", () => {
+    const d = primed(row("Anna Rossi", "ciao", "10:30"));
+    expect(d.scan([row("Anna Rossi", "are you there?", "10:31")])).toHaveLength(1);
+    expect(d.scan([row("Anna Rossi", "ciao", "10:30")])).toEqual([]);
+  });
+
+  it("notifies the next message after the row showed something else", () => {
+    const d = primed(row("Anna Rossi", "ciao", "10:30"));
+    expect(d.scan([row("Anna Rossi", "", "")])).toEqual([]);
+    expect(d.scan([row("Anna Rossi", "are you there?", "10:31")])).toEqual([{ chat: "Anna Rossi", body: "are you there?" }]);
+  });
+
   it("notifies the same text sent again, at a new time", () => {
     const d = primed(row("Anna Rossi", "ok", "9/26"), row("Luca Bianchi", "ok", "10:02 AM"));
     expect(d.scan([row("Anna Rossi", "ok", "10:05 AM"), row("Luca Bianchi", "ok", "10:07 AM")])).toEqual([

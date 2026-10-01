@@ -1,9 +1,9 @@
 import type { BrowserContext, Page } from "playwright-core";
-import { Desktop, parseState, STATE } from "@/shared/slot-db/state";
+import { Desktop, parseState, STATE, Viewing } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
 import { DESKTOP_BRIDGE } from "../logic/desktop";
 import { OWNER_PAUSE, ownerBusy } from "../logic/owner";
-import { wantedChat } from "../logic/parking";
+import { shownInApp, wantedChat } from "../logic/parking";
 import { errorText, log } from "../log";
 import { byAgent, withInput } from "../teams/input";
 import { installMicHook } from "../teams/scripts/calls";
@@ -135,6 +135,13 @@ export function wanted(a: Agent): string {
   return wantedChat(a.store.getState(STATE.activeChat), a.store.getState(STATE.viewing), nowSeconds(), a.store.selfChat());
 }
 
+// The app shows this chat now and Teams holds it open for it: a message there is read as it comes, in Teams and in the
+// app, and needs no notification
+export function inApp(a: Agent, chat: string): boolean {
+  const viewing = parseState(Viewing, a.store.getState(STATE.viewing), { chat: "", ts: 0 });
+  return !!chat && a.store.getState(STATE.activeChat) === chat && shownInApp(viewing, nowSeconds()) === chat;
+}
+
 // The visible page reads what is open: after a reload Teams reopens a chat of its own choosing, put right here
 export async function park(a: Agent, want: string) {
   if (!want || a.store.hasPendingCommands() || (await a.tp.isOpen(want))) return;
@@ -147,7 +154,9 @@ export async function park(a: Agent, want: string) {
 export async function drainHook(a: Agent) {
   for (const n of await a.tp.page.evaluate(drainNotifications)) {
     if (n.title === TEXTS.healthTag || TEXTS.ownNotification.test(n.title)) continue;
-    log.info("MSG", n.title, { body: n.body });
-    await a.notifier.message(n.title, n.body, a.store.isKnownChat(n.title) ? n.title : "");
+    const chat = a.store.isKnownChat(n.title) ? n.title : "";
+    const shown = inApp(a, chat);
+    log.info("MSG", n.title, { body: n.body, inApp: shown || undefined });
+    if (!shown) await a.notifier.message(n.title, n.body, chat);
   }
 }

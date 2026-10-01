@@ -1,4 +1,4 @@
-import { PARK_AFTER } from "@/agent/logic/parking";
+import { shownInApp } from "@/agent/logic/parking";
 import type { Message } from "@/shared/slot-db/rows";
 import { STATE, Viewing } from "@/shared/slot-db/state";
 import { accountSummary, upSince } from "../accounts";
@@ -38,14 +38,14 @@ function accountOf(userId: string, account: number | undefined): Slot {
   return owned.find((s) => s.slot === slot)!;
 }
 
-// The chat Teams shows, saved by the agent every second: the one last opened, while a chat was in use within
-// PARK_AFTER seconds (later Teams parks on the self chat). Nothing while the agent or Teams is not working.
+// The chat Teams shows, saved by the agent every second: the one last opened, while the app shows a chat (marked
+// within PARK_AFTER seconds, not left since; otherwise Teams parks on the self chat). Nothing while the agent or Teams
+// is not working.
 function liveChat(r: SlotReader, s: Slot): string {
   if (s.stopped) return "";
   const h = r.health(upSince(s));
   if (h.agent !== "ok" || h.teams !== "ok") return "";
-  const { ts } = Viewing.parse(r.state<unknown>(STATE.viewing, {}) ?? {});
-  return Date.now() / 1000 - ts < PARK_AFTER ? r.activeChat() : "";
+  return shownInApp(Viewing.parse(r.state<unknown>(STATE.viewing, {}) ?? {}), Date.now() / 1000) ? r.activeChat() : "";
 }
 
 // Teams message ids are the milliseconds of the message

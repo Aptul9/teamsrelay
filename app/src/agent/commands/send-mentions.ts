@@ -5,8 +5,8 @@ import { afterMessageAction } from "./finish";
 import type { Handler } from "./index";
 
 // arg1: chat, arg2: {parts}. Text and people tagged with @, each picked in the Teams list.
-export const sendMentions: Handler = async (a, { arg1: chat, arg2 }) => {
+export const sendMentions: Handler = async (a, { ts, arg1: chat, arg2 }) => {
   const { parts } = parseArgs(MentionArgs, arg2);
   if (!parts.length) return "failed";
-  return afterMessageAction(a, chat, await sendWithMentions(a.tp, chat, parts, () => saveOpenChat(a, chat)));
+  return afterMessageAction(a, chat, await sendWithMentions(a.tp, chat, parts, () => saveOpenChat(a, chat)), ts);
 };

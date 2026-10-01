@@ -10,7 +10,7 @@ import type { TeamsPage } from "@/agent/teams/page";
 import { tempDir } from "../helpers";
 
 let store: SlotStore;
-let payloads: { title: string; body: string; chat: string }[];
+let payloads: { title: string; body: string; chat: string; ts?: number }[];
 
 function agent(caught: { title: string; body: string }[]): Agent {
   const devices = { targets: (): PushTarget[] => [{ endpoint: "https://push.example/phone", sub: '{"endpoint":"https://push.example/phone","keys":{"p256dh":"k","auth":"a"}}' }], remove: () => undefined };
@@ -35,13 +35,13 @@ beforeEach(() => {
 describe("notifications caught from Teams", () => {
   it("name the chat when the title of the notification is a chat of the list", async () => {
     await drainHook(agent([{ title: "Anna Rossi", body: "are you there?" }]));
-    expect(payloads).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", tag: "chat-0-Anna Rossi" }]);
+    expect(payloads).toEqual([{ title: "Anna Rossi", body: "are you there?", chat: "Anna Rossi", tag: "chat-0-Anna Rossi", ts: expect.any(Number) }]);
   });
 
   // in a group chat the title may be the person who wrote: a tap would open a chat that is not the one
   it("name no chat when the title is not a chat of the list", async () => {
     await drainHook(agent([{ title: "Luca Bianchi", body: "deploy is green" }]));
-    expect(payloads).toEqual([{ title: "Luca Bianchi", body: "deploy is green", chat: "", tag: "chat-0-Luca Bianchi" }]);
+    expect(payloads).toEqual([{ title: "Luca Bianchi", body: "deploy is green", chat: "", tag: "chat-0-Luca Bianchi", ts: expect.any(Number) }]);
     expect(store.lastNotificationTs()).toBeGreaterThan(0);
   });
 

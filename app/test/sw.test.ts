@@ -13,7 +13,7 @@ type Shown = {
   vibrate?: number[];
   actions?: { action: string; title: string }[];
   timestamp?: number;
-  data: { lines?: string[] };
+  data: { lines?: string[]; body?: string };
 };
 
 // A window of the app, as the service worker sees it. bell: what its page answers when asked to ring the bell of a
@@ -90,31 +90,48 @@ describe("service worker notifications", () => {
     expect(n.renotify).toBeUndefined();
   });
 
-  it("keeps one notification per chat with its last five lines, alerting again", async () => {
+  // user 2026-09-30: a notification that lists the previous messages looks broken, the newest one is enough
+  it("keeps one notification per chat with its newest message only, alerting again", async () => {
     const sw = serviceWorker();
-    for (const body of ["one", "two", "three", "four", "five", "six", "seven"]) await sw.push({ title: "Anna Rossi", body, acc: 1, tag: "chat-1-Anna Rossi" });
+    for (const [i, body] of ["one", "two", "three", "four", "five", "six", "seven"].entries()) await sw.push({ title: "Anna Rossi", body, acc: 1, tag: "chat-1-Anna Rossi", ts: 1000 + i });
     const n = sw.shown[sw.shown.length - 1];
-    expect(n).toMatchObject({ title: "Anna Rossi", body: "three\nfour\nfive\nsix\nseven", tag: "chat-1-Anna Rossi", renotify: true });
-    expect(n.data).toMatchObject({ acc: 1, tag: "chat-1-Anna Rossi", lines: ["three", "four", "five", "six", "seven"] });
+    expect(n).toMatchObject({ title: "Anna Rossi", body: "seven", tag: "chat-1-Anna Rossi", renotify: true });
+    expect(n.data).toMatchObject({ acc: 1, tag: "chat-1-Anna Rossi", body: "seven" });
+    expect(n.data.lines).toBeUndefined();
   });
 
-  it("does not mix the lines of two chats", async () => {
+  it("keeps the chats apart", async () => {
     const sw = serviceWorker();
-    await sw.push({ title: "Anna Rossi", body: "a1", acc: 1, tag: "chat-1-Anna Rossi" });
-    await sw.push({ title: "Luca Bianchi", body: "b1", acc: 1, tag: "chat-1-Luca Bianchi" });
-    expect((await sw.push({ title: "Anna Rossi", body: "a2", acc: 1, tag: "chat-1-Anna Rossi" })).body).toBe("a1\na2");
+    await sw.push({ title: "Anna Rossi", body: "a1", acc: 1, tag: "chat-1-Anna Rossi", ts: 1000 });
+    await sw.push({ title: "Luca Bianchi", body: "b1", acc: 1, tag: "chat-1-Luca Bianchi", ts: 2000 });
+    expect((await sw.push({ title: "Anna Rossi", body: "a2", acc: 1, tag: "chat-1-Anna Rossi", ts: 3000 })).body).toBe("a2");
+    expect(sw.shown.filter((n) => n.tag === "chat-1-Luca Bianchi").at(-1)?.body).toBe("b1");
   });
 
-  it("keeps every line of pushes that arrive together", async () => {
+  it("ends on the newest of pushes that arrive together", async () => {
     const sw = serviceWorker();
-    await Promise.all(["one", "two", "three"].map((body) => sw.push({ title: "Anna Rossi", body, acc: 1, tag: "chat-1-Anna Rossi" })));
-    expect(sw.shown[sw.shown.length - 1].body).toBe("one\ntwo\nthree");
+    await Promise.all(["one", "two", "three"].map((body, i) => sw.push({ title: "Anna Rossi", body, acc: 1, tag: "chat-1-Anna Rossi", ts: 1000 + i })));
+    expect(sw.shown[sw.shown.length - 1].body).toBe("three");
   });
 
-  it("shows a line sent again without adding it or alerting", async () => {
+  // a retry, or a push service that delivers out of order, brings an older message after a newer one
+  it("leaves the newer message on screen, quiet, when an older one arrives late", async () => {
     const sw = serviceWorker();
-    await sw.push({ title: "Anna Rossi", body: "one", acc: 1, tag: "chat-1-Anna Rossi" });
-    const n = await sw.push({ title: "Anna Rossi", body: "one", acc: 1, tag: "chat-1-Anna Rossi" });
+    await sw.push({ title: "Anna Rossi", body: "hello?", acc: 1, tag: "chat-1-Anna Rossi", ts: 9000 });
+    const n = await sw.push({ title: "Anna Rossi", body: "are you there?", acc: 1, tag: "chat-1-Anna Rossi", ts: 5000 });
+    expect(n).toMatchObject({ title: "Anna Rossi", body: "hello?", tag: "chat-1-Anna Rossi", renotify: false, silent: true, timestamp: 9000 });
+  });
+
+  // a phone back after a night shows when each message came, not when the push reached it
+  it("shows the time the message was sent", async () => {
+    const n = await serviceWorker().push({ title: "Anna Rossi", body: "ciao", acc: 1, tag: "chat-1-Anna Rossi", ts: 1_790_772_000_000 });
+    expect(n.timestamp).toBe(1_790_772_000_000);
+  });
+
+  it("shows a message sent again without alerting", async () => {
+    const sw = serviceWorker();
+    await sw.push({ title: "Anna Rossi", body: "one", acc: 1, tag: "chat-1-Anna Rossi", ts: 1000 });
+    const n = await sw.push({ title: "Anna Rossi", body: "one", acc: 1, tag: "chat-1-Anna Rossi", ts: 1000 });
     expect(n).toMatchObject({ body: "one", renotify: false });
   });
 
@@ -219,12 +236,13 @@ describe("service worker call notifications", () => {
     expect(sw.opened).toEqual(["/?a=2", "/?a=2"]);
   });
 
-  it("keeps a call apart from the lines of a chat of the same person", async () => {
+  it("keeps a call apart from the notification of a chat of the same person", async () => {
     const sw = serviceWorker();
-    await sw.push({ title: "Anna Rossi", body: "are you there?", acc: 2, tag: "chat-2-Anna Rossi" });
+    await sw.push({ title: "Anna Rossi", body: "are you there?", acc: 2, tag: "chat-2-Anna Rossi", ts: 1000 });
     const n = await sw.push(ringing);
     expect(n.body).toBe("Teams call, ringing now");
-    expect((await sw.push({ title: "Anna Rossi", body: "hello?", acc: 2, tag: "chat-2-Anna Rossi" })).body).toBe("are you there?\nhello?");
+    expect((await sw.push({ title: "Anna Rossi", body: "hello?", acc: 2, tag: "chat-2-Anna Rossi", ts: 2000 })).body).toBe("hello?");
+    expect(sw.shown.filter((x) => x.tag === "call-2").at(-1)?.body).toBe("Teams call, ringing now");
   });
 });
 

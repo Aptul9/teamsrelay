@@ -4,7 +4,7 @@ import { afterMessageAction } from "./finish";
 import type { Handler } from "./index";
 
 // arg1: chat, arg2: {mid}. Own messages only; Teams leaves Undo for a few seconds.
-export const deleteCommand: Handler = async (a, { arg1: chat, arg2 }) => {
+export const deleteCommand: Handler = async (a, { ts, arg1: chat, arg2 }) => {
   const { mid } = parseArgs(MessageArgs, arg2);
-  return afterMessageAction(a, chat, await deleteMessage(a.tp, chat, mid));
+  return afterMessageAction(a, chat, await deleteMessage(a.tp, chat, mid), ts);
 };

@@ -8,8 +8,8 @@ import type { Handler, Outcome } from "./index";
 // the app can tell the messages of this visit from the ones saved at the last one; failed otherwise, with the reason in
 // cmd_result:<id>. While Teams is signed out nothing is touched: there is no chat list to click in (while it loads, the
 // open waits in the queue: runPendingCommands).
-export const open: Handler = async (a, { id, arg1: chat }) => {
-  markViewing(a, chat);
+export const open: Handler = async (a, { id, ts, arg1: chat }) => {
+  markViewing(a, chat, ts);
   if (a.health?.teams === "login") return failed(a, id, "signed-out");
   const problem = await a.tp.showChat(chat);
   if (problem) return failed(a, id, problem);

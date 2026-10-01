@@ -1,4 +1,5 @@
 // Web Push on this device: the service worker receives the notifications the agents send to the user.
+import { chatTag } from "@/agent/logic/notify";
 import { call, post } from "./client";
 
 export type PushState = "on" | "off" | "unsupported";
@@ -38,4 +39,15 @@ export async function enablePush(): Promise<void> {
   if (!key) throw new Error("Push keys are not configured on the server.");
   const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(key) }));
   await post("/api/push/subscribe", sub.toJSON(), 0);
+}
+
+// The notification of a chat on this device, closed once the app shows the chat: its messages are there to read.
+// reg: the registration of the service worker, none where there is no service worker.
+export async function closeChatNotification(acc: number, chat: string, reg?: Pick<ServiceWorkerRegistration, "getNotifications"> | null) {
+  try {
+    const r = reg === undefined ? await navigator.serviceWorker?.getRegistration() : reg;
+    for (const n of (await r?.getNotifications({ tag: chatTag(acc, chat) })) ?? []) n.close();
+  } catch {
+    // notifications not available here
+  }
 }

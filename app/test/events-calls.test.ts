@@ -36,10 +36,10 @@ afterEach(() => vi.useRealTimers());
 
 const write = (k: string, v: object) => slotDb.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(k, JSON.stringify(v));
 
-// The stream of the app with the account on screen: the events as they come, by name
-async function open() {
+// The stream of the app with the account on screen (and a chat: &chat=): the events as they come, by name
+async function open(query = "") {
   const stop = new AbortController();
-  const res = await GET(new Request(`http://localhost:8090/api/events?a=${slot}`, { signal: stop.signal }), undefined);
+  const res = await GET(new Request(`http://localhost:8090/api/events?a=${slot}${query}`, { signal: stop.signal }), undefined);
   const reader = res.body!.getReader();
   const events: { name: string; data: unknown }[] = [];
   const text = new TextDecoder();
@@ -62,6 +62,28 @@ async function open() {
   const count = (name: string) => events.filter((e) => e.name === name).length;
   return { last, count, close: () => stop.abort() };
 }
+
+// The app itself tells which chat it shows (POST /api/viewing, told=1 on its stream): a stream still open while the
+// app is gone (a phone that lost the network) keeps no chat open in Teams
+describe("chat on screen", () => {
+  const viewing = () => slotDb.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.viewing) as string | undefined;
+
+  it("is not marked by the stream of an app that tells it itself", async () => {
+    const s = await open("&chat=Anna%20Rossi&told=1");
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(s.count("messages")).toBeGreaterThan(0);
+    expect(viewing()).toBeUndefined();
+    s.close();
+  });
+
+  // a page loaded before the deploy runs the build before it until reloaded: its chat stays marked as it was
+  it("is marked every 10 s by the stream of an app of the build before", async () => {
+    const s = await open("&chat=Anna%20Rossi");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(JSON.parse(viewing() ?? "{}").chat).toBe("Anna Rossi");
+    s.close();
+  });
+});
 
 describe("calls on the event stream", () => {
   it("looks at the calls four times a second", () => {

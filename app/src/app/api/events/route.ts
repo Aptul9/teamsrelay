@@ -22,6 +22,7 @@ export const GET = route(async (req) => {
   const owned = slotsOf(appDb(), user.id);
   const slot = owned.length ? pickSlot(owned.map((s) => s.slot), url.searchParams.get("a")) : 0;
   const chat = url.searchParams.get("chat") || "";
+  const told = url.searchParams.get("told") === "1";
 
   const enc = new TextEncoder();
   const last = new Map<string, string>();
@@ -93,8 +94,9 @@ export const GET = route(async (req) => {
               const open = reader.openOf(chat);
               send("messages", { chat, rows: reader.messages(chat), open });
             }
-            // the app asks for a chat only while it is on screen
-            if (chat && ticks % 10 === 1) reader.markViewing(chat);
+            // the chat on screen is the app's to tell (POST /api/viewing, told=1): a stream outlives an app gone without
+            // a word. A page loaded before that build, open until reloaded, has its chat marked here as it had.
+            if (chat && !told && ticks % 10 === 1) reader.markViewing(chat);
           }
           if (ticks % 20 === 0) controller.enqueue(enc.encode(": ping\n\n"));
         } catch (e) {

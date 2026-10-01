@@ -190,9 +190,9 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// The commands queued for the account after `after` (oldest first), and the chat the app shows when it shows one since
-// later than `vts`: at once when there are any, otherwise as soon as some come, at the latest after `waitMs` with
-// nothing. One connection for the whole wait, which ends at once when the token stops working.
+// The commands queued for the account after `after` (oldest first), and the chat the app shows (none: it stopped
+// showing one) when that changed later than `vts`: at once when there are any, otherwise as soon as some come, at the
+// latest after `waitMs` with nothing. One connection for the whole wait, which ends at once when the token stops working.
 export async function waitForRelayCommands(
   caller: RelayCaller,
   { after, vts, waitMs, signal }: { after: number; vts: number; waitMs: number; signal?: AbortSignal },
@@ -208,7 +208,7 @@ export async function waitForRelayCommands(
       stillRelay(caller);
       const commands = pending.all(after) as ServerCommand[];
       const v = parseState(Viewing, viewing.get(STATE.viewing) as string | undefined, { chat: "", ts: 0 });
-      const shown = v.chat && v.ts > vts ? v : null;
+      const shown = v.ts > vts ? v : null;
       if (commands.length || shown || Date.now() >= end || signal?.aborted) return { commands, viewing: shown };
       await sleep(250);
     }
