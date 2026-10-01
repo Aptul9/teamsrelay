@@ -56,6 +56,11 @@ export function consentGiven(userId: string, clientId: string): boolean {
   return tolerant(() => !!appDb().prepare("SELECT 1 FROM oauthConsent WHERE userId=? AND clientId=?").get(userId, clientId), false);
 }
 
+// The name a client registered with, its id when it gave none or is gone
+export function clientName(clientId: string): string {
+  return tolerant(() => (appDb().prepare("SELECT name FROM oauthClient WHERE clientId=?").pluck().get(clientId) as string | null | undefined) || clientId, clientId);
+}
+
 // The clients a user allowed, newest first
 export function clientsOf(userId: string): { clientId: string; name: string; since: string }[] {
   return tolerant(

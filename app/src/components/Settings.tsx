@@ -6,6 +6,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import { AccountLines, accName } from "./AccountMenu";
+import { AiClients } from "./AiClients";
 import { Avatar } from "./Avatar";
 import { PageHeader } from "./PageHeader";
 import { relayHost, RelayTokenDialog } from "./RelayToken";
@@ -353,6 +354,7 @@ export function Settings({ user, passwordManaged }: { user: { name: string; emai
         </Card>
 
         <TeamsAccounts />
+        <AiClients />
 
         <Card>
           <CardHeader>
