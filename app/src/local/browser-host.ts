@@ -130,10 +130,10 @@ export class BrowserHost {
     this.session = null;
     const s = await pending?.catch(() => null);
     if (!s) return;
-    if (s.context) await s.context.close().catch((e: unknown) => log.warn("browser", `close: ${errorText(e)}`));
-    await s.server.close().catch((e: unknown) => log.warn("browser", `close of Playwright MCP: ${errorText(e)}`));
+    if (s.context) await s.context.close().catch((e: unknown) => log.warn("ai-browser", `close: ${errorText(e)}`));
+    await s.server.close().catch((e: unknown) => log.warn("ai-browser", `close of Playwright MCP: ${errorText(e)}`));
     fs.rmSync(this.o.outputDir, { recursive: true, force: true });
-    log.info("browser", s.context ? "closed" : "Playwright MCP closed");
+    log.info("ai-browser", s.context ? "closed" : "Playwright MCP closed");
   }
 
   private stopIdle() {
@@ -150,7 +150,7 @@ export class BrowserHost {
       session.server = await mod.createConnection(config(this.o.outputDir), async () => {
         const context = await mod.launch(this.o.profileDir, this.o.channel);
         session.context = context;
-        log.info("browser", "started", { profile: this.o.profileDir });
+        log.info("ai-browser", "started", { profile: this.o.profileDir });
         return context;
       });
       await session.server.connect(transport);

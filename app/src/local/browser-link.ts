@@ -54,7 +54,7 @@ export class BrowserLink {
   constructor(private readonly o: BrowserLinkOptions) {}
 
   start() {
-    log.info("browser", "on: MCP clients of the server drive a browser of its own here");
+    log.info("ai-browser", "on: MCP clients of the server drive a browser of its own here");
     this.connect();
   }
 
@@ -79,7 +79,7 @@ export class BrowserLink {
         ? this.o.open(url, this.o.token)
         : (new WebSocket(url, { headers: { Authorization: `Bearer ${this.o.token}` }, dispatcher: this.agent }) as unknown as LinkSocket);
     } catch (e) {
-      log.warn("browser", `socket: ${errorText(e)}`);
+      log.warn("ai-browser", `socket: ${errorText(e)}`);
       this.again();
       return;
     }
@@ -87,7 +87,7 @@ export class BrowserLink {
     s.onopen = () => {
       if (this.socket !== s) return;
       this.wait = RETRY_FIRST_MS;
-      log.info("browser", "socket to the server open");
+      log.info("ai-browser", "socket to the server open");
     };
     s.onmessage = (ev) => {
       if (this.socket === s) this.received(s, ev.data);
@@ -120,7 +120,7 @@ export class BrowserLink {
     const screened = screenRequest(msg);
     if (!screened.ok) {
       const name = (msg as { params?: { name?: unknown } })?.params?.name;
-      log.warn("browser", "refused", { method: String((msg as { method?: unknown })?.method ?? ""), tool: typeof name === "string" ? name : undefined });
+      log.warn("ai-browser", "refused", { method: String((msg as { method?: unknown })?.method ?? ""), tool: typeof name === "string" ? name : undefined });
       if (screened.reply) this.send(s, screened.reply);
       return;
     }
@@ -130,7 +130,7 @@ export class BrowserLink {
 
   private async run(s: LinkSocket, r: RpcRequest) {
     const tool = r.method === "tools/call" ? String(r.params?.name) : "";
-    if (tool) log.info("browser", "call", { tool, host: hostOf(r) || undefined });
+    if (tool) log.info("ai-browser", "call", { tool, host: hostOf(r) || undefined });
     let answer: HostAnswer;
     try {
       answer = await this.o.host.request(r.method as "tools/list" | "tools/call", r.params ?? {});
@@ -143,7 +143,7 @@ export class BrowserLink {
         : JSON.stringify({ jsonrpc: "2.0", id: r.id, result: r.method === "tools/list" ? screenTools(answer.result) : answer.result });
     if (Buffer.byteLength(out) > MAX_BROWSER_MESSAGE) {
       const mb = Math.round(Buffer.byteLength(out) / 1024 / 1024);
-      log.warn("browser", "answer too large", { tool, mb });
+      log.warn("ai-browser", "answer too large", { tool, mb });
       const text = `The answer is too large (${mb} MB, at most ${MAX_BROWSER_MESSAGE / 1024 / 1024} MB): take a screenshot of the visible part, or a snapshot of one element`;
       out = JSON.stringify({ jsonrpc: "2.0", id: r.id, result: { content: [{ type: "text", text }], isError: true } });
     }
