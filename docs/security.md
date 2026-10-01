@@ -19,9 +19,19 @@ TeamsRelay holds live Microsoft sessions. Whoever controls the server, a session
 
 ## MCP endpoint
 
-- `/mcp` answers only when `MCP_TOKEN` is set (404 otherwise). Its bearer reads every chat TeamsRelay holds for the administrator of `.env` and can open a chat in Teams (`refresh_chat`, which marks it read): keep the token like a password, out of files that go to git.
-- The token is compared in constant time. No session cookie counts on `/mcp`, and a request carrying an `Origin` header (a web page) answers 403, so a page open in a browser signed in to TeamsRelay cannot use the endpoint.
-- No tool writes to Teams. Message texts reach the model as data written by other people; a client that also has tools reaching the network or the shell can still be steered by them.
+- `/mcp` takes two kinds of bearer. `MCP_TOKEN` (when set) reads every chat TeamsRelay holds for the administrator of `.env` and can open a chat in Teams (`refresh_chat`, which marks it read): keep it like a password, out of files that go to git. It is compared in constant time and drives no browser.
+- An OAuth access token (`@better-auth/mcp`) acts as the user who signed in and allowed the client on the consent screen: the read tools on that user's accounts, and the browser tools of that user's relays. Tokens are JWTs signed by the key of the jwt plugin (`jwks` table of `data/app.db`), bound to the resource `/mcp`, valid one hour; the signature is checked against that key, read from the web app's own port. Every request also checks that the user still exists, is not banned, and still has the consent of that client: a client revoked in Settings, or a banned user, is refused at its next request, whatever the expiry of its token.
+- Clients register themselves (dynamic client registration, open: Claude Code and claude.ai do). A registered client gets nothing without a user signing in and pressing Allow. A registration with a loopback redirect and no `application_type` is taken as a native app (RFC 8252), so that clients of the MCP SDK 1.x can use their `http://localhost` callback.
+- No session cookie counts on `/mcp`, and a request carrying an `Origin` header (a web page) answers 403, so a page open in a browser signed in to TeamsRelay cannot use the endpoint.
+- No tool writes to Teams. Message texts and pages reach the model as data written by other people; a client that also has tools reaching the network or the shell can still be steered by them.
+
+## Browser of a relay for AI clients
+
+- Off unless `RELAY_BROWSER=1` in the `relay.env` of that computer: neither the server nor a token turns it on. The relay opens a websocket to the server (`/api/relay/browser/socket`) with its token; no port opens on that computer.
+- The relay checks every request against its allowlist before Playwright MCP sees it, so the line holds even against a server that forwards anything: no code runs in the relay or in the page (`browser_run_code_unsafe`, `browser_evaluate`), no file of that disk is read or uploaded (`browser_file_upload`, `browser_drop`, `filename`), no request headers or cookies leave (`browser_network_request*`), and `browser_navigate` and new tabs take `http:` and `https:` addresses only, none of this computer (`localhost`, `127.0.0.0/8`, `[::1]`). Only the address given is checked: a link in a page, or a name that resolves to a loopback address, still reaches it; the relay API on that computer answers only with its token.
+- The browser is a second browser process on its own profile (`<STATE_DIR>/ai-profile`), in a window of its own: never the Teams browser or its profile, which these tools cannot reach. Screenshots are also saved by Playwright MCP in `<STATE_DIR>/ai-output` (at most 20 MB, emptied when the browser closes after its idle time); no tool takes a path from the client.
+- Whoever holds an OAuth token of the owner of the account, or controls the server, browses from that computer and its network, inside whatever the AI profile is signed in to. Sign in there by hand only to sites the AI may use. On a computer of a client environment (a VDI, a managed laptop) that environment's rules decide whether `RELAY_BROWSER` may be on.
+- Each call is written to `browser_actions` (time, user, client, account, tool, host, outcome), shown to the owner in Settings with a switch that takes the browser away from every client.
 
 ## Remote desktop
 

@@ -40,13 +40,14 @@ AI browser: own profile, own window, headful
 ## Relay
 
 1. With `RELAY_BROWSER=1` and a server joined, the relay opens `wss://<server>/api/relay/browser/socket` with its token, and opens it again after a drop, waiting longer each time up to 30 s, as the sync does. Without the variable it opens nothing, and the server lists no browser tool for the account.
-2. On the first message it creates the Playwright MCP server: `createConnection({ browser: { userDataDir: <STATE_DIR>/ai-profile, launchOptions: { channel: <BROWSER_CHANNEL>, headless: false } }, capabilities: ["core", "core-navigation", "core-tabs", "core-input"], allowUnrestrictedFileAccess: false, outputDir: <STATE_DIR>/ai-output, imageResponses: "allow" })`, connected to a transport over the websocket. Playwright MCP launches the browser at the first tool call.
+2. On the first message it creates the Playwright MCP server: `createConnection({ capabilities: ["core", "core-navigation", "core-tabs", "core-input"], allowUnrestrictedFileAccess: false, outputDir: <STATE_DIR>/ai-output, outputMaxSize: 20 MB, imageResponses: "allow", snapshot: { mode: "none" } }, contextGetter)`, connected to a transport in the relay process: the relay is its MCP client and opens the session itself, without the `roots` capability. The context getter launches the browser at the first tool call, `launchPersistentContext(<STATE_DIR>/ai-profile, { channel: <BROWSER_CHANNEL>, headless: false })` with the Playwright that `@playwright/mcp` brings, so that the relay holds the browser and can close it. The websocket carries JSON-RPC `tools/list` and `tools/call` requests from the server and their answers.
 3. Every message from the server passes the allowlist before Playwright MCP sees it; every answer passes it on the way back. The relay is the side that runs the tools, so the allowlist there holds even against a server that forwards anything:
    - `tools/list` answers only the allowed tools, without the `filename` argument (a file on the relay disk is of no use to a remote client).
-   - `tools/call` of any other tool, or with `filename`, answers an error and runs nothing.
-   - `browser_navigate` and `browser_tabs` with `action: new` take `http:` and `https:` URLs only, and no loopback host (`localhost`, `127.0.0.0/8`, `[::1]`).
+   - `tools/call` of any other tool, or with `filename`, answers an error and runs nothing. Any other method (`initialize`, `ping`...) answers a JSON-RPC error.
+   - `browser_navigate` and `browser_tabs` with a `url` take `http:` and `https:` URLs only, and no loopback host (`localhost`, `*.localhost`, `127.0.0.0/8`, `0.0.0.0/8`, `[::1]`, IPv4-mapped loopback).
+   - An answer larger than 32 MB becomes a tool error instead.
 4. Allowed: `browser_navigate`, `browser_navigate_back`, `browser_tabs`, `browser_snapshot`, `browser_find`, `browser_take_screenshot`, `browser_click`, `browser_hover`, `browser_drag`, `browser_type`, `browser_press_key`, `browser_fill_form`, `browser_select_option`, `browser_handle_dialog`, `browser_wait_for`, `browser_resize`, `browser_close`, `browser_console_messages`. Left out: `browser_run_code_unsafe`, `browser_evaluate`, `browser_file_upload`, `browser_drop`, `browser_network_requests`, `browser_network_request` (headers carry cookies and tokens of the AI profile), `browser_emulate_media`, and every tool of the capabilities not listed in 2.
-5. After 15 minutes with no tool call the relay closes the Playwright MCP server, and the browser with it; the next call creates both again. The profile stays on disk.
+5. After 15 minutes with no tool call (`RELAY_BROWSER_IDLE`) the relay closes its browser context, then the Playwright MCP server (closing the server alone leaves the browser running), and empties `ai-output`; the next call creates both again. The profile stays on disk.
 6. `@playwright/mcp` is pinned to an exact version in `package.json` and stays external to `dist/relay.cjs`, like `playwright-core`: `npm ci` on the relay computer installs its own Playwright next to the relay's.
 
 ## Server
@@ -54,24 +55,28 @@ AI browser: own profile, own window, headful
 1. The browser hub is preloaded with the call-audio hub. It takes one relay socket per account (a newer one replaces the older), after `GET /api/relay/browser` answers that the token is the relay of that account. It keeps the last `tools/list` of each relay, and sends one call at a time per account, each with a 90 s limit.
 2. The `/mcp` route reaches the hub through `globalThis`: Turbopack copies module state per chunk.
 3. For an OAuth token, the tools of `/mcp` are the five read tools plus, while at least one account the user owns has its relay connected with the browser on, each allowed tool of that relay with one more argument, `account` (slot number). A client that listed its tools before the relay connected sees the browser tools after it lists them again.
-4. A browser tool exists only for an OAuth token (`MCP_TOKEN` gets an unknown tool). A call checks, in this order: the user owns slot N (404), the account is a relay account with the browser on and connected, and the owner did not stop it in the app (tool error naming the account). Then the hub forwards it without `account`, and the answer goes back as it came, images included.
+4. A browser tool exists only for an OAuth token (`MCP_TOKEN` gets an unknown tool). A call checks, in this order: the user owns slot N ("Account not found", nothing written), the account is a relay account, it is not stopped, the owner did not switch its browser off in Settings, its relay is connected with the browser on (tool error naming the account, written with its outcome). Then the hub forwards it without `account`, and the answer goes back as it came, images included.
 5. Each call is written to `browser_actions` in `app.db`: time, user, OAuth client, slot, tool, host of the URL for `browser_navigate` and `browser_tabs`, outcome. The account settings show the last 50, and a switch that stops the browser tools of that account (`teams_accounts.browser_off`).
 
 ## Authentication
 
 1. `@better-auth/mcp` added to the better-auth instance, better-auth raised to 1.7.7; its tables come from the migrations run at boot (`getMigrations`).
-2. Dynamic client registration on: Claude Code and claude.ai register themselves. A registered client gets nothing without a signed-in user.
+2. Dynamic client registration on: Claude Code and claude.ai register themselves. A registered client gets nothing without a signed-in user. A registration with only loopback HTTP redirects and no `application_type` is taken as native (MCP SDK 1.x sends none, and better-auth refuses a web client with an `http://localhost` redirect).
 3. Authorization sends the browser to the existing sign-in page of the app, then to one consent screen naming the client, with Allow and Deny.
-4. `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource` reach the web app through Caddy.
-5. `/mcp` takes either `MCP_TOKEN` (read tools only, as today) or an OAuth access token checked by `requireMcpAuth`. Requests with an `Origin` header keep answering 403.
+4. `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-authorization-server/api/auth` (the issuer is `<APP_URL>/api/auth`) reach the web app through Caddy, whose catch-all already sends them there; a route of the web app answers `/.well-known/*` through better-auth.
+5. `/mcp` takes either `MCP_TOKEN` (read tools only, as today) or an OAuth access token checked by `requireMcpAuth` against the JWKS read from the web app's own port. Access tokens are JWTs valid one hour: revocation is a consent check on every request (Settings, AI clients, Revoke deletes consent and tokens; a banned or deleted user is refused too). Requests with an `Origin` header keep answering 403. OAuth is off when `APP_URL` is plain HTTP on a host other than loopback (an OAuth resource must be HTTPS).
 
 ## Security
 
-- Whoever holds an OAuth token of the owner of an account, or controls the server, drives a browser on the relay computer: navigation, clicks and typing inside whatever the AI profile is signed in to, from the network of that computer. Nothing more reaches that computer: no code runs in the relay, no file is read from or written to its disk by a tool, and the Teams browser and profile are out of reach.
+- Whoever holds an OAuth token of the owner of an account, or controls the server, drives a browser on the relay computer: navigation, clicks and typing inside whatever the AI profile is signed in to, from the network of that computer. Nothing more reaches that computer: no code runs in the relay, no tool reads a file of its disk or takes a path from the client, and the Teams browser and profile are out of reach. Playwright MCP saves each screenshot as a PNG in `<STATE_DIR>/ai-output` on its own (capped, emptied when the browser closes).
 - `RELAY_BROWSER` sits on the relay computer: neither the server nor a token turns it on.
 - Pages are written by other people and can steer the model that reads them (prompt injection), as chat messages already can ([mcp.md](../mcp.md)). The allowlist bounds what a steered model can do through these tools; a client with other tools (shell, email) can still act on what it read.
 - The loopback check reads the URL a tool gets, nothing else: a link in a page, or a name that resolves to a loopback address, still reaches it. The relay API on the same computer answers only with its token.
 - Driving a browser from a computer of a client environment (a VDI, a managed laptop) falls under that environment's rules: the owner decides per relay, with `RELAY_BROWSER`.
+
+## Changes after the spikes
+
+2026-10-01, before the build, from the spikes recorded in the plan ([2026-10-01-relay-browser-mcp-plan.md](2026-10-01-relay-browser-mcp-plan.md)): the relay opens the MCP session itself and launches the AI browser with the Playwright of `@playwright/mcp` (Relay 2, 5); action answers carry no snapshot; registration defaults to native for loopback redirects; discovery paths and per-request revocation (Authentication 2, 4, 5); the check order of Server 4 names the stopped account and the switch. The intent is unchanged: no port on the relay computer, the allowlist in the relay, the Teams browser and profile untouched, OAuth tokens only for the browser, `MCP_TOKEN` read only, `RELAY_BROWSER` off by default.
 
 ## Not done
 
