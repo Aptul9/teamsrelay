@@ -1,14 +1,14 @@
 // The embedded ssh2 server (the no-admin shell into a relay host). Public-key auth only; an exec request runs the
 // command through the same runner cmdapi uses. Driven by a real in-process ssh2 client: an authorized key runs a
 // command, an unauthorized key is refused.
-import { Client, utils } from "ssh2";
+import { Client } from "ssh2";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { generateEd25519 } from "@/fleet/ssh/keys";
 import { startSshServer } from "@/fleet/ssh/server";
 
-type KeyPair = { private: string; public: string };
-const hostKey = (utils.generateKeyPairSync as (t: string) => KeyPair)("ed25519");
-const good = (utils.generateKeyPairSync as (t: string) => KeyPair)("ed25519");
-const bad = (utils.generateKeyPairSync as (t: string) => KeyPair)("ed25519");
+const hostKey = generateEd25519();
+const good = generateEd25519();
+const bad = generateEd25519();
 
 let server: { port: number; close: () => Promise<void> };
 

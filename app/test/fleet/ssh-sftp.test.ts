@@ -2,14 +2,14 @@
 // a real ssh2 SFTP client against a temp directory: write a file, read it back, list the directory, remove it.
 import fs from "node:fs";
 import path from "node:path";
-import { Client, utils } from "ssh2";
+import { Client } from "ssh2";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { generateEd25519 } from "@/fleet/ssh/keys";
 import { startSshServer } from "@/fleet/ssh/server";
 import { tempDir } from "../helpers";
 
-type KeyPair = { private: string; public: string };
-const hostKey = (utils.generateKeyPairSync as (t: string) => KeyPair)("ed25519");
-const good = (utils.generateKeyPairSync as (t: string) => KeyPair)("ed25519");
+const hostKey = generateEd25519();
+const good = generateEd25519();
 
 let server: { port: number; close: () => Promise<void> };
 let dir: string;
