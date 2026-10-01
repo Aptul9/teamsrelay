@@ -292,7 +292,7 @@ Once the `ssh` component is enabled, log in from a machine whose key is in `auth
 ssh -J oracle-vm -p 8822 fleet@127.0.0.1    # jump through the VM to the tunnel endpoint on its loopback
 ```
 
-The username is ignored (auth is by key). That is `library` mode (the default, no admin, embedded ssh2): its shell has no pseudo-tty, so it suits commands and scripts more than full-screen terminal programs. For a full OS shell with pty and sftp, set `"mode": "system"` in the `ssh` block instead: the agent then tunnels to the host's own OpenSSH Server on port 22, which must be installed and running on the host and which owns authentication (so `authorizedKeys` is not used). Log in the same way, `ssh -J oracle-vm -p <vmPort> <your-os-user>@127.0.0.1`.
+The username is ignored (auth is by key). That is `library` mode (the default, no admin, embedded ssh2): its shell has no pseudo-tty, so it suits commands and scripts more than full-screen terminal programs. File transfer works in library mode too, over the same connection: `sftp -J oracle-vm -P <vmPort> fleet@127.0.0.1`, or `scp -O -J oracle-vm -P <vmPort> <file> fleet@127.0.0.1:<path>`. For a full OS shell with pty and sftp, set `"mode": "system"` in the `ssh` block instead: the agent then tunnels to the host's own OpenSSH Server on port 22, which must be installed and running on the host and which owns authentication (so `authorizedKeys` is not used). Log in the same way, `ssh -J oracle-vm -p <vmPort> <your-os-user>@127.0.0.1`.
 
 ### From the control machine
 

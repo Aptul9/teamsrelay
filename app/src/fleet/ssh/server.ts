@@ -10,6 +10,7 @@ import path from "node:path";
 import { Server, utils, type AuthContext, type Connection, type ParsedKey } from "ssh2";
 import { errorText, log } from "@/agent/log";
 import { defaultShell, run } from "@/fleet/cmdapi/runner";
+import { wireSftp } from "./sftp";
 
 export interface SshServerOptions {
   port: number;
@@ -86,6 +87,7 @@ export function startSshServer(opts: SshServerOptions): Promise<SshServer> {
         const session = accept();
         // a client may request a pty before the shell; acknowledge it (there is no real pty behind it)
         session.on("pty", (acc) => acc && acc());
+        session.on("sftp", (acc) => wireSftp(acc(), cwd ?? process.cwd()));
         session.on("exec", (acc, _reject, info) => {
           const stream = acc();
           run({ command: info.command, shell, cwd, maxOutput })
