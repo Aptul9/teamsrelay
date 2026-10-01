@@ -69,9 +69,18 @@ export function migrateAppSchema(db: Database.Database) {
     ["checking", "INTEGER NOT NULL DEFAULT 0"],
     // SHA-256 (hex) of the token of the relay of an account on another computer, "" for an account of the browsers container
     ["relay_token", "TEXT NOT NULL DEFAULT ''"],
+    // 1 while the owner keeps the browser of its relay away from the MCP clients (Settings)
+    ["browser_off", "INTEGER NOT NULL DEFAULT 0"],
   ]) {
     if (!columns.includes(column)) db.exec(`ALTER TABLE teams_accounts ADD COLUMN ${column} ${decl}`);
   }
+  // each call of a browser tool of /mcp: when (ms), who, through which OAuth client, on which account, which tool, the
+  // host of the page it opened, how it ended
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS browser_actions(id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, user_id TEXT NOT NULL, client_id TEXT NOT NULL,
+      slot INTEGER NOT NULL, tool TEXT NOT NULL, host TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS browser_actions_slot ON browser_actions(slot, id);
+  `);
 }
 
 const hasTable = (db: Database.Database, name: string) =>
@@ -174,6 +183,34 @@ export function claimSlot(db: Database.Database, userId: string, limits: { slotC
 
 export function releaseSlot(db: Database.Database, slot: number) {
   db.prepare("DELETE FROM teams_accounts WHERE slot=?").run(slot);
+  // the next account of the slot starts with no actions of this one
+  db.prepare("DELETE FROM browser_actions WHERE slot=?").run(slot);
+}
+
+export function browserOff(db: Database.Database, slot: number): boolean {
+  return !!db.prepare("SELECT browser_off FROM teams_accounts WHERE slot=?").pluck().get(slot);
+}
+
+export function setBrowserOff(db: Database.Database, slot: number, off: boolean) {
+  db.prepare("UPDATE teams_accounts SET browser_off=? WHERE slot=?").run(off ? 1 : 0, slot);
+}
+
+export type BrowserAction = { id: number; ts: number; user_id: string; client_id: string; slot: number; tool: string; host: string; outcome: string };
+
+// actions kept per account; Settings shows the last 50
+const BROWSER_ACTIONS_KEPT = 500;
+
+export function logBrowserAction(
+  db: Database.Database,
+  a: { userId: string; clientId: string; slot: number; tool: string; host: string; outcome: string },
+  now = Date.now(),
+) {
+  db.prepare("INSERT INTO browser_actions(ts, user_id, client_id, slot, tool, host, outcome) VALUES(?,?,?,?,?,?,?)").run(now, a.userId, a.clientId, a.slot, a.tool, a.host, a.outcome);
+  db.prepare("DELETE FROM browser_actions WHERE slot=? AND id <= (SELECT id FROM browser_actions WHERE slot=? ORDER BY id DESC LIMIT 1 OFFSET ?)").run(a.slot, a.slot, BROWSER_ACTIONS_KEPT);
+}
+
+export function browserActionsOf(db: Database.Database, slot: number, limit = 50): BrowserAction[] {
+  return db.prepare("SELECT id, ts, user_id, client_id, slot, tool, host, outcome FROM browser_actions WHERE slot=? ORDER BY id DESC LIMIT ?").all(slot, limit) as BrowserAction[];
 }
 
 // The account of the relay that holds the token of this digest

@@ -14,8 +14,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as wellKnown from "@/app/.well-known/[...path]/route";
 import { POST } from "@/app/mcp/route";
 import { appDb, migrateAppSchema } from "@/lib/appdb";
+import { BROWSER_HUB_KEY, type BrowserHub } from "@/lib/browser-hub";
 import { auth, authOptions } from "@/lib/auth";
 import { clientsOf, consentGiven, revokeClient } from "@/lib/mcp/oauth";
+import { addRelayAccount } from "@/lib/slots";
 import { syncEnvAdmin } from "@/server/env-admin";
 import { tempDir } from "./helpers";
 
@@ -196,6 +198,28 @@ describe("authorization", () => {
   it("refuses a token from a web page: 403", async () => {
     const { token } = await authorize();
     expect((await mcpPost({ Authorization: `Bearer ${token}`, Origin: "https://example.com" })).status).toBe(403);
+  });
+
+  it("gives the token the browser tools of a relay of the user that is connected, and calls it", async () => {
+    const { slot } = await addRelayAccount(userId, { db: appDb(), dataDir: path.dirname(process.env.APP_DB!), slotCount: 6, perUser: 6 });
+    const calls: unknown[] = [];
+    const hub: BrowserHub = {
+      tools: (n) => (n === slot ? [{ name: "browser_snapshot", description: "Snapshot", inputSchema: { type: "object", properties: {} } }] : null),
+      call: async (n, name, args) => (calls.push({ n, name, args }), { content: [{ type: "text", text: "- heading" }] }),
+    };
+    (globalThis as Record<string, unknown>)[BROWSER_HUB_KEY] = hub;
+    try {
+      const { clientId, token } = await authorize();
+      expect(await tools(token)).toContain("browser_snapshot");
+      const client = new Client({ name: "vitest", version: "1.0.0" });
+      await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+      expect((await client.callTool({ name: "browser_snapshot", arguments: { account: slot } })).content).toEqual([{ type: "text", text: "- heading" }]);
+      await client.close();
+      expect(calls).toEqual([{ n: slot, name: "browser_snapshot", args: {} }]);
+      expect(appDb().prepare("SELECT client_id, tool, outcome FROM browser_actions WHERE slot=?").all(slot)).toEqual([{ client_id: clientId, tool: "browser_snapshot", outcome: "ok" }]);
+    } finally {
+      delete (globalThis as Record<string, unknown>)[BROWSER_HUB_KEY];
+    }
   });
 
   it("refuses the token of a client the user revoked, at once", async () => {
