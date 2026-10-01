@@ -14,10 +14,10 @@ afterEach(() => {
   vi.mocked(callActions.startAudioCall).mockReset();
 });
 
-// The Teams page of the account: the chat list of the store (kind of each chat), a toast ringing or not, a header with
-// the participants of a group or not, the page recording once the call is placed (records: at once, after that many ms,
-// or never). open: what showChat answers (null: shown).
-function teams(o: { kind?: string; group?: boolean; toast?: boolean; records?: boolean | number; open?: string | null; ringing?: boolean; inCall?: boolean; teams?: string } = {}) {
+// The Teams page of the account: the chat list of the store (kind of each chat), a toast ringing or not, the header of
+// the chat shown (notOne: why it is not the header of a 1:1 chat, "" when it is), the page recording once the call is
+// placed (records: at once, after that many ms, or never). open: what showChat answers (null: shown).
+function teams(o: { kind?: string; notOne?: string; toast?: boolean; records?: boolean | number; open?: string | null; ringing?: boolean; inCall?: boolean; teams?: string } = {}) {
   const states = new Map<string, string>();
   let placedAt = -1;
   const recording = () => placedAt >= 0 && (o.records === true || (typeof o.records === "number" && Date.now() - placedAt >= o.records));
@@ -26,7 +26,7 @@ function teams(o: { kind?: string; group?: boolean; toast?: boolean; records?: b
     url: () => "https://teams.microsoft.com/v2/",
     isClosed: () => false,
     evaluate: vi.fn(async (fn: { name: string }) =>
-      fn.name === "readIncomingCall" ? (o.toast ? { caller: "Luca Bianchi" } : null) : fn.name === "groupChatShown" ? !!o.group : fn.name === "openOverlayNames" ? [] : null,
+      fn.name === "readIncomingCall" ? (o.toast ? { caller: "Luca Bianchi" } : null) : fn.name === "notOneOnOne" ? (o.notOne ?? "") : fn.name === "openOverlayNames" ? [] : null,
     ),
     frames: () => [frame],
     context: () => ({ pages: () => [page] }),
@@ -101,8 +101,8 @@ describe("call asked from the app", () => {
     expect(callActions.startAudioCall).not.toHaveBeenCalled();
   });
 
-  it("presses nothing in a chat whose header shows its participants, though the list said 1:1", async () => {
-    const t = teams({ group: true, records: true });
+  it("presses nothing in a chat whose header is not the header of a 1:1 chat, though the list said 1:1", async () => {
+    const t = teams({ notOne: "3 people in the participant count", records: true });
     expect(await call(t.a, t.cmd())).toBe("failed");
     expect(t.reason(7)).toBe("not-one");
     expect(callActions.startAudioCall).not.toHaveBeenCalled();

@@ -14,9 +14,22 @@ export function readIncomingCall({ s, t }: { s: Selectors; t: Texts }): { caller
   return { caller: m ? m[1].replace(t.externalMark, "").trim() : "" };
 }
 
-// The chat open is a group: its header shows the count of its participants (a 1:1 chat has none)
-export function groupChatShown(s: Selectors): boolean {
-  return [...document.querySelectorAll<HTMLElement>(s.participantCount)].some((e) => e.getClientRects().length > 0);
+// Why the chat on screen is not a 1:1 chat as its header shows it, "" when it is. Teams web (2026-10-01) shows a
+// participant count in the header of every chat but the self chat, 0 in a 1:1 chat, and the "Audio call" button only in
+// a 1:1 chat (a group chat has Meet now and a field that names it). The header counts as 1:1 only with that button, no
+// mark of a group and a count of 0 when there is one: anything else, a header not read included, places no call.
+export function notOneOnOne({ s, t }: { s: Selectors; t: Texts }): string {
+  const shown = (root: ParentNode, sel: string) => [...root.querySelectorAll<HTMLElement>(sel)].filter((e) => e.getClientRects().length > 0);
+  const header = shown(document, s.chatHeader).find((h) => shown(h, s.chatTitle).length > 0);
+  if (!header) return "no chat header on screen";
+  if (shown(header, s.groupHeaderMarks).length) return "the header shows the marks of a group chat";
+  for (const count of shown(header, s.participantCount)) {
+    const m = `${count.getAttribute("aria-label") ?? ""} ${count.textContent ?? ""}`.match(t.participantCount);
+    if (!m) return "participant count not readable";
+    if (Number(m[1]) > 0) return `${m[1]} people in the participant count`;
+  }
+  if (!shown(header, s.oneOnOneCall).length) return "no 1:1 call button in the header";
+  return "";
 }
 
 type MicWindow = Window & { __teamsMicHook?: boolean; __teamsMicTracks?: MediaStreamTrack[] };

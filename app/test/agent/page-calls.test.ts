@@ -2,7 +2,7 @@
 // The microphone the page records from tells the call in progress; the microphone button of the call, Teams' own mute.
 import { describe, expect, it } from "vitest";
 import { acceptCall, acceptShortcut, clickMic, hangUp, muteShortcut, startAudioCall } from "@/agent/teams/call-actions";
-import { groupChatShown, installMicHook, micLive, micMuted, readIncomingCall } from "@/agent/teams/scripts/calls";
+import { installMicHook, micLive, micMuted, notOneOnOne, readIncomingCall } from "@/agent/teams/scripts/calls";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
 import { fixture, withChrome } from "./chrome";
 
@@ -119,14 +119,54 @@ describe("calling from the app", () => {
     expect(await clicks()).toEqual({});
   });
 
-  it("tells a group chat by the participant count in its header", async () => {
-    const group = () => chrome.page.evaluate(groupChatShown, SEL);
-    await chrome.page.setContent('<h2 data-tid="chat-title">Project Alpha</h2><button data-tid="chat-header-participant-count" aria-label="Add people, 10 participants">10</button>');
-    expect(await group()).toBe(true);
-    await chrome.page.setContent('<h2 data-tid="chat-title">Anna Rossi</h2>');
-    expect(await group()).toBe(false);
-    await chrome.page.setContent('<h2 data-tid="chat-title">Anna Rossi</h2><button data-tid="chat-header-participant-count" style="display:none">10</button>');
-    expect(await group()).toBe(false);
+});
+
+// The header of the chat about to be called, captured from Teams web on 2026-10-01 (scripts/capture-fixture.ts,
+// chat-header): a 1:1 chat with a person of another organization and of the same one, a group chat of three people with
+// people of another organization, the self chat. Teams shows a participant count in every one of them but the self chat
+// (0 in a 1:1); only a 1:1 chat has its "Audio call" button. A header is taken for a 1:1 chat only on that button, with
+// no mark of a group: whatever else fails the call (a wrong read must never start a group call).
+describe("the header of the chat to call", () => {
+  const why = () => chrome.page.evaluate(notOneOnOne, { s: SEL, t: TEXTS });
+  const header = async (html: string) => {
+    await chrome.page.setContent(html);
+    return why();
+  };
+
+  it("takes a 1:1 chat with a person of another organization, and one of the same organization", async () => {
+    for (const f of ["header-one-external.html", "header-one.html"]) expect(await header(fixture(f)), f).toBe("");
+  });
+
+  it("refuses a group chat, the self chat, and a page with no chat header", async () => {
+    expect(await header(fixture("header-group.html"))).toMatch(/group|3/);
+    expect(await header(fixture("header-self.html"))).toMatch(/no 1:1 call button/);
+    expect(await header("<main><h2 data-tid=\"chat-title\">Anna Rossi</h2></main>")).toMatch(/no chat header/);
+  });
+
+  it("refuses a 1:1 header whose participant count is above 0, or that it cannot read", async () => {
+    const one = fixture("header-one-external.html");
+    expect(await header(one.replace("0 participants including", "2 participants including"))).toMatch(/2/);
+    expect(await header(one.replace("View and add participants, 0 participants including external participants", "View and add participants"))).toMatch(/count/);
+  });
+
+  it("refuses a 1:1 header that also shows a mark of a group chat", async () => {
+    const one = fixture("header-one.html");
+    for (const mark of ["audio-drop-in-button", "chat-title-name-group-chat", "tfw-group-chat-avatar-button"]) {
+      expect(await header(one.replace('<div data-tid="entity-header"', `<div data-tid="entity-header"><button data-tid="${mark}">x</button`)), mark).toMatch(/group/);
+    }
+  });
+
+  it("reads only what shows: a hidden 1:1 call button counts for nothing, a hidden group mark is no mark", async () => {
+    const hiddenCall = fixture("header-self.html").replace('<div data-tid="entity-header"', '<div data-tid="entity-header"><button data-tid="default-chat-call-audio-button" style="display:none">Audio call</button');
+    expect(await header(hiddenCall)).toMatch(/no 1:1 call button/);
+    const hiddenMark = fixture("header-one.html").replace('<div data-tid="entity-header"', '<div data-tid="entity-header"><button data-tid="audio-drop-in-button" style="display:none">x</button');
+    expect(await header(hiddenMark)).toBe("");
+  });
+
+  it("reads the header of the chat on screen when Teams keeps an old one hidden", async () => {
+    const page = `<div style="display:none">${fixture("header-group.html")}</div>${fixture("header-one.html")}`;
+    expect(await header(page)).toBe("");
+    expect(await header(`<div style="display:none">${fixture("header-one.html")}</div>${fixture("header-group.html")}`)).toMatch(/group|3/);
   });
 });
 

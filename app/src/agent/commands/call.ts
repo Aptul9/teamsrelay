@@ -6,7 +6,7 @@ import { markViewing } from "../jobs/conversation";
 import { log } from "../log";
 import { startAudioCall } from "../teams/call-actions";
 import { sleep } from "../teams/page";
-import { groupChatShown, readIncomingCall } from "../teams/scripts/calls";
+import { notOneOnOne, readIncomingCall } from "../teams/scripts/calls";
 import { openOverlayNames } from "../teams/scripts/message-actions";
 import { SEL, TEXTS } from "../teams/selectors";
 import type { Handler, Outcome } from "./index";
@@ -22,8 +22,8 @@ const SELF_CHAT = /\(you\)/i;
 // presses Teams' own shortcut for an audio call. Done once a Teams page records from the microphone: the call watch
 // keeps it in progress from there, named after the person (a.outgoing). Nothing is pressed for a call asked too long
 // ago, while a call rings or is in progress (the same keys accept a call ringing as a video call), in a chat the list
-// does not show as 1:1 or whose header shows its participants, or in the self chat; failed then, with the reason in
-// cmd_result:<id>.
+// does not show as 1:1 or whose header is not the header of a 1:1 chat (notOneOnOne), or in the self chat; failed then,
+// with the reason in cmd_result:<id>.
 export const call: Handler = async (a, { id, arg1: chat, ts }) => {
   if (ts && nowSeconds() - ts >= CALL_MAX_AGE) return failed(a, id, chat, "late");
   if (a.ringing || a.inCall) return failed(a, id, chat, "busy");
@@ -34,7 +34,11 @@ export const call: Handler = async (a, { id, arg1: chat, ts }) => {
   if (problem) return failed(a, id, chat, problem);
   a.store.setState(STATE.activeChat, chat);
   const page = a.tp.page;
-  if (await page.evaluate(groupChatShown, SEL)) return failed(a, id, chat, "not-one");
+  const notOne = await page.evaluate(notOneOnOne, { s: SEL, t: TEXTS });
+  if (notOne) {
+    log.info("call", "header is not a 1:1 chat", { callee: chat, why: notOne });
+    return failed(a, id, chat, "not-one");
+  }
   a.outgoing = { callee: chat, since: Date.now() };
   const pressed = await startAudioCall(page, async () => !a.ringing && !a.inCall && !(await page.evaluate(readIncomingCall, { s: SEL, t: TEXTS })));
   if (!pressed) {
