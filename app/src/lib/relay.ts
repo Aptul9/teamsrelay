@@ -18,7 +18,7 @@ import { ensureSlotSchema, insertRow } from "@/shared/slot-db/schema";
 import { parseState, STATE, Viewing } from "@/shared/slot-db/state";
 import { appDb, relayAccount, slotRow } from "./appdb";
 import { config } from "./config";
-import { HttpError } from "./http";
+import { declaredLength, HttpError } from "./http";
 import { SlotNotReady, slotDbPath, slotDir } from "./slotdb";
 import { imageExt } from "./uploads";
 
@@ -61,7 +61,7 @@ function stillRelay(caller: RelayCaller) {
 // Content-Length says (a chunked body has none); a sync with every chat stays well under the limit.
 export async function relayJson<T>(req: Request, schema: z.ZodType<T>, maxBytes = 64e6): Promise<T> {
   const tooLarge = () => new HttpError(413, "Body too large");
-  if (Number(req.headers.get("content-length") ?? 0) > maxBytes) throw tooLarge();
+  if ((declaredLength(req) ?? 0) > maxBytes) throw tooLarge();
   const chunks: Uint8Array[] = [];
   let size = 0;
   if (req.body) {
@@ -95,12 +95,17 @@ export function createRelaySlot(dir: string) {
   SlotStore.open(path.join(dir, "messages.db")).close();
 }
 
+// The file of the database of the slot, SlotNotReady while it is not there
+function slotDbFile(slot: number): string {
+  const file = slotDbPath(slot);
+  if (!fs.existsSync(file)) throw new SlotNotReady();
+  return file;
+}
+
 // The database of the slot, made when the account was added (createRelaySlot) and never here: a request of an account
 // removed meanwhile cannot bring its folder back
 function openSlotDb(slot: number): Database.Database {
-  const file = slotDbPath(slot);
-  if (!fs.existsSync(file)) throw new SlotNotReady();
-  const db = new Database(file, { fileMustExist: true });
+  const db = new Database(slotDbFile(slot), { fileMustExist: true });
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 8000");
   ensureSlotSchema(db);
@@ -251,8 +256,7 @@ function relayNotifier(caller: RelayCaller): Notifier {
   } catch (e) {
     console.error(`relay ${caller.slot}: FCM key: ${(e as Error).message}`);
   }
-  if (!fs.existsSync(slotDbPath(caller.slot))) throw new SlotNotReady();
-  const store = SlotStore.open(slotDbPath(caller.slot));
+  const store = SlotStore.open(slotDbFile(caller.slot));
   const app = new AppStore(config.appDb, caller.slot);
   const { slot, added } = caller;
   // the devices of the owner while the account holds the slot: a notification still on its way when the account is
@@ -362,7 +366,7 @@ export async function saveRelayFile(caller: RelayCaller, kind: RelayFileKind, na
   if (!k.name.test(name)) throw new HttpError(400, "Invalid file name");
   if (!body) throw new HttpError(400, "Missing file");
   // the folder of the slot comes with the account, never from here
-  if (!fs.existsSync(slotDbPath(caller.slot))) throw new SlotNotReady();
+  slotDbFile(caller.slot);
   const room = roomOf(caller);
   const quota = config.relayQuotaBytes;
   const tooLarge = () => new HttpError(413, "File too large");
@@ -412,8 +416,3 @@ export async function saveRelayFile(caller: RelayCaller, kind: RelayFileKind, na
   }
 }
 
-// Content-Length of a request, null without one
-export const declaredLength = (req: Request) => {
-  const v = req.headers.get("content-length");
-  return v === null ? null : Number(v);
-};

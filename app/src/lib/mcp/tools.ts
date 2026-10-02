@@ -5,7 +5,7 @@ import { STATE, Viewing } from "@/shared/slot-db/state";
 import { accountSummary, upSince } from "../accounts";
 import { appDb, slotsOf, type Slot } from "../appdb";
 import { pickSlot } from "../authz";
-import { queue } from "../commands";
+import { idleReason, queue } from "../commands";
 import { sentAt } from "../message-times";
 import { withSlot, type SlotReader } from "../slotdb";
 
@@ -121,8 +121,8 @@ export function readChat(userId: string, { account, chat }: Account & { chat: st
 // Opens the chat in Teams with the open command of the app and waits for the agent: Teams marks the chat as read
 export async function refreshChat(userId: string, { account, chat }: Account & { chat: string }, wait = { timeoutMs: 30_000, pollMs: 500 }) {
   const s = accountOf(userId, account);
-  if (s.stopped) throw new ToolError("This Teams account is stopped: start it in TeamsRelay, from its page or from Settings");
-  if (s.check_every) throw new ToolError("This Teams account runs only during its checks: set it to always on in the Settings of TeamsRelay to open chats");
+  const idle = idleReason(s.slot);
+  if (idle) throw new ToolError(idle);
   withSlot(s.slot, (r) => {
     if (!r.chats().some((c) => c.name === chat)) throw new ToolError("No chat with this name: use a name as list_chats gives it");
     const h = r.health(upSince(s));

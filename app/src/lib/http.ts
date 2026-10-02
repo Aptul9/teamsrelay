@@ -25,6 +25,12 @@ export function route<C = unknown>(fn: Handler<C>): Handler<C> {
   };
 }
 
+// Content-Length of a request, null without one
+export const declaredLength = (req: Request) => {
+  const v = req.headers.get("content-length");
+  return v === null ? null : Number(v);
+};
+
 export async function body<T extends Record<string, unknown>>(req: Request): Promise<T> {
   try {
     const b = await req.json();
