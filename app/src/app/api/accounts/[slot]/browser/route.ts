@@ -1,4 +1,4 @@
-import { appDb, browserActionsOf, browserOff, setBrowserOff, slotRow } from "@/lib/appdb";
+import { appDb, browserActionsOf, setBrowserOff, slotRow } from "@/lib/appdb";
 import { browserHub } from "@/lib/browser-hub";
 import { body, HttpError, route } from "@/lib/http";
 import { clientName } from "@/lib/mcp/oauth";
@@ -22,7 +22,7 @@ async function ownSlot(req: Request, param: string) {
 export const GET = route<Ctx>(async (req, { params }) => {
   const row = await ownSlot(req, (await params).slot);
   const actions = browserActionsOf(appDb(), row.slot).map((a) => ({ ts: a.ts, client: clientName(a.client_id), tool: a.tool, host: a.host, outcome: a.outcome }));
-  return Response.json({ off: browserOff(appDb(), row.slot), connected: !!browserHub()?.tools(row.slot), actions });
+  return Response.json({ off: !!row.browser_off, connected: !!browserHub()?.tools(row.slot), actions });
 });
 
 // {off: true}: the MCP clients get no browser of this account until {off: false}

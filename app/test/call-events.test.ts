@@ -23,6 +23,7 @@ const slot = (n: number, o: Partial<Slot> = {}): Slot => ({
   check_result: "",
   checking: 0,
   relay: 0,
+  browser_off: 0,
   ...o,
 });
 

@@ -29,13 +29,15 @@ export type Slot = {
   check_result: string;
   checking: number;
   relay: number;
+  // 1 while the owner keeps the browser of its relay away from the MCP clients (Settings)
+  browser_off: number;
 };
 
 export { CHECK_INTERVALS } from "@/shared/checks";
 export type CheckResult = "ok" | "login" | "failed";
 
 // relay_token, the digest of the token of the relay, never leaves the database: rows say only whether there is one
-const SLOT_COLUMNS = "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking, (relay_token <> '') AS relay";
+const SLOT_COLUMNS = "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking, (relay_token <> '') AS relay, browser_off";
 
 let shared: Database.Database | null = null;
 
@@ -60,9 +62,9 @@ export function migrateAppSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS push_subscriptions_user ON push_subscriptions(user_id);
   `);
   const columns = db.prepare("SELECT name FROM pragma_table_info('teams_accounts')").pluck().all();
-  if (!columns.includes("stopped")) db.exec("ALTER TABLE teams_accounts ADD COLUMN stopped INTEGER NOT NULL DEFAULT 0");
-  if (!columns.includes("started")) db.exec("ALTER TABLE teams_accounts ADD COLUMN started INTEGER NOT NULL DEFAULT 0");
   for (const [column, decl] of [
+    ["stopped", "INTEGER NOT NULL DEFAULT 0"],
+    ["started", "INTEGER NOT NULL DEFAULT 0"],
     ["check_every", "INTEGER NOT NULL DEFAULT 0"],
     ["check_due", "INTEGER NOT NULL DEFAULT 0"],
     ["checked", "INTEGER NOT NULL DEFAULT 0"],
@@ -70,7 +72,6 @@ export function migrateAppSchema(db: Database.Database) {
     ["checking", "INTEGER NOT NULL DEFAULT 0"],
     // SHA-256 (hex) of the token of the relay of an account on another computer, "" for an account of the browsers container
     ["relay_token", "TEXT NOT NULL DEFAULT ''"],
-    // 1 while the owner keeps the browser of its relay away from the MCP clients (Settings)
     ["browser_off", "INTEGER NOT NULL DEFAULT 0"],
   ]) {
     if (!columns.includes(column)) db.exec(`ALTER TABLE teams_accounts ADD COLUMN ${column} ${decl}`);
@@ -188,9 +189,6 @@ export function releaseSlot(db: Database.Database, slot: number) {
   db.prepare("DELETE FROM browser_actions WHERE slot=?").run(slot);
 }
 
-export function browserOff(db: Database.Database, slot: number): boolean {
-  return !!db.prepare("SELECT browser_off FROM teams_accounts WHERE slot=?").pluck().get(slot);
-}
 
 export function setBrowserOff(db: Database.Database, slot: number, off: boolean) {
   db.prepare("UPDATE teams_accounts SET browser_off=? WHERE slot=?").run(off ? 1 : 0, slot);

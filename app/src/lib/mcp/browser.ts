@@ -1,4 +1,4 @@
-import { appDb, browserOff, logBrowserAction, slotRow, slotsOf } from "../appdb";
+import { appDb, logBrowserAction, slotRow, slotsOf } from "../appdb";
 import { browserHub, type BrowserTool, type ToolResult } from "../browser-hub";
 import { toolError } from "@/shared/relay-sync";
 import { ToolError } from "./tools";
@@ -13,7 +13,7 @@ export function browserAccounts(userId: string): number[] {
   const hub = browserHub();
   if (!hub) return [];
   return slotsOf(appDb(), userId)
-    .filter((s) => s.relay && !s.stopped && !browserOff(appDb(), s.slot) && hub.tools(s.slot))
+    .filter((s) => s.relay && !s.stopped && !s.browser_off && hub.tools(s.slot))
     .map((s) => s.slot);
 }
 
@@ -70,7 +70,7 @@ export async function callBrowserTool(o: { userId: string; clientId: string; slo
   };
   if (!row.relay) return refuse("not-relay", `Account ${slot} is not on another computer: only the relay of an account on another computer has a browser for AI clients`);
   if (row.stopped) return refuse("stopped", `Account ${slot} is stopped: start it first`);
-  if (browserOff(appDb(), slot)) return refuse("off", `The browser of account ${slot} is switched off for AI clients: its owner turns it on again in Settings`);
+  if (row.browser_off) return refuse("off", `The browser of account ${slot} is switched off for AI clients: its owner turns it on again in Settings`);
   const hub = browserHub();
   const tools = hub?.tools(slot);
   if (!hub || !tools) return refuse("offline", `The relay of account ${slot} is not connected with its browser on (RELAY_BROWSER=1 in its relay.env)`);

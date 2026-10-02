@@ -58,6 +58,7 @@ const account: Account = {
   relay: false,
   host: "",
   relaySeen: 0,
+  callAudio: false,
 };
 const relay: Account = { ...account, slot: 3, tenant: "Fabrikam", relay: true, host: "office-pc" };
 

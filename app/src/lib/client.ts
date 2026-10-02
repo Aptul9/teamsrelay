@@ -4,40 +4,10 @@ import type { CallReason } from "@/shared/slot-db/commands";
 import { hasTeamsId, IMAGE_TYPES, MAX_UPLOAD, type ActivityItem } from "@/shared/slot-db/rows";
 import { timeLabel } from "./message-times";
 
-export type Account = {
-  slot: number;
-  name: string;
-  email: string;
-  tenant: string;
-  av: string;
-  // the owner's own presence word (shared/presence), "" when unknown
-  presence: string;
-  teams: string;
-  overall: string;
-  stopped: boolean;
-  unread: number;
-  unreadActivity: string[] | null;
-  missedCalls: string[] | null;
-  // ids of every item of the feed, newest first: what an account met for the first time counts as seen
-  activityIds: string[] | null;
-  added: number;
-  desktop: string;
-  // checked every N hours (0: always on): seconds between two checks, end (0 before the first) and outcome of the
-  // last one, when the next is due (0: asked from the app), a check running now
-  checkEvery: number;
-  checked: number;
-  checkResult: string;
-  nextCheck: number;
-  checking: boolean;
-  // an account on another computer, whose relay joined the server: the name of that computer ("" before its first
-  // sync) and the time of its last sync
-  relay: boolean;
-  host: string;
-  relaySeen: number;
-  // its relay sends the sound of a call answered or placed from the app to the app (absent: a relay of before)
-  callAudio?: boolean;
-};
-export type { ActivityItem, CallLogEntry, Chat, Message, Reaction } from "@/shared/slot-db/rows";
+// An account as GET /api/accounts gives it
+import type { AccountSummary as Account } from "./accounts";
+export type { Account };
+export type { ActivityItem, CallLogEntry, Chat, Message } from "@/shared/slot-db/rows";
 export type { OpenReason, OpenStatus } from "@/shared/slot-db/commands";
 export { CHECK_INTERVALS } from "@/shared/checks";
 export type { RingingCall, SlotHealth as Health } from "@/shared/slot-db/state";
