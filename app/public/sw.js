@@ -13,13 +13,26 @@ self.addEventListener('push', event => {
   event.waitUntil(Promise.all([shown, badge(d)]));
 });
 
+// The windows of the app, those not yet controlled by this worker included
+const windows = () => self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+
+// The first window of the app gets `msg` (when given) and the focus; with none, `url` opens in a new one
+async function focusOrOpen(msg, url) {
+  for (const c of await windows()) {
+    if ('focus' in c) {
+      if (msg) c.postMessage(msg);
+      return c.focus();
+    }
+  }
+  if (clients.openWindow) return clients.openWindow(url);
+}
+
 // While a window of the installed app is on screen, the app keeps the number of what waits on its icon (App.tsx). With
 // none on screen a push puts a dot there, until the app shows the number again; a call that ended adds nothing. Pushes
 // of the local relay (no acc) put none: its page never takes a dot away.
 async function badge(d) {
   if (!d.acc || d.call === 'ended' || !self.navigator || !self.navigator.setAppBadge) return;
-  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-  if (windows.some(w => w.visibilityState === 'visible')) return;
+  if ((await windows()).some(w => w.visibilityState === 'visible')) return;
   try { await self.navigator.setAppBadge(); } catch (_) {}
 }
 
@@ -54,11 +67,11 @@ const BELL_WAIT = 500;
 // until one plays it: one bell per message. With no window, or none that plays it in time (a tab not clicked since it
 // loaded may play no sound, a page the browser froze does not answer), the notification keeps the sound of the device.
 async function bellRung() {
-  let windows = [];
+  let open = [];
   try {
-    windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    open = await windows();
   } catch (_) {}
-  const order = [...windows.filter(w => w.visibilityState === 'visible'), ...windows.filter(w => w.visibilityState !== 'visible')];
+  const order = [...open.filter(w => w.visibilityState === 'visible'), ...open.filter(w => w.visibilityState !== 'visible')];
   for (const w of order) if (await askBell(w)) return true;
   return false;
 }
@@ -136,15 +149,7 @@ function answerCall(d) {
     .then(j => {
       if (!j) return clients.openWindow('/?a=' + d.acc);
       if (j.desktop && !String(j.desktop).startsWith('/')) return clients.openWindow(j.desktop);
-      return clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cl => {
-        for (const c of cl) {
-          if ('focus' in c) {
-            c.postMessage({ acc: d.acc, call: true });
-            return c.focus();
-          }
-        }
-        return clients.openWindow('/?a=' + d.acc + '&call=1');
-      });
+      return focusOrOpen({ acc: d.acc, call: true }, '/?a=' + d.acc + '&call=1');
     });
 }
 
@@ -158,14 +163,5 @@ self.addEventListener('notificationclick', event => {
   }
   const acc = d.acc;
   const chat = acc ? '' : d.chat || '';
-  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cl => {
-    for (const c of cl) {
-      if ('focus' in c) {
-        if (acc) c.postMessage({ acc });
-        else if (chat) c.postMessage({ chat });
-        return c.focus();
-      }
-    }
-    if (clients.openWindow) return clients.openWindow(acc ? '/?a=' + acc : chat ? '/#chat=' + encodeURIComponent(chat) : '/');
-  }));
+  event.waitUntil(focusOrOpen(acc ? { acc } : chat ? { chat } : null, acc ? '/?a=' + acc : chat ? '/#chat=' + encodeURIComponent(chat) : '/'));
 });
