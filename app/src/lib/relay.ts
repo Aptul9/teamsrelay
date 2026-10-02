@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 import Database from "better-sqlite3";
 import type { z } from "zod";
 import { MAX_DOWNLOAD } from "@/agent/logic/files";
@@ -189,7 +190,6 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // The commands queued for the account after `after` (oldest first), and the chat the app shows (none: it stopped
 // showing one) when that changed later than `vts`: at once when there are any, otherwise as soon as some come, at the

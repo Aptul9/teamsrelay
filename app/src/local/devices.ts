@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { nowSeconds } from "@/agent/context";
 import type { PushDevices, PushTarget } from "@/agent/push/notifier";
 
 // The devices subscribed from the app of the relay: a table of relay.db the slot databases of the server do not
@@ -28,7 +29,7 @@ export class RelayDevices implements PushDevices {
 
   // A device subscribing again replaces its subscription
   save(endpoint: string, sub: string, ua: string) {
-    this.db.prepare("INSERT OR REPLACE INTO push_subscriptions(endpoint, sub, ua, ts) VALUES(?,?,?,?)").run(endpoint, sub, ua, Math.floor(Date.now() / 1000));
+    this.db.prepare("INSERT OR REPLACE INTO push_subscriptions(endpoint, sub, ua, ts) VALUES(?,?,?,?)").run(endpoint, sub, ua, nowSeconds());
   }
 
   remove(endpoint: string): boolean {

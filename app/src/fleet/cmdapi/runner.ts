@@ -5,6 +5,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const POSIX = process.platform !== "win32";
 
@@ -37,7 +38,6 @@ export interface Result {
   truncated: boolean;
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // Find an executable on PATH. On Windows the name may be given without its extension, so PATHEXT is tried.
 export function whichSync(name: string): string | null {

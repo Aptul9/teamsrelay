@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { setTimeout as wait } from "node:timers/promises";
 import Database from "better-sqlite3";
+import { nowSeconds } from "@/agent/context";
 import { Agent, fetch as undiciFetch } from "undici";
 import type webpush from "web-push";
 import type { z } from "zod";
@@ -116,12 +118,8 @@ export type ServerLinkOptions = {
   onCallAudio?: () => void;
 };
 
-const pause = (ms: number, signal: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    if (signal.aborted) return resolve();
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => (clearTimeout(t), resolve()), { once: true });
-  });
+// ends early, without an error, once `signal` aborts
+const pause = (ms: number, signal: AbortSignal) => wait(ms, undefined, { signal }).catch(() => undefined);
 
 export class ServerLink {
   // devices of the owner on the server, from the last answer about commands: the health of the relay reports them
@@ -462,7 +460,7 @@ export class ServerLink {
   private serverCommands(): Map<number, { id: number; status: CommandStatus }> {
     const out = new Map<number, { id: number; status: CommandStatus }>();
     if (!this.added) return out;
-    const since = Math.floor(Date.now() / 1000) - STATUSES_FOR_S;
+    const since = nowSeconds() - STATUSES_FOR_S;
     const rows = this.db.prepare("SELECT id, key, status FROM commands WHERE key LIKE ? AND ts >= ?").all(`srv-${this.added}-%`, since) as {
       id: number;
       key: string;

@@ -10,7 +10,7 @@ export function sentAt(mid: string | number | undefined): number | null {
   return /^1\d{12}$/.test(s) ? Number(s) : null;
 }
 
-const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
+export const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
 
 // For each message: whether it starts a group (author, picture and time above it) and whether it is the first of its
 // day (a divider above it). A message without a time breaks no group and starts no day.

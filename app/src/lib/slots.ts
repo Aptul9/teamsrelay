@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
+import { nowSeconds } from "@/agent/context";
 import { askCheck, CHECK_INTERVALS, claimSlot, listSlots, releaseSlot, setCheckEvery, setRelayToken, setSlotStopped, slotRow } from "./appdb";
 import type { ControlClient } from "./control";
 import { HttpError } from "./http";
@@ -133,7 +134,7 @@ export function setAccountRunning(n: number, running: boolean, ctl: ControlClien
 // Always on (every 0), or checked every `every` seconds: its browser runs only while it is checked (src/lib/checks.ts),
 // so it stops now, unless a check runs; back to always on, it starts now. The app shows one status per account (stopped,
 // always on, checked every N): a stopped account given a mode is back in service, checked ones with a check asked.
-export function setCheckMode(n: number, every: number, ctl: ControlClient, db: Database.Database, now = Math.floor(Date.now() / 1000)): Promise<void> {
+export function setCheckMode(n: number, every: number, ctl: ControlClient, db: Database.Database, now = nowSeconds()): Promise<void> {
   if (every !== 0 && !(CHECK_INTERVALS as readonly number[]).includes(every)) {
     return Promise.reject(new HttpError(400, `checkEvery must be 0 or one of ${CHECK_INTERVALS.join(", ")}`));
   }

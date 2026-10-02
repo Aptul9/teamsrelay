@@ -1,3 +1,4 @@
+import { setTimeout as wait } from "node:timers/promises";
 import type Database from "better-sqlite3";
 import { SIGN_IN_TRY_AFTER, SIGN_IN_TRY_WAIT } from "@/shared/sign-in";
 import { STATE, Watch } from "@/shared/slot-db/state";
@@ -44,7 +45,6 @@ export const ALERT_WAIT = 30;
 // in the remote desktop
 export const SIGN_IN_WAIT = 600;
 
-const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const report = (n: number) => (e: Error) => console.error(`check of account ${n}: ${e.message}`);
 
 // Starts the account, waits for Teams, has the agent read the chat list and the Activity feed, stops it. The outcome
@@ -52,7 +52,7 @@ const report = (n: number) => (e: Error) => console.error(`check of account ${n}
 // always on meanwhile; nothing is recorded and the browser is left as its owner wants it.
 export async function runCheck(n: number, d: CheckDeps): Promise<CheckResult | null> {
   const now = () => Math.floor((d.now ?? Date.now)() / 1000);
-  const sleep = d.sleep ?? pause;
+  const sleep = d.sleep ?? ((ms: number) => wait(ms));
   const begun = now();
   let asked = false;
   let signIn = false;

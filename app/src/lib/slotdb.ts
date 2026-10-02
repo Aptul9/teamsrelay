@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { nowSeconds } from "@/agent/context";
 import { OpenResult, type CommandType, type OpenStatus } from "@/shared/slot-db/commands";
 import { HAS_TEAMS_ID, parseExtra, type ActivityItem, type CallLogEntry, type Chat, type Message } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
@@ -187,7 +188,7 @@ export class SlotReader {
   enqueue(type: CommandType, arg1 = "", arg2 = ""): number {
     const r = this.db
       .prepare("INSERT INTO commands(ts, type, arg1, arg2) VALUES(?,?,?,?)")
-      .run(Math.floor(Date.now() / 1000), type, arg1, arg2);
+      .run(nowSeconds(), type, arg1, arg2);
     return Number(r.lastInsertRowid);
   }
 
@@ -211,7 +212,7 @@ export class SlotReader {
   markViewing(chat: string) {
     this.db
       .prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)")
-      .run(STATE.viewing, JSON.stringify({ chat, ts: Math.floor(Date.now() / 1000) }));
+      .run(STATE.viewing, JSON.stringify({ chat, ts: nowSeconds() }));
   }
 
   // The app stopped showing this chat: the agent goes back to the self chat at once. Not when the app shows another
@@ -220,14 +221,14 @@ export class SlotReader {
     this.db.transaction(() => {
       const shown = parseState(Viewing, this.db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.viewing) as string | undefined);
       if (shown.chat !== chat) return;
-      this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.viewing, JSON.stringify({ chat: "", ts: Math.floor(Date.now() / 1000) }));
+      this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.viewing, JSON.stringify({ chat: "", ts: nowSeconds() }));
     })();
   }
 
   // The owner opens the remote desktop of the account: its agent leaves Teams as it is for a while
   // (src/agent/logic/owner.ts)
   markDesktop() {
-    this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.desktop, JSON.stringify({ ts: Math.floor(Date.now() / 1000) }));
+    this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.desktop, JSON.stringify({ ts: nowSeconds() }));
   }
 }
 

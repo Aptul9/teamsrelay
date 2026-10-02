@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { shownInApp } from "@/agent/logic/parking";
 import type { Message } from "@/shared/slot-db/rows";
 import { STATE, Viewing } from "@/shared/slot-db/state";
@@ -5,6 +6,7 @@ import { accountSummary, upSince } from "../accounts";
 import { appDb, slotsOf, type Slot } from "../appdb";
 import { pickSlot } from "../authz";
 import { queue } from "../commands";
+import { sentAt } from "../message-times";
 import { withSlot, type SlotReader } from "../slotdb";
 
 // Read-only tools of /mcp, as functions of the user the token acts as
@@ -50,7 +52,8 @@ function liveChat(r: SlotReader, s: Slot): string {
 
 // Teams message ids are the milliseconds of the message
 export function messageTime(mid: string): string | undefined {
-  return /^\d{13}$/.test(mid) ? new Date(Number(mid)).toISOString() : undefined;
+  const at = sentAt(mid);
+  return at === null ? undefined : new Date(at).toISOString();
 }
 
 function toolMessage(m: Message): ToolMessage {
@@ -114,7 +117,6 @@ export function readChat(userId: string, { account, chat }: Account & { chat: st
   return withSlot(s.slot, (r) => chatMessages(r, s, chat));
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Opens the chat in Teams with the open command of the app and waits for the agent: Teams marks the chat as read
 export async function refreshChat(userId: string, { account, chat }: Account & { chat: string }, wait = { timeoutMs: 30_000, pollMs: 500 }) {

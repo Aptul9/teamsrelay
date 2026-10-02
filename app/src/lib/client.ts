@@ -2,6 +2,7 @@
 
 import type { CallReason } from "@/shared/slot-db/commands";
 import { hasTeamsId, IMAGE_TYPES, MAX_UPLOAD, type ActivityItem } from "@/shared/slot-db/rows";
+import { timeLabel } from "./message-times";
 
 export type Account = {
   slot: number;
@@ -302,7 +303,7 @@ export function ago(ts?: number): string {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-export const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+export const clock = (ts: number) => timeLabel(ts * 1000);
 
 // The interval of the checks of an account: "1 h", "2 h", "4 h"
 export const hours = (seconds: number) => `${Math.round(seconds / 3600)} h`;

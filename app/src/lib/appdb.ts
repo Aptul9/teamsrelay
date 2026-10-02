@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { nowSeconds } from "@/agent/context";
 import { config } from "./config";
 import { HttpError } from "./http";
 
@@ -91,7 +92,7 @@ const hasTable = (db: Database.Database, name: string) =>
 export function adoptLegacyData(db: Database.Database, userId: string): { slots: number; devices: number } {
   return db.transaction(() => {
     if ((db.pragma("user_version", { simple: true }) as number) >= SCHEMA_VERSION) return { slots: 0, devices: 0 };
-    const now = Math.floor(Date.now() / 1000);
+    const now = nowSeconds();
     let slots = 0;
     let devices = 0;
     if (hasTable(db, "accounts")) {
@@ -160,7 +161,7 @@ export function isSlotStopped(db: Database.Database, slot: number): boolean {
 
 export function setSlotStopped(db: Database.Database, slot: number, stopped: boolean) {
   if (stopped) db.prepare("UPDATE teams_accounts SET stopped=1 WHERE slot=?").run(slot);
-  else db.prepare("UPDATE teams_accounts SET stopped=0, started=? WHERE slot=?").run(Math.floor(Date.now() / 1000), slot);
+  else db.prepare("UPDATE teams_accounts SET stopped=0, started=? WHERE slot=?").run(nowSeconds(), slot);
 }
 
 export function slotOwner(db: Database.Database, slot: number): string | null {
@@ -174,7 +175,7 @@ export function claimSlot(db: Database.Database, userId: string, limits: { slotC
     const taken = new Set(listSlots(db).map((s) => s.slot));
     for (let n = 1; n <= limits.slotCount; n++) {
       if (taken.has(n)) continue;
-      db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(?,?,?)").run(n, userId, Math.floor(Date.now() / 1000));
+      db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(?,?,?)").run(n, userId, nowSeconds());
       return n;
     }
     throw new HttpError(409, `No free slot: all ${limits.slotCount} are in use`);
@@ -230,7 +231,7 @@ export function savePushSubscription(db: Database.Database, userId: string, sub:
     endpoint,
     userId,
     JSON.stringify(sub),
-    Math.floor(Date.now() / 1000),
+    nowSeconds(),
   );
 }
 
@@ -255,7 +256,7 @@ export function saveFcmDevice(db: Database.Database, userId: string, token: stri
     endpoint,
     userId,
     JSON.stringify({ fcm: { token, key, name, session } }),
-    Math.floor(Date.now() / 1000),
+    nowSeconds(),
   );
   return key;
 }
