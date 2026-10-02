@@ -226,7 +226,7 @@ describe("relay joined to a server", () => {
         ["Anna Rossi", "ciao", "12:19", 1, "0123456789abcdef.png", "one"],
       ],
       anna: [["1790431664072", "ciao", "<p>ciao</p>"]],
-      me: { name: "Test User", email: "test.user@contoso.example", tenant: "Contoso" },
+      me: { name: "Test User", email: "test.user@contoso.example", tenant: "Contoso", av: "" },
       activity: ["25006882909"],
       calls: [{ caller: "Anna Rossi", since: 1790500000000, seconds: 9 }],
       health: "green",

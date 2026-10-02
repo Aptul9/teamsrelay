@@ -57,6 +57,14 @@ const PUSH_TIMEOUT_MS = 10_000;
 const hash = (json: string) => crypto.createHash("sha1").update(json).digest("base64");
 const digest = (v: unknown) => hash(JSON.stringify(v));
 
+// the digests of what the server took into what it holds: null for a key removed there
+function takeDigests(sent: Map<string, string>, taken: Map<string, string | null>) {
+  for (const [k, d] of taken) {
+    if (d === null) sent.delete(k);
+    else sent.set(k, d);
+  }
+}
+
 export class ServerError extends Error {
   constructor(
     readonly status: number,
@@ -413,15 +421,9 @@ export class ServerLink {
 
     const commit = () => {
       Object.assign(this.sent, next);
-      for (const [chat, d] of messageDigests) {
-        if (d === null) this.sent.messages.delete(chat);
-        else this.sent.messages.set(chat, d);
-      }
-      for (const [k, d] of stateDigests) {
-        if (d === null) this.sent.state.delete(k);
-        else this.sent.state.set(k, d);
-      }
-      for (const [mid, d] of readbyDigests) this.sent.readby.set(mid, d);
+      takeDigests(this.sent.messages, messageDigests);
+      takeDigests(this.sent.state, stateDigests);
+      takeDigests(this.sent.readby, readbyDigests);
       for (const c of statuses) this.sent.commands.set(c.id, c.status);
       if (viewing) this.viewingTs = Math.max(this.viewingTs, viewing.ts);
     };
@@ -448,30 +450,26 @@ export class ServerLink {
       state[k] = v;
       digests.set(k, d);
     }
-    const commit = () => {
-      for (const [k, d] of digests) {
-        if (d === null) this.sent.state.delete(k);
-        else this.sent.state.set(k, d);
-      }
-    };
-    return { state, commit };
+    return { state, commit: () => takeDigests(this.sent.state, digests) };
   }
 
   // The commands of the server queued here in the last day, of the current series: local id to the id and status there
   private serverCommands(): Map<number, { id: number; status: CommandStatus }> {
-    const out = new Map<number, { id: number; status: CommandStatus }>();
-    if (!this.added) return out;
-    const since = nowSeconds() - STATUSES_FOR_S;
+    if (!this.added) return new Map();
+    return new Map(this.series(nowSeconds() - STATUSES_FOR_S).map((c) => [c.local, { id: c.id, status: c.status }]));
+  }
+
+  // The commands of the current series queued here since `since` (Unix s): local id, id on the server, status
+  private series(since = 0): { local: number; id: number; status: CommandStatus }[] {
     const rows = this.db.prepare("SELECT id, key, status FROM commands WHERE key LIKE ? AND ts >= ?").all(`srv-${this.added}-%`, since) as {
       id: number;
       key: string;
       status: CommandStatus;
     }[];
-    for (const r of rows) {
+    return rows.flatMap((r) => {
       const m = SERVER_COMMAND_KEY.exec(r.key);
-      if (m && Number(m[1]) === this.added) out.set(r.id, { id: Number(m[2]), status: r.status });
-    }
-    return out;
+      return m ? [{ local: r.id, id: Number(m[2]), status: r.status }] : [];
+    });
   }
 
   // The files a sync names, and those that failed before: the server says which it lacks, those go up one by one.
@@ -567,12 +565,7 @@ export class ServerLink {
 
   // The last command of the current series queued here, from relay.db: a restart goes on from there
   private lastQueued(): number {
-    let last = 0;
-    for (const key of this.db.prepare("SELECT key FROM commands WHERE key LIKE ?").pluck().all(`srv-${this.added}-%`) as string[]) {
-      const m = SERVER_COMMAND_KEY.exec(key);
-      if (m) last = Math.max(last, Number(m[2]));
-    }
-    return last;
+    return this.series().reduce((last, c) => Math.max(last, c.id), 0);
   }
 
   // A command of the app, queued here with the time the app queued it, by the clock of this computer: one that waited
