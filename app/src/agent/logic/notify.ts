@@ -11,10 +11,10 @@ export const CALL_TTL = 60;
 export const PUSH_DEDUP_SECONDS = 150;
 
 // Seconds before the next try of a push the push service could not take: 5xx, no answer, 429 without Retry-After
-export const PUSH_RETRY_DELAYS = [5, 30, 120];
+const PUSH_RETRY_DELAYS = [5, 30, 120];
 
 // A longer Retry-After of a 429 is cut to this, in seconds
-export const PUSH_RETRY_AFTER_MAX = 900;
+const PUSH_RETRY_AFTER_MAX = 900;
 
 // Wait before trying a push again after this failed attempt (0 = the first send), or null: other 4xx are refusals
 // the same request would get again, and the attempts are over after the last delay

@@ -2,7 +2,8 @@
 // scripts/capture-fixture.ts: the structure is Teams', every name is invented.
 import { describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
-import { composerMentionNames, mentionMessageSent, mentionOptionPoint } from "@/agent/teams/scripts/mentions";
+import { ownMessageSent } from "@/agent/teams/scripts/compose";
+import { composerMentionNames, mentionOptionPoint } from "@/agent/teams/scripts/mentions";
 import { fixture, withChrome } from "./chrome";
 
 const chrome = withChrome();
@@ -61,22 +62,22 @@ describe("message with people tagged, sent", () => {
 
   it("is seen once Teams has it, with every person tagged", async () => {
     const before = await sent("DUS Saf", "Sent");
-    expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(true);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(true);
   });
 
   it("is not seen before Teams draws its status icon, or when Teams failed to send it", async () => {
     const before = await sent("DUS Saf", "Sent");
     await chrome.page.evaluate((mid) => document.querySelector(`[data-mid="${mid}"]`)!.closest(".fui-ChatMyMessage")!.querySelector('[class*="statusIcon"]')!.remove(), TEXT_MID);
-    expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(false);
     await sent("DUS Saf", "Failed to send");
-    expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(false);
   });
 
   it("is not seen while sending, without the person, or among the messages already there", async () => {
     let before = await sent("DUS Saf", "Sending...");
-    expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf"] })).toBe(false);
     before = await sent("DUS Saf", "Sent");
-    expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf", "VEL Tor"] })).toBe(false);
-    expect(await chrome.page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before: [...before, TEXT_MID], names: ["DUS Saf"] })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, names: ["DUS Saf", "VEL Tor"] })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before: [...before, TEXT_MID], names: ["DUS Saf"] })).toBe(false);
   });
 });

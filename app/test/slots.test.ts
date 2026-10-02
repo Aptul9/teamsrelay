@@ -52,7 +52,7 @@ describe("addAccount", () => {
     expect(slot).toBe(1);
     expect(calls).toEqual(["stop 1", "wipe 1", "start 1"]);
     expect(fs.existsSync(path.join(dataDir, "1"))).toBe(false);
-    expect(listSlots(db)).toEqual([{ slot: 1, owner_id: "u1", added: expect.any(Number), stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0 }]);
+    expect(listSlots(db)).toEqual([{ slot: 1, owner_id: "u1", added: expect.any(Number), stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0, browser_off: 0 }]);
   });
 
   it("releases the slot when it cannot be started", async () => {
@@ -91,7 +91,7 @@ describe("removeAccount", () => {
     await expect(removeAccount(1, control("wipe 1"), opts())).rejects.toThrow(/wipe 1 failed/);
 
     expect(fs.existsSync(path.join(dataDir, "1", "messages.db"))).toBe(true);
-    expect(listSlots(db)).toEqual([{ slot: 1, owner_id: "u1", added: expect.any(Number), stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0 }]);
+    expect(listSlots(db)).toEqual([{ slot: 1, owner_id: "u1", added: expect.any(Number), stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0, browser_off: 0 }]);
   });
 });
 

@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { DesktopSwitcher } from "@/components/DesktopSwitcher";
 import { accountsOf } from "@/lib/accounts";
+import { loginUrl } from "@/lib/authz";
 import { currentUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Remote Teams" };
@@ -12,6 +13,6 @@ export default async function Remote({ searchParams }: { searchParams: Promise<R
   const { account } = await searchParams;
   const asked = typeof account === "string" && /^\d+$/.test(account) ? account : "";
   const user = await currentUser(await headers());
-  if (!user) redirect(`/login?next=${encodeURIComponent(asked ? `/remote?account=${asked}` : "/remote")}`);
+  if (!user) redirect(loginUrl(asked ? `/remote?account=${asked}` : "/remote"));
   return <DesktopSwitcher accounts={accountsOf(user.id).accounts} initial={Number(asked)} />;
 }

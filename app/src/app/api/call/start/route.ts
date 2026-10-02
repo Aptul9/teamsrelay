@@ -1,5 +1,6 @@
 import { appDb, slotRow } from "@/lib/appdb";
-import { chatName, queueOnce } from "@/lib/commands";
+import { queueOnce } from "@/lib/commands";
+import { chatName } from "@/shared/command-input";
 import { desktopUrlOf } from "@/lib/config";
 import { body, HttpError, route } from "@/lib/http";
 import { requireSlot } from "@/lib/session";

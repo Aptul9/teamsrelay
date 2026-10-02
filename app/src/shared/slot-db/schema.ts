@@ -38,6 +38,21 @@ const ADDED_COLUMNS = [
 
 export const SLOT_TABLES = ["messages", "chats", "chat_messages", "commands", "state", "readby", "activity", "calls"] as const;
 
+// The columns of the rows the agent saves and a relay sends to its server (src/shared/relay-sync.ts), in this order
+const ROW_COLUMNS = {
+  chats: ["name", "preview", "pos", "ts", "tm", "unread", "mention", "muted", "av", "presence", "kind"],
+  chat_messages: ["chat", "idx", "mid", "author", "text", "mine", "reacts", "extra"],
+  activity: ["id", "pos", "kind", "actor", "title", "emoji", "preview", "tm", "chat", "channel", "unread", "ts", "av"],
+  calls: ["since", "caller", "seconds"],
+  readby: ["mid", "chat", "label", "names", "ts"],
+} as const;
+type RowTable = keyof typeof ROW_COLUMNS;
+
+export const rowColumns = (table: RowTable) => ROW_COLUMNS[table].join(", ");
+
+// One row of `table`, its values in the order of rowColumns; it replaces the row of the same key
+export const insertRow = (table: RowTable) => `INSERT OR REPLACE INTO ${table}(${rowColumns(table)}) VALUES(${ROW_COLUMNS[table].map(() => "?").join(",")})`;
+
 // Creates the missing tables and columns. Never drops anything: the web app keeps showing chats and messages
 // across restarts of the agent.
 export function ensureSlotSchema(db: Database.Database) {

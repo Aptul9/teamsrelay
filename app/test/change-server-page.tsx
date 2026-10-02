@@ -30,6 +30,7 @@ const account: Account = {
   relay: false,
   host: "",
   relaySeen: 0,
+  callAudio: false,
 };
 
 const none = () => undefined;

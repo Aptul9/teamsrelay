@@ -1,13 +1,13 @@
 import { createPrivateKey } from "node:crypto";
 import fs from "node:fs";
-import { ConfigError } from "../config";
+import { ConfigError } from "@/shared/env";
 
 export type VapidKeys = { publicKey: string; privateKey: string };
 
 // The Web Push keys of vapid/: private_key.pem (PKCS#8, P-256, written by scripts/gen-vapid.mjs or by the
 // Python tool of earlier releases) and appkey.txt, the public key the devices subscribed with. web-push takes
 // the raw private scalar and the uncompressed public point, both base64url.
-export function vapidKeysFromPem(pem: string): VapidKeys {
+function vapidKeysFromPem(pem: string): VapidKeys {
   const jwk = createPrivateKey(pem).export({ format: "jwk" });
   if (jwk.crv !== "P-256" || !jwk.d || !jwk.x || !jwk.y) throw new ConfigError("VAPID private key is not a P-256 key");
   const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url")]);

@@ -6,6 +6,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { build } from "esbuild";
+import { bundleOptions } from "../../scripts/bundles.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tempDir } from "../helpers";
 
@@ -25,7 +26,7 @@ async function freePort(): Promise<number> {
 beforeAll(async () => {
   const dir = tempDir();
   const bundle = path.join(dir, "fleet-agent.cjs");
-  await build({ entryPoints: [path.join(APP, "src/fleet/agent/main.ts")], bundle: true, platform: "node", target: "node24", format: "cjs", external: ["ssh2", "better-sqlite3"], outfile: bundle, logLevel: "warning" });
+  await build(bundleOptions("fleet-agent", bundle));
 
   const port = await freePort();
   const configFile = path.join(dir, "fleet.config.json");

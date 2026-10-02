@@ -4,7 +4,8 @@ import { pickSlot } from "@/lib/authz";
 import { CallReaders } from "@/lib/calls";
 import { route } from "@/lib/http";
 import { currentUser, requireUser } from "@/lib/session";
-import { healthOf, SlotNotReady, SlotReader } from "@/lib/slotdb";
+import { SlotReader } from "@/lib/slotdb";
+import { healthOf } from "@/shared/slot-db/state";
 
 export const dynamic = "force-dynamic";
 
@@ -76,13 +77,7 @@ export const GET = route(async (req) => {
           // the app rings for a call of any account, the one on screen or not
           send("calls", calls.ringing(mine));
           if (!own) return;
-          if (!reader) {
-            try {
-              reader = SlotReader.forSlot(slot);
-            } catch (e) {
-              if (!(e instanceof SlotNotReady)) throw e;
-            }
-          }
+          reader ??= SlotReader.tryForSlot(slot);
           const push_subs = countPushSubscriptions(appDb(), user.id);
           send("health", { ...slotHealth(reader ? reader.health(upSince(own)) : healthOf({}, upSince(own)), own), push_subs });
           if (reader) {

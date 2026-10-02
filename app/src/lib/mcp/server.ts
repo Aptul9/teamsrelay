@@ -1,5 +1,6 @@
 import { fromJsonSchema, McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { toolError } from "@/shared/relay-sync";
 import { HttpError } from "../http";
 import { SlotNotReady } from "../slotdb";
 import { browserAccounts, browserTools, callBrowserTool, withAccount } from "./browser";
@@ -19,11 +20,9 @@ async function answer(fn: () => Data | Promise<Data>) {
     const data = await fn();
     return { content: [{ type: "text" as const, text: JSON.stringify(data) }], structuredContent: data };
   } catch (e) {
-    if (e instanceof ToolError || e instanceof HttpError || e instanceof SlotNotReady) {
-      return { content: [{ type: "text" as const, text: e.message }], isError: true };
-    }
+    if (e instanceof ToolError || e instanceof HttpError || e instanceof SlotNotReady) return toolError(e.message);
     console.error("mcp:", e);
-    return { content: [{ type: "text" as const, text: "Internal error" }], isError: true };
+    return toolError("Internal error");
   }
 }
 
@@ -50,9 +49,9 @@ Runs in a browser of its own on the computer of a relay of yours (never its Team
         try {
           return (await callBrowserTool({ userId, clientId, slot: account, name: t.name, args: rest })) as CallToolResult;
         } catch (e) {
-          if (e instanceof ToolError) return { content: [{ type: "text" as const, text: e.message }], isError: true };
+          if (e instanceof ToolError) return toolError(e.message);
           console.error("mcp browser:", e);
-          return { content: [{ type: "text" as const, text: "Internal error" }], isError: true };
+          return toolError("Internal error");
         }
       },
     );

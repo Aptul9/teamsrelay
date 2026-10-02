@@ -2,8 +2,8 @@
 // check with no auth. A non-zero exit stays 200 with the exit code in the body; 4xx means the request itself was
 // declined (bad token, malformed body, nothing to run). Reached only through the reverse tunnel to the hub VM, so it
 // binds loopback by default and never leaves this machine on its own.
-import { createHash, timingSafeEqual } from "node:crypto";
 import http from "node:http";
+import { bearerToken, sameToken } from "@/shared/bearer";
 import { HttpError } from "@/shared/http-error";
 import type { CmdApiConfig } from "./config";
 import { run, type RunOptions } from "./runner";
@@ -14,13 +14,9 @@ export interface CmdApiServer {
   close: () => Promise<void>;
 }
 
-const digest = (s: string) => createHash("sha256").update(s, "utf8").digest();
-
 function authorize(req: http.IncomingMessage, token: string): void {
   if (!token) return;
-  const header = req.headers["authorization"] ?? "";
-  const [scheme, presented = ""] = header.split(" ");
-  if (scheme.toLowerCase() !== "bearer" || !timingSafeEqual(digest(presented), digest(token))) {
+  if (!sameToken(bearerToken(req.headers.authorization), token)) {
     throw new HttpError(401, "bad or missing bearer token");
   }
 }

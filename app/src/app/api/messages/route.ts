@@ -1,4 +1,4 @@
-import { chatName } from "@/lib/commands";
+import { chatName } from "@/shared/command-input";
 import { route } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
 import { withSlot } from "@/lib/slotdb";

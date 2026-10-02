@@ -1,10 +1,12 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { shownInApp } from "@/agent/logic/parking";
 import type { Message } from "@/shared/slot-db/rows";
 import { STATE, Viewing } from "@/shared/slot-db/state";
 import { accountSummary, upSince } from "../accounts";
 import { appDb, slotsOf, type Slot } from "../appdb";
 import { pickSlot } from "../authz";
-import { queue } from "../commands";
+import { idleReason, queue } from "../commands";
+import { sentAt } from "../message-times";
 import { withSlot, type SlotReader } from "../slotdb";
 
 // Read-only tools of /mcp, as functions of the user the token acts as
@@ -13,7 +15,7 @@ export class ToolError extends Error {}
 
 type Account = { account?: number };
 
-export type ToolMessage = {
+type ToolMessage = {
   id: string;
   time?: string;
   author: string;
@@ -50,7 +52,8 @@ function liveChat(r: SlotReader, s: Slot): string {
 
 // Teams message ids are the milliseconds of the message
 export function messageTime(mid: string): string | undefined {
-  return /^\d{13}$/.test(mid) ? new Date(Number(mid)).toISOString() : undefined;
+  const at = sentAt(mid);
+  return at === null ? undefined : new Date(at).toISOString();
 }
 
 function toolMessage(m: Message): ToolMessage {
@@ -65,7 +68,7 @@ function toolMessage(m: Message): ToolMessage {
   return out;
 }
 
-export function chatMessages(r: SlotReader, s: Slot, chat: string) {
+function chatMessages(r: SlotReader, s: Slot, chat: string) {
   const messages = r.messages(chat).map(toolMessage);
   if (!messages.length && !r.chats().some((c) => c.name === chat)) throw new ToolError("No chat with this name: use a name as list_chats gives it");
   return {
@@ -114,13 +117,12 @@ export function readChat(userId: string, { account, chat }: Account & { chat: st
   return withSlot(s.slot, (r) => chatMessages(r, s, chat));
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Opens the chat in Teams with the open command of the app and waits for the agent: Teams marks the chat as read
 export async function refreshChat(userId: string, { account, chat }: Account & { chat: string }, wait = { timeoutMs: 30_000, pollMs: 500 }) {
   const s = accountOf(userId, account);
-  if (s.stopped) throw new ToolError("This Teams account is stopped: start it in TeamsRelay, from its page or from Settings");
-  if (s.check_every) throw new ToolError("This Teams account runs only during its checks: set it to always on in the Settings of TeamsRelay to open chats");
+  const idle = idleReason(s.slot);
+  if (idle) throw new ToolError(idle);
   withSlot(s.slot, (r) => {
     if (!r.chats().some((c) => c.name === chat)) throw new ToolError("No chat with this name: use a name as list_chats gives it");
     const h = r.health(upSince(s));

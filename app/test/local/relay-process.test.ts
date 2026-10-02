@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { build } from "esbuild";
+import { bundleOptions } from "../../scripts/bundles.mjs";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { tempDir } from "../helpers";
 
@@ -13,17 +14,7 @@ let child: ChildProcess | null = null;
 
 beforeAll(async () => {
   bundle = path.join(tempDir("teamsrelay-relay-process-"), "relay.cjs");
-  await build({
-    absWorkingDir: APP,
-    entryPoints: ["src/local/main.ts"],
-    bundle: true,
-    platform: "node",
-    target: "node24",
-    format: "cjs",
-    external: ["playwright-core", "better-sqlite3"],
-    outfile: bundle,
-    logLevel: "warning",
-  });
+  await build(bundleOptions("relay", bundle));
 });
 
 afterEach(() => {

@@ -119,13 +119,13 @@ describe("other messages", () => {
   it("refuses every other method with a JSON-RPC error: the relay opens the session itself", () => {
     for (const method of ["initialize", "ping", "resources/list", "prompts/list", "completion/complete", "logging/setLevel", "tools/call/x"]) {
       const r = screenRequest({ jsonrpc: "2.0", id: 3, method, params: {} });
-      expect(r, method).toEqual({ ok: false, reply: { jsonrpc: "2.0", id: 3, error: { code: -32601, message: `Method not allowed: ${method}` } } });
+      expect(r, method).toEqual({ ok: false, why: `Method not allowed: ${method}`, reply: { jsonrpc: "2.0", id: 3, error: { code: -32601, message: `Method not allowed: ${method}` } } });
     }
   });
 
   it("answers nothing to a notification or a message with no id, and lets none through", () => {
     for (const msg of [{ jsonrpc: "2.0", method: "notifications/initialized" }, { jsonrpc: "2.0", method: "tools/call", params: { name: "browser_snapshot" } }]) {
-      expect(screenRequest(msg)).toEqual({ ok: false, reply: null });
+      expect(screenRequest(msg)).toEqual({ ok: false, why: "Invalid request", reply: null });
     }
   });
 

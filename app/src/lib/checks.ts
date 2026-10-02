@@ -1,10 +1,11 @@
+import { setTimeout as wait } from "node:timers/promises";
 import type Database from "better-sqlite3";
 import { SIGN_IN_TRY_AFTER, SIGN_IN_TRY_WAIT } from "@/shared/sign-in";
 import { STATE, Watch } from "@/shared/slot-db/state";
 import { beginCheck, endCheck, listSlots, nextCheck, slotRow, type CheckResult } from "./appdb";
 import type { ControlClient } from "./control";
 import { exclusive, slotDown, slotUp } from "./slots";
-import { SlotNotReady, withSlot, type SlotReader } from "./slotdb";
+import { withSlot, withSlotOr } from "./slotdb";
 
 // An account checked every N hours (check_every > 0) runs only while it is checked: started, read, stopped. One check
 // at a time, the one due first first: several browsers starting together would not fit in memory. A check holds
@@ -23,7 +24,7 @@ export type SlotPort = {
   commandStatus(n: number, id: number): string | null;
 };
 
-export type CheckDeps = {
+type CheckDeps = {
   ctl: ControlClient;
   db: Database.Database;
   slot: SlotPort;
@@ -38,13 +39,12 @@ export type CheckDeps = {
 export const TEAMS_WAIT = 240;
 export const SIGNED_OUT = SIGN_IN_TRY_AFTER + SIGN_IN_TRY_WAIT + 15;
 // Seconds for the check command, and for the agent's sign-in alert once a sign-in is found to do
-export const COMMAND_WAIT = 180;
+const COMMAND_WAIT = 180;
 export const ALERT_WAIT = 30;
 // A check its owner asks for, of an account whose last check found a sign-in to do, waits that long for the sign-in
 // in the remote desktop
 export const SIGN_IN_WAIT = 600;
 
-const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const report = (n: number) => (e: Error) => console.error(`check of account ${n}: ${e.message}`);
 
 // Starts the account, waits for Teams, has the agent read the chat list and the Activity feed, stops it. The outcome
@@ -52,7 +52,7 @@ const report = (n: number) => (e: Error) => console.error(`check of account ${n}
 // always on meanwhile; nothing is recorded and the browser is left as its owner wants it.
 export async function runCheck(n: number, d: CheckDeps): Promise<CheckResult | null> {
   const now = () => Math.floor((d.now ?? Date.now)() / 1000);
-  const sleep = d.sleep ?? pause;
+  const sleep = d.sleep ?? ((ms: number) => wait(ms));
   const begun = now();
   let asked = false;
   let signIn = false;
@@ -196,17 +196,9 @@ export function settleChecks(ctl: ControlClient, db: Database.Database): Promise
 
 // The database of each account as the checks of the web app read it; an account whose agent never ran has none
 export function slotPort(): SlotPort {
-  const read = <T>(n: number, fn: (r: SlotReader) => T, fallback: T): T => {
-    try {
-      return withSlot(n, fn);
-    } catch (e) {
-      if (e instanceof SlotNotReady) return fallback;
-      throw e;
-    }
-  };
   return {
     health: (n) =>
-      read(
+      withSlotOr(
         n,
         (r) => {
           const h = r.state<{ ts?: unknown; teams?: unknown }>(STATE.health, {});
@@ -216,11 +208,11 @@ export function slotPort(): SlotPort {
       ),
     // armed as the agent arms it: a signed-in identity saved once
     signInAlert: (n) =>
-      read(n, (r) => ({ armed: r.state<unknown>(STATE.me, null) !== null, alerted: Watch.safeParse(r.state<unknown>(STATE.loginWatch, {})).data?.alerted ?? false }), {
+      withSlotOr(n, (r) => ({ armed: r.state<unknown>(STATE.me, null) !== null, alerted: Watch.safeParse(r.state<unknown>(STATE.loginWatch, {})).data?.alerted ?? false }), {
         armed: false,
         alerted: false,
       }),
     enqueue: (n) => withSlot(n, (r) => r.enqueue("check")),
-    commandStatus: (n, id) => read(n, (r) => r.commandStatus(id)?.status ?? null, null),
+    commandStatus: (n, id) => withSlotOr(n, (r) => r.commandStatus(id)?.status ?? null, null),
   };
 }

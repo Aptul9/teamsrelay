@@ -1,7 +1,8 @@
 import { TEXTS } from "../teams/selectors";
+import { isSelfChat } from "./chats";
 
 export type ListedChat = { name: string; preview: string; time: string; unread: boolean; muted: boolean };
-export type NewMessage = { chat: string; body: string };
+type NewMessage = { chat: string; body: string };
 
 // The list shows the time of the last message for about a day, then its date: a time that turns into a date is
 // the same message getting older
@@ -30,7 +31,7 @@ export class NewMessageDetector {
       if (!ch.name) continue;
       const preview = (ch.preview || "").trim();
       const sig = `${preview}|${ch.time}`;
-      if (this.primed && !ch.name.toLowerCase().includes(TEXTS.selfChat.toLowerCase()) && !ch.muted) {
+      if (this.primed && !isSelfChat(ch.name) && !ch.muted) {
         const inbound = !!preview && !TEXTS.outbound.test(preview);
         const changed = inbound && this.last.has(ch.name) && !this.shown(ch.name, preview, ch.time);
         const becameUnread = this.unread.get(ch.name) !== true && ch.unread;

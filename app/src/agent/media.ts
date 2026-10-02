@@ -1,8 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Page } from "playwright-core";
-import { MEDIA_NAME } from "@/shared/slot-db/rows";
-import { avatarFile, downloadFile, downloadUrl, isPlaceholderImage, isSharePointUrl, MAX_DOWNLOAD, MEDIA_EXT } from "./logic/files";
+import { avatarFile, downloadFile, downloadUrl, isPlaceholderImage, isSharePointUrl, MAX_DOWNLOAD, MEDIA_EXT, pruneMedia } from "./logic/files";
 import { errorText, log } from "./log";
 import { copyImage, fetchImage } from "./teams/scripts/media";
 
@@ -77,18 +76,7 @@ export class Media {
   // Removes the files of the media folder no row names any more (`named`: SlotStore.mediaFiles), such as the picture of
   // a chat that left the list; one that shows again is copied again under its name. Number of files removed.
   prune(named: ReadonlySet<string>): number {
-    if (!fs.existsSync(this.mediaDir)) return 0;
-    let removed = 0;
-    for (const name of fs.readdirSync(this.mediaDir)) {
-      if (!MEDIA_NAME.test(name) || named.has(name)) continue;
-      try {
-        fs.rmSync(path.join(this.mediaDir, name));
-        removed++;
-      } catch (e) {
-        log.warn("media", errorText(e), { file: name });
-      }
-    }
-    return removed;
+    return pruneMedia(this.mediaDir, named);
   }
 
   // SharePoint or OneDrive attachment downloaded with the browser session (from the phone the link would ask

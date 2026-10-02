@@ -107,7 +107,7 @@ describe("a chat opening in Teams", () => {
     await expect.poll(() => asked.length).toBe(1);
     const reasons: [OpenStatus["reason"], string][] = [
       ["signed-out", "Teams is signed out"],
-      ["not-shown", "Teams did not show it"],
+      ["not-shown", "Teams did not show the chat"],
       ["unreadable", "its messages could not be read"],
       [undefined, "Teams did not get to it in time"],
     ];

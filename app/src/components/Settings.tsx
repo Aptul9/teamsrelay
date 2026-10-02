@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
-import { AccountLines, accName } from "./AccountMenu";
+import { AccountLines } from "./AccountMenu";
 import { AiClients } from "./AiClients";
 import { Avatar } from "./Avatar";
 import { PageHeader } from "./PageHeader";
@@ -34,11 +34,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { authClient } from "@/lib/auth-client";
-import { accountStatus, ApiError, bellOn, call, CHECK_INTERVALS, hours, post, setBellOn, toLogin, type Account } from "@/lib/client";
+import { accName, accountStatus, bellOn, call, CHECK_INTERVALS, errorText, hours, noSubscribe, patch, post, setBellOn, toLogin, type Account } from "@/lib/client";
+import { PASSWORD_MIN } from "@/shared/password";
 import { enablePush, pushState, type PushState } from "@/lib/push";
 import { Ringer } from "@/lib/ring";
 
-const noSubscribe = () => () => {};
 
 // the bell setting of this device, in the storage of the browser: the switch follows its changes
 const bellWatchers = new Set<() => void>();
@@ -84,7 +84,7 @@ function TeamsAccounts() {
     setSaving(a.slot);
     try {
       const change = value === "stopped" ? { running: false } : { checkEvery };
-      await call(`/api/accounts/${a.slot}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(change) }, 0);
+      await patch(`/api/accounts/${a.slot}`, change, 0);
       const list = await fetchAccounts();
       if (list) setAccounts(list);
       if (value === "stopped") toast.success(`${accName(a)}: stopped`, { description: "Still signed in: no messages or notifications until you choose another status." });
@@ -94,7 +94,7 @@ function TeamsAccounts() {
         });
       else toast.success(`${accName(a)}: always on`, { description: "Its browser starts now and stays up." });
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Status not changed");
+      toast.error(errorText(e, "Status not changed"));
     } finally {
       setSaving(0);
     }
@@ -106,7 +106,7 @@ function TeamsAccounts() {
     try {
       setToken(await post<{ token: string; server: string }>(`/api/accounts/${a.slot}/token`, undefined, 0));
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "No new token");
+      toast.error(errorText(e, "No new token"));
     } finally {
       setSaving(0);
     }
@@ -220,7 +220,7 @@ export function Settings({ user, passwordManaged }: { user: { name: string; emai
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
     const found: typeof errors = {};
-    if (next.length < 10) found.next = "At least 10 characters";
+    if (next.length < PASSWORD_MIN) found.next = `At least ${PASSWORD_MIN} characters`;
     if (confirm !== next) found.confirm = "The two passwords differ";
     setErrors(found);
     if (Object.keys(found).length) return;

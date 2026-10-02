@@ -13,6 +13,6 @@ export function shownInApp(viewing: Viewing, nowSeconds: number): string {
 // the chat in use in the app while the app shows it (viewing, marked by the app and by every command),
 // otherwise the self chat. Without a self chat the open chat stays.
 export function wantedChat(active: string, viewing: string, nowSeconds: number, selfChat: string): string {
-  if (active && shownInApp(parseState(Viewing, viewing, { chat: "", ts: 0 }), nowSeconds)) return active;
+  if (active && shownInApp(parseState(Viewing, viewing), nowSeconds)) return active;
   return selfChat || active;
 }

@@ -29,12 +29,13 @@ function report(r: Awaited<ReturnType<typeof exec>>): boolean {
   return r.exitCode === 0 && !r.timedOut;
 }
 
-async function runExec(hosts: FleetHost[], request: RunRequest): Promise<boolean> {
+// One request per host, one host after the other
+async function runExec(hosts: FleetHost[], request: (host: FleetHost) => RunRequest): Promise<boolean> {
   let ok = true;
   for (const host of hosts) {
     header(host);
     try {
-      ok = report(await exec(host, request)) && ok;
+      ok = report(await exec(host, request(host))) && ok;
     } catch (e) {
       console.error((e as Error).message);
       ok = false;
@@ -83,30 +84,16 @@ async function main(): Promise<number> {
         console.error("exec needs a command");
         return 2;
       }
-      return (await runExec(hosts, { command: rest.join(" ") })) ? 0 : 1;
+      return (await runExec(hosts, () => ({ command: rest.join(" ") }))) ? 0 : 1;
     }
     case "update":
-      return (await updateAll(hosts)) ? 0 : 1;
+      return (await runExec(hosts, updateRequest)) ? 0 : 1;
     case "status":
       return (await runStatus(hosts)) ? 0 : 1;
     default:
       console.error(`unknown command ${command}\n${USAGE}`);
       return 2;
   }
-}
-
-async function updateAll(hosts: FleetHost[]): Promise<boolean> {
-  let ok = true;
-  for (const host of hosts) {
-    header(host);
-    try {
-      ok = report(await exec(host, updateRequest(host))) && ok;
-    } catch (e) {
-      console.error((e as Error).message);
-      ok = false;
-    }
-  }
-  return ok;
 }
 
 main().then(

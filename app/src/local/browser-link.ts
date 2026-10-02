@@ -1,8 +1,9 @@
-import { Agent, WebSocket } from "undici";
+import { Agent } from "undici";
 import { errorText, log } from "@/agent/log";
-import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH } from "@/shared/relay-sync";
+import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH, toolError, urlHost } from "@/shared/relay-sync";
 import { screenRequest, screenTools, type RpcRequest } from "./browser-allowlist";
 import type { HostAnswer } from "./browser-host";
+import { openLink, type LinkSocket, type OpenSocket } from "./link-socket";
 
 // The browser of this relay for the MCP clients of the owner, as the server reaches it: a websocket the relay opens to
 // the server it joined (/api/relay/browser/socket, src/server/browser-hub.ts), with its token. The server sends
@@ -13,34 +14,13 @@ import type { HostAnswer } from "./browser-host";
 const RETRY_FIRST_MS = 1000;
 const RETRY_LONGEST_MS = 30_000;
 
-// What the link needs of a websocket: undici's, or a fake in the tests
-export type LinkSocket = {
-  readyState: number;
-  send(data: string): void;
-  close(): void;
-  onopen: ((ev: unknown) => void) | null;
-  onmessage: ((ev: { data: unknown }) => void) | null;
-  onclose: ((ev: unknown) => void) | null;
-  onerror: ((ev: unknown) => void) | null;
-};
-
-export type BrowserLinkOptions = {
+type BrowserLinkOptions = {
   // the server the relay joined, and its token
   url: string;
   token: string;
   host: { request(method: "tools/list" | "tools/call", params: unknown): Promise<HostAnswer>; close(): Promise<void> };
-  open?: (url: string, token: string) => LinkSocket;
+  open?: OpenSocket;
 };
-
-// the host of a URL a call opens, for the log; "" for the other tools
-function hostOf(r: RpcRequest): string {
-  const args = (r.params?.arguments ?? {}) as { url?: unknown };
-  try {
-    return typeof args.url === "string" ? new URL(args.url).host : "";
-  } catch {
-    return "";
-  }
-}
 
 export class BrowserLink {
   private socket: LinkSocket | null = null;
@@ -72,32 +52,25 @@ export class BrowserLink {
 
   private connect() {
     if (this.socket || this.stopped) return;
-    const url = this.o.url.replace(/^http/, "ws") + RELAY_BROWSER_PATH;
-    let s: LinkSocket;
     try {
-      s = this.o.open
-        ? this.o.open(url, this.o.token)
-        : (new WebSocket(url, { headers: { Authorization: `Bearer ${this.o.token}` }, dispatcher: this.agent }) as unknown as LinkSocket);
+      this.socket = openLink(
+        { server: this.o.url, path: RELAY_BROWSER_PATH, token: this.o.token, dispatcher: this.agent, open: this.o.open, current: () => this.socket },
+        {
+          open: () => {
+            this.wait = RETRY_FIRST_MS;
+            log.info("ai-browser", "socket to the server open");
+          },
+          message: (s, data) => this.received(s, data),
+          close: () => {
+            this.socket = null;
+            this.again();
+          },
+        },
+      );
     } catch (e) {
       log.warn("ai-browser", `socket: ${errorText(e)}`);
       this.again();
-      return;
     }
-    this.socket = s;
-    s.onopen = () => {
-      if (this.socket !== s) return;
-      this.wait = RETRY_FIRST_MS;
-      log.info("ai-browser", "socket to the server open");
-    };
-    s.onmessage = (ev) => {
-      if (this.socket === s) this.received(s, ev.data);
-    };
-    s.onerror = () => undefined;
-    s.onclose = () => {
-      if (this.socket !== s) return;
-      this.socket = null;
-      this.again();
-    };
   }
 
   private again() {
@@ -120,9 +93,7 @@ export class BrowserLink {
     const screened = screenRequest(msg);
     if (!screened.ok) {
       const name = (msg as { params?: { name?: unknown } })?.params?.name;
-      const reply = screened.reply as { result?: { content?: { text?: unknown }[] }; error?: { message?: unknown } } | null;
-      const why = reply?.result?.content?.[0]?.text ?? reply?.error?.message;
-      log.warn("ai-browser", "refused", { method: String((msg as { method?: unknown })?.method ?? ""), tool: typeof name === "string" ? name : undefined, why: typeof why === "string" ? why : undefined });
+      log.warn("ai-browser", "refused", { method: String((msg as { method?: unknown })?.method ?? ""), tool: typeof name === "string" ? name : undefined, why: screened.why });
       if (screened.reply) this.send(s, screened.reply);
       return;
     }
@@ -132,7 +103,7 @@ export class BrowserLink {
 
   private async run(s: LinkSocket, r: RpcRequest) {
     const tool = r.method === "tools/call" ? String(r.params?.name) : "";
-    if (tool) log.info("ai-browser", "call", { tool, host: hostOf(r) || undefined });
+    if (tool) log.info("ai-browser", "call", { tool, host: urlHost(r.params?.arguments) || undefined });
     let answer: HostAnswer;
     try {
       answer = await this.o.host.request(r.method as "tools/list" | "tools/call", r.params ?? {});
@@ -147,7 +118,7 @@ export class BrowserLink {
       const mb = Math.round(Buffer.byteLength(out) / 1024 / 1024);
       log.warn("ai-browser", "answer too large", { tool, mb });
       const text = `The answer is too large (${mb} MB, at most ${MAX_BROWSER_MESSAGE / 1024 / 1024} MB): take a screenshot of the visible part, or a snapshot of one element`;
-      out = JSON.stringify({ jsonrpc: "2.0", id: r.id, result: { content: [{ type: "text", text }], isError: true } });
+      out = JSON.stringify({ jsonrpc: "2.0", id: r.id, result: toolError(text) });
     }
     if (this.socket === s && s.readyState === 1) s.send(out);
   }

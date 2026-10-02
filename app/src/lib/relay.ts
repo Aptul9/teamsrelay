@@ -3,21 +3,22 @@ import fs from "node:fs";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 import Database from "better-sqlite3";
 import type { z } from "zod";
-import { MAX_DOWNLOAD } from "@/agent/logic/files";
+import { MAX_DOWNLOAD, pruneMedia } from "@/agent/logic/files";
 import { FcmSender, loadServiceAccount } from "@/agent/push/fcm";
 import { Notifier, type PushDevices } from "@/agent/push/notifier";
 import { loadVapidKeys } from "@/agent/push/vapid";
 import { AppStore } from "@/agent/store/app-store";
 import { mediaFilesOf, SlotStore } from "@/agent/store/slot-store";
-import type { CommandsAnswer, HaveBody, PushBody, ServerCommand, SyncBody } from "@/shared/relay-sync";
-import { FILE_NAME, MEDIA_NAME } from "@/shared/slot-db/rows";
-import { ensureSlotSchema } from "@/shared/slot-db/schema";
+import { bearerToken } from "@/shared/bearer";
+import { LIVE_KEYS, RELAY_FILE_NAME, type CommandsAnswer, type HaveBody, type PushBody, type ServerCommand, type SyncBody } from "@/shared/relay-sync";
+import { ensureSlotSchema, insertRow } from "@/shared/slot-db/schema";
 import { parseState, STATE, Viewing } from "@/shared/slot-db/state";
 import { appDb, relayAccount, slotRow } from "./appdb";
 import { config } from "./config";
-import { HttpError } from "./http";
+import { declaredLength, HttpError } from "./http";
 import { SlotNotReady, slotDbPath, slotDir } from "./slotdb";
 import { imageExt } from "./uploads";
 
@@ -33,7 +34,7 @@ export const ON_ANOTHER_COMPUTER = "This Teams account runs on another computer:
 
 // The account a request of a relay comes from: its slot, when the account took the slot, and the digest of the token
 // the request came with
-export type RelayCaller = { slot: number; added: number; digest: string };
+type RelayCaller = { slot: number; added: number; digest: string };
 
 const refused = () => new HttpError(401, "Missing or wrong token", { "WWW-Authenticate": 'Bearer realm="teamsrelay"' });
 
@@ -41,8 +42,8 @@ const refused = () => new HttpError(401, "Missing or wrong token", { "WWW-Authen
 // its digest: the database never holds it, and a wrong token tells nothing by its timing.
 export function requireRelay(req: Request): RelayCaller {
   if (req.headers.has("origin")) throw new HttpError(403, "Requests from web pages are not accepted");
-  const m = /^Bearer\s+(\S+)\s*$/i.exec(req.headers.get("authorization") ?? "");
-  const digest = m ? relayDigest(m[1]) : "";
+  const token = bearerToken(req.headers.get("authorization"));
+  const digest = token ? relayDigest(token) : "";
   const found = digest ? relayAccount(appDb(), digest) : null;
   if (!found) throw refused();
   return { slot: found.slot, added: found.added, digest };
@@ -60,7 +61,7 @@ function stillRelay(caller: RelayCaller) {
 // Content-Length says (a chunked body has none); a sync with every chat stays well under the limit.
 export async function relayJson<T>(req: Request, schema: z.ZodType<T>, maxBytes = 64e6): Promise<T> {
   const tooLarge = () => new HttpError(413, "Body too large");
-  if (Number(req.headers.get("content-length") ?? 0) > maxBytes) throw tooLarge();
+  if ((declaredLength(req) ?? 0) > maxBytes) throw tooLarge();
   const chunks: Uint8Array[] = [];
   let size = 0;
   if (req.body) {
@@ -94,25 +95,30 @@ export function createRelaySlot(dir: string) {
   SlotStore.open(path.join(dir, "messages.db")).close();
 }
 
+// The file of the database of the slot, SlotNotReady while it is not there
+function slotDbFile(slot: number): string {
+  const file = slotDbPath(slot);
+  if (!fs.existsSync(file)) throw new SlotNotReady();
+  return file;
+}
+
 // The database of the slot, made when the account was added (createRelaySlot) and never here: a request of an account
 // removed meanwhile cannot bring its folder back
 function openSlotDb(slot: number): Database.Database {
-  const file = slotDbPath(slot);
-  if (!fs.existsSync(file)) throw new SlotNotReady();
-  const db = new Database(file, { fileMustExist: true });
+  const db = new Database(slotDbFile(slot), { fileMustExist: true });
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 8000");
   ensureSlotSchema(db);
   return db;
 }
 
-const viewingTs = (v: string | null | undefined) => parseState(Viewing, v, { chat: "", ts: 0 }).ts;
+const viewingTs = (v: string | null | undefined) => parseState(Viewing, v).ts;
 
 // The health the agent of the relay rewrites every few seconds, the call while it rings and the call in progress, go by
 // the clock of the server: the app judges each by its age, and the clock of the other computer may be off. Each keeps
 // the age it had on the relay when it was sent (`at`: a time of the relay, ms, on the server's clock).
 function onServerClock(k: string, v: string, at: (ms: number) => number): string {
-  if (k !== STATE.health && k !== STATE.call && k !== STATE.inCall) return v;
+  if (!LIVE_KEYS.includes(k)) return v;
   try {
     const o = JSON.parse(v) as unknown;
     if (!o || typeof o !== "object" || Array.isArray(o)) return v;
@@ -137,12 +143,12 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
     db.transaction(() => {
       if (b.chats) {
         db.prepare("DELETE FROM chats").run();
-        const insert = db.prepare("INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
+        const insert = db.prepare(insertRow("chats"));
         for (const c of b.chats) insert.run(c.name, c.preview, c.pos, c.ts, c.tm, c.unread, c.mention, c.muted, c.av, c.presence ?? null, c.kind ?? "");
       }
       if (b.messages) {
         const clear = db.prepare("DELETE FROM chat_messages WHERE chat=?");
-        const insert = db.prepare("INSERT INTO chat_messages(chat, idx, mid, author, text, mine, reacts, extra) VALUES(?,?,?,?,?,?,?,?)");
+        const insert = db.prepare(insertRow("chat_messages"));
         for (const [chat, rows] of Object.entries(b.messages)) {
           clear.run(chat);
           for (const m of rows) insert.run(chat, m.idx, m.mid, m.author, m.text, m.mine, m.reacts, m.extra);
@@ -150,18 +156,16 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
       }
       if (b.activity) {
         db.prepare("DELETE FROM activity").run();
-        const insert = db.prepare(
-          "INSERT OR REPLACE INTO activity(id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        );
+        const insert = db.prepare(insertRow("activity"));
         for (const a of b.activity) insert.run(a.id, a.pos, a.kind, a.actor, a.title, a.emoji, a.preview, a.tm, a.chat, a.channel, a.unread, a.ts, a.av);
       }
       if (b.calls) {
         db.prepare("DELETE FROM calls").run();
-        const insert = db.prepare("INSERT INTO calls(since, caller, seconds) VALUES(?,?,?)");
+        const insert = db.prepare(insertRow("calls"));
         for (const c of b.calls) insert.run(c.since, c.caller, c.seconds);
       }
       if (b.readby) {
-        const upsert = db.prepare("INSERT OR REPLACE INTO readby(mid, chat, label, names, ts) VALUES(?,?,?,?,?)");
+        const upsert = db.prepare(insertRow("readby"));
         for (const r of b.readby) upsert.run(r.mid, r.chat, r.label, r.names, r.ts);
       }
       if (b.state) {
@@ -189,7 +193,6 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // The commands queued for the account after `after` (oldest first), and the chat the app shows (none: it stopped
 // showing one) when that changed later than `vts`: at once when there are any, otherwise as soon as some come, at the
@@ -208,7 +211,7 @@ export async function waitForRelayCommands(
     for (;;) {
       stillRelay(caller);
       const commands = pending.all(after) as ServerCommand[];
-      const v = parseState(Viewing, viewing.get(STATE.viewing) as string | undefined, { chat: "", ts: 0 });
+      const v = parseState(Viewing, viewing.get(STATE.viewing) as string | undefined);
       const shown = v.ts > vts ? v : null;
       if (commands.length || shown || Date.now() >= end || signal?.aborted) return { commands, viewing: shown };
       await sleep(250);
@@ -237,9 +240,10 @@ function relayNotifier(caller: RelayCaller): Notifier {
   const known = pushers().get(caller.slot);
   if (known?.added === caller.added) return known.notifier;
   if (known) forgetRelay(caller.slot);
+  const push = config.push;
   let vapid = null;
   try {
-    vapid = loadVapidKeys(config.vapidPrivateFile, config.vapidAppKeyFile);
+    vapid = loadVapidKeys(push.vapid.privateKeyFile, push.vapid.appKeyFile);
   } catch (e) {
     console.error(`relay ${caller.slot}: push keys: ${(e as Error).message}`);
   }
@@ -247,13 +251,12 @@ function relayNotifier(caller: RelayCaller): Notifier {
   // without notifications, and the browsers with theirs
   let fcm: FcmSender | null = null;
   try {
-    const sa = loadServiceAccount(config.fcmCredentialsFile);
+    const sa = loadServiceAccount(push.fcmCredentials);
     if (sa) fcm = new FcmSender(sa);
   } catch (e) {
     console.error(`relay ${caller.slot}: FCM key: ${(e as Error).message}`);
   }
-  if (!fs.existsSync(slotDbPath(caller.slot))) throw new SlotNotReady();
-  const store = SlotStore.open(slotDbPath(caller.slot));
+  const store = SlotStore.open(slotDbFile(caller.slot));
   const app = new AppStore(config.appDb, caller.slot);
   const { slot, added } = caller;
   // the devices of the owner while the account holds the slot: a notification still on its way when the account is
@@ -263,7 +266,7 @@ function relayNotifier(caller: RelayCaller): Notifier {
     remove: (endpoint) => app.remove(endpoint),
     account: (me) => app.account(me),
   };
-  const notifier = new Notifier({ store, devices, vapid, subject: config.vapidSubject, ntfy: config.ntfy, fcm, answerable: true });
+  const notifier = new Notifier({ store, devices, vapid, subject: push.vapid.subject, ntfy: push.ntfy, fcm, answerable: true });
   pushers().set(slot, { added, store, notifier });
   return notifier;
 }
@@ -296,10 +299,10 @@ export async function relayPush(caller: RelayCaller, b: PushBody): Promise<numbe
 
 // Images and profile pictures (media) and downloaded attachments (files) of the slot, uploaded by the relay
 const KINDS = {
-  media: { name: MEDIA_NAME, max: 10e6 },
-  files: { name: FILE_NAME, max: MAX_DOWNLOAD },
+  media: { name: RELAY_FILE_NAME.media, max: 10e6 },
+  files: { name: RELAY_FILE_NAME.files, max: MAX_DOWNLOAD },
 } as const;
-export type RelayFileKind = keyof typeof KINDS;
+type RelayFileKind = keyof typeof KINDS;
 
 // Folder names written out: the build traces the files a path can reach, and a folder named by a variable makes it
 // take in the whole project
@@ -316,21 +319,10 @@ export function missingRelayFiles(slot: number, have: HaveBody): HaveBody {
 // messages no longer kept. One that shows again goes again: the relay asks about the files of every sync that names
 // them. Their bytes go back to the room of the account. Attachments stay until the account is removed.
 function pruneRelayMedia(caller: RelayCaller, named: ReadonlySet<string>) {
-  const dir = folderOf(caller.slot, "media");
-  if (!fs.existsSync(dir)) return;
   const room = rooms().get(caller.slot);
-  for (const name of fs.readdirSync(dir)) {
-    if (!MEDIA_NAME.test(name) || named.has(name)) continue;
-    const file = path.join(dir, name);
-    const size = fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
-    try {
-      fs.rmSync(file);
-    } catch (e) {
-      console.error(`relay ${caller.slot}: ${(e as Error).message}`);
-      continue;
-    }
+  pruneMedia(folderOf(caller.slot, "media"), named, (size) => {
     if (room) room.used -= size;
-  }
+  });
 }
 
 // Bytes of the files of a folder, 0 without the folder
@@ -363,7 +355,7 @@ export async function saveRelayFile(caller: RelayCaller, kind: RelayFileKind, na
   if (!k.name.test(name)) throw new HttpError(400, "Invalid file name");
   if (!body) throw new HttpError(400, "Missing file");
   // the folder of the slot comes with the account, never from here
-  if (!fs.existsSync(slotDbPath(caller.slot))) throw new SlotNotReady();
+  slotDbFile(caller.slot);
   const room = roomOf(caller);
   const quota = config.relayQuotaBytes;
   const tooLarge = () => new HttpError(413, "File too large");
@@ -413,8 +405,3 @@ export async function saveRelayFile(caller: RelayCaller, kind: RelayFileKind, na
   }
 }
 
-// Content-Length of a request, null without one
-export const declaredLength = (req: Request) => {
-  const v = req.headers.get("content-length");
-  return v === null ? null : Number(v);
-};

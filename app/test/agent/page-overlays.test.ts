@@ -5,7 +5,7 @@ import type { BrowserContext, Page } from "playwright-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SlotStore } from "@/agent/store/slot-store";
 import { TeamsPage } from "@/agent/teams/page";
-import { openOverlays } from "@/agent/teams/scripts/message-actions";
+import { openOverlayNames } from "@/agent/teams/scripts/message-actions";
 import { SEL } from "@/agent/teams/selectors";
 import { tempDir } from "../helpers";
 import { withChrome } from "./chrome";
@@ -65,7 +65,7 @@ describe("the log says why an action on Teams was not taken", () => {
   it("takes an empty dialog of no size for nothing open", async () => {
     await open(`${PAGE}<div role="dialog" aria-label="Profile Card" style="position: absolute; top: 0; left: 0; width: 0; height: 0"></div>`);
     expect(await tp.clearOverlays()).toBe(true);
-    expect(await page.evaluate(openOverlays, SEL)).toBe(0);
+    expect(await page.evaluate(openOverlayNames, SEL)).toEqual([]);
     expect(lines).toEqual([]);
   });
 

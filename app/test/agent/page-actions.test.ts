@@ -10,7 +10,7 @@ import {
   lastMessageQuotes,
   messageBodyText,
   messageCount,
-  openOverlays,
+  openOverlayNames,
   ownReactions,
   quoteBoxReady,
   reactionPill,
@@ -113,7 +113,7 @@ describe("message action page scripts", () => {
       <div role="menu"><div role="menuitem" data-tid="message-actions-read-receipt">Read by 2 of 3</div></div>
       <div role="menu"><div role="menuitem">Anna Rossi</div><div role="menuitem">Luca Bianchi</div></div>
       <div role="dialog" style="display:none"></div>`);
-    expect(await chrome.page.evaluate(openOverlays, SEL)).toBe(2);
+    expect(await chrome.page.evaluate(openOverlayNames, SEL)).toHaveLength(2);
     expect(await chrome.page.evaluate(readReceiptNames, { s: SEL, entry: ACTIONS.readReceipt })).toEqual(["Anna Rossi", "Luca Bianchi"]);
   });
 });

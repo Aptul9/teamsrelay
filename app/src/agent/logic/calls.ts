@@ -9,7 +9,7 @@ export const CALL_END_AFTER = 2;
 // since: when it started ringing (ms on the wall clock), the time the notification shows; seconds: how long the
 // toast showed; replaced: the call of another caller whose toast this one took over before it could end
 export type EndedCall = { caller: string; since: number; seconds: number };
-export type CallEvent = { kind: "ringing"; caller: string; since: number; again: boolean; replaced?: EndedCall } | ({ kind: "ended" } & EndedCall);
+type CallEvent = { kind: "ringing"; caller: string; since: number; again: boolean; replaced?: EndedCall } | ({ kind: "ended" } & EndedCall);
 
 // Durations run on `clock`, which only goes forward (performance.now): the wall clock set back during a call would
 // keep it ringing. A caller without a name (text not read yet, or for a moment) is the call already ringing.

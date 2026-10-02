@@ -1,9 +1,3 @@
-import { chatName, messageArgs, queue } from "@/lib/commands";
-import { body, route } from "@/lib/http";
-import { requireSlot } from "@/lib/session";
+import { commandRoute } from "@/lib/commands";
 
-export const POST = route(async (req) => {
-  const { slot } = await requireSlot(req);
-  const b = await body(req);
-  return Response.json({ ok: true, id: queue(slot, "undodelete", chatName(b.name), messageArgs(b.mid)) });
-});
+export const POST = commandRoute("undodelete");

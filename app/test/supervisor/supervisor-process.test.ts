@@ -6,10 +6,10 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { build } from "esbuild";
+import { bundleOptions } from "../../scripts/bundles.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tempDir } from "../helpers";
 
-const APP = path.resolve(__dirname, "../..");
 const posix = process.platform !== "win32";
 let dir = "";
 let bundle = "";
@@ -54,7 +54,7 @@ beforeAll(async () => {
   if (!posix) return;
   dir = tempDir();
   bundle = path.join(dir, "supervisor.cjs");
-  await build({ entryPoints: [path.join(APP, "src/supervisor/main.ts")], bundle: true, platform: "node", target: "node24", format: "cjs", outfile: bundle, logLevel: "warning" });
+  await build(bundleOptions("supervisor", bundle));
   // stand-in for Chromium: leaves its arguments in its HOME, the profile of the account
   const chromium = path.join(dir, "chromium");
   fs.writeFileSync(

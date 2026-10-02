@@ -5,7 +5,8 @@
 import Database from "better-sqlite3";
 import { chromium } from "playwright-core";
 import { CdpBrowser } from "./cdp";
-import { ConfigError, loadConfig } from "./config";
+import { ConfigError } from "@/shared/env";
+import { loadConfig } from "./config";
 import { NewMessageDetector } from "./logic/new-messages";
 import { errorText, log } from "./log";
 import { runAgent } from "./loop";

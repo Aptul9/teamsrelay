@@ -25,7 +25,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  vi.mocked(requireSlot).mockResolvedValue({ user, slot, added: 0 });
+  vi.mocked(requireSlot).mockResolvedValue({ user, slot });
   slotDb.exec("DELETE FROM state");
 });
 

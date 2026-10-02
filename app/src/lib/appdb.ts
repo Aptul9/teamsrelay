@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { nowSeconds } from "@/agent/context";
+import { subscriptionOf } from "@/shared/push-subscription";
 import { config } from "./config";
 import { HttpError } from "./http";
 
@@ -28,13 +30,15 @@ export type Slot = {
   check_result: string;
   checking: number;
   relay: number;
+  // 1 while the owner keeps the browser of its relay away from the MCP clients (Settings)
+  browser_off: number;
 };
 
 export { CHECK_INTERVALS } from "@/shared/checks";
 export type CheckResult = "ok" | "login" | "failed";
 
 // relay_token, the digest of the token of the relay, never leaves the database: rows say only whether there is one
-const SLOT_COLUMNS = "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking, (relay_token <> '') AS relay";
+const SLOT_COLUMNS = "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking, (relay_token <> '') AS relay, browser_off";
 
 let shared: Database.Database | null = null;
 
@@ -59,9 +63,9 @@ export function migrateAppSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS push_subscriptions_user ON push_subscriptions(user_id);
   `);
   const columns = db.prepare("SELECT name FROM pragma_table_info('teams_accounts')").pluck().all();
-  if (!columns.includes("stopped")) db.exec("ALTER TABLE teams_accounts ADD COLUMN stopped INTEGER NOT NULL DEFAULT 0");
-  if (!columns.includes("started")) db.exec("ALTER TABLE teams_accounts ADD COLUMN started INTEGER NOT NULL DEFAULT 0");
   for (const [column, decl] of [
+    ["stopped", "INTEGER NOT NULL DEFAULT 0"],
+    ["started", "INTEGER NOT NULL DEFAULT 0"],
     ["check_every", "INTEGER NOT NULL DEFAULT 0"],
     ["check_due", "INTEGER NOT NULL DEFAULT 0"],
     ["checked", "INTEGER NOT NULL DEFAULT 0"],
@@ -69,7 +73,6 @@ export function migrateAppSchema(db: Database.Database) {
     ["checking", "INTEGER NOT NULL DEFAULT 0"],
     // SHA-256 (hex) of the token of the relay of an account on another computer, "" for an account of the browsers container
     ["relay_token", "TEXT NOT NULL DEFAULT ''"],
-    // 1 while the owner keeps the browser of its relay away from the MCP clients (Settings)
     ["browser_off", "INTEGER NOT NULL DEFAULT 0"],
   ]) {
     if (!columns.includes(column)) db.exec(`ALTER TABLE teams_accounts ADD COLUMN ${column} ${decl}`);
@@ -91,7 +94,7 @@ const hasTable = (db: Database.Database, name: string) =>
 export function adoptLegacyData(db: Database.Database, userId: string): { slots: number; devices: number } {
   return db.transaction(() => {
     if ((db.pragma("user_version", { simple: true }) as number) >= SCHEMA_VERSION) return { slots: 0, devices: 0 };
-    const now = Math.floor(Date.now() / 1000);
+    const now = nowSeconds();
     let slots = 0;
     let devices = 0;
     if (hasTable(db, "accounts")) {
@@ -160,7 +163,7 @@ export function isSlotStopped(db: Database.Database, slot: number): boolean {
 
 export function setSlotStopped(db: Database.Database, slot: number, stopped: boolean) {
   if (stopped) db.prepare("UPDATE teams_accounts SET stopped=1 WHERE slot=?").run(slot);
-  else db.prepare("UPDATE teams_accounts SET stopped=0, started=? WHERE slot=?").run(Math.floor(Date.now() / 1000), slot);
+  else db.prepare("UPDATE teams_accounts SET stopped=0, started=? WHERE slot=?").run(nowSeconds(), slot);
 }
 
 export function slotOwner(db: Database.Database, slot: number): string | null {
@@ -174,7 +177,7 @@ export function claimSlot(db: Database.Database, userId: string, limits: { slotC
     const taken = new Set(listSlots(db).map((s) => s.slot));
     for (let n = 1; n <= limits.slotCount; n++) {
       if (taken.has(n)) continue;
-      db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(?,?,?)").run(n, userId, Math.floor(Date.now() / 1000));
+      db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(?,?,?)").run(n, userId, nowSeconds());
       return n;
     }
     throw new HttpError(409, `No free slot: all ${limits.slotCount} are in use`);
@@ -187,15 +190,12 @@ export function releaseSlot(db: Database.Database, slot: number) {
   db.prepare("DELETE FROM browser_actions WHERE slot=?").run(slot);
 }
 
-export function browserOff(db: Database.Database, slot: number): boolean {
-  return !!db.prepare("SELECT browser_off FROM teams_accounts WHERE slot=?").pluck().get(slot);
-}
 
 export function setBrowserOff(db: Database.Database, slot: number, off: boolean) {
   db.prepare("UPDATE teams_accounts SET browser_off=? WHERE slot=?").run(off ? 1 : 0, slot);
 }
 
-export type BrowserAction = { id: number; ts: number; user_id: string; client_id: string; slot: number; tool: string; host: string; outcome: string };
+type BrowserAction = { id: number; ts: number; user_id: string; client_id: string; slot: number; tool: string; host: string; outcome: string };
 
 // actions kept per account; Settings shows the last 50
 const BROWSER_ACTIONS_KEPT = 500;
@@ -224,14 +224,8 @@ export function relayAccount(db: Database.Database, digest: string): { slot: num
 }
 
 export function savePushSubscription(db: Database.Database, userId: string, sub: Record<string, unknown>) {
-  const endpoint = sub.endpoint;
-  if (typeof endpoint !== "string" || !/^https:\/\//.test(endpoint)) throw new HttpError(400, "Subscription without endpoint");
-  db.prepare("INSERT OR REPLACE INTO push_subscriptions(endpoint, user_id, sub, created) VALUES(?,?,?,?)").run(
-    endpoint,
-    userId,
-    JSON.stringify(sub),
-    Math.floor(Date.now() / 1000),
-  );
+  const { endpoint, json } = subscriptionOf(sub);
+  db.prepare("INSERT OR REPLACE INTO push_subscriptions(endpoint, user_id, sub, created) VALUES(?,?,?,?)").run(endpoint, userId, json, nowSeconds());
 }
 
 // A phone of the Android app (mobile/), a push device as a browser is: endpoint fcm:<token>, sub {fcm: {token, key,
@@ -255,7 +249,7 @@ export function saveFcmDevice(db: Database.Database, userId: string, token: stri
     endpoint,
     userId,
     JSON.stringify({ fcm: { token, key, name, session } }),
-    Math.floor(Date.now() / 1000),
+    nowSeconds(),
   );
   return key;
 }

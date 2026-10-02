@@ -29,8 +29,27 @@ export type MessageExtra = {
 
 export type Message = { mid: string; author: string; text: string; mine: number; reacts: string } & MessageExtra;
 
-// Names of the files in the media folder, the only ones the apps serve from it
+// Names of the files in the media folder, the only ones the apps serve from it, and of the images an app sends
 export const MEDIA_NAME = /^[0-9a-f]{16}\.(png|jpg|gif|webp)$/;
+// Those images by file extension
+export const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", gif: "image/gif", webp: "image/webp" } as const;
+export type ImageExt = keyof typeof IMAGE_TYPES;
+// Largest image an app sends
+export const MAX_UPLOAD = 10e6;
+
+// The six quick reactions of Teams as it draws them (the app of the local relay keeps a copy: src/local/web/app.js)
+export const REACTION_EMOJI: Record<string, string> = { like: "👍", heart: "❤️", laugh: "😆", surprised: "😮", cry: "😢", angry: "😠" };
+// The JSON extra of a row of chat_messages; nothing when it is not an object
+export function parseExtra(v: string | null | undefined): MessageExtra {
+  if (!v) return {};
+  try {
+    const extra: unknown = JSON.parse(v);
+    return extra && typeof extra === "object" ? (extra as MessageExtra) : {};
+  } catch {
+    return {};
+  }
+}
+
 // Names of the attachments the agent downloaded into the files folder
 export const FILE_NAME = /^[0-9a-f]{16}(\.[a-z0-9]{1,8})?$/;
 

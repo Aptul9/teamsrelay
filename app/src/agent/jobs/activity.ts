@@ -1,11 +1,12 @@
 import { STATE } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
-import { wantedChat } from "../logic/parking";
 import { errorText, log } from "../log";
 import { sleep } from "../teams/page";
-import { readActivityFeed, scrollActivityFeed, type FeedItem } from "../teams/scripts/activity";
+import { readActivityFeed, type FeedItem } from "../teams/scripts/activity";
+import { scrollList } from "../teams/scripts/chat-list";
 import { SEL, TEXTS } from "../teams/selectors";
 import type { ActivityEntry } from "../store/slot-store";
+import { wanted } from "./page-setup";
 
 const FEED_LIMIT = 40;
 
@@ -14,7 +15,6 @@ const FEED_LIMIT = 40;
 // the side bar was clickable or the page never left the chat view.
 export async function readActivity(a: Agent, railWait = 0): Promise<number | null> {
   const page = a.tp.page;
-  const active = a.store.getState(STATE.activeChat);
   let items: ActivityEntry[] | null = null;
   try {
     await a.tp.clearOverlays();
@@ -25,7 +25,7 @@ export async function readActivity(a: Agent, railWait = 0): Promise<number | nul
     const seen = new Map<string, FeedItem>();
     for (let i = 0; i < 6; i++) {
       for (const item of await page.evaluate(readActivityFeed, { s: SEL, t: TEXTS })) seen.set(item.id || item.title + item.tm, item);
-      if (seen.size >= FEED_LIMIT || !(await page.evaluate(scrollActivityFeed, SEL))) break;
+      if (seen.size >= FEED_LIMIT || !(await page.evaluate(scrollList, { item: SEL.feedItem, to: "down" as const }))) break;
       await sleep(600);
     }
     items = await a.media.avatars(page, [...seen.values()].slice(0, FEED_LIMIT), FEED_LIMIT);
@@ -36,7 +36,7 @@ export async function readActivity(a: Agent, railWait = 0): Promise<number | nul
     try {
       await a.tp.clickRail(SEL.chatView);
       await page.locator(SEL.anyChatRow).first().waitFor({ timeout: 8000 });
-      const want = wantedChat(active, a.store.getState(STATE.viewing), nowSeconds(), a.store.selfChat());
+      const want = wanted(a);
       if (want) await a.tp.openChat(want);
     } catch (e) {
       log.warn("activity", `back to chat: ${errorText(e)}`);

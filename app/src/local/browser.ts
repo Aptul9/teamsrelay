@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { chromium, type BrowserContext } from "playwright-core";
-import { hostOf, isLoginUrl, isTeamsUrl } from "@/agent/logic/hosts";
+import { hostOf, pickTeamsPage } from "@/agent/logic/hosts";
 import { errorText, log } from "@/agent/log";
 import type { BrowserSource } from "@/agent/loop";
 import { grantNotifications } from "@/agent/permissions";
@@ -15,7 +15,7 @@ const KEEP_UPDATING = ["--disable-background-networking", "--disable-component-u
 const BLANK_TAB_MS = 5_000;
 const OTHER_PAGE_MS = 10 * 60_000;
 
-export type LaunchOptions = { profileDir: string; channel: string; headless?: boolean; extraArgs?: string[] };
+type LaunchOptions = { profileDir: string; channel: string; headless?: boolean; extraArgs?: string[] };
 
 // The browser of the relay, on a profile of its own. Never the profile of the everyday browser: since Chromium 136
 // remote debugging, the pipe Playwright drives it through included, is ignored on the default user data directory,
@@ -42,7 +42,7 @@ export async function launchBrowser(o: LaunchOptions): Promise<BrowserContext> {
   // The browser may restore tabs of its previous session: one is kept, the Teams one if there, else the blank one
   // the launch opens
   const pages = context.pages();
-  const keep = pages.find((p) => isTeamsUrl(p.url()) || isLoginUrl(p.url())) ?? pages.find((p) => p.url() === "about:blank") ?? pages[0];
+  const keep = pickTeamsPage(pages) ?? pages.find((p) => p.url() === "about:blank") ?? pages[0];
   for (const page of pages) if (page !== keep) await page.close().catch(() => undefined);
   return context;
 }
@@ -91,7 +91,7 @@ export class BrowserKeeper implements BrowserSource {
       log.warn("browser", "closed: starting it again");
     });
     log.info("browser", "started");
-    if (!context.pages().some((p) => isTeamsUrl(p.url()) || isLoginUrl(p.url()))) await openTeams(context, this.teamsUrl);
+    if (!pickTeamsPage(context.pages())) await openTeams(context, this.teamsUrl);
     return context;
   }
 

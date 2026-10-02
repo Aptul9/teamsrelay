@@ -35,7 +35,7 @@ describe("cmdapi runner", () => {
   });
 
   it("runs a string command through a shell", async () => {
-    const r = await run({ command: "echo fleettest", shell: true });
+    const r = await run({ command: "echo fleettest" });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain("fleettest");
   });

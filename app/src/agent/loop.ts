@@ -22,8 +22,8 @@ import { asAgent } from "./teams/input";
 import { sleep, TeamsPage } from "./teams/page";
 
 // Seconds between two inputs on the Teams page
-export const ACTIVE_EVERY = 60;
-export const ACTIVITY_RETRY = 30;
+const ACTIVE_EVERY = 60;
+const ACTIVITY_RETRY = 30;
 // The automatic check judges Teams once it had time to load: a start or a reload inside a window of the check shows
 // Teams within a minute; Teams not ready this many seconds into the window is the problem the check reports
 export const SELF_CHECK_GRACE = 300;
@@ -40,7 +40,8 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
   // while a call rings (an answer clicks its toast), during a call (the call view stays on screen) and while the owner
   // uses Teams (remote desktop, window of the local relay) the jobs that move Teams to a chat or the feed wait; commands
   // of the app go on, asked by the owner
-  const free = () => teamsOk() && !a.inCall && !a.ringing && !ownerUses(a);
+  const idle = () => !a.inCall && !a.ringing && !ownerUses(a);
+  const free = () => teamsOk() && idle();
   // the page sees the input of these jobs as trusted input, as the owner's: it is the agent's own (teams/input.ts)
   const own = <T>(fn: () => Promise<T>) => asAgent(a.tp.page, fn);
   const active = () => a.store.getState(STATE.activeChat);
@@ -116,7 +117,7 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
       name: "sign-in",
       every: { rounds: 1 },
       anyPage: true,
-      when: () => a.health?.teams === "login" && !a.inCall && !a.ringing && !ownerUses(a),
+      when: () => a.health?.teams === "login" && idle(),
       run: () => trySignIn(a),
     },
     {

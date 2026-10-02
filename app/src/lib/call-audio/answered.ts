@@ -1,5 +1,5 @@
 // What the page needs of the sound of one call (CallAudio, or a fake in the tests)
-export type CallSound = { start(): void; stop(): void; mute(on: boolean): void; resume(): void };
+type CallSound = { start(): void; stop(): void; mute(on: boolean): void; resume(): void };
 
 // An answer that never became a call in progress (refused, too late) gives the sound up after this long; a call in
 // progress gives it up this long after it left the event stream, which drops for a few seconds when the web app

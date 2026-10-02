@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseEnv } from "@/shared/env";
 import type { AccountsConfig } from "./accounts";
 
 // Environment of the supervisor: the container environment (s6 with-contenv), set by the image and by
@@ -22,18 +23,10 @@ const Env = z.object({
 const BROWSER_ENV = ["TZ", "LANG", "LANGUAGE", "LC_ALL", "PULSE_RUNTIME_PATH"];
 const AGENT_ENV = ["TZ", "VAPID_SUBJECT", "NTFY_ENABLED", "NTFY_URL", "NTFY_TOPIC"];
 
-export type SupervisorConfig = { socket: string; accounts: AccountsConfig };
-
-export class ConfigError extends Error {}
+type SupervisorConfig = { socket: string; accounts: AccountsConfig };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): SupervisorConfig {
-  // an empty variable counts as unset
-  const given = Object.fromEntries(Object.keys(Env.shape).map((k) => [k, env[k] === "" ? undefined : env[k]]));
-  const r = Env.safeParse(given);
-  if (!r.success) {
-    throw new ConfigError(r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
-  }
-  const e = r.data;
+  const e = parseEnv(Env, env);
   const pick = (names: string[]) => Object.fromEntries(names.flatMap((k) => (env[k] ? [[k, env[k]]] : [])));
   return {
     socket: e.CONTROL_SOCKET,

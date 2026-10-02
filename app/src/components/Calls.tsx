@@ -5,13 +5,12 @@ import { cn } from "cn";
 import { Avatar } from "./Avatar";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import type { ActivityItem, CallLogEntry, RingingCall } from "@/lib/client";
+import { sameDay, timeLabel } from "@/lib/message-times";
 import { hasTeamsId } from "@/shared/slot-db/rows";
 
 // When a call rang: the time today, the day and the time before
 function when(ms: number, now = Date.now()): string {
-  const d = new Date(ms);
-  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  return d.toDateString() === new Date(now).toDateString() ? time : `${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${time}`;
+  return sameDay(ms, now) ? timeLabel(ms) : `${new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${timeLabel(ms)}`;
 }
 
 type Row = { key: string; name: string; line: string; icon: typeof PhoneIcon; tone: string; dot?: boolean };

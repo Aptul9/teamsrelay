@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
@@ -8,18 +7,20 @@ import { nowSeconds } from "@/agent/context";
 import { errorText, log } from "@/agent/log";
 import type { SlotStore } from "@/agent/store/slot-store";
 import { sleep } from "@/agent/teams/page";
-import { chatName, messageArgs, messageText, reactArgs, textArgs } from "@/shared/command-input";
+import { chatName, commandOf } from "@/shared/command-input";
+import { bearerToken, sameToken } from "@/shared/bearer";
 import { HttpError } from "@/shared/http-error";
-import { COMMAND_KEY, IMAGE_TYPES, type CommandStatus, type CommandType, type ImageExt } from "@/shared/slot-db/commands";
-import { MEDIA_NAME, type Message } from "@/shared/slot-db/rows";
-import { AgentHealth, Identity, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
+import { subscriptionOf } from "@/shared/push-subscription";
+import { COMMAND_KEY, type CommandStatus } from "@/shared/slot-db/commands";
+import { IMAGE_TYPES, MEDIA_NAME, type ImageExt, type Message } from "@/shared/slot-db/rows";
+import { AgentHealth, healthOf, Identity, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import type { RelayDevices } from "./devices";
 
 // The only way into the relay: the app (src/local/web) and a small API behind one token. Everything the phone asks
 // for is a row of relay.db, or a command the agent runs on Teams. No browser, no desktop, nothing of the Microsoft
 // session goes out through here.
 
-export type ApiOptions = {
+type ApiOptions = {
   store: SlotStore;
   devices: RelayDevices;
   token: string;
@@ -47,9 +48,6 @@ const STATIC: Record<string, { dir: "web" | "public"; file: string; type: string
 
 // The files of the app on disk, for the check of the bundle
 export const appFiles = (webDir: string, publicDir: string) => Object.values(STATIC).map((f) => path.join(f.dir === "web" ? webDir : publicDir, f.file));
-
-// The commands of the app: text only, no Activity feed, image, mention or download
-export const RELAY_COMMANDS = ["open", "send", "reply", "react", "edit", "delete", "undodelete", "resync", "recheck"] as const satisfies readonly CommandType[];
 
 // The page loads only what the relay serves; messages are shown as text, never as HTML
 const CSP =
@@ -87,45 +85,11 @@ export class Failures {
   }
 }
 
-const digest = (s: string) => createHash("sha256").update(s, "utf8").digest();
-
-// The command of a POST /api/cmd body as the agent reads it (arg1, arg2); 400 when it is not one
-export function commandOf(b: Record<string, unknown>): { type: CommandType; arg1: string; arg2: string } {
-  const type = b.type as (typeof RELAY_COMMANDS)[number];
-  if (typeof type !== "string" || !(RELAY_COMMANDS as readonly string[]).includes(type)) throw new HttpError(400, "Unknown command");
-  switch (type) {
-    case "open":
-      return { type, arg1: chatName(b.chat), arg2: "" };
-    case "send":
-      return { type, arg1: chatName(b.chat), arg2: messageText(b.text) };
-    case "reply":
-    case "edit":
-      return { type, arg1: chatName(b.chat), arg2: textArgs(b.mid, b.text) };
-    case "delete":
-    case "undodelete":
-      return { type, arg1: chatName(b.chat), arg2: messageArgs(b.mid) };
-    case "react":
-      return { type, arg1: chatName(b.chat), arg2: reactArgs(b.mid, b.emoji, b.pill) };
-    case "resync":
-    case "recheck":
-      return { type, arg1: "", arg2: "" };
-  }
-}
-
 // The key the app gives a command, or null: the same key queues it once (a retry after a lost answer)
 function keyOf(b: Record<string, unknown>): string | null {
   if (b.key === undefined || b.key === null) return null;
   if (typeof b.key !== "string" || !COMMAND_KEY.test(b.key)) throw new HttpError(400, "Invalid command key");
   return b.key;
-}
-
-// The agent rewrites its health every ~5 s. Older than a minute, it no longer describes reality.
-export function servedHealth(saved: Partial<AgentHealth>, now = Date.now() / 1000): SlotHealth {
-  const h: SlotHealth = { ...saved };
-  h.agent = now - (Number(h.ts) || 0) < 60 ? "ok" : "stale";
-  if (h.agent !== "ok") Object.assign(h, { teams: "unknown", watcher: "stale", overall: "red" });
-  h.overall ??= "yellow";
-  return h;
 }
 
 // Why a command cannot run now, as the status and message the app shows; null when it can
@@ -134,17 +98,6 @@ function refusal(h: SlotHealth): HttpError | null {
   if (h.browser === "down") return new HttpError(503, "The browser of the relay does not start: see its log");
   if (h.teams === "login") return new HttpError(409, "Teams is signed out: sign in again in the relay window");
   return null;
-}
-
-// A Web Push subscription as the browser gives it (PushSubscription.toJSON())
-function subscriptionOf(b: Record<string, unknown>): { endpoint: string; json: string } {
-  const { endpoint, keys } = b as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } };
-  if (typeof endpoint !== "string" || !endpoint.startsWith("https://") || endpoint.length > 2000) throw new HttpError(400, "Invalid subscription endpoint");
-  const b64 = /^[A-Za-z0-9_-]{16,200}=*$/;
-  if (typeof keys?.p256dh !== "string" || typeof keys.auth !== "string" || !b64.test(keys.p256dh) || !b64.test(keys.auth)) {
-    throw new HttpError(400, "Invalid subscription keys");
-  }
-  return { endpoint, json: JSON.stringify({ endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } }) };
 }
 
 // What the app shows of a message: text only (the reduced HTML stays in the database)
@@ -200,15 +153,14 @@ async function waitFor(store: SlotStore, id: number, ms: number): Promise<Comman
 }
 
 export function apiHandler(o: ApiOptions, failures = new Failures()): http.RequestListener {
-  const expected = digest(o.token);
   const wait = o.commandWaitMs ?? 30_000;
 
-  const health = () => servedHealth(parseState(AgentHealth.partial(), o.store.getState(STATE.health), {}));
+  const health = () => healthOf(parseState(AgentHealth.partial(), o.store.getState(STATE.health), {}));
 
   async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     const route = `${req.method} ${url.pathname}`;
     if (route === "GET /api/state") {
-      const me = parseState(Identity, o.store.getState(STATE.me), Identity.parse({}));
+      const me = parseState(Identity, o.store.getState(STATE.me));
       return send(res, 200, {
         health: health(),
         me: { name: me.name, email: me.email, tenant: me.tenant },
@@ -293,8 +245,7 @@ export function apiHandler(o: ApiOptions, failures = new Failures()): http.Reque
       // the public key is public: the app needs it to subscribe
       if (req.method === "GET" && url.pathname === "/api/vapid") return send(res, 200, { key: o.vapidKey });
       if (!url.pathname.startsWith("/api/") && !url.pathname.startsWith("/media/")) throw new HttpError(404, "Not found");
-      const given = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "")?.[1] ?? "";
-      if (!timingSafeEqual(digest(given), expected)) {
+      if (!sameToken(bearerToken(req.headers.authorization), o.token)) {
         if (failures.blocked(ip)) throw new HttpError(429, "Too many wrong tokens: try again later");
         failures.add(ip);
         log.warn("api", "wrong token", { ip, path: url.pathname });

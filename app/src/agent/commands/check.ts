@@ -1,29 +1,11 @@
-import { z } from "zod";
 import { parseState, STATE } from "@/shared/slot-db/state";
 import { readActivity } from "../jobs/activity";
 import { scanChatsFull } from "../jobs/chat-list";
+import { isSelfChat } from "../logic/chats";
+import { Seen, union } from "../logic/check-seen";
 import { errorText, log } from "../log";
 import { RAIL_WAIT } from "./activity";
 import type { Handler } from "./index";
-
-// What was unread at the end of a check: each unread chat with its preview (a new message changes it) and, from the
-// recent reads of the feed (newest first, up to KEEP), the ids of the unread Activity items and of the missed calls
-// (Teams shows those as read, new or not), and whether any feed was read (a row of an earlier release, without it,
-// was written after one). New is an id the recent reads did not have; an item a read shows takes the state it has
-// there, one the read leaves out keeps the state of the reads before (a shorter read leaves out the older items). Feed
-// items carry no time: an older item that only a longer read shows counts as new too. A row without calls, from an earlier
-// release, pushes no missed call: the check only records them.
-const Seen = z.object({
-  chats: z.array(z.string()).catch([]),
-  activity: z.array(z.string()).catch([]),
-  calls: z.array(z.string()).optional().catch(undefined),
-  read: z.boolean().catch(true),
-});
-
-const KEEP = 200;
-
-// ids newest first: the ones of this read, then the ones of the earlier reads, up to KEEP
-const union = (now: string[], before: string[] | undefined) => [...new Set([...now, ...(before ?? [])])].slice(0, KEEP);
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -37,9 +19,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export const check: Handler = async (a) => {
   const chats = await scanChatsFull(a);
   const feed = await readActivity(a, RAIL_WAIT);
-  const unread = a.store.chats().filter((c) => c.unread && !c.muted && !/\(you\)/i.test(c.name));
+  const unread = a.store.chats().filter((c) => c.unread && !c.muted && !isSelfChat(c.name));
   const before = a.store.getState(STATE.checkSeen);
-  const was = before ? parseState(Seen, before, { chats: [], activity: [], read: true }) : null;
+  const was = before ? parseState(Seen, before) : null;
   const read = feed !== null;
   const calls = read ? a.store.missedCalls() : [];
   const unreadNow = read ? a.store.unreadActivity() : [];

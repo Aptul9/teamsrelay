@@ -1,12 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { ImageExt } from "@/shared/slot-db/commands";
+import { MAX_UPLOAD, type ImageExt } from "@/shared/slot-db/rows";
 import { HttpError } from "./http";
 import { slotDir } from "./slotdb";
 
-// Largest image the app sends
-export const MAX_UPLOAD = 10e6;
 // An upload the agent never picked up (account stopped meanwhile...) goes after a day
 const KEEP_MS = 86_400_000;
 

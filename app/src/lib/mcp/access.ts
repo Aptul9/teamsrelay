@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { bearerToken, sameToken } from "@/shared/bearer";
 import { appDb } from "../appdb";
 import { config } from "../config";
 import { envAdminEmail } from "../env-admin";
@@ -14,12 +14,10 @@ export function mcpConfigError(): string | null {
   return null;
 }
 
-const digest = (s: string) => createHash("sha256").update(s).digest();
-
-// Authorization: Bearer <MCP_TOKEN>. Digests have one length, so the comparison takes the same time for any value.
+// Authorization: Bearer <MCP_TOKEN>
 export function tokenMatches(authorization: string | null): boolean {
-  const m = /^Bearer\s+(\S+)\s*$/i.exec(authorization ?? "");
-  return !!config.mcpToken && !!m && timingSafeEqual(digest(m[1]), digest(config.mcpToken));
+  const token = bearerToken(authorization);
+  return !!config.mcpToken && !!token && sameToken(token, config.mcpToken);
 }
 
 // Id of the administrator of .env; null when there is none

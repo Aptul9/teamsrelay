@@ -45,6 +45,7 @@ export const STATE = {
 
 // JSON result of command <id>, e.g. DownloadResult
 export const cmdResultKey = (id: number) => `cmd_result:${id}`;
+export const CMD_RESULT_KEY = /^cmd_result:(\d+)$/;
 // "1": 1:1 chat, where Teams has no "Read by" entry
 export const oneToOneKey = (chat: string) => `chat_1to1:${chat}`;
 // JSON Members of a chat, read by the agent on a members command
@@ -165,8 +166,22 @@ export type SlotHealth = Partial<Omit<AgentHealth, "teams" | "watcher" | "overal
   overall?: AgentHealth["overall"] | "grey";
 };
 
-// JSON of a state row; missing, broken or of another shape gives the fallback
-export function parseState<T>(schema: z.ZodType<T>, value: string | null | undefined, fallback: T): T {
+// The agent rewrites its health every ~5 s. Older than a minute, it no longer describes reality. `added`: when the
+// slot was switched on, which needs up to a couple of minutes for browser and agent.
+export function healthOf(saved: SlotHealth, added = 0, now = Date.now() / 1000): SlotHealth {
+  const h: SlotHealth = { ...saved };
+  h.agent = now - (Number(h.ts) || 0) < 60 ? "ok" : "stale";
+  if (h.agent !== "ok") {
+    const starting = now - added < 180;
+    Object.assign(h, { teams: starting ? "starting" : "unknown", watcher: "stale", overall: starting ? "yellow" : "red" });
+  }
+  h.overall ??= "yellow";
+  return h;
+}
+
+// JSON of a state row; missing, broken or of another shape gives the fallback, by default what the schema makes of
+// nothing (every field of the state schemas above falls back on its own)
+export function parseState<T>(schema: z.ZodType<T>, value: string | null | undefined, fallback: T = schema.parse({})): T {
   if (!value) return fallback;
   try {
     const r = schema.safeParse(JSON.parse(value));

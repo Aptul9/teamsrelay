@@ -1,49 +1,20 @@
 // Browser-side helpers of the PWA: API calls, command follow-up, formatting.
 
-import type { CallReason } from "@/shared/slot-db/commands";
-import { hasTeamsId, type ActivityItem } from "@/shared/slot-db/rows";
+import type { CallReason, OpenReason } from "@/shared/slot-db/commands";
+import { hasTeamsId, IMAGE_TYPES, MAX_UPLOAD, type ActivityItem } from "@/shared/slot-db/rows";
+import { timeLabel } from "./message-times";
 
-export type Account = {
-  slot: number;
-  name: string;
-  email: string;
-  tenant: string;
-  av: string;
-  // the owner's own presence word (shared/presence), "" when unknown
-  presence: string;
-  teams: string;
-  overall: string;
-  stopped: boolean;
-  unread: number;
-  unreadActivity: string[] | null;
-  missedCalls: string[] | null;
-  // ids of every item of the feed, newest first: what an account met for the first time counts as seen
-  activityIds: string[] | null;
-  added: number;
-  desktop: string;
-  // checked every N hours (0: always on): seconds between two checks, end (0 before the first) and outcome of the
-  // last one, when the next is due (0: asked from the app), a check running now
-  checkEvery: number;
-  checked: number;
-  checkResult: string;
-  nextCheck: number;
-  checking: boolean;
-  // an account on another computer, whose relay joined the server: the name of that computer ("" before its first
-  // sync) and the time of its last sync
-  relay: boolean;
-  host: string;
-  relaySeen: number;
-  // its relay sends the sound of a call answered or placed from the app to the app (absent: a relay of before)
-  callAudio?: boolean;
-};
-export type { ActivityItem, CallLogEntry, Chat, Message, Reaction } from "@/shared/slot-db/rows";
+// An account as GET /api/accounts gives it
+import type { AccountSummary as Account } from "./accounts";
+export type { Account };
+export type { ActivityItem, CallLogEntry, Chat, Message } from "@/shared/slot-db/rows";
 export type { OpenReason, OpenStatus } from "@/shared/slot-db/commands";
 export { CHECK_INTERVALS } from "@/shared/checks";
 export type { RingingCall, SlotHealth as Health } from "@/shared/slot-db/state";
 // detail: why the web app refused the command, when it did
-export type CommandResult = { status: string; result: { f?: string } | null; detail?: string };
+type CommandResult = { status: string; result: { f?: string } | null; detail?: string };
 
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -71,15 +42,22 @@ export async function call<T>(path: string, init: RequestInit | undefined, acc: 
   return j as T;
 }
 
-export function post<T>(path: string, body: unknown, acc: number): Promise<T> {
-  return call<T>(
-    path,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) },
-    acc,
-  );
-}
+const send = <T>(method: string, path: string, body: unknown, acc: number) =>
+  call<T>(path, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }, acc);
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const post = <T>(path: string, body: unknown, acc: number) => send<T>("POST", path, body, acc);
+export const patch = <T>(path: string, body: unknown, acc: number) => send<T>("PATCH", path, body, acc);
+
+// What to tell of a call that threw: the reason the server gave, or `fallback` when it never answered
+export const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
+
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// A copy of `o` without `key`
+export const omit = <V>(o: Record<string, V>, key: string | number): Record<string, V> => Object.fromEntries(Object.entries(o).filter(([k]) => k !== String(key)));
+
+// useSyncExternalStore of a value that never changes
+export const noSubscribe = () => () => {};
 
 // The commands of a call (answer, hang-up, mute): the agent takes them within a look of its call watch and Teams shows
 // them within a second, so their outcome is read every CALL_CMD_EVERY ms, for about ten seconds
@@ -89,21 +67,22 @@ export const CALL_CMD_TRIES = 70;
 // the agent may still place it (CALL_MAX_AGE, src/agent/commands/call.ts), so a call never starts after a failure shown
 export const CALL_START_TRIES = 300;
 
-// Why a call asked from the app was not placed, as the agent tells it (CallResult); a call failed without one waited
-// too long for the agent, or was cut by its restart
-const CALL_PROBLEMS: Record<CallReason, string> = {
+// Why a chat asked from the app did not open, or a call was not placed, as the agent tells it (OpenResult, CallResult);
+// one failed without a reason waited too long for the agent, or was cut by its restart
+const REASONS: Record<OpenReason | CallReason, string> = {
   late: "Teams got to it too late: try again.",
   busy: "A call rings or is on in this account.",
   "signed-out": "Teams is signed out: sign in again, then try again.",
   "not-listed": "Teams has no chat with this name in its list.",
   "not-shown": "Teams did not show the chat.",
+  unreadable: "Teams showed it, but its messages could not be read.",
   "not-one": "Only a 1:1 chat can be called.",
   "no-call": "Teams did not start the call: try again, or call from the remote Teams.",
 };
 
-export function callProblem(result: unknown): string {
+export function reasonText(result: unknown): string {
   const reason = (result as { reason?: unknown } | null)?.reason;
-  return typeof reason === "string" && Object.hasOwn(CALL_PROBLEMS, reason) ? CALL_PROBLEMS[reason as CallReason] : "Teams did not get to it in time.";
+  return typeof reason === "string" && Object.hasOwn(REASONS, reason) ? REASONS[reason as CallReason] : "Teams did not get to it in time.";
 }
 
 // Waits until the agent confirms the change on Teams (done) or gives up (failed), polling `tries` times `every` ms apart
@@ -130,12 +109,12 @@ export async function runCmd(path: string, body: unknown, acc: number, tries?: n
 }
 
 // Images the app sends, as /api/sendimage takes them (it checks the content again)
-export const IMAGE_ACCEPT = "image/png,image/jpeg,image/gif,image/webp";
+export const IMAGE_ACCEPT = Object.values(IMAGE_TYPES).join(",");
 
 export function imageProblem(f: File): string | null {
   if (!IMAGE_ACCEPT.split(",").includes(f.type)) return "Only PNG, JPEG, GIF or WebP images can be sent from here: send other files from Teams";
   if (!f.size) return "Empty image";
-  if (f.size > 10e6) return "Image larger than 10 MB";
+  if (f.size > MAX_UPLOAD) return "Image larger than 10 MB";
   return null;
 }
 
@@ -180,7 +159,7 @@ export function unseenIds(ids: string[], seen: string[] | null): number {
 
 export type Unread = { chats: number; notifications: number; calls: number };
 
-export const unreadTotal = (u: Unread) => u.chats + u.notifications + u.calls;
+const unreadTotal = (u: Unread) => u.chats + u.notifications + u.calls;
 
 // What waits in an account the app does not show: unread chats, the notifications and the missed calls this device has
 // not shown yet, the numbers its Chats, Notifications and Calls tabs would have. A stopped account reads nothing new
@@ -208,11 +187,15 @@ export function appBadgeCount(accounts: Account[], unreadOf: (a: Account) => Unr
 }
 
 // The same number in the title of the page, for the tab and the taskbar: "(5) TeamsRelay"
-export const pageTitle = (n: number) => (n > 0 ? `(${n > 99 ? "99+" : n}) TeamsRelay` : "TeamsRelay");
+// A count as a badge shows it
+export const capped = (n: number) => (n > 99 ? "99+" : String(n));
+
+export const pageTitle = (n: number) => (n > 0 ? `(${capped(n)}) TeamsRelay` : "TeamsRelay");
 
 // An account never signed in to Microsoft has no name nor email yet: it shows as an account being added, not as a
 // numbered one, until its first sign-in. One signed out since keeps who it was.
 export const NEW_ACCOUNT = "New Teams account";
+export const accName = (a: Pick<Account, "name" | "email">) => a.name || a.email || NEW_ACCOUNT;
 export const signedInOnce = (a: Pick<Account, "name" | "email">) => !!(a.name || a.email);
 export const addingTitle = (accounts: Account[]) =>
   accounts.some(signedInOnce) ? "Finish adding this Teams account" : "Add your first Teams account";
@@ -234,7 +217,7 @@ export function markShown(stored: string[] | null, items: ActivityItem[], list: 
 
 // The seen list the Calls list compares with while it is open, for its dots: the one of when it opened, and the one of
 // the new account when the account changes under it
-export type CallsSnapshot = { acc: number; seen: string[] | null };
+type CallsSnapshot = { acc: number; seen: string[] | null };
 export const callsSnapshot = (s: CallsSnapshot | null, acc: number, seen: string[] | null): CallsSnapshot => (s?.acc === acc ? s : { acc, seen });
 
 export function parseSeen(raw: string | null): string[] | null {
@@ -286,13 +269,6 @@ export function initials(s: string): string {
   return ((p[0]?.[0] || "") + (p[1]?.[0] || "") || s[0] || "?").toUpperCase();
 }
 
-const COLORS = ["#6264a7", "#0a7cbb", "#498205", "#c19c00", "#ca5010", "#b4009e", "#008272", "#e3008c", "#5c2e91", "#986f0b"];
-export function avColor(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return COLORS[h % COLORS.length];
-}
-
 export function ago(ts?: number): string {
   if (!ts) return "never";
   const s = Math.max(0, Date.now() / 1000 - ts);
@@ -302,7 +278,7 @@ export function ago(ts?: number): string {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-export const clock = (ts: number) => new Date(ts * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+export const clock = (ts: number) => timeLabel(ts * 1000);
 
 // The interval of the checks of an account: "1 h", "2 h", "4 h"
 export const hours = (seconds: number) => `${Math.round(seconds / 3600)} h`;

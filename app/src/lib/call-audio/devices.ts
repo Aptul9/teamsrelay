@@ -1,5 +1,5 @@
 import { readStorage, writeStorage } from "@/lib/client";
-import { BELL, bellSamples } from "@/lib/ring";
+import { BELL, bellSamples, bufferOf, rms } from "@/lib/ring";
 
 // The microphone and the speaker of calls answered on this device, as Teams keeps them per computer. "" is the default
 // device of the system.
@@ -62,11 +62,8 @@ export async function testSpeaker(speaker: string): Promise<boolean> {
   const ctx = new AudioContext();
   try {
     const found = await playOn(ctx, speaker);
-    const samples = bellSamples(ctx.sampleRate);
-    const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate);
-    buffer.copyToChannel(samples, 0);
     const source = ctx.createBufferSource();
-    source.buffer = buffer;
+    source.buffer = bufferOf(ctx, bellSamples(ctx.sampleRate));
     source.connect(ctx.destination);
     await ctx.resume();
     source.start();
@@ -95,8 +92,8 @@ export async function openMicrophone(device: string): Promise<{ stream: MediaStr
 }
 
 // A test of the microphone picked, without a call: how loud it is, for as long as the test runs
-export async function testMicrophone(device: string): Promise<{ level(): number; fellBack: boolean; stop(): void }> {
-  const { stream, fellBack } = await openMicrophone(device);
+export async function testMicrophone(device: string): Promise<{ level(): number; stop(): void }> {
+  const { stream } = await openMicrophone(device);
   const ctx = new AudioContext();
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 1024;
@@ -104,12 +101,9 @@ export async function testMicrophone(device: string): Promise<{ level(): number;
   void ctx.resume().catch(() => undefined);
   const samples = new Float32Array(analyser.fftSize);
   return {
-    fellBack,
     level: () => {
       analyser.getFloatTimeDomainData(samples);
-      let sum = 0;
-      for (const s of samples) sum += s * s;
-      return Math.sqrt(sum / samples.length);
+      return rms(samples);
     },
     stop: () => {
       stream.getTracks().forEach((t) => t.stop());

@@ -2,9 +2,9 @@
 // reverse tunnels that publish them on the hub VM. node dist/fleet-agent.cjs. Config is fleet.config.json next to
 // package.json (or FLEET_CONFIG). Runs under pm2 beside the relay; pm2 keeps it alive and brings it back at logon.
 import path from "node:path";
-import { ConfigError } from "@/agent/config";
+import { ConfigError } from "@/shared/env";
 import { errorText, log } from "@/agent/log";
-import { loadCmdApiConfig } from "@/fleet/cmdapi/config";
+import { cmdApiConfig } from "@/fleet/cmdapi/config";
 import { startCmdApi, type CmdApiServer } from "@/fleet/cmdapi/server";
 import { loadOrCreateHostKey, startSshServer, type SshServer } from "@/fleet/ssh/server";
 import { loadAgentConfigFile, type AgentConfig } from "./config";
@@ -19,15 +19,8 @@ async function start(config: AgentConfig): Promise<void> {
   const tunnels: TunnelHandle[] = [];
 
   if (config.cmdapi.enabled) {
-    // drive the shared cmdapi loader from the fleet config, so the loopback/token checks are the same everywhere
-    const cc = loadCmdApiConfig({
-      CMDAPI_HOST: "127.0.0.1",
-      CMDAPI_PORT: String(config.cmdapi.localPort),
-      CMDAPI_TOKEN: config.cmdapi.token,
-      CMDAPI_TIMEOUT: String(config.cmdapi.timeout),
-      CMDAPI_CWD: config.cmdapi.cwd || undefined,
-    });
-    const server: CmdApiServer = await startCmdApi(cc);
+    const { localPort: port, token, timeout, cwd } = config.cmdapi;
+    const server: CmdApiServer = await startCmdApi(cmdApiConfig({ host: "127.0.0.1", port, token, timeout, cwd }));
     log.info("fleet", `cmdapi: listening on ${server.url}`);
     closers.push(() => server.close());
     tunnels.push(superviseTunnel("cmdapi", config.vm, config.cmdapi.vmPort as number, config.cmdapi.localPort));

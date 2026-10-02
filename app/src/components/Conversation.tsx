@@ -25,6 +25,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { toast } from "sonner";
 import { cn } from "cn";
 import { Avatar } from "./Avatar";
+import { useResync } from "./ChatList";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,12 +49,12 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ApiError, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message, type OpenReason, type OpenStatus } from "@/lib/client";
+import { capped, errorText, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, omit, post, reasonText, runCmd, sendImage, type Chat, type Message, type OpenStatus } from "@/lib/client";
+import { REACTION_EMOJI } from "@/shared/slot-db/rows";
 import { useInUse } from "@/lib/in-use";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
 import { dayLabel, fullTime, placeMessages, sentAt, timeLabel } from "@/lib/message-times";
 
-const EMO: Record<string, string> = { like: "👍", heart: "❤️", laugh: "😆", surprised: "😮", cry: "😢", angry: "😠" };
 const EMO_LABEL: Record<string, string> = { like: "Like", heart: "Heart", laugh: "Laugh", surprised: "Surprised", cry: "Sad", angry: "Angry" };
 
 // The agent already rebuilds message bodies from a short list of tags; sanitized again before rendering.
@@ -77,16 +78,6 @@ function readStatus(m: Message): { label: string; seen: boolean } {
   if (/seen|read/i.test(m.status || "")) return { label: "Seen", seen: true };
   return { label: "Sent", seen: false };
 }
-
-// Why Teams did not open the chat, as the agent tells it (cmd_result of the open); an open failed without a reason
-// waited too long for the agent, or was cut by its restart
-const OPEN_FAILED: Record<OpenReason, string> = {
-  "signed-out": "Teams is signed out: sign in again, then try again.",
-  "not-listed": "Teams has no chat with this name in its list.",
-  "not-shown": "Teams did not show it.",
-  unreadable: "Teams showed it, but its messages could not be read.",
-};
-const NO_ANSWER = "Teams did not get to it in time.";
 
 // Away from the app this long, the chat is opened in Teams again on return, with its progress on screen. Teams leaves
 // the chat as soon as the app is out of use (lib/in-use.ts, lib/viewing.ts) and the agent opens it again at its first
@@ -158,7 +149,7 @@ export function Conversation({
   const touch = useSyncExternalStore(onHoverChange, () => window.matchMedia(NO_HOVER).matches, () => false);
   const [downloads, setDownloads] = useState<Record<string, "busy" | "failed">>({});
   const [restoring, setRestoring] = useState<Record<string, boolean>>({});
-  const [refreshing, setRefreshing] = useState(false);
+  const { refreshing, refresh } = useResync(acc);
   const [now, setNow] = useState(() => Date.now());
   const boxRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -190,7 +181,7 @@ export function Conversation({
     let gone = false;
     post<{ id: number }>("/api/open", { name: chat }, acc).then(
       (r) => !gone && setAsked({ ask: asks, id: r.id }),
-      (e: unknown) => !gone && setAsked({ ask: asks, error: e instanceof ApiError ? e.message : "No answer from the server." }),
+      (e: unknown) => !gone && setAsked({ ask: asks, error: errorText(e, "No answer from the server.") }),
     );
     return () => {
       gone = true;
@@ -223,7 +214,7 @@ export function Conversation({
             ? "live"
             : "failed"
         : "opening";
-  const whyNot = mine?.error ?? (open?.reason ? OPEN_FAILED[open.reason] : NO_ANSWER);
+  const whyNot = mine?.error ?? reasonText(open);
 
   // a pending message that never shows up on Teams turns into "Not sent"
   useEffect(() => {
@@ -245,20 +236,10 @@ export function Conversation({
     if (b) atBottom.current = b.scrollHeight - b.scrollTop - b.clientHeight < 70;
   };
 
-  async function refresh() {
-    setRefreshing(true);
-    try {
-      await post("/api/resync", undefined, acc);
-    } catch {
-      toast.error("Refresh failed");
-    }
-    setTimeout(() => setRefreshing(false), 900);
-  }
-
   async function doReact(mid: string, key: string) {
     setSheetFor(null);
     const m = messages.find((x) => String(x.mid) === mid);
-    const mineAlready = m?.reactions?.some((r) => r.e === EMO[key] && r.mine);
+    const mineAlready = m?.reactions?.some((r) => r.e === REACTION_EMOJI[key] && r.mine);
     if (!mineAlready) setLocalReacts((s) => ({ ...s, [mid]: [...new Set([...(s[mid] || []), key])] }));
     const r = await runCmd("/api/react", { name: chat, mid, emoji: key }, acc);
     setLocalReacts((s) => ({ ...s, [mid]: (s[mid] || []).filter((k) => k !== key) }));
@@ -269,7 +250,7 @@ export function Conversation({
   async function tapPill(mid: string, emoji: string) {
     const m = messages.find((x) => String(x.mid) === mid);
     const wasMine = !!m?.reactions?.find((x) => x.e === emoji)?.mine;
-    const key = Object.keys(EMO).find((k) => EMO[k] === emoji);
+    const key = Object.keys(REACTION_EMOJI).find((k) => REACTION_EMOJI[k] === emoji);
     if (wasMine) setPillPending((s) => ({ ...s, [mid]: { ...(s[mid] || {}), [emoji]: true } }));
     else if (key) setLocalReacts((s) => ({ ...s, [mid]: [...new Set([...(s[mid] || []), key])] }));
     const r = await runCmd("/api/react", { name: chat, mid, pill: emoji }, acc);
@@ -308,11 +289,7 @@ export function Conversation({
     setSheetFor(null);
     setPendingEdits((s) => ({ ...s, [mid]: "Deleting…" }));
     const r = await runCmd("/api/delete", { name: chat, mid }, acc);
-    setPendingEdits((s) => {
-      const rest = { ...s };
-      delete rest[mid];
-      return rest;
-    });
+    setPendingEdits((s) => omit(s, mid));
     if (r.status !== "done") toast.error("Message not deleted on Teams");
   }
 
@@ -327,22 +304,12 @@ export function Conversation({
   async function getFile(url: string, name: string) {
     if (downloads[url] === "busy") return;
     setDownloads((s) => ({ ...s, [url]: "busy" }));
-    let r: { status: string; result: { f?: string } | null } = { status: "failed", result: null };
-    try {
-      const c = await post<{ id: number }>("/api/download", { url, name }, acc);
-      r = await followCmd(c.id, acc);
-    } catch {
-      // reported below
-    }
+    const r = await runCmd("/api/download", { url, name }, acc);
     if (r.status !== "done" || !r.result?.f) {
       setDownloads((s) => ({ ...s, [url]: "failed" }));
       return;
     }
-    setDownloads((s) => {
-      const rest = { ...s };
-      delete rest[url];
-      return rest;
-    });
+    setDownloads((s) => omit(s, url));
     const a = document.createElement("a");
     a.href = `/files/${encodeURIComponent(r.result.f)}?a=${acc}&name=${encodeURIComponent(name)}`;
     a.download = name;
@@ -454,11 +421,7 @@ export function Conversation({
       setEditMid(null);
       setPendingEdits((s) => ({ ...s, [mid]: t }));
       const r = await runCmd("/api/edit", { name: chat, mid, text: t }, acc);
-      setPendingEdits((s) => {
-        const rest = { ...s };
-        delete rest[mid];
-        return rest;
-      });
+      setPendingEdits((s) => omit(s, mid));
       if (r.status !== "done") toast.error("Edit not applied on Teams");
       return;
     }
@@ -498,7 +461,7 @@ export function Conversation({
       .filter((r) => !pillPending[mid]?.[r.e])
       .map((r) => ({ e: r.e, n: r.n, mine: r.mine, pend: false }));
     const localOnly = (localReacts[mid] || [])
-      .map((k) => EMO[k])
+      .map((k) => REACTION_EMOJI[k])
       .filter((x) => x && !(m.reactions || []).some((r) => r.e === x))
       .map((x) => ({ e: x, n: 1, mine: true, pend: true }));
     const reacts = [...teamsReacts, ...localOnly];
@@ -620,7 +583,7 @@ export function Conversation({
                   mine ? "right-2" : "left-2",
                 )}
               >
-                {Object.entries(EMO).map(([k, e]) => (
+                {Object.entries(REACTION_EMOJI).map(([k, e]) => (
                   <Tooltip key={k}>
                     <TooltipTrigger asChild>
                       <button
@@ -753,7 +716,7 @@ export function Conversation({
           <ArrowLeftIcon className="size-5" />
           {others - otherCalls > 0 && (
             <span aria-hidden className="absolute top-0.5 left-5 min-w-4 rounded-full bg-primary px-1 text-center text-[0.625rem] leading-4 font-semibold text-primary-foreground tabular-nums">
-              {others - otherCalls > 99 ? "99+" : others - otherCalls}
+              {capped(others - otherCalls)}
             </span>
           )}
           {otherCalls > 0 && <span aria-hidden className="absolute bottom-1 left-6 size-2.5 rounded-full bg-destructive ring-2 ring-background" />}
@@ -1050,7 +1013,7 @@ export function Conversation({
           {sheetMsg && (
             <>
               <div className="flex justify-between gap-1 px-1">
-                {Object.entries(EMO).map(([k, e]) => (
+                {Object.entries(REACTION_EMOJI).map(([k, e]) => (
                   <button
                     key={k}
                     type="button"

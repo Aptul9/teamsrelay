@@ -3,7 +3,7 @@
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ConfigError } from "@/agent/config";
+import { ConfigError } from "@/shared/env";
 import { loadCmdApiConfig } from "@/fleet/cmdapi/config";
 
 describe("cmdapi config", () => {

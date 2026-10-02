@@ -75,6 +75,20 @@ export function ringSamples(rate: number): Float32Array<ArrayBuffer> {
 // ringer, to learn whether it may play: running means allowed, suspended means the first click or key press in the
 // page allows it. Between two calls the context rests (suspended); a page once allowed may resume it without a new
 // click. output: where the ring goes, the speakers unless given (tests put an analyser in between).
+// One channel of `samples` at the rate of `ctx`, to play
+export function bufferOf(ctx: BaseAudioContext, samples: Float32Array<ArrayBuffer>): AudioBuffer {
+  const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate);
+  buffer.copyToChannel(samples, 0);
+  return buffer;
+}
+
+// How loud `samples` are (root mean square)
+export function rms(samples: ArrayLike<number>): number {
+  let sum = 0;
+  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+  return Math.sqrt(sum / Math.max(1, samples.length));
+}
+
 export class Ringer {
   private ctx: AudioContext | null = null;
   private out: AudioNode | null = null;
@@ -194,10 +208,7 @@ export class Ringer {
   }
 
   private makeBuffer(ctx: AudioContext, samplesOf = ringSamples): AudioBuffer {
-    const samples = samplesOf(ctx.sampleRate);
-    const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate);
-    buffer.copyToChannel(samples, 0);
-    return buffer;
+    return bufferOf(ctx, samplesOf(ctx.sampleRate));
   }
 
   // A context that runs has been allowed; with nothing to play it rests until a call rings or a message comes

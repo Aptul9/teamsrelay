@@ -12,10 +12,10 @@ export type PageProbe = {
   presence?: string;
 };
 
-export type HealthInputs = { probe: PageProbe | null; pushSubs: number; lastMsgTs: number; lastScanTs: number; now: number };
+type HealthInputs = { probe: PageProbe | null; pushSubs: number; lastMsgTs: number; lastScanTs: number; now: number };
 
 // A chat list read in the last minute means new message detection is running
-export const SCAN_FRESH = 60;
+const SCAN_FRESH = 60;
 
 export function computeHealth({ probe, pushSubs, lastMsgTs, lastScanTs, now }: HealthInputs): AgentHealth {
   let teams: TeamsState = "err";

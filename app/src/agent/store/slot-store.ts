@@ -2,9 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
-import { HAS_TEAMS_ID, type Message, type MessageExtra, type ReadBy } from "@/shared/slot-db/rows";
-import { CALL_LOG_SIZE, ensureSlotSchema } from "@/shared/slot-db/schema";
+import { HAS_TEAMS_ID, parseExtra, type Message, type MessageExtra, type ReadBy } from "@/shared/slot-db/rows";
+import { CALL_LOG_SIZE, ensureSlotSchema, insertRow } from "@/shared/slot-db/schema";
 import { Identity, parseState, STATE } from "@/shared/slot-db/state";
+import { nowSeconds } from "../context";
 import { mergeChats, type ChatEntry } from "../logic/chats";
 
 // The agent side of data/N/messages.db (src/shared/slot-db), or of relay.db for the local relay, where the API
@@ -27,7 +28,6 @@ export type ActivityEntry = {
   av: string;
 };
 
-const nowSeconds = () => Math.floor(Date.now() / 1000);
 const bit = (v: boolean) => (v ? 1 : 0);
 
 export class SlotStore {
@@ -98,9 +98,7 @@ export class SlotStore {
       const rows = mergeChats(visible, this.chats(), replace);
       const ts = nowSeconds();
       this.db.prepare("DELETE FROM chats").run();
-      const insert = this.db.prepare(
-        "INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-      );
+      const insert = this.db.prepare(insertRow("chats"));
       rows.forEach((c, i) => insert.run(c.name, c.preview, i, ts, c.time, bit(c.unread), bit(c.mention), bit(c.muted), c.av, c.presence ?? "", c.kind ?? ""));
     })();
   }
@@ -123,7 +121,7 @@ export class SlotStore {
   saveChatMessages(chat: string, messages: readonly SavedMessage[]) {
     this.db.transaction(() => {
       this.db.prepare("DELETE FROM chat_messages WHERE chat=?").run(chat);
-      const insert = this.db.prepare("INSERT INTO chat_messages(chat, idx, mid, author, text, mine, reacts, extra) VALUES(?,?,?,?,?,?,?,?)");
+      const insert = this.db.prepare(insertRow("chat_messages"));
       messages.forEach((m, i) =>
         insert.run(chat, i, m.mid, m.author, m.text, bit(m.mine), m.reacts, m.extra ? JSON.stringify(m.extra) : ""),
       );
@@ -160,7 +158,7 @@ export class SlotStore {
 
   saveReadBy(mid: string, chat: string, readBy: ReadBy) {
     this.db
-      .prepare("INSERT OR REPLACE INTO readby(mid, chat, label, names, ts) VALUES(?,?,?,?,?)")
+      .prepare(insertRow("readby"))
       .run(mid, chat, readBy.label, JSON.stringify(readBy.names), nowSeconds());
   }
 
@@ -217,7 +215,7 @@ export class SlotStore {
   // A call that rang, for the call log of the web app: the last CALL_LOG_SIZE are kept
   addCall(caller: string, since: number, seconds: number) {
     this.db.transaction(() => {
-      this.db.prepare("INSERT INTO calls(since, caller, seconds) VALUES(?, ?, ?)").run(since, caller, seconds);
+      this.db.prepare(insertRow("calls")).run(since, caller, seconds);
       this.db.prepare("DELETE FROM calls WHERE id NOT IN (SELECT id FROM calls ORDER BY since DESC, id DESC LIMIT ?)").run(CALL_LOG_SIZE);
     })();
   }
@@ -246,9 +244,7 @@ export class SlotStore {
     this.db.transaction(() => {
       const ts = nowSeconds();
       this.db.prepare("DELETE FROM activity").run();
-      const insert = this.db.prepare(
-        "INSERT OR REPLACE INTO activity(id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-      );
+      const insert = this.db.prepare(insertRow("activity"));
       items.forEach((a, i) =>
         insert.run(a.id || `x${i}`, i, a.kind, a.actor, a.title, a.emoji, a.preview, a.tm, a.chat, bit(a.channel), bit(a.unread), ts, a.av),
       );
@@ -272,16 +268,6 @@ export function mediaFilesOf(db: Database.Database): Set<string> {
   }
   add(parseState(Identity, db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.me) as string | null | undefined, null)?.av);
   return files;
-}
-
-function parseExtra(v: string | null): MessageExtra {
-  if (!v) return {};
-  try {
-    const extra: unknown = JSON.parse(v);
-    return extra && typeof extra === "object" ? (extra as MessageExtra) : {};
-  } catch {
-    return {};
-  }
 }
 
 function parseNames(v: string | null): string[] {

@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ConfigError } from "@/agent/config";
+import { ConfigError } from "@/shared/env";
 import { FcmSender, loadServiceAccount } from "@/agent/push/fcm";
 import { newDeviceKey, sealFor } from "@/agent/push/seal";
 import { tempDir } from "../helpers";

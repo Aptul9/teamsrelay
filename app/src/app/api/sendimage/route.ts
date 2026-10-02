@@ -1,15 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
-import { chatName, idleReason, queue } from "@/lib/commands";
-import { HttpError, route, text } from "@/lib/http";
+import { idleReason, queue } from "@/lib/commands";
+import { chatName } from "@/shared/command-input";
+import { declaredLength, HttpError, route, text } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
-import { MAX_UPLOAD, saveUpload, uploadsDir } from "@/lib/uploads";
+import { saveUpload, uploadsDir } from "@/lib/uploads";
+import { MAX_UPLOAD } from "@/shared/slot-db/rows";
 
 // multipart/form-data: name (chat), file (image), text (caption, optional)
 export const POST = route(async (req) => {
   const { slot } = await requireSlot(req);
   // a declared length over the limit is refused before the form is read into memory
-  if (Number(req.headers.get("content-length")) > MAX_UPLOAD + 100_000) throw new HttpError(413, "Image larger than 10 MB");
+  if ((declaredLength(req) ?? 0) > MAX_UPLOAD + 100_000) throw new HttpError(413, "Image larger than 10 MB");
   const why = idleReason(slot);
   if (why) throw new HttpError(409, why);
   let form: FormData;

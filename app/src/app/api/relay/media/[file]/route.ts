@@ -1,5 +1,6 @@
 import { route } from "@/lib/http";
-import { declaredLength, requireRelay, saveRelayFile } from "@/lib/relay";
+import { declaredLength } from "@/lib/http";
+import { requireRelay, saveRelayFile } from "@/lib/relay";
 
 export const dynamic = "force-dynamic";
 

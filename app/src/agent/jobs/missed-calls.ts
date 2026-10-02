@@ -1,14 +1,12 @@
 import { z } from "zod";
 import { parseState, STATE } from "@/shared/slot-db/state";
 import type { Agent } from "../context";
+import { Seen, union } from "../logic/check-seen";
 import { errorText, log } from "../log";
 
 // Seconds after a call ends to read the Activity feed, where Teams lists it once missed (an answered call leaves
 // nothing there): soon, and once more for a Teams slow to list it
 export const FEED_AFTER_CALL = [8, 40] as const;
-
-// ids kept of the missed calls already alerted, newest first
-const KEEP = 200;
 
 // When the feed of an account always on is read out of its turn, which comes every 150 rounds: a few seconds after
 // each call that ended, and once more later
@@ -34,7 +32,6 @@ export class FeedAfterCalls {
 }
 
 const Ids = z.array(z.string()).catch([]);
-const CheckCalls = z.object({ calls: z.array(z.string()).optional().catch(undefined) }).catch({ calls: undefined });
 
 // Each missed call of the feed that no push told yet alerts once, with who called and the time Teams shows. The
 // first feed an account reads only records what it has: an agent that starts pushes none of the past. The calls the
@@ -44,10 +41,10 @@ export async function pushMissedCalls(a: Pick<Agent, "store" | "notifier">): Pro
   const calls = a.store.missedCalls();
   const raw = a.store.getState(STATE.callsTold);
   const told = raw ? parseState(Ids, raw, []) : null;
-  const checked = parseState(CheckCalls, a.store.getState(STATE.checkSeen), { calls: undefined }).calls ?? [];
+  const checked = parseState(Seen, a.store.getState(STATE.checkSeen)).calls ?? [];
   const known = new Set([...(told ?? []), ...checked]);
   const fresh = told ? calls.filter((c) => !known.has(c.id)) : [];
-  a.store.setState(STATE.callsTold, JSON.stringify([...new Set([...calls.map((c) => c.id), ...(told ?? [])])].slice(0, KEEP)));
+  a.store.setState(STATE.callsTold, JSON.stringify(union(calls.map((c) => c.id), told ?? undefined)));
   const pushes = fresh.map((c) => a.notifier.alert(c.caller ? `Missed call from ${c.caller}` : "Missed call", `Teams call${c.time ? ` at ${c.time}` : ""}, not answered`));
   for (const r of await Promise.allSettled(pushes)) if (r.status === "rejected") log.warn("calls", `push: ${errorText(r.reason)}`);
   if (fresh.length) log.info("calls", "missed", { calls: fresh.length });

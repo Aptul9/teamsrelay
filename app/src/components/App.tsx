@@ -19,7 +19,7 @@ import {
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
-import { AccountMenu, accName, needsLogin } from "./AccountMenu";
+import { AccountMenu, needsLogin } from "./AccountMenu";
 import { Activity } from "./Activity";
 import { CallBanner, RingHint } from "./CallAlert";
 import { CallDevices } from "./CallDevices";
@@ -51,27 +51,32 @@ import { appStart, keepAppStart, useAppStart } from "@/lib/android-app";
 import { authClient } from "@/lib/auth-client";
 import {
   accountUnread,
+  accName,
   addingTitle,
-  ApiError,
   appBadgeCount,
   bellOn,
   call,
   CALL_CMD_EVERY,
   CALL_CMD_TRIES,
   CALL_START_TRIES,
-  callProblem,
   callsSnapshot,
+  capped,
   checkLine,
   clock,
   desktopTarget,
+  errorText,
   followCmd,
   hours,
   idleChecked,
   isMissedCall,
   isSelf,
   loadSeen,
+  noSubscribe,
+  omit,
   noteShown,
   pageTitle,
+  reasonText,
+  patch,
   post,
   readStorage,
   relayOffline,
@@ -101,7 +106,6 @@ type ListTab = "chats" | "activity" | "calls";
 type User = { name: string; email: string; role: string };
 
 // On a PC (mouse, no touch) the remote desktop opens in a browser tab; elsewhere it has a view of its own
-const noSubscribe = () => () => {};
 const isPcNow = () => window.matchMedia("(hover:hover) and (pointer:fine)").matches && !("ontouchstart" in window);
 
 // The app on screen: the event stream names the open chat, whose messages it brings. Reading it takes the window in use
@@ -122,7 +126,7 @@ function CountBadge({ n, red }: { n: number; red?: boolean }) {
         red ? "bg-destructive text-white" : "bg-primary text-primary-foreground",
       )}
     >
-      {n > 99 ? "99+" : n}
+      {capped(n)}
     </span>
   );
 }
@@ -195,12 +199,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       : new AnsweredCalls<CallAudio>({
           make: (n, url) =>
             new CallAudio({ url: url ?? callAudioUrl(window.location), devices: savedDevices(), onState: (st) => setCallAudio((m) => ({ ...m, [n]: st })) }),
-          onStop: (n) =>
-            setCallAudio((m) => {
-              const next = { ...m };
-              delete next[n];
-              return next;
-            }),
+          onStop: (n) => setCallAudio((m) => omit(m, n)),
         }),
   );
   const startCallAudio = useCallback(
@@ -493,7 +492,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     try {
       ({ id } = await post<{ id: number }>("/api/call/answer", { since: c.since, ...(relaySound ? { audio: true } : {}) }, c.acc));
     } catch (e) {
-      return failed(e instanceof ApiError ? e.message : "The server could not be reached");
+      return failed(errorText(e, "The server could not be reached"));
     }
     const r = await followCmd(id, c.acc, CALL_CMD_TRIES, CALL_CMD_EVERY);
     return r.status === "done" || failed("Teams did not take the call: it may have stopped ringing");
@@ -517,10 +516,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     try {
       ({ id } = await post<{ id: number }>("/api/call/start", { name, ...(relaySound ? { audio: true } : {}) }, n));
     } catch (e) {
-      return failed(e instanceof ApiError ? e.message : "The server could not be reached");
+      return failed(errorText(e, "The server could not be reached"));
     }
     const r = await followCmd(id, n, CALL_START_TRIES, CALL_CMD_EVERY);
-    if (r.status !== "done") return failed(callProblem(r.result));
+    if (r.status !== "done") return failed(reasonText(r.result));
     // placed: the event stream brings the call in progress within a look, and the banner of the call takes over
     setTimeout(done, 10_000);
   }
@@ -570,7 +569,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       selectAccount(r.slot);
       toast.success("Browser starting", { description: "Sign in to Microsoft as soon as the account shows the button, within two minutes." });
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Account not added");
+      toast.error(errorText(e, "Account not added"));
     } finally {
       setAdding(false);
     }
@@ -585,22 +584,21 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       selectAccount(r.slot);
       setRelayToken({ token: r.token, server: r.server });
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Account not added");
+      toast.error(errorText(e, "Account not added"));
     } finally {
       setAdding(false);
     }
   }
 
-  // Stop keeps the Microsoft session: the account only stops reading Teams and sending notifications
-  async function setRunning(a: Account, running: boolean) {
+  // A stopped account starts again (Settings stops it)
+  async function startAccount(a: Account) {
     setToggling(a.slot);
     try {
-      await call(`/api/accounts/${a.slot}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ running }) }, 0);
+      await patch(`/api/accounts/${a.slot}`, { running: true }, 0);
       await loadAccounts();
-      if (running) toast.success(`${accName(a)} started`, { description: "Teams is back within a couple of minutes." });
-      else toast.success(`${accName(a)} stopped`, { description: "Still signed in. No new messages or notifications until you start it again." });
+      toast.success(`${accName(a)} started`, { description: "Teams is back within a couple of minutes." });
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : running ? "Account not started" : "Account not stopped");
+      toast.error(errorText(e, "Account not started"));
     } finally {
       setToggling(0);
     }
@@ -616,7 +614,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
         description: needsLogin(a) ? "The browser starts: sign in to Microsoft in the remote Teams within ten minutes." : "The browser starts, reads Teams and stops again within a few minutes.",
       });
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Check not started");
+      toast.error(errorText(e, "Check not started"));
     }
   }
 
@@ -627,7 +625,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       await loadAccounts();
       toast.success("Account removed", { id });
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Account not removed", { id });
+      toast.error(errorText(e, "Account not removed"), { id });
     }
   }
 
@@ -719,7 +717,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
                   t.red ? "bg-destructive text-white" : "bg-primary text-primary-foreground",
                 )}
               >
-                {t.count > 99 ? "99+" : t.count}
+                {capped(t.count)}
               </span>
             )}
           </span>
@@ -804,7 +802,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               <AlertTitle>This account is stopped</AlertTitle>
               <AlertDescription>
                 <p>Still signed in to Microsoft. The chats are the last ones read: no new messages or notifications until you start it.</p>
-                <Button size="sm" className="mt-2 h-9 md:h-8" disabled={toggling === current.slot} onClick={() => void setRunning(current, true)}>
+                <Button size="sm" className="mt-2 h-9 md:h-8" disabled={toggling === current.slot} onClick={() => void startAccount(current)}>
                   {toggling === current.slot ? <Spinner /> : <PowerIcon />}
                   Start
                 </Button>

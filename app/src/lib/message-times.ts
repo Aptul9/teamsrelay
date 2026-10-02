@@ -2,7 +2,7 @@
 // from the id, with no column of its own.
 
 // Consecutive messages of one person make one group, as in Teams, until a pause longer than this or another day
-export const GROUP_GAP = 5 * 60_000;
+const GROUP_GAP = 5 * 60_000;
 
 // When a message was sent, from its Teams id; null for an id that is not a time
 export function sentAt(mid: string | number | undefined): number | null {
@@ -10,7 +10,7 @@ export function sentAt(mid: string | number | undefined): number | null {
   return /^1\d{12}$/.test(s) ? Number(s) : null;
 }
 
-const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
+export const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
 
 // For each message: whether it starts a group (author, picture and time above it) and whether it is the first of its
 // day (a divider above it). A message without a time breaks no group and starts no day.

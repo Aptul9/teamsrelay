@@ -4,10 +4,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { build } from "esbuild";
+import { bundleOptions } from "../../scripts/bundles.mjs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tempDir } from "../helpers";
 
-const APP = path.resolve(__dirname, "../..");
 const TOKEN = "t".repeat(32);
 let proc: ChildProcess | null = null;
 let url = "";
@@ -15,7 +15,7 @@ let url = "";
 beforeAll(async () => {
   const dir = tempDir();
   const bundle = path.join(dir, "cmdapi.cjs");
-  await build({ entryPoints: [path.join(APP, "src/fleet/cmdapi/main.ts")], bundle: true, platform: "node", target: "node24", format: "cjs", outfile: bundle, logLevel: "warning" });
+  await build(bundleOptions("cmdapi", bundle));
 
   proc = spawn(process.execPath, [bundle], {
     cwd: dir,

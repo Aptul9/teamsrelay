@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseState } from "./state";
 
 // Commands the web app queues in the commands table and the agent runs on the Teams page.
 // arg1 is the chat name (the file URL for download); arg2 is the text for send, JSON for the others below.
@@ -87,11 +88,6 @@ export const WithAudio = z.object({ audio: z.boolean().catch(false) });
 export const MuteArgs = z.object({ on: z.boolean().nullable().catch(null) });
 export type MuteArgs = z.infer<typeof MuteArgs>;
 
-// Images the app can send, by file extension
-export const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", gif: "image/gif", webp: "image/webp" } as const;
-export type ImageExt = keyof typeof IMAGE_TYPES;
-export const UPLOAD_NAME = /^[0-9a-f]{16}\.(png|jpg|gif|webp)$/;
-
 // Result of a download, in the state row cmd_result:<id>: file name in data/N/files
 export const DownloadResult = z.object({ f: z.string() });
 export type DownloadResult = z.infer<typeof DownloadResult>;
@@ -120,13 +116,4 @@ export type CallResult = z.infer<typeof CallResult>;
 export type OpenStatus = { id: number; status: "pending" | "done" | "failed"; reason?: OpenReason };
 
 // arg2 that is not JSON, or not an object, gives the empty arguments
-export function parseArgs<T>(schema: z.ZodType<T>, arg2: string | null | undefined): T {
-  let value: unknown = {};
-  try {
-    value = JSON.parse(arg2 || "{}");
-  } catch {
-    value = {};
-  }
-  const r = schema.safeParse(value);
-  return r.success ? r.data : schema.parse({});
-}
+export const parseArgs = <T>(schema: z.ZodType<T>, arg2: string | null | undefined): T => parseState(schema, arg2);

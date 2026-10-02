@@ -57,17 +57,9 @@ export function ownReactions({ s, mid }: MessageArgs): string[] {
   return [...item.querySelectorAll(`${s.pill}[aria-pressed="true"]`)].map((x) => (x.getAttribute("aria-labelledby") || "").split("-")[1] || "");
 }
 
-// Menus and dialogs left open over the chat, which would catch the mouse
-// Menus and dialogs open over the page: those with a box. Teams keeps some empty ones of no size in the page (a
-// Profile Card on the MSC Cruises account), which cover nothing and no Escape closes.
-export function openOverlays(s: Selectors): number {
-  return [...document.querySelectorAll(s.overlays)].filter((e) => {
-    const r = e.getBoundingClientRect();
-    return r.width > 0 && r.height > 0;
-  }).length;
-}
-
-// The same overlays as the log names them: role, label, data-tid
+// Menus and dialogs open over the page, which would catch the mouse, as the log names them (role, label, data-tid):
+// those with a box. Teams keeps some empty ones of no size in the page (a Profile Card on the MSC Cruises account),
+// which cover nothing and no Escape closes.
 export function openOverlayNames(s: Selectors): string[] {
   return [...document.querySelectorAll(s.overlays)]
     .filter((e) => {

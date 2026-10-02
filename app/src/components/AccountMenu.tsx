@@ -17,13 +17,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { checkLine, idleChecked, lastCheck, NEW_ACCOUNT, relayOffline, statusText, type Account, type Unread } from "@/lib/client";
+import { accName, capped, checkLine, idleChecked, lastCheck, relayOffline, statusText, type Account, type Unread } from "@/lib/client";
 
-export const accName = (a: Account) => a.name || a.email || NEW_ACCOUNT;
 
 // chats and notifications share the purple count; missed calls have a red one of their own
 const total = (u: Unread) => u.chats + u.notifications;
-const capped = (n: number) => (n > 99 ? "99+" : String(n));
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const unreadText = (u: Unread) =>
   [u.chats > 0 && plural(u.chats, "unread chat", "unread chats"), u.notifications > 0 && plural(u.notifications, "new notification", "new notifications")]
@@ -31,7 +29,7 @@ const unreadText = (u: Unread) =>
     .join(", ");
 const callsText = (n: number) => plural(n, "missed call", "missed calls");
 
-export function MissedBadge({ n, className }: { n: number; className?: string }) {
+function MissedBadge({ n, className }: { n: number; className?: string }) {
   if (!n) return null;
   return (
     <Badge className={cn("h-5 min-w-5 rounded-full bg-destructive px-1.5 text-white tabular-nums", className)} title={callsText(n)}>
@@ -60,7 +58,7 @@ function relayState(a: Account): { text: string; warn: boolean } | null {
 }
 
 // What the account is doing, when it is not simply running: stopped, checked, starting, a sign-in to do...
-export function accState(a: Account): { text: string; warn: boolean } | null {
+function accState(a: Account): { text: string; warn: boolean } | null {
   if (a.relay) return relayState(a);
   if (a.stopped) return { text: "Stopped · still signed in", warn: false };
   if (idleChecked(a)) {
@@ -76,10 +74,10 @@ export function accState(a: Account): { text: string; warn: boolean } | null {
 }
 
 // Who the account is: the accounts of one person share the name
-export const accIdentity = (a: Account) => [a.email, a.tenant].filter(Boolean).join(" · ");
+const accIdentity = (a: Account) => [a.email, a.tenant].filter(Boolean).join(" · ");
 
 // The line under the name on the account menu button: what the account is doing, else who it is
-export function accSub(a: Account): { text: string; warn: boolean } {
+function accSub(a: Account): { text: string; warn: boolean } {
   return accState(a) ?? { text: accIdentity(a), warn: false };
 }
 

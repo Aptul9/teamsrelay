@@ -4,7 +4,7 @@ import type { Agent } from "@/agent/context";
 import { browserDownHealth, noTabHealth, updateHealth } from "@/agent/jobs/health";
 import type { Notifier } from "@/agent/push/notifier";
 import type { TeamsPage } from "@/agent/teams/page";
-import { openOverlays } from "@/agent/teams/scripts/message-actions";
+import { openOverlayNames } from "@/agent/teams/scripts/message-actions";
 import { uncoveredPoint } from "@/agent/teams/scripts/page-state";
 import { SEL } from "@/agent/teams/selectors";
 import { SlotStore } from "@/agent/store/slot-store";
@@ -114,7 +114,7 @@ describe("side bar for the Activity job", () => {
     const evaluate = async (fn: unknown, arg: unknown) => {
       if (fn === uncoveredPoint) asked.push(arg);
       if (fn === uncoveredPoint) return arg === SEL.activityView ? state.point : null;
-      if (fn === openOverlays) return state.overlays;
+      if (fn === openOverlayNames) return Array.from({ length: state.overlays }, () => "menu");
       return probe;
     };
     a.tp = { page: { url: () => "https://teams.cloud.microsoft/v2/", evaluate } } as unknown as TeamsPage;

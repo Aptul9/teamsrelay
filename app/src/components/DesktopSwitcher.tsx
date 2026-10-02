@@ -3,8 +3,7 @@
 import { ChevronDownIcon, ChevronUpIcon, MonitorIcon } from "lucide-react";
 import { cn } from "cn";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { accName } from "@/components/AccountMenu";
-import { onDesktop, type Account } from "@/lib/client";
+import { accName, errorText, onDesktop, post, type Account } from "@/lib/client";
 
 const label = (a: Account) => a.tenant || accName(a);
 
@@ -46,12 +45,9 @@ export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; in
     setProblem("");
     let why = "";
     try {
-      const r = await fetch(`/api/desktop/${a.slot}`, { method: "POST" });
-      const b = (await r.json().catch(() => ({}))) as { shown?: boolean; detail?: string };
-      if (!r.ok) why = b.detail || `error ${r.status}`;
-      else if (!b.shown) why = "the desktop did not answer";
-    } catch {
-      why = "the server did not answer";
+      if (!(await post<{ shown?: boolean }>(`/api/desktop/${a.slot}`, undefined, 0)).shown) why = "the desktop did not answer";
+    } catch (e) {
+      why = errorText(e, "the server did not answer");
     }
     // the tab stays down with the reason
     if (why) return setProblem(`${label(a)} not brought to the front: ${why}`);

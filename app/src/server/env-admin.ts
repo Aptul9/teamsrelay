@@ -1,6 +1,7 @@
 import { adoptLegacyData, appDb } from "@/lib/appdb";
 import { auth } from "@/lib/auth";
 import { envAdminEmail } from "@/lib/env-admin";
+import { PASSWORD_MIN } from "@/shared/password";
 
 // The administrator of .env exists, is an administrator, is not banned and signs in with ADMIN_PASSWORD.
 // A new password in .env signs it out of every device. Returns what was done, for the log.
@@ -14,7 +15,7 @@ export async function syncEnvAdmin(): Promise<string> {
     if (!users) throw new Error("No users yet: set ADMIN_EMAIL and ADMIN_PASSWORD in .env to create the first administrator");
     return "no administrator in .env";
   }
-  if (password.length < 10) throw new Error("ADMIN_PASSWORD must be at least 10 characters");
+  if (password.length < PASSWORD_MIN) throw new Error(`ADMIN_PASSWORD must be at least ${PASSWORD_MIN} characters`);
 
   const ctx = await auth().$context;
   const found = await ctx.internalAdapter.findUserByEmail(email, { includeAccounts: true });

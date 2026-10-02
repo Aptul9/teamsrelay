@@ -14,8 +14,8 @@ import { SEL, TEXTS } from "../teams/selectors";
 // of the page, 1.5 ms on prod (2026-09-30): the timer is what the ring in the app and a tap on Answer wait for.
 export const CALL_LOOK_MS = 200;
 // An answer, a hang-up or a mute shows on the page within CONFIRM_TRIES looks CONFIRM_EVERY ms apart (5 s), or it failed
-export const CONFIRM_TRIES = 20;
-export const CONFIRM_EVERY = 250;
+const CONFIRM_TRIES = 20;
+const CONFIRM_EVERY = 250;
 // looks after a click that did not take (the toast still there, no microphone) before the Accept shortcut (1.5 s)
 const SHORTCUT_AFTER = 6;
 // looks after the mute shortcut that changed nothing before the click on the microphone button (1.5 s)
@@ -179,7 +179,7 @@ export class CallWatch {
       await acceptShortcut(page);
     }
     for (let i = 0; i < CONFIRM_TRIES; i++) {
-      if (!(await this.readToast(page)) || (await this.recordingPage(page))) {
+      if (!(await this.readToast(page)) || (await recordingPage(page))) {
         this.answered = since;
         this.answeredAt = this.clock();
         log.info("call", "answered", { caller: ringing.caller, by: shortcut ? "shortcut" : "click" });
@@ -204,7 +204,7 @@ export class CallWatch {
   // The shortcut of Teams web that ends a call, on the page that records from the microphone: done once it stops. A
   // call muted in Teams that let the microphone go gets it on the page of its microphone button: done once that goes.
   private async hangUp(page: Page): Promise<Outcome> {
-    const recording = await this.recordingPage(page);
+    const recording = await recordingPage(page);
     const target = recording ?? (this.inCall ? ((await this.callMic(page))?.page ?? null) : null);
     if (!target) {
       log.warn("call", "hangup: no call in progress");
@@ -212,7 +212,7 @@ export class CallWatch {
     }
     await hangUp(target);
     for (let i = 0; i < CONFIRM_TRIES; i++) {
-      if (recording ? !(await this.recordingPage(page)) : !(await this.callMic(page))) {
+      if (recording ? !(await recordingPage(page)) : !(await this.callMic(page))) {
         log.info("call", "hung up");
         // the read of the microphone right after writes the call over
         this.micLooked = -Infinity;
@@ -283,10 +283,6 @@ export class CallWatch {
     return "done";
   }
 
-  private recordingPage(page: Page): Promise<Page | null> {
-    return recordingPage(page);
-  }
-
   // Teams' own mute of the call, from the microphone button on screen in any frame of any Teams page: the page that
   // shows it and whether it reads muted. Null where none shows one, or where two read differently.
   private async callMic(page: Page): Promise<{ page: Page; muted: boolean } | null> {
@@ -327,7 +323,7 @@ export class CallWatch {
   // once when it changes (a press in the desktop, an organizer). Teams may let the microphone go while muted: a call
   // in progress stays in progress while its microphone button reads muted; none starts from a button alone.
   private async watchMicrophone(page: Page) {
-    const recording = !!(await this.recordingPage(page));
+    const recording = !!(await recordingPage(page));
     const was = this.inCall;
     const mic = recording || was ? await this.callMic(page) : null;
     const live = recording || (!!was && mic?.muted === true);

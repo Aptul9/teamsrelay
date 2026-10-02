@@ -5,7 +5,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import webpush from "web-push";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ConfigError } from "@/agent/config";
+import { ConfigError } from "@/shared/env";
 import { CALL_TTL, PUSH_TTL } from "@/agent/logic/notify";
 import type { FcmResult, FcmSender } from "@/agent/push/fcm";
 import { newDeviceKey } from "@/agent/push/seal";

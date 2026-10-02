@@ -1,7 +1,7 @@
 // Chat list page scripts against a static copy of the Teams chat list.
 import { describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
-import { clickChatRow, openChatTitle, readChatList, scrollChatList } from "@/agent/teams/scripts/chat-list";
+import { clickChatRow, openChatTitle, readChatList, scrollList } from "@/agent/teams/scripts/chat-list";
 import { picture, withChrome } from "./chrome";
 
 const row = (id: string, text: string, extra = "") => `<div role="treeitem" aria-level="2" id="${id}" ${extra}>${text}</div>`;
@@ -100,10 +100,10 @@ describe("chat list page scripts", () => {
         ${Array.from({ length: 30 }, (_, i) => `<div role="treeitem" aria-level="2" id="menu-${i}" style="height:40px">Chat ${i}</div>`).join("")}
       </div></div>`);
     expect(await chrome.page.evaluate(openChatTitle, SEL)).toBe("Anna Rossi");
-    expect(await chrome.page.evaluate(scrollChatList, { s: SEL, to: "down" as const })).toBe(true);
+    expect(await chrome.page.evaluate(scrollList, { item: SEL.anyChatRow, to: "down" as const })).toBe(true);
     expect(await chrome.page.evaluate(() => document.getElementById("list")?.scrollTop)).toBe(160);
-    expect(await chrome.page.evaluate(scrollChatList, { s: SEL, to: "top" as const })).toBe(true);
-    expect(await chrome.page.evaluate(scrollChatList, { s: SEL, to: "top" as const })).toBe(false);
+    expect(await chrome.page.evaluate(scrollList, { item: SEL.anyChatRow, to: "top" as const })).toBe(true);
+    expect(await chrome.page.evaluate(scrollList, { item: SEL.anyChatRow, to: "top" as const })).toBe(false);
   });
 
   // header of a group chat without a name (structure taken from Teams web in September 2026): its first person,

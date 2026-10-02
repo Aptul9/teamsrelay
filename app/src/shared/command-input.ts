@@ -1,5 +1,5 @@
 import { HttpError } from "./http-error";
-import { REACTIONS as REACTION_NAMES, type MessageArgs, type ReactArgs, type TextArgs } from "./slot-db/commands";
+import { REACTIONS as REACTION_NAMES, type CommandType, type MessageArgs, type ReactArgs, type TextArgs } from "./slot-db/commands";
 
 // What an app sends with a command, checked the same way by the web app (one route per command) and by the API of
 // the local relay (one route for all of them): a value that does not pass is a 400 with the reason, and nothing is
@@ -10,7 +10,7 @@ export function chatName(v: unknown): string {
   return v;
 }
 
-export function messageId(v: unknown): string {
+function messageId(v: unknown): string {
   if (typeof v !== "string" || !v || v.length > 100) throw new HttpError(400, "Invalid message id");
   return v;
 }
@@ -30,17 +30,17 @@ export function mentionNames(v: unknown): string[] {
   return v as string[];
 }
 
-export const REACTIONS = new Set<string>(REACTION_NAMES);
+const REACTIONS = new Set<string>(REACTION_NAMES);
 
 // delete, undodelete
-export const messageArgs = (mid: unknown) => JSON.stringify({ mid: messageId(mid) } satisfies MessageArgs);
+const messageArgs = (mid: unknown) => JSON.stringify({ mid: messageId(mid) } satisfies MessageArgs);
 
 // reply, edit
-export const textArgs = (mid: unknown, text: unknown) => JSON.stringify({ mid: messageId(mid), text: messageText(text) } satisfies TextArgs);
+const textArgs = (mid: unknown, text: unknown) => JSON.stringify({ mid: messageId(mid), text: messageText(text) } satisfies TextArgs);
 
 // react. emoji: one of the six quick reactions. pill: the emoji of a reaction already under the message, clicked like
 // in Teams (removed if it is yours, added otherwise).
-export function reactArgs(mid: unknown, emoji: unknown, pill: unknown): string {
+function reactArgs(mid: unknown, emoji: unknown, pill: unknown): string {
   const id = messageId(mid);
   if (pill) {
     if (typeof pill !== "string" || pill.length > 16) throw new HttpError(400, "Invalid reaction");
@@ -48,4 +48,32 @@ export function reactArgs(mid: unknown, emoji: unknown, pill: unknown): string {
   }
   if (typeof emoji !== "string" || !REACTIONS.has(emoji)) throw new HttpError(400, "Unsupported reaction");
   return JSON.stringify({ mid: id, emoji } satisfies ReactArgs);
+}
+
+// The commands an app sends with nothing but what it typed or tapped: the relay takes them all on one route (POST
+// /api/cmd, src/local/server.ts), the web app on one route each (commandRoute, src/lib/commands.ts)
+export const APP_COMMANDS = ["open", "send", "reply", "react", "edit", "delete", "undodelete", "resync", "recheck"] as const satisfies readonly CommandType[];
+export type AppCommand = (typeof APP_COMMANDS)[number];
+
+// The command of such a body as the agent reads it (arg1, arg2); 400 when it is not one
+export function commandOf(b: Record<string, unknown>): { type: AppCommand; arg1: string; arg2: string } {
+  const type = b.type as AppCommand;
+  if (typeof type !== "string" || !(APP_COMMANDS as readonly string[]).includes(type)) throw new HttpError(400, "Unknown command");
+  switch (type) {
+    case "open":
+      return { type, arg1: chatName(b.chat), arg2: "" };
+    case "send":
+      return { type, arg1: chatName(b.chat), arg2: messageText(b.text) };
+    case "reply":
+    case "edit":
+      return { type, arg1: chatName(b.chat), arg2: textArgs(b.mid, b.text) };
+    case "delete":
+    case "undodelete":
+      return { type, arg1: chatName(b.chat), arg2: messageArgs(b.mid) };
+    case "react":
+      return { type, arg1: chatName(b.chat), arg2: reactArgs(b.mid, b.emoji, b.pill) };
+    case "resync":
+    case "recheck":
+      return { type, arg1: "", arg2: "" };
+  }
 }

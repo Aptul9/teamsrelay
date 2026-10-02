@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useAppStart } from "@/lib/android-app";
 import type { CallAudioState } from "@/lib/call-audio/call-audio";
 import { type MuteView, shownMuted } from "@/lib/call-audio/mute";
-import type { Account, RingingCall } from "@/lib/client";
+import { noSubscribe, omit, type Account, type RingingCall } from "@/lib/client";
 import type { Ringer } from "@/lib/ring";
 import { relayHost } from "./RelayToken";
 
@@ -36,12 +36,10 @@ const callKey = (c: RingingCall) => `${c.acc}:${c.since}${c.active ? ":in" : ""}
 
 // A tap on Answer or Hang up on its way to Teams, by call
 type Busy = Record<string, "answer" | "hangup">;
-const without = (b: Busy, key: string): Busy => Object.fromEntries(Object.entries(b).filter(([k]) => k !== key));
 
 // The account a call rings in, as its notifications name it: organization, otherwise email
 export const accountLabel = (a: Account | undefined, acc: number) => (a && (a.tenant || a.email || a.name)) || `Account ${acc}`;
 
-const noSubscribe = () => () => {};
 
 // Whether the page may play the ring; before hydration it counts as allowed, so the server shows no hint
 function useRingAllowed(ringer: Ringer | null) {
@@ -104,7 +102,7 @@ export function CallBanner({
     const key = callKey(c);
     // the taps of calls that moved on go with the next one
     setBusy((b) => ({ ...Object.fromEntries(Object.entries(b).filter(([k]) => live.has(k))), [key]: kind }));
-    const again = () => setBusy((b) => (b[key] === kind ? without(b, key) : b));
+    const again = () => setBusy((b) => (b[key] === kind ? omit(b, key) : b));
     void Promise.resolve(fn?.(c)).then((done) => done === false && again(), again);
   }
 

@@ -4,11 +4,9 @@ import { Identity, parseState, SignInTry, STATE, Watch } from "@/shared/slot-db/
 import { nowSeconds, type Agent } from "../context";
 import { hostOf, isLoginUrl, isTeamsUrl } from "../logic/hosts";
 import { log } from "../log";
-import { teamsSignIn, visibleButtons } from "../teams/scripts/sign-in";
+import { signInPage } from "../teams/scripts/sign-in";
 import { SEL, TEXTS } from "../teams/selectors";
 import { pressMicrosoft, pressTeamsSignIn } from "../teams/sign-in-actions";
-
-const NONE: SignInTry = { at: 0, pressed: [], microsoft: false };
 
 // What was logged for the sign-out of each agent (the one that started at `since`): the pages whose buttons were
 // listed, the attempt skipped for being too close to the last one, the pages listed once the owner was told
@@ -26,11 +24,11 @@ const told = new WeakMap<Agent, { since: number; pages: Set<string>; skipped: bo
 // they show.
 export async function trySignIn(a: Agent) {
   const now = nowSeconds();
-  const w = parseState(Watch, a.store.getState(STATE.loginWatch), { since: 0, alerted: false });
+  const w = parseState(Watch, a.store.getState(STATE.loginWatch));
   const me = a.store.getState(STATE.me);
   if (!w.since || !me) return;
   const seen = toldOf(a, w.since);
-  let t = parseState(SignInTry, a.store.getState(STATE.signInTry), NONE);
+  let t = parseState(SignInTry, a.store.getState(STATE.signInTry));
   if (t.at < w.since) {
     if (w.alerted) {
       if (!seen.listed) for (const page of signOutPages(a)) await logButtons(page, seen);
@@ -45,7 +43,7 @@ export async function trySignIn(a: Agent) {
     }
     const page = a.tp.page;
     const onTeams = isTeamsUrl(page.url());
-    const button = onTeams && !!(await page.evaluate(teamsSignIn, { s: SEL, t: TEXTS }).catch(() => null))?.at;
+    const button = onTeams && !!(await page.evaluate(signInPage, { s: SEL, t: TEXTS }).catch(() => null))?.teams.at;
     if (!button && !microsoftPage(a)) return;
     t = { at: now, pressed: [], microsoft: false };
     save(a, t);
@@ -63,7 +61,7 @@ export async function trySignIn(a: Agent) {
   const page = microsoftPage(a);
   if (!page) return;
   await logButtons(page, seen);
-  const done = await pressMicrosoft(page, parseState(Identity, me, { name: "", email: "", tenant: "", av: "" }).email);
+  const done = await pressMicrosoft(page, parseState(Identity, me).email);
   if (!done) return;
   t.microsoft = true;
   if (done === "account" || done === "button") t.pressed.push(done);
@@ -86,29 +84,23 @@ function toldOf(a: Agent, since: number) {
   return fresh;
 }
 
-// The page on Microsoft's sign-in host: the popup Teams' Sign in opened, or the Teams tab itself sent there
-function microsoftPage(a: Agent): Page | null {
-  const pages = a.tp.page
+// The pages on Microsoft's sign-in host: the popup Teams' Sign in opened, or the Teams tab itself sent there
+const loginPages = (a: Agent): Page[] =>
+  a.tp.page
     .context()
     .pages()
     .filter((p) => !p.isClosed() && isLoginUrl(p.url()));
-  return pages.at(-1) ?? null;
-}
+
+const microsoftPage = (a: Agent): Page | null => loginPages(a).at(-1) ?? null;
 
 // The pages of a sign-out: the Teams tab (or the page the agent drives), and those on Microsoft's sign-in host
-function signOutPages(a: Agent): Page[] {
-  const login = a.tp.page
-    .context()
-    .pages()
-    .filter((p) => p !== a.tp.page && !p.isClosed() && isLoginUrl(p.url()));
-  return [a.tp.page, ...login];
-}
+const signOutPages = (a: Agent): Page[] => [a.tp.page, ...loginPages(a).filter((p) => p !== a.tp.page)];
 
 // Once per sign-out and page address (without its query)
 async function logButtons(page: Page, seen: { pages: Set<string> }) {
   const where = page.url().split("?")[0];
   if (seen.pages.has(where)) return;
-  const buttons = await page.evaluate(visibleButtons, SEL).catch(() => null);
+  const buttons = (await page.evaluate(signInPage, { s: SEL, t: TEXTS }).catch(() => null))?.buttons;
   if (!buttons) return;
   seen.pages.add(where);
   log.info("SESSION", "sign-in page buttons", { host: hostOf(page.url()), buttons: buttons.join(" | ") });

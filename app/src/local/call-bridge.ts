@@ -1,8 +1,9 @@
 import type { BrowserContext } from "playwright-core";
-import { Agent, WebSocket } from "undici";
+import { Agent } from "undici";
 import { errorText, log } from "@/agent/log";
 import { CALL_AUDIO_PATH } from "@/shared/relay-sync";
 import { installCallBridge } from "./call-bridge-page";
+import { openLink, type LinkSocket, type OpenSocket } from "./link-socket";
 
 // The sound of a call answered or placed from the app on this account, in the app: the relay side of the bridge. The
 // page (call-bridge-page.ts) asks here when Teams wants the microphone; the call is the app's when the app armed the
@@ -11,7 +12,7 @@ import { installCallBridge } from "./call-bridge-page";
 // server (/api/call/audio/socket, src/server/call-audio-hub.ts). A call answered in the Teams window of this computer
 // is never the app's: Teams gets the microphone of the computer, and nothing leaves.
 
-export const BRIDGE_BINDING = "__teamsRelayCallBridge";
+const BRIDGE_BINDING = "__teamsRelayCallBridge";
 
 // an arm with no microphone asked for within this long is dropped: that answer or call did not happen
 const ARM_MS = 90_000;
@@ -24,30 +25,18 @@ const RECONNECT_MS = 1_000;
 
 type Msg = { op?: unknown; p?: unknown; channels?: unknown; host?: unknown };
 
-// What the bridge needs of a websocket: undici's, or a fake in the tests
-export type BridgeSocket = {
-  binaryType: string;
-  readyState: number;
-  send(data: string | Uint8Array): void;
-  close(): void;
-  onopen: ((ev: unknown) => void) | null;
-  onmessage: ((ev: { data: unknown }) => void) | null;
-  onclose: ((ev: unknown) => void) | null;
-  onerror: ((ev: unknown) => void) | null;
-};
-
-export type CallBridgeOptions = {
+type CallBridgeOptions = {
   // the server the relay joined, and its token
   url: string;
   token: string;
-  open?: (url: string, token: string) => BridgeSocket;
+  open?: OpenSocket;
   clock?: () => number;
 };
 
 export class CallBridge {
   private armedAt = 0;
   private active = false;
-  private socket: BridgeSocket | null = null;
+  private socket: LinkSocket | null = null;
   private retry: ReturnType<typeof setTimeout> | null = null;
   private queue: Uint8Array[] = [];
   private waiting: (() => void) | null = null;
@@ -180,39 +169,32 @@ export class CallBridge {
 
   private connect() {
     if (this.socket || this.stopped) return;
-    const url = this.o.url.replace(/^http/, "ws") + CALL_AUDIO_PATH;
-    let s: BridgeSocket;
     try {
-      s = this.o.open
-        ? this.o.open(url, this.o.token)
-        : (new WebSocket(url, { headers: { Authorization: `Bearer ${this.o.token}` }, dispatcher: this.agent }) as unknown as BridgeSocket);
+      this.socket = openLink(
+        { server: this.o.url, path: CALL_AUDIO_PATH, token: this.o.token, dispatcher: this.agent, open: this.o.open, current: () => this.socket },
+        {
+          open: () => {
+            log.info("bridge", "socket to the server open");
+            if (this.channels) this.text(`CHANNELS ${this.channels}`);
+            if (this.active) this.text("CAPTURE_DEMAND microphone 1");
+          },
+          message: (_s, data) => this.fromServer(data),
+          close: () => {
+            this.socket = null;
+            // a call in progress, or one armed: the socket opens again
+            if (!this.stopped && (this.active || this.armedAt)) {
+              this.retry = setTimeout(() => {
+                this.retry = null;
+                this.connect();
+              }, RECONNECT_MS);
+            }
+          },
+        },
+      );
+      this.socket.binaryType = "arraybuffer";
     } catch (e) {
       log.warn("bridge", `socket: ${errorText(e)}`);
-      return;
     }
-    this.socket = s;
-    s.binaryType = "arraybuffer";
-    s.onopen = () => {
-      if (this.socket !== s) return;
-      log.info("bridge", "socket to the server open");
-      if (this.channels) this.text(`CHANNELS ${this.channels}`);
-      if (this.active) this.text("CAPTURE_DEMAND microphone 1");
-    };
-    s.onmessage = (ev) => {
-      if (this.socket === s) this.fromServer(ev.data);
-    };
-    s.onerror = () => undefined;
-    s.onclose = () => {
-      if (this.socket !== s) return;
-      this.socket = null;
-      // a call in progress, or one armed: the socket opens again
-      if (!this.stopped && (this.active || this.armedAt)) {
-        this.retry = setTimeout(() => {
-          this.retry = null;
-          this.connect();
-        }, RECONNECT_MS);
-      }
-    };
   }
 
   private send(b: Uint8Array) {

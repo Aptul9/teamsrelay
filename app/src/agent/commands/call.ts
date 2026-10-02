@@ -3,6 +3,7 @@ import { cmdResultKey, STATE } from "@/shared/slot-db/state";
 import { nowSeconds, type Agent } from "../context";
 import { recordingPage } from "../jobs/calls";
 import { markViewing } from "../jobs/conversation";
+import { isSelfChat } from "../logic/chats";
 import { log } from "../log";
 import { startAudioCall } from "../teams/call-actions";
 import { sleep } from "../teams/page";
@@ -16,7 +17,6 @@ import type { Handler, Outcome } from "./index";
 export const CALL_MAX_AGE = 25;
 // Milliseconds Teams has to start recording from the microphone once the keys went: a call it placed does at once
 export const CALL_START_WAIT = 10_000;
-const SELF_CHAT = /\(you\)/i;
 
 // arg1: chat. A Teams audio call to the person of that 1:1 chat, asked from the app: Teams opens the chat and the agent
 // presses Teams' own shortcut for an audio call. Done once a Teams page records from the microphone: the call watch
@@ -28,7 +28,7 @@ export const call: Handler = async (a, { id, arg1: chat, ts }) => {
   if (ts && nowSeconds() - ts >= CALL_MAX_AGE) return failed(a, id, chat, "late");
   if (a.ringing || a.inCall) return failed(a, id, chat, "busy");
   if (a.health?.teams === "login") return failed(a, id, chat, "signed-out");
-  if (SELF_CHAT.test(chat) || a.store.chats().find((c) => c.name === chat)?.kind !== "one") return failed(a, id, chat, "not-one");
+  if (isSelfChat(chat) || a.store.chats().find((c) => c.name === chat)?.kind !== "one") return failed(a, id, chat, "not-one");
   markViewing(a, chat, ts);
   const problem = await a.tp.showChat(chat);
   if (problem) return failed(a, id, chat, problem);

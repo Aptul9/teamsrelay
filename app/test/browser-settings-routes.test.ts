@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import * as browserRoute from "@/app/api/accounts/[slot]/browser/route";
 import * as clientRoute from "@/app/api/oauth/clients/[id]/route";
 import * as clientsRoute from "@/app/api/oauth/clients/route";
-import { appDb, browserOff, claimSlot, logBrowserAction, migrateAppSchema } from "@/lib/appdb";
+import { appDb, claimSlot, logBrowserAction, migrateAppSchema, slotRow } from "@/lib/appdb";
 import { BROWSER_HUB_KEY } from "@/lib/browser-hub";
 import { requireUser } from "@/lib/session";
 import { addRelayAccount } from "@/lib/slots";
@@ -74,9 +74,9 @@ describe("PATCH /api/accounts/N/browser", () => {
   it("switches the browser of the relay off and on again", async () => {
     as("u1");
     expect((await browserRoute.PATCH(req("PATCH", { off: true }), ctx(relay))).status).toBe(200);
-    expect(browserOff(appDb(), relay)).toBe(true);
+    expect(slotRow(appDb(), relay)?.browser_off).toBe(1);
     expect((await browserRoute.PATCH(req("PATCH", { off: false }), ctx(relay))).status).toBe(200);
-    expect(browserOff(appDb(), relay)).toBe(false);
+    expect(slotRow(appDb(), relay)?.browser_off).toBe(0);
   });
 
   it("wants true or false, an account on another computer, and its owner", async () => {
@@ -85,7 +85,7 @@ describe("PATCH /api/accounts/N/browser", () => {
     expect((await browserRoute.PATCH(req("PATCH", { off: true }), ctx(container))).status).toBe(409);
     as("u2");
     expect((await browserRoute.PATCH(req("PATCH", { off: true }), ctx(relay))).status).toBe(404);
-    expect(browserOff(appDb(), relay)).toBe(false);
+    expect(slotRow(appDb(), relay)?.browser_off).toBe(0);
   });
 });
 

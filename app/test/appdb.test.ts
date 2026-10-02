@@ -45,7 +45,7 @@ describe("schema", () => {
 
     migrateAppSchema(old);
 
-    expect(listSlots(old)).toEqual([{ slot: 2, owner_id: "u1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0 }]);
+    expect(listSlots(old)).toEqual([{ slot: 2, owner_id: "u1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0, browser_off: 0 }]);
   });
 });
 
@@ -111,8 +111,8 @@ describe("legacy data", () => {
 
     expect(adoptLegacyData(db, "admin-1")).toEqual({ slots: 2, devices: 1 });
     expect(listSlots(db)).toEqual([
-      { slot: 1, owner_id: "admin-1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0 },
-      { slot: 3, owner_id: "admin-1", added: 300, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0 },
+      { slot: 1, owner_id: "admin-1", added: 100, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0, browser_off: 0 },
+      { slot: 3, owner_id: "admin-1", added: 300, stopped: 0, started: 0, check_every: 0, check_due: 0, checked: 0, check_result: "", checking: 0, relay: 0, browser_off: 0 },
     ]);
     expect(countPushSubscriptions(db, "admin-1")).toBe(1);
 
@@ -148,12 +148,15 @@ describe("slots", () => {
   });
 });
 
+// keys as a browser gives them (base64url)
+const KEYS = { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM", auth: "tBHItJI5svbpez7KI4CCXg" };
+
 describe("push subscriptions", () => {
   it("belong to one user and move with a new subscribe", () => {
-    savePushSubscription(db, "u1", { endpoint: "https://push/x", keys: {} });
-    savePushSubscription(db, "u2", { endpoint: "https://push/y", keys: {} });
+    savePushSubscription(db, "u1", { endpoint: "https://push/x", keys: KEYS });
+    savePushSubscription(db, "u2", { endpoint: "https://push/y", keys: KEYS });
     expect(countPushSubscriptions(db, "u1")).toBe(1);
-    savePushSubscription(db, "u2", { endpoint: "https://push/x", keys: {} });
+    savePushSubscription(db, "u2", { endpoint: "https://push/x", keys: KEYS });
     expect(countPushSubscriptions(db, "u1")).toBe(0);
     expect(countPushSubscriptions(db, "u2")).toBe(2);
     deletePushSubscriptionsOf(db, "u2");
@@ -161,6 +164,7 @@ describe("push subscriptions", () => {
   });
 
   it("rejects a subscription without endpoint", () => {
-    expect(() => savePushSubscription(db, "u1", { keys: {} })).toThrow(/endpoint/);
+    expect(() => savePushSubscription(db, "u1", { keys: KEYS })).toThrow(/endpoint/);
+    expect(() => savePushSubscription(db, "u1", { endpoint: "https://push/z", keys: {} })).toThrow(/keys/);
   });
 });

@@ -3,15 +3,10 @@
 // curls that loopback port. The request body travels on SSH's stdin into curl (--data-binary @-); the bearer token
 // rides the remote curl line.
 import { spawn } from "node:child_process";
-import type { Result } from "@/fleet/cmdapi/runner";
+import type { Result, RunOptions } from "@/fleet/cmdapi/runner";
 import type { FleetHost } from "./inventory";
 
-export interface RunRequest {
-  command?: string;
-  args?: string[];
-  cwd?: string;
-  timeout?: number;
-}
+export type RunRequest = Pick<RunOptions, "command" | "args" | "cwd" | "timeout">;
 
 const base = (host: FleetHost) => `http://127.0.0.1:${host.port}`;
 

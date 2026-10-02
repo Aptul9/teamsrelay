@@ -35,7 +35,7 @@ const later: Later = (ms, fn) => void setTimeout(fn, ms).unref();
 const APPLE_PUSH = /^https:\/\/web\.push\.apple\.com\//;
 
 // A phone of the Android app (mobile/), registered through /api/push/fcm: FCM, not Web Push
-const isPhone = (t: PushTarget) => t.endpoint.startsWith("fcm:");
+export const isPhone = (t: Pick<PushTarget, "endpoint">) => t.endpoint.startsWith("fcm:");
 
 // The outcome of one send, handed to took when the push service took it
 function noteTook(ok: boolean, t: PushTarget, took?: (t: PushTarget) => void): boolean {
@@ -56,6 +56,8 @@ function sealFitting(key: string, content: Record<string, unknown>): Record<stri
 // (messages table).
 export class Notifier {
   private readonly recent: RecentPushes;
+  private readonly now: () => number;
+  private readonly schedule: Later;
 
   constructor(
     private readonly o: {
@@ -73,6 +75,13 @@ export class Notifier {
     },
   ) {
     this.recent = new RecentPushes(o.clock);
+    this.now = o.clock ?? Date.now;
+    this.schedule = o.later ?? later;
+  }
+
+  // The account the notifications come from, for an app that shows more than one
+  private account() {
+    return this.o.devices.account?.(parseState(Identity, this.o.store.getState(STATE.me)));
   }
 
   // A new Teams message: the same text within 150 s is notified once. On the device it replaces the notification
@@ -82,7 +91,7 @@ export class Notifier {
     if (!this.recent.allow(body)) return;
     this.o.store.addNotification(title, body);
     await this.ntfy(title, body);
-    await this.push(title, body, chat, "high", title, (this.o.clock ?? Date.now)());
+    await this.push(title, body, chat, "high", title, this.now());
   }
 
   // About the relay itself (Teams signed out, outcome of a check): push and ntfy, no history
@@ -156,10 +165,10 @@ export class Notifier {
     content: (acc: number) => { title: string } & Record<string, unknown>,
     o: Delivery & { skip?: (t: PushTarget) => boolean; took?: (t: PushTarget) => void },
   ): Promise<number> {
-    const { vapid, devices, store, fcm } = this.o;
+    const { vapid, devices, fcm } = this.o;
     const targets = devices.targets().filter((t) => !o.skip?.(t));
     if (!targets.length) return 0;
-    const account = devices.account?.(parseState(Identity, store.getState(STATE.me), Identity.parse({})));
+    const account = this.account();
     const c = content(account?.acc ?? 0);
     const message = { ...c, title: pushTitle(c.title, account?.label ?? ""), ...(account ? { acc: account.acc } : {}) };
     const sends: Promise<boolean>[] = [];
@@ -216,21 +225,10 @@ export class Notifier {
       // no answer, or the access token refused: the status stays unknown
       log.warn("push", `FCM: ${errorText(e)}`, { attempt });
     }
-    const wait = o.retry ? pushRetryDelay(status, retryAfter, attempt, (this.o.clock ?? Date.now)()) : null;
+    const wait = o.retry ? pushRetryDelay(status, retryAfter, attempt, this.now()) : null;
     if (status !== undefined) log.warn("push", `FCM answered ${status}`, { attempt, retry: wait ?? "none" });
-    if (wait !== null) (this.o.later ?? later)(wait * 1000, () => this.retryPhone(t.endpoint, message, o, attempt + 1));
+    if (wait !== null) this.retryLater(wait, t.endpoint, attempt + 1, (x) => this.sendToPhone(x, message, o, attempt + 1));
     return false;
-  }
-
-  private retryPhone(endpoint: string, message: Record<string, unknown>, o: Delivery, attempt: number) {
-    const failed = (e: unknown) => log.warn("push", `retry: ${errorText(e)}`, { attempt, fcm: true });
-    try {
-      const t = this.o.devices.targets().find((x) => x.endpoint === endpoint);
-      if (!t) return log.info("push", "phone gone before the retry", { attempt });
-      this.sendToPhone(t, message, o, attempt).catch(failed);
-    } catch (e) {
-      failed(e);
-    }
   }
 
   private async sendTo(t: PushTarget, payload: string, options: webpush.RequestOptions, attempt: number, retry = true): Promise<boolean> {
@@ -250,59 +248,55 @@ export class Notifier {
       // subscription web-push refuses before sending fails the same way every time
       const reached = status !== undefined || typeof code === "string" || errorText(e) === "Socket timeout";
       const retryAfter = headers?.["retry-after"];
-      const wait = retry && reached ? pushRetryDelay(status, Array.isArray(retryAfter) ? retryAfter[0] : retryAfter, attempt, (this.o.clock ?? Date.now)()) : null;
+      const wait = retry && reached ? pushRetryDelay(status, Array.isArray(retryAfter) ? retryAfter[0] : retryAfter, attempt, this.now()) : null;
       log.warn("push", errorText(e), { status, attempt, retry: wait ?? "none" });
-      if (wait !== null) (this.o.later ?? later)(wait * 1000, () => this.retry(t.endpoint, payload, options, attempt + 1));
+      if (wait !== null) this.retryLater(wait, t.endpoint, attempt + 1, (x) => this.sendTo(x, payload, options, attempt + 1));
       return false;
     }
   }
 
-  // A retry goes to the device only while it is still one of the devices: a subscription can pass to another user
-  // of the same browser, or be removed, while the retry waits. It runs on a timer, where an error of the device
-  // store would be uncaught (the local relay stops on one): logged instead.
-  private retry(endpoint: string, payload: string, options: webpush.RequestOptions, attempt: number) {
-    const failed = (e: unknown) => log.warn("push", `retry: ${errorText(e)}`, { attempt });
-    try {
-      const t = this.o.devices.targets().find((x) => x.endpoint === endpoint);
-      if (!t) return log.info("push", "device gone before the retry", { attempt });
-      this.sendTo(t, payload, options, attempt).catch(failed);
-    } catch (e) {
-      failed(e);
-    }
+  // A retry in `wait` seconds goes to the device only while it is still one of the devices: a subscription can pass
+  // to another user of the same browser, or be removed, while the retry waits. It runs on a timer, where an error of
+  // the device store would be uncaught (the local relay stops on one): logged instead.
+  private retryLater(wait: number, endpoint: string, attempt: number, send: (t: PushTarget) => Promise<boolean>) {
+    const fields = { attempt, ...(isPhone({ endpoint }) && { fcm: true }) };
+    this.schedule(wait * 1000, () => {
+      const failed = (e: unknown) => log.warn("push", `retry: ${errorText(e)}`, fields);
+      try {
+        const t = this.o.devices.targets().find((x) => x.endpoint === endpoint);
+        if (!t) return log.info("push", `${isPhone({ endpoint }) ? "phone" : "device"} gone before the retry`, { attempt });
+        send(t).catch(failed);
+      } catch (e) {
+        failed(e);
+      }
+    });
   }
 
   // A call on ntfy: priority 5 while it rings, then the same notification (sequence id) at priority 2, quiet
   private async ntfyCall(title: string, body: string, since: number, ringing: boolean) {
-    const ntfy = this.o.ntfy;
-    if (!ntfy) return;
-    const account = this.o.devices.account?.(parseState(Identity, this.o.store.getState(STATE.me), Identity.parse({})));
-    try {
-      await fetch(ntfy.url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: ntfy.topic,
-          title: pushTitle(title, account?.label ?? "").slice(0, 100),
-          message: body,
-          priority: ringing ? 5 : 2,
-          tags: ["telephone_receiver"],
-          sequence_id: `call-${account?.acc ?? 0}-${since}`,
-        }),
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (e) {
-      log.warn("ntfy", errorText(e));
-    }
+    if (!this.o.ntfy) return;
+    const account = this.account();
+    await this.postNtfy({
+      title: pushTitle(title, account?.label ?? "").slice(0, 100),
+      message: body,
+      priority: ringing ? 5 : 2,
+      tags: ["telephone_receiver"],
+      sequence_id: `call-${account?.acc ?? 0}-${since}`,
+    });
   }
 
-  private async ntfy(title: string, body: string) {
+  private ntfy(title: string, body: string) {
+    return this.postNtfy({ title: (title || "Teams").slice(0, 100), message: (body || "(new message)").slice(0, 1000), priority: 4, tags: ["speech_balloon"] });
+  }
+
+  private async postNtfy(message: Record<string, unknown>) {
     const ntfy = this.o.ntfy;
     if (!ntfy) return;
     try {
       await fetch(ntfy.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: ntfy.topic, title: (title || "Teams").slice(0, 100), message: (body || "(new message)").slice(0, 1000), priority: 4, tags: ["speech_balloon"] }),
+        body: JSON.stringify({ topic: ntfy.topic, ...message }),
         signal: AbortSignal.timeout(10_000),
       });
     } catch (e) {

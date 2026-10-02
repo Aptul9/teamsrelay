@@ -28,9 +28,15 @@ export async function boot() {
     fatal(e instanceof Error ? e.message : String(e));
   }
   if (config.mcpToken) console.log("MCP endpoint on: /mcp");
+  let push: typeof config.push;
+  try {
+    push = config.push;
+  } catch (e) {
+    fatal(`configuration: ${e instanceof Error ? e.message : String(e)}`);
+  }
   // the phones of the Android app get the notifications of the accounts on another computer from here (lib/relay.ts)
   try {
-    if (loadServiceAccount(config.fcmCredentialsFile)) console.log("FCM on: phones of the Android app");
+    if (loadServiceAccount(push.fcmCredentials)) console.log("FCM on: phones of the Android app");
   } catch (e) {
     console.error(`FCM off: ${e instanceof Error ? e.message : String(e)}`);
   }

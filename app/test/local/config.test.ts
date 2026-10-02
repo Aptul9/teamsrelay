@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ConfigError } from "@/agent/config";
+import { ConfigError } from "@/shared/env";
 import { loadConfig, readToken } from "@/local/config";
 import { tempDir } from "../helpers";
 
@@ -34,8 +34,6 @@ describe("relay configuration", () => {
       subject: "mailto:admin@example.com",
     });
     expect(c.alerts).toEqual({
-      signInAfter: 60,
-      browserAfter: 300,
       signIn: `Sign in again in the relay window on ${os.hostname()}`,
       browserDown: `The browser of the relay on ${os.hostname()} does not start`,
     });

@@ -1,4 +1,5 @@
 import type { Page } from "playwright-core";
+import { drainInput } from "./scripts/page-state";
 
 // One sequence of real input at a time per page. Playwright keeps one mouse position and one set of held keys per page:
 // two sequences at once (the presence keeper of the loop, a click or a shortcut of the call watch) mix their moves and
@@ -36,6 +37,11 @@ export async function asAgent<T>(page: object, fn: () => Promise<T>): Promise<T>
 // Input at `at` (ms) on that page came from the agent
 export function byAgent(page: object, at: number): boolean {
   return (spans.get(page) ?? []).some((s) => at >= s.from && at <= s.to + TAIL_MS);
+}
+
+// The owner's input (ms) the page recorded since the last call, the agent's own left out
+export async function ownerInput(page: Page): Promise<number[]> {
+  return ((await page.evaluate(drainInput)) ?? []).filter((t) => !byAgent(page, t));
 }
 
 // A real click at a point of the page: CDP mouse events there, with no wait for anything to hold still. The page takes

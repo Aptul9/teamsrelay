@@ -19,7 +19,7 @@ export type McpModule = {
   launch(profileDir: string, channel: string): Promise<AiContext>;
 };
 
-export type HostOptions = { profileDir: string; outputDir: string; channel: string; idleMs: number; load?: () => McpModule };
+type HostOptions = { profileDir: string; outputDir: string; channel: string; idleMs: number; load?: () => McpModule };
 
 // the answer of Playwright MCP to one request: its result, or its JSON-RPC error
 export type HostAnswer = { result?: unknown; error?: unknown };

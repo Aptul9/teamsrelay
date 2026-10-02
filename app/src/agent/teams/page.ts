@@ -1,15 +1,24 @@
 import type { Page } from "playwright-core";
 import type { OpenProblem } from "@/shared/slot-db/commands";
 import { sameChat } from "../logic/chats";
-import { errorText, log } from "../log";
+import { errorText, log, type Fields } from "../log";
 import type { SlotStore } from "../store/slot-store";
-import { openChatTitle, clickChatRow, scrollChatList } from "./scripts/chat-list";
+import { openChatTitle, clickChatRow, scrollList } from "./scripts/chat-list";
 import { composerLeft } from "./scripts/compose";
-import { barButtonPoint, centerElement, openOverlayNames, openOverlays } from "./scripts/message-actions";
+import { barButtonPoint, centerElement, openOverlayNames } from "./scripts/message-actions";
 import { uncoveredPoint } from "./scripts/page-state";
 import { SEL, TEXTS } from "./selectors";
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// True as soon as `check` is, asked `tries` times `ms` apart; a check that throws counts as false
+export async function until(check: () => Promise<boolean>, tries: number, ms: number): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    await sleep(ms);
+    if (await check().catch(() => false)) return true;
+  }
+  return false;
+}
 
 // What became of a message the agent sent: sent (Teams shows it sent), failed (it never left the compose box), or
 // unconfirmed (Enter went, Teams did not show it sent in time: it may be out, sending it again may make two)
@@ -19,12 +28,21 @@ export type SendResult = "sent" | "failed" | "unconfirmed";
 // that the web app, which waits for the message in the saved chat, sees it at once
 export type AfterPress = () => Promise<unknown>;
 
-export async function afterPress(fn?: AfterPress) {
+async function afterPress(fn?: AfterPress) {
   try {
     await fn?.();
   } catch (e) {
     log.warn("send", `after the send: ${errorText(e)}`);
   }
+}
+
+// The end of every send, once the message went: `sent` at once, then Teams watched (every 300 ms, `tries` times) until
+// `shown` says it has the message
+export async function confirmSent(o: { area: string; shown: () => Promise<boolean>; tries: number; sent?: AfterPress; fields: Fields }): Promise<SendResult> {
+  await afterPress(o.sent);
+  if (await until(o.shown, o.tries, 300)) return "sent";
+  log.warn(o.area, "not shown sent on Teams: unconfirmed", o.fields);
+  return "unconfirmed";
 }
 
 // A message by id, for Node-side locators
@@ -57,6 +75,12 @@ export class TeamsPage {
     return (await this.showChat(name)) === null;
   }
 
+  // Menus closed, then the chat open. `typing`: Teams is asked once more that it still shows the chat, right before
+  // something is typed in it (text in another chat goes to the wrong people).
+  async toChat(name: string, typing = false): Promise<boolean> {
+    return (await this.clearOverlays()) && (await this.openChat(name)) && (!typing || (await this.isOpen(name)));
+  }
+
   // Opens the chat unless Teams shows it already: clicks its row and waits until Teams shows it (the messages of
   // the previous chat are still in the page for a moment), then takes the list back to the top, where the chats
   // with new messages are. Null once Teams shows it, otherwise why not.
@@ -68,7 +92,7 @@ export class TeamsPage {
       open = await this.isOpen(name).catch(() => false);
       if (!open) await sleep(250);
     }
-    await this.page.evaluate(scrollChatList, { s: SEL, to: "top" as const }).catch(() => false);
+    await this.page.evaluate(scrollList, { item: SEL.anyChatRow, to: "top" as const }).catch(() => false);
     if (!clicked) return "not-listed";
     if (!open) {
       log.warn("open", "chat did not open", { chat: name });
@@ -86,7 +110,7 @@ export class TeamsPage {
     const click = (exact: boolean) => this.page.evaluate(clickChatRow, { s: SEL, t: TEXTS, name, exact });
     if (await click(true)) return true;
     if (Date.now() - (this.missed.get(name) ?? 0) < 30_000) return false;
-    const scroll = (to: "top" | "down") => this.page.evaluate(scrollChatList, { s: SEL, to });
+    const scroll = (to: "top" | "down") => this.page.evaluate(scrollList, { item: SEL.anyChatRow, to });
     await scroll("top");
     for (let i = 0; i < 9; i++) {
       await sleep(400);
@@ -107,15 +131,16 @@ export class TeamsPage {
   // Menus or dialogs left open over the chat would catch the mouse: Escape, up to three times. One still open is
   // named in the log: the action that asked is not taken, and the web app only sees it failed.
   async clearOverlays(): Promise<boolean> {
-    for (let i = 0; i < 3; i++) {
-      if (!(await this.page.evaluate(openOverlays, SEL))) return true;
+    for (let i = 0; ; i++) {
+      const open = await this.page.evaluate(openOverlayNames, SEL);
+      if (!open.length) return true;
+      if (i === 3) {
+        log.warn("page", "overlay still open after Escape", { overlays: open.join(", ") });
+        return false;
+      }
       await this.page.keyboard.press("Escape");
       await sleep(400);
     }
-    if (!(await this.page.evaluate(openOverlays, SEL))) return true;
-    const left = await this.page.evaluate(openOverlayNames, SEL).catch(() => []);
-    log.warn("page", "overlay still open after Escape", { overlays: left.join(", ") });
-    return false;
   }
 
   // Empties the compose box after a send that went wrong: what is left there would go out with the next message.

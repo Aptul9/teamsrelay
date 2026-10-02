@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import type { Identity } from "@/shared/slot-db/state";
 import { accountLabel } from "../logic/notify";
 import { errorText, log } from "../log";
-import type { PushDevices, PushTarget } from "../push/notifier";
+import { isPhone, type PushDevices, type PushTarget } from "../push/notifier";
 
 // data/app.db belongs to the web app (users, teams_accounts, push_subscriptions). The agent reads the owner
 // of its slot and the owner's devices, and removes the subscriptions the push service reports as gone. It
@@ -48,7 +48,7 @@ export class AppStore implements PushDevices {
       const rows = db
         .prepare("SELECT p.endpoint, p.sub FROM push_subscriptions p JOIN teams_accounts a ON a.owner_id=p.user_id WHERE a.slot=?")
         .all(this.slot) as PushTarget[];
-      return rows.filter((t) => !t.endpoint.startsWith("fcm:") || sessionRuns(db, t.sub));
+      return rows.filter((t) => !isPhone(t) || sessionRuns(db, t.sub));
     }, []);
   }
 

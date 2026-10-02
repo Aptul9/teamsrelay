@@ -6,6 +6,7 @@ import { appDb, forgetFcmDevicesOfSession } from "./appdb";
 import { config } from "./config";
 import { ENV_PASSWORD_MESSAGE, isEnvAdmin } from "./env-admin";
 import { mcpResource, nativeByDefault } from "./mcp/oauth";
+import { PASSWORD_MAX, PASSWORD_MIN } from "@/shared/password";
 
 // Before every request of better-auth. The administrator of .env changes its password in .env only, not from Settings
 // nor from Users. An MCP client registering itself with a loopback redirect and no application_type (MCP SDK 1.x) is a
@@ -53,8 +54,8 @@ export function authOptions() {
       enabled: true,
       // users are created by an administrator
       disableSignUp: true,
-      minPasswordLength: 10,
-      maxPasswordLength: 256,
+      minPasswordLength: PASSWORD_MIN,
+      maxPasswordLength: PASSWORD_MAX,
     },
     session: {
       expiresIn: 60 * 60 * 24 * 30,

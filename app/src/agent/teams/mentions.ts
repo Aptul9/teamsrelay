@@ -1,26 +1,18 @@
 import type { MentionPart } from "@/shared/slot-db/commands";
 import { errorText, log } from "../log";
-import { afterPress, sleep, type AfterPress, type SendResult, type TeamsPage } from "./page";
-import { composerLeft, messageIds } from "./scripts/compose";
+import { confirmSent, sleep, until, type AfterPress, type SendResult, type TeamsPage } from "./page";
+import { composerLeft, messageIds, ownMessageSent } from "./scripts/compose";
 import { rosterNames, topicNames } from "./scripts/members";
-import { composerMentionNames, mentionMessageSent, mentionOptionPoint } from "./scripts/mentions";
+import { composerMentionNames, mentionOptionPoint } from "./scripts/mentions";
 import { SEL, TEXTS } from "./selectors";
 
 // People of a chat and messages that tag them with @. Each action checks on the page that Teams applied it.
-
-async function until(check: () => Promise<boolean>, tries: number, ms: number): Promise<boolean> {
-  for (let i = 0; i < tries; i++) {
-    await sleep(ms);
-    if (await check().catch(() => false)) return true;
-  }
-  return false;
-}
 
 // People of a chat as Teams names them: in a group chat the list its participant count opens, read and closed
 // with Escape (the list also holds buttons that remove people and leave the chat: nothing in it is clicked);
 // in the other chats the header. null when the chat did not open or the list did not show.
 export async function readMembers(tp: TeamsPage, chat: string): Promise<string[] | null> {
-  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return null;
+  if (!(await tp.toChat(chat, true))) return null;
   const page = tp.page;
   const count = page.locator(`${SEL.participantCount}:visible`);
   if (!(await count.count())) return page.evaluate(topicNames, { s: SEL, t: TEXTS });
@@ -56,14 +48,10 @@ async function tagPerson(tp: TeamsPage, name: string): Promise<boolean> {
   return false;
 }
 
-// Types the message in the compose box of the open chat, text as it is and people picked in the Teams list, and
-// checks every person is tagged. Nothing is sent. The box must be empty before: a draft would go out with it.
-export async function composeWithMentions(tp: TeamsPage, parts: readonly MentionPart[]): Promise<boolean> {
+// Types the message in the empty compose box of the open chat, text as it is and people picked in the Teams list,
+// and checks every person is tagged. Nothing is sent.
+async function composeWithMentions(tp: TeamsPage, parts: readonly MentionPart[]): Promise<boolean> {
   const page = tp.page;
-  if (await page.evaluate(composerLeft, SEL)) {
-    log.warn("mention", "compose box not empty");
-    return false;
-  }
   await page.locator(SEL.editor).last().focus({ timeout: 2000 });
   for (const part of parts) {
     if ("text" in part) await page.keyboard.insertText(part.text);
@@ -77,7 +65,7 @@ export async function composeWithMentions(tp: TeamsPage, parts: readonly Mention
 // holds a draft; whatever goes wrong before the send leaves the box empty. Sent once Teams shows the message sent,
 // with everyone tagged; unconfirmed when Enter went and Teams does not show it. `sent` runs as soon as the message went.
 export async function sendWithMentions(tp: TeamsPage, chat: string, parts: readonly MentionPart[], sent?: AfterPress): Promise<SendResult> {
-  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return "failed";
+  if (!(await tp.toChat(chat, true))) return "failed";
   const page = tp.page;
   // a draft already there is someone's: left as it is, nothing sent
   if (await page.evaluate(composerLeft, SEL)) {
@@ -98,8 +86,5 @@ export async function sendWithMentions(tp: TeamsPage, chat: string, parts: reado
     await tp.emptyComposeBox();
     return "failed";
   }
-  await afterPress(sent);
-  if (await until(() => page.evaluate(mentionMessageSent, { s: SEL, t: TEXTS, before, names }), 40, 300)) return "sent";
-  log.warn("mention", "message not shown sent on Teams: unconfirmed", { chat });
-  return "unconfirmed";
+  return confirmSent({ area: "mention", shown: () => page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, names }), tries: 40, sent, fields: { chat } });
 }

@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { setTimeout as wait } from "node:timers/promises";
 import Database from "better-sqlite3";
+import { nowSeconds } from "@/agent/context";
 import { Agent, fetch as undiciFetch } from "undici";
 import type webpush from "web-push";
 import type { z } from "zod";
@@ -19,17 +21,21 @@ import {
   ReadByRow,
   SERVER_COMMAND_KEY,
   serverCommandKey,
+  RELAY_FILE_NAME,
   StateKey,
   StateValue,
+  SYNC_MAX,
+  LIVE_KEYS,
   type CommandsAnswer,
   type HaveBody,
   type PushBody,
   type ServerCommand,
   type SyncBody,
 } from "@/shared/relay-sync";
-import { DownloadResult, ImageArgs, parseArgs, UPLOAD_NAME, WithAudio, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
-import { FILE_NAME, MEDIA_NAME, type MessageExtra } from "@/shared/slot-db/rows";
-import { cmdResultKey, Identity, parseState, STATE, Viewing } from "@/shared/slot-db/state";
+import { DownloadResult, ImageArgs, parseArgs, WithAudio, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
+import { MEDIA_NAME, parseExtra } from "@/shared/slot-db/rows";
+import { rowColumns } from "@/shared/slot-db/schema";
+import { CMD_RESULT_KEY, cmdResultKey, Identity, parseState, STATE, Viewing } from "@/shared/slot-db/state";
 
 // The relay of an account on another computer, joined to a TeamsRelay server (docs/design/2026-09-27-relay-joins-
 // server.md): relay.db mirrored into data/N/messages.db of the server, the commands the app queues there run here,
@@ -45,14 +51,21 @@ const SYNC_EVERY_MS = 1000;
 // a notification waits its turn this long at most: later it would only confuse
 const PUSH_STALE_MS = 120_000;
 const PUSH_TIMEOUT_MS = 10_000;
-// read right before the rows go (live()): the server takes them by their age, and the files before the rows may take a
-// while; none names a file. The call in progress is one of them: the app offers Hang up and Mute only while it is fresh
-const LIVE: readonly string[] = [STATE.health, STATE.call, STATE.inCall];
+// LIVE_KEYS are read right before the rows go (live()): the server takes them by their age, and the files before the
+// rows may take a while; none names a file. The app offers Hang up and Mute only while the call in progress is fresh.
 
 const hash = (json: string) => crypto.createHash("sha1").update(json).digest("base64");
 const digest = (v: unknown) => hash(JSON.stringify(v));
 
-export class ServerError extends Error {
+// the digests of what the server took into what it holds: null for a key removed there
+function takeDigests(sent: Map<string, string>, taken: Map<string, string | null>) {
+  for (const [k, d] of taken) {
+    if (d === null) sent.delete(k);
+    else sent.set(k, d);
+  }
+}
+
+class ServerError extends Error {
   constructor(
     readonly status: number,
     detail: string,
@@ -114,12 +127,8 @@ export type ServerLinkOptions = {
   onCallAudio?: () => void;
 };
 
-const pause = (ms: number, signal: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    if (signal.aborted) return resolve();
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => (clearTimeout(t), resolve()), { once: true });
-  });
+// ends early, without an error, once `signal` aborts
+const pause = (ms: number, signal: AbortSignal) => wait(ms, undefined, { signal }).catch(() => undefined);
 
 export class ServerLink {
   // devices of the owner on the server, from the last answer about commands: the health of the relay reports them
@@ -259,9 +268,9 @@ export class ServerLink {
     const all = <T>(sql: string, ...args: unknown[]) => this.db.prepare(sql).all(...args) as T[];
     let complete = true;
 
-    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind FROM chats ORDER BY pos")
+    const chats = all<ChatRow>(`SELECT ${rowColumns("chats")} FROM chats ORDER BY pos`)
       .filter((c) => this.fits(ChatRow, c, `chat ${c.name}`))
-      .slice(0, 2000);
+      .slice(0, SYNC_MAX.chats);
     const chatsDigest = digest(chats);
     if (chatsDigest !== this.sent.chats) {
       body.chats = chats;
@@ -273,7 +282,7 @@ export class ServerLink {
     // and a chat that leaves it has its rows removed there
     const listed = new Set(chats.map((c) => c.name));
     const byChat = new Map<string, MessageRow[]>();
-    for (const { chat, ...m } of all<MessageRow & { chat: string }>("SELECT chat, idx, mid, author, text, mine, reacts, extra FROM chat_messages ORDER BY chat, idx")) {
+    for (const { chat, ...m } of all<MessageRow & { chat: string }>(`SELECT ${rowColumns("chat_messages")} FROM chat_messages ORDER BY chat, idx`)) {
       if (!listed.has(chat)) continue;
       const rows = byChat.get(chat);
       if (rows) rows.push(m);
@@ -287,7 +296,7 @@ export class ServerLink {
       if (this.sent.messages.get(chat) === d) continue;
       // never sent, never to remove there
       if (!this.fits(ChatName, chat, `messages of ${chat}`)) continue;
-      const fitting = rows.filter((m) => this.fits(MessageRow, m, `message ${m.mid ?? m.idx} of ${chat}`)).slice(0, 2000);
+      const fitting = rows.filter((m) => this.fits(MessageRow, m, `message ${m.mid ?? m.idx} of ${chat}`)).slice(0, SYNC_MAX.messages);
       if (!chatRoom.take(JSON.stringify(fitting).length)) {
         complete = false;
         continue;
@@ -295,14 +304,9 @@ export class ServerLink {
       messages[chat] = fitting;
       messageDigests.set(chat, d);
       for (const m of fitting) {
-        let extra: MessageExtra | null = null;
-        try {
-          extra = m.extra ? (JSON.parse(m.extra) as MessageExtra) : null;
-        } catch {
-          // not JSON: it names nothing
-        }
-        for (const im of extra?.images ?? []) picture(im.f);
-        picture(extra?.av);
+        const extra = parseExtra(m.extra);
+        for (const im of extra.images ?? []) picture(im.f);
+        picture(extra.av);
       }
     }
     for (const chat of this.sent.messages.keys()) {
@@ -323,14 +327,14 @@ export class ServerLink {
     const state = new Map<string, string>();
     let viewing: { raw: string; ts: number } | null = null;
     for (const { k, v } of all<{ k: string; v: string | null }>("SELECT k, v FROM state")) {
-      if (k === STATE.relay || LIVE.includes(k)) continue;
+      if (k === STATE.relay || LIVE_KEYS.includes(k)) continue;
       if (k === STATE.viewing) {
-        const local = parseState(Viewing, v, { chat: "", ts: 0 });
+        const local = parseState(Viewing, v);
         const ts = local.ts + (this.offset ?? 0);
         if (this.offset !== null && ts > this.viewingTs) viewing = { raw: JSON.stringify({ ...local, ts }), ts };
         continue;
       }
-      const result = /^cmd_result:(\d+)$/.exec(k);
+      const result = CMD_RESULT_KEY.exec(k);
       if (!result) state.set(k, v ?? "");
       else if (serverIdOf.has(Number(result[1]))) state.set(cmdResultKey(serverIdOf.get(Number(result[1]))!), v ?? "");
     }
@@ -354,7 +358,7 @@ export class ServerLink {
       stateDigests.set(k, d);
     }
     for (const k of this.sent.state.keys()) {
-      if (state.has(k) || LIVE.includes(k)) continue;
+      if (state.has(k) || LIVE_KEYS.includes(k)) continue;
       if (!keyRoom.take(k.length)) {
         complete = false;
         continue;
@@ -365,25 +369,25 @@ export class ServerLink {
     if (viewing) stateOut[STATE.viewing] = viewing.raw;
     if (Object.keys(stateOut).length) body.state = stateOut;
     for (const [k, v] of Object.entries(stateOut)) {
-      if (k === STATE.me) picture(parseState(Identity, v, Identity.parse({})).av);
-      else if (/^cmd_result:\d+$/.test(k)) {
+      if (k === STATE.me) picture(parseState(Identity, v).av);
+      else if (CMD_RESULT_KEY.test(k)) {
         const f = parseState(DownloadResult, v, null)?.f;
         if (f) named.files.add(f);
       }
     }
 
-    const activity = all<ActivityRow>("SELECT id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av FROM activity ORDER BY pos")
+    const activity = all<ActivityRow>(`SELECT ${rowColumns("activity")} FROM activity ORDER BY pos`)
       .filter((a) => this.fits(ActivityRow, a, `activity ${a.id}`))
-      .slice(0, 2000);
+      .slice(0, SYNC_MAX.activity);
     const activityDigest = digest(activity);
     if (activityDigest !== this.sent.activity) {
       body.activity = activity;
       next.activity = activityDigest;
       for (const a of activity) picture(a.av);
     }
-    const calls = all<CallRow>("SELECT since, caller, seconds FROM calls ORDER BY id")
+    const calls = all<CallRow>(`SELECT ${rowColumns("calls")} FROM calls ORDER BY id`)
       .filter((c) => this.fits(CallRow, c, `call ${c.since}`))
-      .slice(-500);
+      .slice(-SYNC_MAX.calls);
     const callsDigest = digest(calls);
     if (callsDigest !== this.sent.calls) {
       body.calls = calls;
@@ -393,7 +397,7 @@ export class ServerLink {
     const readby: ReadByRow[] = [];
     const readbyDigests = new Map<string, string>();
     const readbyRoom = new Room(PER_SYNC.readby);
-    for (const r of all<ReadByRow>("SELECT mid, chat, label, names, ts FROM readby")) {
+    for (const r of all<ReadByRow>(`SELECT ${rowColumns("readby")} FROM readby`)) {
       const json = JSON.stringify(r);
       const d = hash(json);
       if (this.sent.readby.get(r.mid) === d) continue;
@@ -417,15 +421,9 @@ export class ServerLink {
 
     const commit = () => {
       Object.assign(this.sent, next);
-      for (const [chat, d] of messageDigests) {
-        if (d === null) this.sent.messages.delete(chat);
-        else this.sent.messages.set(chat, d);
-      }
-      for (const [k, d] of stateDigests) {
-        if (d === null) this.sent.state.delete(k);
-        else this.sent.state.set(k, d);
-      }
-      for (const [mid, d] of readbyDigests) this.sent.readby.set(mid, d);
+      takeDigests(this.sent.messages, messageDigests);
+      takeDigests(this.sent.state, stateDigests);
+      takeDigests(this.sent.readby, readbyDigests);
       for (const c of statuses) this.sent.commands.set(c.id, c.status);
       if (viewing) this.viewingTs = Math.max(this.viewingTs, viewing.ts);
     };
@@ -437,7 +435,7 @@ export class ServerLink {
     const state: Record<string, string | null> = {};
     const digests = new Map<string, string | null>();
     const read = this.db.prepare("SELECT v FROM state WHERE k=?").pluck();
-    for (const k of LIVE) {
+    for (const k of LIVE_KEYS) {
       const row = read.get(k) as string | null | undefined;
       if (row === undefined) {
         if (this.sent.state.has(k)) {
@@ -452,30 +450,26 @@ export class ServerLink {
       state[k] = v;
       digests.set(k, d);
     }
-    const commit = () => {
-      for (const [k, d] of digests) {
-        if (d === null) this.sent.state.delete(k);
-        else this.sent.state.set(k, d);
-      }
-    };
-    return { state, commit };
+    return { state, commit: () => takeDigests(this.sent.state, digests) };
   }
 
   // The commands of the server queued here in the last day, of the current series: local id to the id and status there
   private serverCommands(): Map<number, { id: number; status: CommandStatus }> {
-    const out = new Map<number, { id: number; status: CommandStatus }>();
-    if (!this.added) return out;
-    const since = Math.floor(Date.now() / 1000) - STATUSES_FOR_S;
+    if (!this.added) return new Map();
+    return new Map(this.series(nowSeconds() - STATUSES_FOR_S).map((c) => [c.local, { id: c.id, status: c.status }]));
+  }
+
+  // The commands of the current series queued here since `since` (Unix s): local id, id on the server, status
+  private series(since = 0): { local: number; id: number; status: CommandStatus }[] {
     const rows = this.db.prepare("SELECT id, key, status FROM commands WHERE key LIKE ? AND ts >= ?").all(`srv-${this.added}-%`, since) as {
       id: number;
       key: string;
       status: CommandStatus;
     }[];
-    for (const r of rows) {
+    return rows.flatMap((r) => {
       const m = SERVER_COMMAND_KEY.exec(r.key);
-      if (m && Number(m[1]) === this.added) out.set(r.id, { id: Number(m[2]), status: r.status });
-    }
-    return out;
+      return m ? [{ local: r.id, id: Number(m[2]), status: r.status }] : [];
+    });
   }
 
   // The files a sync names, and those that failed before: the server says which it lacks, those go up one by one.
@@ -488,11 +482,10 @@ export class ServerLink {
   // names any more) goes nowhere.
   private async uploadFiles(named: Named) {
     const dirOf = { media: this.o.mediaDir, files: this.o.filesDir };
-    const pattern = { media: MEDIA_NAME, files: FILE_NAME };
     const want: HaveBody = { media: [], files: [] };
     for (const kind of ["media", "files"] as const) {
       for (const name of new Set([...named[kind], ...this.retry[kind]])) {
-        if (!pattern[kind].test(name)) continue;
+        if (!RELAY_FILE_NAME[kind].test(name)) continue;
         if (fs.existsSync(path.join(dirOf[kind], name))) want[kind].push(name);
         else this.retry[kind].delete(name);
       }
@@ -563,7 +556,7 @@ export class ServerLink {
       this.viewingTs = a.viewing.ts;
       // by the clock of this computer, as the agent reads it
       const ts = a.viewing.ts - (this.offset ?? 0);
-      const local = parseState(Viewing, this.o.store.getState(STATE.viewing), { chat: "", ts: 0 });
+      const local = parseState(Viewing, this.o.store.getState(STATE.viewing));
       if (ts > local.ts) this.o.store.setState(STATE.viewing, JSON.stringify({ chat: a.viewing.chat, ts }));
     }
     for (const c of a.commands) await this.queue(c);
@@ -572,12 +565,7 @@ export class ServerLink {
 
   // The last command of the current series queued here, from relay.db: a restart goes on from there
   private lastQueued(): number {
-    let last = 0;
-    for (const key of this.db.prepare("SELECT key FROM commands WHERE key LIKE ?").pluck().all(`srv-${this.added}-%`) as string[]) {
-      const m = SERVER_COMMAND_KEY.exec(key);
-      if (m) last = Math.max(last, Number(m[2]));
-    }
-    return last;
+    return this.series().reduce((last, c) => Math.max(last, c.id), 0);
   }
 
   // A command of the app, queued here with the time the app queued it, by the clock of this computer: one that waited
@@ -585,7 +573,7 @@ export class ServerLink {
   private async queue(c: ServerCommand) {
     if (c.type === "sendimage") {
       const { file } = parseArgs(ImageArgs, c.arg2);
-      if (UPLOAD_NAME.test(file) && !fs.existsSync(path.join(this.o.uploadsDir, file))) {
+      if (MEDIA_NAME.test(file) && !fs.existsSync(path.join(this.o.uploadsDir, file))) {
         try {
           const data = Buffer.from(await (await this.call("GET", `/api/relay/uploads/${file}`, { timeout: 120_000 })).arrayBuffer());
           fs.mkdirSync(this.o.uploadsDir, { recursive: true });

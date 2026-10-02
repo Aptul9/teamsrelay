@@ -1,4 +1,5 @@
 import path from "node:path";
+import { parseEnv, PushEnv, pushSettings } from "@/shared/env";
 import { DEFAULT_DESKTOP_URL } from "./client";
 
 function positiveInt(name: string, fallback: number): number {
@@ -29,26 +30,10 @@ export const config = {
   get desktopUrl() {
     return process.env.DESKTOP_URL || DEFAULT_DESKTOP_URL;
   },
-  get vapidAppKeyFile() {
-    return process.env.VAPID_APPKEY || "/vapid/appkey.txt";
-  },
   // The web app sends the notifications of the accounts on another computer itself (src/lib/relay.ts): the same
-  // keys, subject and ntfy settings as the agents
-  get vapidPrivateFile() {
-    return process.env.VAPID_PRIVATE || "/vapid/private_key.pem";
-  },
-  get vapidSubject() {
-    const s = process.env.VAPID_SUBJECT || "";
-    return /^(mailto:|https:\/\/)/.test(s) ? s : "mailto:admin@example.com";
-  },
-  // Service account key of the Firebase project, for the phones of the Android app (mobile/): the same file the agents
-  // read, for the notifications of the accounts on another computer. A missing file leaves FCM off for them.
-  get fcmCredentialsFile() {
-    return process.env.FCM_CREDENTIALS || "/fcm/service-account.json";
-  },
-  get ntfy(): { url: string; topic: string } | null {
-    const topic = process.env.NTFY_TOPIC || "";
-    return process.env.NTFY_ENABLED === "1" && topic ? { url: process.env.NTFY_URL || "https://ntfy.sh", topic } : null;
+  // keys, subject, Firebase key and ntfy settings as the agents, checked the same way (boot stops on a wrong one)
+  get push() {
+    return pushSettings(parseEnv(PushEnv, process.env));
   },
   // Room of an account on another computer for its images and attachments on this server: RELAY_QUOTA_MB, 2048 by
   // default. Past it the server refuses its new files, and the app shows them missing.
