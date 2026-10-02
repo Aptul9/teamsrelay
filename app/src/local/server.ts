@@ -1,4 +1,3 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
@@ -9,6 +8,7 @@ import { errorText, log } from "@/agent/log";
 import type { SlotStore } from "@/agent/store/slot-store";
 import { sleep } from "@/agent/teams/page";
 import { chatName, commandOf } from "@/shared/command-input";
+import { bearerToken, sameToken } from "@/shared/bearer";
 import { HttpError } from "@/shared/http-error";
 import { COMMAND_KEY, IMAGE_TYPES, type CommandStatus, type ImageExt } from "@/shared/slot-db/commands";
 import { MEDIA_NAME, type Message } from "@/shared/slot-db/rows";
@@ -83,8 +83,6 @@ export class Failures {
     return f;
   }
 }
-
-const digest = (s: string) => createHash("sha256").update(s, "utf8").digest();
 
 // The key the app gives a command, or null: the same key queues it once (a retry after a lost answer)
 function keyOf(b: Record<string, unknown>): string | null {
@@ -165,7 +163,6 @@ async function waitFor(store: SlotStore, id: number, ms: number): Promise<Comman
 }
 
 export function apiHandler(o: ApiOptions, failures = new Failures()): http.RequestListener {
-  const expected = digest(o.token);
   const wait = o.commandWaitMs ?? 30_000;
 
   const health = () => healthOf(parseState(AgentHealth.partial(), o.store.getState(STATE.health), {}));
@@ -258,8 +255,7 @@ export function apiHandler(o: ApiOptions, failures = new Failures()): http.Reque
       // the public key is public: the app needs it to subscribe
       if (req.method === "GET" && url.pathname === "/api/vapid") return send(res, 200, { key: o.vapidKey });
       if (!url.pathname.startsWith("/api/") && !url.pathname.startsWith("/media/")) throw new HttpError(404, "Not found");
-      const given = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "")?.[1] ?? "";
-      if (!timingSafeEqual(digest(given), expected)) {
+      if (!sameToken(bearerToken(req.headers.authorization), o.token)) {
         if (failures.blocked(ip)) throw new HttpError(429, "Too many wrong tokens: try again later");
         failures.add(ip);
         log.warn("api", "wrong token", { ip, path: url.pathname });

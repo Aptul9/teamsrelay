@@ -23,6 +23,9 @@ export const CALL_AUDIO_PATH = "/api/call/audio/socket";
 export const RELAY_BROWSER_PATH = "/api/relay/browser/socket";
 export const MAX_BROWSER_MESSAGE = 32 * 1024 * 1024;
 
+// The result of a tool call that failed, as MCP gives it
+export const toolError = (text: string) => ({ content: [{ type: "text" as const, text }], isError: true as const });
+
 const int = z.number().int();
 const text = (max: number) => z.string().max(max);
 

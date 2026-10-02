@@ -1,7 +1,7 @@
 import type http from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { BROWSER_HUB_KEY, type BrowserHub, type BrowserTool, type ToolResult } from "@/lib/browser-hub";
-import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH } from "@/shared/relay-sync";
+import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH, toolError } from "@/shared/relay-sync";
 import { acceptUpgrades, askWebApp } from "./upgrade";
 
 // The browsers of the relays for the MCP clients (docs/design/2026-10-01-relay-browser-mcp.md): the relay of an account
@@ -19,8 +19,6 @@ export type Check = (req: http.IncomingMessage) => Promise<number | null>;
 
 type Reply = { result?: unknown; error?: { message?: unknown } };
 type Relay = { ws: WebSocket; tools: BrowserTool[] | null; pending: Map<number, (r: Reply) => void>; queue: Promise<unknown> };
-
-const toolError = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true });
 
 // The web app answers whose relay the request is: its Authorization header goes to GET /api/relay/browser on this
 // same server

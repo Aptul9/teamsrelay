@@ -1,6 +1,6 @@
 import { Agent } from "undici";
 import { errorText, log } from "@/agent/log";
-import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH } from "@/shared/relay-sync";
+import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH, toolError } from "@/shared/relay-sync";
 import { screenRequest, screenTools, type RpcRequest } from "./browser-allowlist";
 import type { HostAnswer } from "./browser-host";
 import { openLink, type LinkSocket, type OpenSocket } from "./link-socket";
@@ -103,9 +103,7 @@ export class BrowserLink {
     const screened = screenRequest(msg);
     if (!screened.ok) {
       const name = (msg as { params?: { name?: unknown } })?.params?.name;
-      const reply = screened.reply as { result?: { content?: { text?: unknown }[] }; error?: { message?: unknown } } | null;
-      const why = reply?.result?.content?.[0]?.text ?? reply?.error?.message;
-      log.warn("ai-browser", "refused", { method: String((msg as { method?: unknown })?.method ?? ""), tool: typeof name === "string" ? name : undefined, why: typeof why === "string" ? why : undefined });
+      log.warn("ai-browser", "refused", { method: String((msg as { method?: unknown })?.method ?? ""), tool: typeof name === "string" ? name : undefined, why: screened.why });
       if (screened.reply) this.send(s, screened.reply);
       return;
     }
@@ -130,7 +128,7 @@ export class BrowserLink {
       const mb = Math.round(Buffer.byteLength(out) / 1024 / 1024);
       log.warn("ai-browser", "answer too large", { tool, mb });
       const text = `The answer is too large (${mb} MB, at most ${MAX_BROWSER_MESSAGE / 1024 / 1024} MB): take a screenshot of the visible part, or a snapshot of one element`;
-      out = JSON.stringify({ jsonrpc: "2.0", id: r.id, result: { content: [{ type: "text", text }], isError: true } });
+      out = JSON.stringify({ jsonrpc: "2.0", id: r.id, result: toolError(text) });
     }
     if (this.socket === s && s.readyState === 1) s.send(out);
   }

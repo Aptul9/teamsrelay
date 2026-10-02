@@ -11,6 +11,7 @@ import { Notifier, type PushDevices } from "@/agent/push/notifier";
 import { loadVapidKeys } from "@/agent/push/vapid";
 import { AppStore } from "@/agent/store/app-store";
 import { mediaFilesOf, SlotStore } from "@/agent/store/slot-store";
+import { bearerToken } from "@/shared/bearer";
 import type { CommandsAnswer, HaveBody, PushBody, ServerCommand, SyncBody } from "@/shared/relay-sync";
 import { FILE_NAME, MEDIA_NAME } from "@/shared/slot-db/rows";
 import { ensureSlotSchema } from "@/shared/slot-db/schema";
@@ -41,8 +42,8 @@ const refused = () => new HttpError(401, "Missing or wrong token", { "WWW-Authen
 // its digest: the database never holds it, and a wrong token tells nothing by its timing.
 export function requireRelay(req: Request): RelayCaller {
   if (req.headers.has("origin")) throw new HttpError(403, "Requests from web pages are not accepted");
-  const m = /^Bearer\s+(\S+)\s*$/i.exec(req.headers.get("authorization") ?? "");
-  const digest = m ? relayDigest(m[1]) : "";
+  const token = bearerToken(req.headers.get("authorization"));
+  const digest = token ? relayDigest(token) : "";
   const found = digest ? relayAccount(appDb(), digest) : null;
   if (!found) throw refused();
   return { slot: found.slot, added: found.added, digest };

@@ -1,3 +1,5 @@
+import { toolError } from "@/shared/relay-sync";
+
 // What the server may ask of the browser of this relay, checked here before Playwright MCP sees it: this computer runs
 // the tools, so the line holds even against a server that forwards anything (docs/design/2026-10-01-relay-browser-mcp.md).
 // The relay opens the MCP session itself: the socket carries tools/list and tools/call, nothing else.
@@ -33,13 +35,18 @@ const FILE_ARGUMENT = "filename";
 
 export type RpcId = number | string;
 export type RpcRequest = { jsonrpc: "2.0"; id: RpcId; method: string; params?: Record<string, unknown> };
-// a request that may go to Playwright MCP, or the answer the relay gives in its place (null: nothing to answer)
-export type Screened = { ok: true; request: RpcRequest } | { ok: false; reply: object | null };
+// a request that may go to Playwright MCP, or the answer the relay gives in its place (null: nothing to answer) and why
+export type Screened = { ok: true; request: RpcRequest } | { ok: false; reply: object | null; why: string };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isId = (v: unknown): v is RpcId => (typeof v === "number" && Number.isFinite(v)) || typeof v === "string";
 
-const toolError = (id: RpcId, text: string) => ({ ok: false as const, reply: { jsonrpc: "2.0", id, result: { content: [{ type: "text", text }], isError: true } } });
+// refused with a JSON-RPC error of `code`, or, without one, with the failed result of a tool call
+const refuse = (id: RpcId | null, why: string, code?: number): Screened => ({
+  ok: false,
+  why,
+  reply: id === null ? null : { jsonrpc: "2.0", id, ...(code ? { error: { code, message: why } } : { result: toolError(why) }) },
+});
 
 // Why a page address is refused, null when it may be opened: web pages only (http, https), and none of this computer.
 // Only the address given is read: a link in a page, or a name that resolves to a loopback address, still reaches it.
@@ -74,22 +81,22 @@ export function refusedUrl(url: unknown): string | null {
 export function screenRequest(msg: unknown): Screened {
   if (!isObject(msg) || msg.jsonrpc !== "2.0" || typeof msg.method !== "string" || !isId(msg.id)) {
     const id = isObject(msg) && isId(msg.id) && typeof msg.method === "string" ? msg.id : null;
-    return { ok: false, reply: id === null ? null : { jsonrpc: "2.0", id, error: { code: -32600, message: "Invalid request" } } };
+    return refuse(id, "Invalid request", -32600);
   }
   const { id, method } = msg;
   if (method === "tools/list") return { ok: true, request: msg as RpcRequest };
-  if (method !== "tools/call") return { ok: false, reply: { jsonrpc: "2.0", id, error: { code: -32601, message: `Method not allowed: ${method}` } } };
+  if (method !== "tools/call") return refuse(id, `Method not allowed: ${method}`, -32601);
   const params = isObject(msg.params) ? msg.params : {};
   const name = params.name;
-  if (typeof name !== "string") return toolError(id, "A tool name is needed");
-  if (!ALLOWED.has(name)) return toolError(id, `${name} is not allowed on this relay`);
+  if (typeof name !== "string") return refuse(id, "A tool name is needed");
+  if (!ALLOWED.has(name)) return refuse(id, `${name} is not allowed on this relay`);
   const args = params.arguments ?? {};
-  if (!isObject(args)) return toolError(id, "The arguments must be an object");
-  if (FILE_ARGUMENT in args) return toolError(id, `${FILE_ARGUMENT} is not allowed: nothing is read from or written to the disk of the relay computer`);
+  if (!isObject(args)) return refuse(id, "The arguments must be an object");
+  if (FILE_ARGUMENT in args) return refuse(id, `${FILE_ARGUMENT} is not allowed: nothing is read from or written to the disk of the relay computer`);
   // the address of a new tab is read whatever the action given with it
   if (name === "browser_navigate" || (name === "browser_tabs" && args.url !== undefined)) {
     const why = refusedUrl(args.url);
-    if (why) return toolError(id, why);
+    if (why) return refuse(id, why);
   }
   return { ok: true, request: msg as RpcRequest };
 }

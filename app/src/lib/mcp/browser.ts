@@ -1,5 +1,6 @@
 import { appDb, browserOff, logBrowserAction, slotRow, slotsOf } from "../appdb";
 import { browserHub, type BrowserTool, type ToolResult } from "../browser-hub";
+import { toolError } from "@/shared/relay-sync";
 import { ToolError } from "./tools";
 
 // The browser of the relays of a user for its MCP clients (docs/design/2026-10-01-relay-browser-mcp.md): the tools of
@@ -44,7 +45,6 @@ export function withAccount(schema: Record<string, unknown>, slots: number[]): R
   };
 }
 
-const failed = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true });
 
 // the host of the page a tool opens, for the log
 function hostOf(args: Record<string, unknown>): string {
@@ -66,7 +66,7 @@ export async function callBrowserTool(o: { userId: string; clientId: string; slo
   const log = (outcome: string) => logBrowserAction(appDb(), { userId: o.userId, clientId: o.clientId, slot, tool: o.name, host: hostOf(o.args), outcome });
   const refuse = (outcome: string, text: string) => {
     log(outcome);
-    return failed(text);
+    return toolError(text);
   };
   if (!row.relay) return refuse("not-relay", `Account ${slot} is not on another computer: only the relay of an account on another computer has a browser for AI clients`);
   if (row.stopped) return refuse("stopped", `Account ${slot} is stopped: start it first`);
