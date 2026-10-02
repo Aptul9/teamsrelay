@@ -4,7 +4,8 @@ import { pickSlot } from "@/lib/authz";
 import { CallReaders } from "@/lib/calls";
 import { route } from "@/lib/http";
 import { currentUser, requireUser } from "@/lib/session";
-import { healthOf, SlotNotReady, SlotReader } from "@/lib/slotdb";
+import { SlotNotReady, SlotReader } from "@/lib/slotdb";
+import { healthOf } from "@/shared/slot-db/state";
 
 export const dynamic = "force-dynamic";
 

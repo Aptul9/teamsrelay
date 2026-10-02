@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import { OpenResult, type CommandType, type OpenStatus } from "@/shared/slot-db/commands";
 import { HAS_TEAMS_ID, type ActivityItem, type CallLogEntry, type Chat, type Message, type MessageExtra } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
-import { CallState, cmdResultKey, InCall, Members, membersKey, parseState, STATE, Viewing, type SlotHealth } from "@/shared/slot-db/state";
+import { CallState, cmdResultKey, healthOf, InCall, Members, membersKey, parseState, STATE, Viewing, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
 
 // data/N/messages.db is created and written by the agent of slot N; the web app reads it and
@@ -232,21 +232,6 @@ export class SlotReader {
 }
 
 const appStatus = (s: string) => (s === "running" ? "pending" : s === "unconfirmed" ? "failed" : s);
-
-// The agent rewrites its health every ~5 s. Older than a minute, it no longer describes reality.
-export function healthOf(saved: Health, added: number): Health {
-  const h: Health = { ...saved };
-  const now = Date.now() / 1000;
-  const age = now - (Number(h.ts) || 0);
-  h.agent = age < 60 ? "ok" : "stale";
-  if (h.agent !== "ok") {
-    // a slot just switched on needs up to a couple of minutes for browser and agent
-    const starting = now - (added || 0) < 180;
-    Object.assign(h, { teams: starting ? "starting" : "unknown", watcher: "stale", overall: starting ? "yellow" : "red" });
-  }
-  h.overall ??= "yellow";
-  return h;
-}
 
 // Opens the slot database for the duration of one call.
 export function withSlot<T>(slot: number, fn: (r: SlotReader) => T): T {

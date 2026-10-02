@@ -2,7 +2,8 @@ import { RelayLink, STATE } from "@/shared/slot-db/state";
 import { appDb, countPushSubscriptions, listSlots, slotsOf, type Slot } from "./appdb";
 import { config, desktopUrlOf } from "./config";
 import { HttpError } from "./http";
-import { healthOf, SlotNotReady, withSlot, type Health } from "./slotdb";
+import { healthOf } from "@/shared/slot-db/state";
+import { SlotNotReady, withSlot, type Health } from "./slotdb";
 
 export type AccountSummary = {
   slot: number;

@@ -12,7 +12,7 @@ import { chatName, messageArgs, messageText, reactArgs, textArgs } from "@/share
 import { HttpError } from "@/shared/http-error";
 import { COMMAND_KEY, IMAGE_TYPES, type CommandStatus, type CommandType, type ImageExt } from "@/shared/slot-db/commands";
 import { MEDIA_NAME, type Message } from "@/shared/slot-db/rows";
-import { AgentHealth, Identity, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
+import { AgentHealth, healthOf, Identity, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import type { RelayDevices } from "./devices";
 
 // The only way into the relay: the app (src/local/web) and a small API behind one token. Everything the phone asks
@@ -119,15 +119,6 @@ function keyOf(b: Record<string, unknown>): string | null {
   return b.key;
 }
 
-// The agent rewrites its health every ~5 s. Older than a minute, it no longer describes reality.
-export function servedHealth(saved: Partial<AgentHealth>, now = Date.now() / 1000): SlotHealth {
-  const h: SlotHealth = { ...saved };
-  h.agent = now - (Number(h.ts) || 0) < 60 ? "ok" : "stale";
-  if (h.agent !== "ok") Object.assign(h, { teams: "unknown", watcher: "stale", overall: "red" });
-  h.overall ??= "yellow";
-  return h;
-}
-
 // Why a command cannot run now, as the status and message the app shows; null when it can
 function refusal(h: SlotHealth): HttpError | null {
   if (h.agent !== "ok") return new HttpError(503, "The relay is not reading Teams right now: see its log");
@@ -203,7 +194,7 @@ export function apiHandler(o: ApiOptions, failures = new Failures()): http.Reque
   const expected = digest(o.token);
   const wait = o.commandWaitMs ?? 30_000;
 
-  const health = () => servedHealth(parseState(AgentHealth.partial(), o.store.getState(STATE.health), {}));
+  const health = () => healthOf(parseState(AgentHealth.partial(), o.store.getState(STATE.health), {}));
 
   async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     const route = `${req.method} ${url.pathname}`;

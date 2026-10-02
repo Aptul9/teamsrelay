@@ -1,7 +1,8 @@
 // The socket of the relay browser to the server, with a fake socket and a fake host: what the allowlist refuses never
 // reaches Playwright MCP, answers go back with their id, one call at a time, and a dropped socket opens again.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BrowserLink, type LinkSocket } from "@/local/browser-link";
+import { BrowserLink } from "@/local/browser-link";
+import type { LinkSocket } from "@/local/link-socket";
 import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH } from "@/shared/relay-sync";
 
 class FakeSocket implements LinkSocket {

@@ -1,8 +1,9 @@
-import { Agent, WebSocket } from "undici";
+import { Agent } from "undici";
 import { errorText, log } from "@/agent/log";
 import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH } from "@/shared/relay-sync";
 import { screenRequest, screenTools, type RpcRequest } from "./browser-allowlist";
 import type { HostAnswer } from "./browser-host";
+import { openLink, type LinkSocket, type OpenSocket } from "./link-socket";
 
 // The browser of this relay for the MCP clients of the owner, as the server reaches it: a websocket the relay opens to
 // the server it joined (/api/relay/browser/socket, src/server/browser-hub.ts), with its token. The server sends
@@ -13,23 +14,12 @@ import type { HostAnswer } from "./browser-host";
 const RETRY_FIRST_MS = 1000;
 const RETRY_LONGEST_MS = 30_000;
 
-// What the link needs of a websocket: undici's, or a fake in the tests
-export type LinkSocket = {
-  readyState: number;
-  send(data: string): void;
-  close(): void;
-  onopen: ((ev: unknown) => void) | null;
-  onmessage: ((ev: { data: unknown }) => void) | null;
-  onclose: ((ev: unknown) => void) | null;
-  onerror: ((ev: unknown) => void) | null;
-};
-
 export type BrowserLinkOptions = {
   // the server the relay joined, and its token
   url: string;
   token: string;
   host: { request(method: "tools/list" | "tools/call", params: unknown): Promise<HostAnswer>; close(): Promise<void> };
-  open?: (url: string, token: string) => LinkSocket;
+  open?: OpenSocket;
 };
 
 // the host of a URL a call opens, for the log; "" for the other tools
@@ -72,32 +62,25 @@ export class BrowserLink {
 
   private connect() {
     if (this.socket || this.stopped) return;
-    const url = this.o.url.replace(/^http/, "ws") + RELAY_BROWSER_PATH;
-    let s: LinkSocket;
     try {
-      s = this.o.open
-        ? this.o.open(url, this.o.token)
-        : (new WebSocket(url, { headers: { Authorization: `Bearer ${this.o.token}` }, dispatcher: this.agent }) as unknown as LinkSocket);
+      this.socket = openLink(
+        { server: this.o.url, path: RELAY_BROWSER_PATH, token: this.o.token, dispatcher: this.agent, open: this.o.open, current: () => this.socket },
+        {
+          open: () => {
+            this.wait = RETRY_FIRST_MS;
+            log.info("ai-browser", "socket to the server open");
+          },
+          message: (s, data) => this.received(s, data),
+          close: () => {
+            this.socket = null;
+            this.again();
+          },
+        },
+      );
     } catch (e) {
       log.warn("ai-browser", `socket: ${errorText(e)}`);
       this.again();
-      return;
     }
-    this.socket = s;
-    s.onopen = () => {
-      if (this.socket !== s) return;
-      this.wait = RETRY_FIRST_MS;
-      log.info("ai-browser", "socket to the server open");
-    };
-    s.onmessage = (ev) => {
-      if (this.socket === s) this.received(s, ev.data);
-    };
-    s.onerror = () => undefined;
-    s.onclose = () => {
-      if (this.socket !== s) return;
-      this.socket = null;
-      this.again();
-    };
   }
 
   private again() {

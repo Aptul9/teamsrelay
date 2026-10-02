@@ -1,6 +1,7 @@
 import type http from "node:http";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
 import { CALL_AUDIO_PATH } from "@/shared/relay-sync";
+import { acceptUpgrades, askWebApp } from "./upgrade";
 
 // The sound of a call answered from the app on an account on another computer: the relay of the account and the page
 // of the app each open a websocket here, on the port of the web app (Next.js serves no websocket; the process loads this
@@ -25,24 +26,16 @@ const settings = (channels: number) => JSON.stringify({ type: "server_settings",
 
 // The web app answers who the request is: the headers that carry the session or the token, and the origin, go to
 // GET /api/call/audio on this same server
-export function webAppCheck(server: http.Server): Check {
+function webAppCheck(server: http.Server): Check {
   return async (req) => {
-    const address = server.address();
-    if (!address || typeof address === "string") return null;
-    const host = address.address === "0.0.0.0" || address.address === "::" ? "127.0.0.1" : address.address;
     const q = new URL(req.url ?? "/", "http://x").searchParams.get("a") ?? "";
     const headers: Record<string, string> = {};
     for (const h of ["cookie", "authorization", "origin"]) {
       const v = req.headers[h];
       if (typeof v === "string") headers[h] = v;
     }
-    const r = await fetch(`http://${host.includes(":") ? `[${host}]` : host}:${address.port}/api/call/audio${q ? `?a=${encodeURIComponent(q)}` : ""}`, {
-      headers,
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!r.ok) return null;
-    const b = (await r.json()) as Partial<Side>;
-    return Number.isInteger(b.slot) && (b.side === "app" || b.side === "relay") ? { slot: b.slot!, side: b.side } : null;
+    const b = await askWebApp(server, `/api/call/audio${q ? `?a=${encodeURIComponent(q)}` : ""}`, headers);
+    return b && Number.isInteger(b.slot) && (b.side === "app" || b.side === "relay") ? { slot: b.slot as number, side: b.side } : null;
   };
 }
 
@@ -143,19 +136,6 @@ export function attachCallAudioHub(server: http.Server, o: { check?: Check; rela
     });
   }
 
-  server.on("upgrade", (req: http.IncomingMessage, socket, head: Buffer) => {
-    if (new URL(req.url ?? "/", "http://x").pathname !== CALL_AUDIO_PATH) return;
-    socket.on("error", () => undefined);
-    check(req).then(
-      (who) => {
-        if (!who) {
-          socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
-          return;
-        }
-        wss.handleUpgrade(req, socket, head, (ws) => (who.side === "app" ? joinApp(who.slot, ws) : joinRelay(who.slot, ws)));
-      },
-      () => socket.destroy(),
-    );
-  });
+  acceptUpgrades(server, wss, CALL_AUDIO_PATH, check, (who, ws) => (who.side === "app" ? joinApp(who.slot, ws) : joinRelay(who.slot, ws)));
   return { close: () => wss.close(), pairs };
 }

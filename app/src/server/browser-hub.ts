@@ -2,6 +2,7 @@ import type http from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
 import { BROWSER_HUB_KEY, type BrowserHub, type BrowserTool, type ToolResult } from "@/lib/browser-hub";
 import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH } from "@/shared/relay-sync";
+import { acceptUpgrades, askWebApp } from "./upgrade";
 
 // The browsers of the relays for the MCP clients (docs/design/2026-10-01-relay-browser-mcp.md): the relay of an account
 // on another computer with RELAY_BROWSER=1 opens a websocket here, on the port of the web app (loaded before Next.js
@@ -23,20 +24,12 @@ const toolError = (text: string): ToolResult => ({ content: [{ type: "text", tex
 
 // The web app answers whose relay the request is: its Authorization header goes to GET /api/relay/browser on this
 // same server
-export function webAppCheck(server: http.Server): Check {
+function webAppCheck(server: http.Server): Check {
   return async (req) => {
-    const address = server.address();
-    if (!address || typeof address === "string") return null;
-    const host = address.address === "0.0.0.0" || address.address === "::" ? "127.0.0.1" : address.address;
     const auth = req.headers.authorization;
     if (typeof auth !== "string") return null;
-    const r = await fetch(`http://${host.includes(":") ? `[${host}]` : host}:${address.port}/api/relay/browser`, {
-      headers: { authorization: auth },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!r.ok) return null;
-    const b = (await r.json()) as { slot?: unknown };
-    return Number.isInteger(b.slot) ? (b.slot as number) : null;
+    const b = await askWebApp(server, "/api/relay/browser", { authorization: auth });
+    return Number.isInteger(b?.slot) ? (b!.slot as number) : null;
   };
 }
 
@@ -118,20 +111,7 @@ export function attachBrowserHub(server: http.Server, o: { check?: Check; callTi
   };
   (globalThis as Record<string, unknown>)[BROWSER_HUB_KEY] = hub;
 
-  server.on("upgrade", (req: http.IncomingMessage, socket, head: Buffer) => {
-    if (new URL(req.url ?? "/", "http://x").pathname !== RELAY_BROWSER_PATH) return;
-    socket.on("error", () => undefined);
-    check(req).then(
-      (slot) => {
-        if (slot === null) {
-          socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
-          return;
-        }
-        wss.handleUpgrade(req, socket, head, (ws) => join(slot, ws));
-      },
-      () => socket.destroy(),
-    );
-  });
+  acceptUpgrades(server, wss, RELAY_BROWSER_PATH, check, join);
 
   return {
     close: () => {
