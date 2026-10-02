@@ -1,3 +1,4 @@
+import { appDb, slotRow, type Slot } from "./appdb";
 import { HttpError } from "./http";
 
 // Slot of a per-account request: the ?a=N parameter, or the first owned slot when missing.
@@ -10,6 +11,14 @@ export function pickSlot(owned: number[], param: string | null): number {
   const n = /^\d+$/.test(param) ? Number(param) : NaN;
   if (!owned.includes(n)) throw new HttpError(404, "Account not found");
   return n;
+}
+
+// The row of an account of this user named by a path parameter; any other slot answers like one that does not exist
+export function ownedSlot(userId: string, param: string): Slot {
+  const n = Number(param);
+  const row = Number.isInteger(n) ? slotRow(appDb(), n) : null;
+  if (!row || row.owner_id !== userId) throw new HttpError(404, "Account not found");
+  return row;
 }
 
 // A path of this site to go to after the sign-in. Browsers read a backslash as a slash and drop tab, CR and LF, so

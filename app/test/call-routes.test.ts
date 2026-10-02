@@ -37,7 +37,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  vi.mocked(requireSlot).mockResolvedValue({ user, slot, added: 0 });
+  vi.mocked(requireSlot).mockResolvedValue({ user, slot });
   setSlotStopped(appDb(), slot, false);
   setCheckEvery(appDb(), slot, 0, 0);
   slotDb.exec("DELETE FROM commands; DELETE FROM state");
@@ -53,7 +53,7 @@ const talk = (since: number, o: { seen?: number; active?: boolean } = {}, db = s
 // the next request comes from the account on another computer, whose relay syncs (commands wait for it)
 const asRelay = () => {
   write(STATE.health, { cdp: "ok", ts: Math.floor(Date.now() / 1000), teams: "ok", overall: "green" }, relayDb);
-  vi.mocked(requireSlot).mockResolvedValue({ user, slot: relaySlot, added: 0 });
+  vi.mocked(requireSlot).mockResolvedValue({ user, slot: relaySlot });
 };
 const relayCommands = () => relayDb.prepare("SELECT type, arg1, arg2 FROM commands ORDER BY id").all();
 const post = (handler: typeof answer, body: unknown) =>
@@ -183,7 +183,7 @@ describe("the sound of a call of an account on another computer in the app", () 
     asRelay();
     expect((await post(answer, { since, audio: true })).status).toBe(200);
     expect(relayCommands()).toEqual([{ type: "answer", arg1: "Anna Rossi", arg2: JSON.stringify({ since, audio: true }) }]);
-    vi.mocked(requireSlot).mockResolvedValue({ user, slot, added: 0 });
+    vi.mocked(requireSlot).mockResolvedValue({ user, slot });
     ring(since);
     expect((await post(answer, { since, audio: true })).status).toBe(200);
     expect(commands()).toEqual([{ type: "answer", arg1: "Anna Rossi", arg2: JSON.stringify({ since }) }]);
@@ -227,7 +227,7 @@ describe("the sound of a call of an account on another computer in the app", () 
       expect([r.status, await r.json()]).toEqual([200, { slot: relaySlot, side: "app" }]);
       expect((await ask({ origin: "https://evil.example" })).status).toBe(403);
       expect((await ask({})).status).toBe(403);
-      vi.mocked(requireSlot).mockResolvedValue({ user, slot, added: 0 });
+      vi.mocked(requireSlot).mockResolvedValue({ user, slot });
       expect((await ask({ origin: APP }, slot)).status).toBe(409);
       vi.mocked(requireSlot).mockRejectedValueOnce(new HttpError(401, "Not signed in"));
       expect((await ask({ origin: APP })).status).toBe(401);

@@ -23,7 +23,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  vi.mocked(requireSlot).mockResolvedValue({ user: { id: "u1", email: "u1@contoso.example", name: "U1" }, slot, added: 0 });
+  vi.mocked(requireSlot).mockResolvedValue({ user: { id: "u1", email: "u1@contoso.example", name: "U1" }, slot });
   setSlotStopped(appDb(), slot, false);
   slotDb.exec("DELETE FROM commands; DELETE FROM state");
 });

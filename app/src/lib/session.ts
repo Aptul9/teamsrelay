@@ -31,14 +31,13 @@ export async function requireAdmin(req: Request): Promise<SessionUser> {
 }
 
 // Per-account requests: ?a=N must be a slot of the session user, administrators included.
-export async function requireSlot(req: Request): Promise<{ user: SessionUser; slot: number; added: number }> {
+export async function requireSlot(req: Request): Promise<{ user: SessionUser; slot: number }> {
   const user = await requireUser(req);
-  const owned = slotsOf(appDb(), user.id);
   const slot = pickSlot(
-    owned.map((s) => s.slot),
+    slotsOf(appDb(), user.id).map((s) => s.slot),
     new URL(req.url).searchParams.get("a"),
   );
-  return { user, slot, added: owned.find((s) => s.slot === slot)!.added };
+  return { user, slot };
 }
 
 // Requests on /api/accounts/N: the owner, or an administrator freeing or switching off a slot

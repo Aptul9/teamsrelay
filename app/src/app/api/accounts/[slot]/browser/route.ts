@@ -1,7 +1,8 @@
-import { appDb, browserActionsOf, setBrowserOff, slotRow } from "@/lib/appdb";
+import { appDb, browserActionsOf, setBrowserOff } from "@/lib/appdb";
 import { browserHub } from "@/lib/browser-hub";
 import { body, HttpError, route } from "@/lib/http";
 import { clientName } from "@/lib/mcp/oauth";
+import { ownedSlot } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
 
 type Ctx = { params: Promise<{ slot: string }> };
@@ -11,11 +12,7 @@ export const dynamic = "force-dynamic";
 // The browser of the relay of an account for the MCP clients, as its owner sees it in Settings. The owner only: the
 // actions tell which sites were opened.
 async function ownSlot(req: Request, param: string) {
-  const user = await requireUser(req);
-  const n = Number(param);
-  const row = Number.isInteger(n) ? slotRow(appDb(), n) : null;
-  if (!row || row.owner_id !== user.id) throw new HttpError(404, "Account not found");
-  return row;
+  return ownedSlot((await requireUser(req)).id, param);
 }
 
 // {off, connected, actions}: switched off in Settings, its relay connected with the browser on, the last 50 calls

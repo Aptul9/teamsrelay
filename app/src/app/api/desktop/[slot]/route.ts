@@ -1,5 +1,4 @@
-import { appDb, slotOwner, slotRow } from "@/lib/appdb";
-import { loginUrl } from "@/lib/authz";
+import { loginUrl, ownedSlot } from "@/lib/authz";
 import { controlClient } from "@/lib/control";
 import { HttpError, route } from "@/lib/http";
 import { ON_ANOTHER_COMPUTER } from "@/lib/relay";
@@ -12,10 +11,9 @@ const redirect = (location: string) => new Response(null, { status: 302, headers
 
 // An account of this user whose window is on the desktop
 function ownAccount(userId: string, slot: string): number {
-  const n = Number(slot);
-  if (!Number.isInteger(n) || slotOwner(appDb(), n) !== userId) throw new HttpError(404, "Account not found");
-  if (slotRow(appDb(), n)?.relay) throw new HttpError(409, ON_ANOTHER_COMPUTER);
-  return n;
+  const row = ownedSlot(userId, slot);
+  if (row.relay) throw new HttpError(409, ON_ANOTHER_COMPUTER);
+  return row.slot;
 }
 
 // The window of the account to the front of the one desktop; false when the supervisor could not do it
