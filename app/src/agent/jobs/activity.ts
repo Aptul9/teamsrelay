@@ -3,7 +3,8 @@ import { nowSeconds, type Agent } from "../context";
 import { wantedChat } from "../logic/parking";
 import { errorText, log } from "../log";
 import { sleep } from "../teams/page";
-import { readActivityFeed, scrollActivityFeed, type FeedItem } from "../teams/scripts/activity";
+import { readActivityFeed, type FeedItem } from "../teams/scripts/activity";
+import { scrollList } from "../teams/scripts/chat-list";
 import { SEL, TEXTS } from "../teams/selectors";
 import type { ActivityEntry } from "../store/slot-store";
 
@@ -25,7 +26,7 @@ export async function readActivity(a: Agent, railWait = 0): Promise<number | nul
     const seen = new Map<string, FeedItem>();
     for (let i = 0; i < 6; i++) {
       for (const item of await page.evaluate(readActivityFeed, { s: SEL, t: TEXTS })) seen.set(item.id || item.title + item.tm, item);
-      if (seen.size >= FEED_LIMIT || !(await page.evaluate(scrollActivityFeed, SEL))) break;
+      if (seen.size >= FEED_LIMIT || !(await page.evaluate(scrollList, { item: SEL.feedItem, to: "down" as const }))) break;
       await sleep(600);
     }
     items = await a.media.avatars(page, [...seen.values()].slice(0, FEED_LIMIT), FEED_LIMIT);

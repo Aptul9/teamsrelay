@@ -3,9 +3,9 @@ import type { OpenProblem } from "@/shared/slot-db/commands";
 import { sameChat } from "../logic/chats";
 import { errorText, log, type Fields } from "../log";
 import type { SlotStore } from "../store/slot-store";
-import { openChatTitle, clickChatRow, scrollChatList } from "./scripts/chat-list";
+import { openChatTitle, clickChatRow, scrollList } from "./scripts/chat-list";
 import { composerLeft } from "./scripts/compose";
-import { barButtonPoint, centerElement, openOverlayNames, openOverlays } from "./scripts/message-actions";
+import { barButtonPoint, centerElement, openOverlayNames } from "./scripts/message-actions";
 import { uncoveredPoint } from "./scripts/page-state";
 import { SEL, TEXTS } from "./selectors";
 
@@ -92,7 +92,7 @@ export class TeamsPage {
       open = await this.isOpen(name).catch(() => false);
       if (!open) await sleep(250);
     }
-    await this.page.evaluate(scrollChatList, { s: SEL, to: "top" as const }).catch(() => false);
+    await this.page.evaluate(scrollList, { item: SEL.anyChatRow, to: "top" as const }).catch(() => false);
     if (!clicked) return "not-listed";
     if (!open) {
       log.warn("open", "chat did not open", { chat: name });
@@ -110,7 +110,7 @@ export class TeamsPage {
     const click = (exact: boolean) => this.page.evaluate(clickChatRow, { s: SEL, t: TEXTS, name, exact });
     if (await click(true)) return true;
     if (Date.now() - (this.missed.get(name) ?? 0) < 30_000) return false;
-    const scroll = (to: "top" | "down") => this.page.evaluate(scrollChatList, { s: SEL, to });
+    const scroll = (to: "top" | "down") => this.page.evaluate(scrollList, { item: SEL.anyChatRow, to });
     await scroll("top");
     for (let i = 0; i < 9; i++) {
       await sleep(400);
@@ -131,15 +131,16 @@ export class TeamsPage {
   // Menus or dialogs left open over the chat would catch the mouse: Escape, up to three times. One still open is
   // named in the log: the action that asked is not taken, and the web app only sees it failed.
   async clearOverlays(): Promise<boolean> {
-    for (let i = 0; i < 3; i++) {
-      if (!(await this.page.evaluate(openOverlays, SEL))) return true;
+    for (let i = 0; ; i++) {
+      const open = await this.page.evaluate(openOverlayNames, SEL);
+      if (!open.length) return true;
+      if (i === 3) {
+        log.warn("page", "overlay still open after Escape", { overlays: open.join(", ") });
+        return false;
+      }
       await this.page.keyboard.press("Escape");
       await sleep(400);
     }
-    if (!(await this.page.evaluate(openOverlays, SEL))) return true;
-    const left = await this.page.evaluate(openOverlayNames, SEL).catch(() => []);
-    log.warn("page", "overlay still open after Escape", { overlays: left.join(", ") });
-    return false;
   }
 
   // Empties the compose box after a send that went wrong: what is left there would go out with the next message.

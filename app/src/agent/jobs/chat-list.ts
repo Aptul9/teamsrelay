@@ -4,7 +4,7 @@ import { nowSeconds, type Agent } from "../context";
 import { CHAT_LIMIT, type ChatEntry } from "../logic/chats";
 import { errorText, log } from "../log";
 import { sleep } from "../teams/page";
-import { readChatList, scrollChatList, type ListRow } from "../teams/scripts/chat-list";
+import { readChatList, scrollList, type ListRow } from "../teams/scripts/chat-list";
 import { SEL, TEXTS } from "../teams/selectors";
 import { inApp } from "./page-setup";
 
@@ -43,15 +43,15 @@ export async function scanChats(a: Agent) {
 export async function scanChatsFull(a: Agent): Promise<number | null> {
   const page = a.tp.page;
   try {
-    await page.evaluate(scrollChatList, { s: SEL, to: "top" as const });
+    await page.evaluate(scrollList, { item: SEL.anyChatRow, to: "top" as const });
     await sleep(400);
     const seen = new Map<string, ChatEntry>();
     for (let i = 0; i < 8; i++) {
       for (const c of await a.media.avatars(page, await readList(a), 20)) seen.set(c.name, c);
-      if (seen.size >= CHAT_LIMIT || !(await page.evaluate(scrollChatList, { s: SEL, to: "down" as const }))) break;
+      if (seen.size >= CHAT_LIMIT || !(await page.evaluate(scrollList, { item: SEL.anyChatRow, to: "down" as const }))) break;
       await sleep(500);
     }
-    await page.evaluate(scrollChatList, { s: SEL, to: "top" as const });
+    await page.evaluate(scrollList, { item: SEL.anyChatRow, to: "top" as const });
     if (!seen.size) return 0;
     a.store.saveChats([...seen.values()].slice(0, CHAT_LIMIT), true);
     a.store.setState(STATE.lastScanTs, String(nowSeconds()));

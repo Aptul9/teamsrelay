@@ -2,7 +2,8 @@
 // in September 2026, names and texts invented).
 import { beforeAll, describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
-import { readActivityFeed, scrollActivityFeed, type FeedItem } from "@/agent/teams/scripts/activity";
+import { readActivityFeed, type FeedItem } from "@/agent/teams/scripts/activity";
+import { scrollList } from "@/agent/teams/scripts/chat-list";
 import { withChrome } from "./chrome";
 
 type Part = { title: string; bold?: boolean; unreadDot?: boolean; icon?: string; preview?: string; tm: string; location?: string; extra?: string };
@@ -77,7 +78,7 @@ describe("Activity feed page script", () => {
 
   it("scrolls the virtualized feed", async () => {
     await chrome.page.setContent(`<div id="f" style="height:120px; overflow-y:auto">${FEED}${FEED}</div>`);
-    expect(await chrome.page.evaluate(scrollActivityFeed, SEL)).toBe(true);
+    expect(await chrome.page.evaluate(scrollList, { item: SEL.feedItem, to: "down" as const })).toBe(true);
     expect(await chrome.page.evaluate(() => document.getElementById("f")?.scrollTop)).toBe(96);
   });
 });

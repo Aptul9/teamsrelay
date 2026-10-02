@@ -60,7 +60,7 @@ export function ownerUses(a: Agent, now = Date.now()): boolean {
 // connections of the desktop not readable): the owner's clicks, keys and wheel turns, and the desktop link, OWNER_PAUSE
 // seconds each.
 function ownerWhy(a: Agent, now = Date.now()): "desktop" | "link" | "input" | null {
-  const link = parseState(Desktop, a.store.getState(STATE.desktop), { ts: 0 }).ts * 1000;
+  const link = parseState(Desktop, a.store.getState(STATE.desktop)).ts * 1000;
   if (a.config.desktop && !a.desktopUnknown) {
     if (a.onDesktop) return "desktop";
     return now - link < DESKTOP_BRIDGE * 1000 && (a.desktopSeenAt ?? 0) < link ? "link" : null;
@@ -138,7 +138,7 @@ export function wanted(a: Agent): string {
 // The app shows this chat now and Teams holds it open for it: a message there is read as it comes, in Teams and in the
 // app, and needs no notification
 export function inApp(a: Agent, chat: string): boolean {
-  const viewing = parseState(Viewing, a.store.getState(STATE.viewing), { chat: "", ts: 0 });
+  const viewing = parseState(Viewing, a.store.getState(STATE.viewing));
   return !!chat && a.store.getState(STATE.activeChat) === chat && shownInApp(viewing, nowSeconds()) === chat;
 }
 

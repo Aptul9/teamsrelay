@@ -106,7 +106,7 @@ function openSlotDb(slot: number): Database.Database {
   return db;
 }
 
-const viewingTs = (v: string | null | undefined) => parseState(Viewing, v, { chat: "", ts: 0 }).ts;
+const viewingTs = (v: string | null | undefined) => parseState(Viewing, v).ts;
 
 // The health the agent of the relay rewrites every few seconds, the call while it rings and the call in progress, go by
 // the clock of the server: the app judges each by its age, and the clock of the other computer may be off. Each keeps
@@ -208,7 +208,7 @@ export async function waitForRelayCommands(
     for (;;) {
       stillRelay(caller);
       const commands = pending.all(after) as ServerCommand[];
-      const v = parseState(Viewing, viewing.get(STATE.viewing) as string | undefined, { chat: "", ts: 0 });
+      const v = parseState(Viewing, viewing.get(STATE.viewing) as string | undefined);
       const shown = v.ts > vts ? v : null;
       if (commands.length || shown || Date.now() >= end || signal?.aborted) return { commands, viewing: shown };
       await sleep(250);

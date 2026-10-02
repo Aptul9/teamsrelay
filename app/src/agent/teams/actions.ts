@@ -2,8 +2,9 @@ import type { ReactionName } from "@/shared/slot-db/commands";
 import type { ReadBy } from "@/shared/slot-db/rows";
 import { errorText, log } from "../log";
 import { confirmSent, messageSelector, sleep, until, type AfterPress, type SendResult, type TeamsPage } from "./page";
-import { composerImages, composerLeft, imageMessageSent, messageIds, ownMessageSent, pasteImage } from "./scripts/compose";
+import { composerImages, composerLeft, messageIds, ownMessageSent, pasteImage } from "./scripts/compose";
 import {
+  centerElement,
   composerText,
   deletedState,
   isOwnMessage,
@@ -20,13 +21,16 @@ import { ACTIONS, BAR_REACTIONS, PICKER_REACTIONS, SEL, TEXTS } from "./selector
 
 // The actions on Teams. Each one checks on the page that Teams applied it and answers true only then.
 
+// The start of `text` is in the compose box
+const typed = async (tp: TeamsPage, text: string) => (await tp.page.evaluate(composerText, SEL)).includes(text.slice(0, 20));
+
 // A click or a key that threw may have sent the message or not: the page says which. The text still in the compose
 // box and no new message: it never left (a panel over the Send button caught the click), the box is emptied and the
 // send failed. Anything else, or a page that cannot be read: it may be out.
 async function afterFailedPress(tp: TeamsPage, text: string, before: string[]): Promise<SendResult> {
   try {
     await sleep(1000);
-    const left = (await tp.page.evaluate(composerText, SEL)).includes(text.slice(0, 20));
+    const left = await typed(tp, text);
     const fresh = (await tp.page.evaluate(messageIds, SEL)).some((mid) => !before.includes(mid));
     if (left && !fresh) {
       await tp.emptyComposeBox();
@@ -60,7 +64,7 @@ export async function sendText(tp: TeamsPage, chat: string, raw: string, sent?: 
     await sleep(200);
     await page.keyboard.insertText(text);
     await sleep(300);
-    if (!(await page.evaluate(composerText, SEL)).includes(text.slice(0, 20))) throw new Error("text not in the compose box");
+    if (!(await typed(tp, text))) throw new Error("text not in the compose box");
     const send = await page.$(SEL.sendButton);
     pressed = true;
     if (send) await send.click();
@@ -83,7 +87,7 @@ export type ImageFile = { name: string; type: string; data: Buffer };
 export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, caption: string, sent?: AfterPress): Promise<SendResult> {
   if (!(await tp.toChat(chat, true))) return "failed";
   const page = tp.page;
-  if ((await page.evaluate(composerText, SEL)).trim() || (await page.evaluate(composerImages, SEL))) {
+  if (await page.evaluate(composerLeft, SEL)) {
     log.warn("image", "compose box not empty", { chat });
     return "failed";
   }
@@ -105,7 +109,7 @@ export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, c
     await tp.emptyComposeBox();
     return "failed";
   }
-  return confirmSent({ area: "image", shown: () => page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before }), tries: 100, sent, fields: { chat } });
+  return confirmSent({ area: "image", shown: () => page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, image: true }), tries: 100, sent, fields: { chat } });
 }
 
 // Reply with quote: on the bar for other people's messages, in More options for yours. Refused when Teams shows
@@ -136,7 +140,7 @@ export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, r
     await sleep(300);
     await page.keyboard.insertText(text);
     await sleep(300);
-    if (!(await page.evaluate(composerText, SEL)).includes(text.slice(0, 20))) throw new Error("text not in the compose box");
+    if (!(await typed(tp, text))) throw new Error("text not in the compose box");
     // the send button changes name with the layout: Enter works in both
     pressed = true;
     await page.keyboard.press("Enter");
@@ -211,7 +215,7 @@ export async function togglePill(tp: TeamsPage, chat: string, mid: string, emoji
   if (!emoji || !(await tp.toChat(chat))) return false;
   const m = tp.page.locator(messageSelector(mid));
   if ((await m.count()) === 0) return false;
-  await m.evaluate((e) => e.scrollIntoView({ block: "center" }));
+  await m.evaluate(centerElement);
   await sleep(400);
   const pill = () => tp.page.evaluate(reactionPill, { s: SEL, mid, emoji });
   const was = await pill();

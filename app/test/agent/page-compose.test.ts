@@ -4,7 +4,7 @@
 // like it does.
 import { describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
-import { composerImages, composerLeft, imageMessageSent, messageIds, ownMessageSent, pasteImage } from "@/agent/teams/scripts/compose";
+import { composerImages, composerLeft, messageIds, ownMessageSent, pasteImage } from "@/agent/teams/scripts/compose";
 import { fixture, picture, withChrome } from "./chrome";
 
 const chrome = withChrome();
@@ -95,30 +95,30 @@ describe("image sent, on the conversation captured from Teams", () => {
 
   it("sees a new image message of yours once Teams shows it sent", async () => {
     const mids = await conversation("Sent");
-    expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before: mids.filter((m) => m !== IMAGE_MID) })).toBe(true);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before: mids.filter((m) => m !== IMAGE_MID), image: true })).toBe(true);
   });
 
   // Teams draws the status icon under the last message of yours only: a new message without it is not known sent
   it("does not take it before Teams draws its status icon, or when Teams failed to send it", async () => {
     const before = (await conversation()).filter((m) => m !== IMAGE_MID);
-    expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, image: true })).toBe(false);
     await conversation("Failed to send");
-    expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, image: true })).toBe(false);
   });
 
   it("waits while Teams still shows it as sending", async () => {
     const mids = await conversation("Sending...");
     const before = mids.filter((m) => m !== IMAGE_MID);
-    expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, image: true })).toBe(false);
     await conversation("Sent");
-    expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before })).toBe(true);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before, image: true })).toBe(true);
   });
 
   it("does not take a message that was already there, or one without an image", async () => {
     const mids = await conversation("Sent");
-    expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before: mids })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before: mids, image: true })).toBe(false);
     const withoutText = mids.filter((m) => m !== "1790000000006");
-    expect(await chrome.page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before: withoutText })).toBe(false);
+    expect(await chrome.page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before: withoutText, image: true })).toBe(false);
   });
 });
 

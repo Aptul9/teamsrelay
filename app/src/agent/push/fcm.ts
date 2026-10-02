@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { JWT } from "google-auth-library";
 import { z } from "zod";
 import { ConfigError } from "@/shared/env";
+import { errorText } from "../log";
 
 // Firebase Cloud Messaging, HTTP v1 API (https://firebase.google.com/docs/cloud-messaging/send/v1-api), for the phones
 // that run the TeamsRelay app of mobile/: one data message per phone, its content sealed with the key of that phone
@@ -23,7 +24,7 @@ export function loadServiceAccount(file: string): ServiceAccount | null {
   try {
     json = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (e) {
-    throw new ConfigError(`${file}: not JSON (${e instanceof Error ? e.message : String(e)})`);
+    throw new ConfigError(`${file}: not JSON (${errorText(e)})`);
   }
   const r = ServiceAccount.safeParse(json);
   if (!r.success) throw new ConfigError(`${file}: not a service account key file of Google Cloud`);

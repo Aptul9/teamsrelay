@@ -325,7 +325,7 @@ export class ServerLink {
     for (const { k, v } of all<{ k: string; v: string | null }>("SELECT k, v FROM state")) {
       if (k === STATE.relay || LIVE.includes(k)) continue;
       if (k === STATE.viewing) {
-        const local = parseState(Viewing, v, { chat: "", ts: 0 });
+        const local = parseState(Viewing, v);
         const ts = local.ts + (this.offset ?? 0);
         if (this.offset !== null && ts > this.viewingTs) viewing = { raw: JSON.stringify({ ...local, ts }), ts };
         continue;
@@ -365,7 +365,7 @@ export class ServerLink {
     if (viewing) stateOut[STATE.viewing] = viewing.raw;
     if (Object.keys(stateOut).length) body.state = stateOut;
     for (const [k, v] of Object.entries(stateOut)) {
-      if (k === STATE.me) picture(parseState(Identity, v, Identity.parse({})).av);
+      if (k === STATE.me) picture(parseState(Identity, v).av);
       else if (/^cmd_result:\d+$/.test(k)) {
         const f = parseState(DownloadResult, v, null)?.f;
         if (f) named.files.add(f);
@@ -563,7 +563,7 @@ export class ServerLink {
       this.viewingTs = a.viewing.ts;
       // by the clock of this computer, as the agent reads it
       const ts = a.viewing.ts - (this.offset ?? 0);
-      const local = parseState(Viewing, this.o.store.getState(STATE.viewing), { chat: "", ts: 0 });
+      const local = parseState(Viewing, this.o.store.getState(STATE.viewing));
       if (ts > local.ts) this.o.store.setState(STATE.viewing, JSON.stringify({ chat: a.viewing.chat, ts }));
     }
     for (const c of a.commands) await this.queue(c);

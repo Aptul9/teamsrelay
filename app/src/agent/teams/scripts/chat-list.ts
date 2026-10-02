@@ -91,9 +91,10 @@ export function openChatTitle(s: Selectors): string {
   return /^\+\d+$/.test(next) ? `${first}, ${next}` : first;
 }
 
-// Scrolls the virtualized chat list to the top, or down by most of a screen. True when it moved.
-export function scrollChatList({ s, to }: { s: Selectors; to: "top" | "down" }): boolean {
-  let e: HTMLElement | null = document.querySelector<HTMLElement>(s.anyChatRow);
+// Scrolls a virtualized list (the chats, the Activity feed), found by one of its `item`s, to the top or down by most of
+// a screen. True when it moved.
+export function scrollList({ item, to }: { item: string; to: "top" | "down" }): boolean {
+  let e: HTMLElement | null = document.querySelector<HTMLElement>(item);
   while (e && !(e.scrollHeight > e.clientHeight + 5 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement;
   if (!e) return false;
   const before = e.scrollTop;

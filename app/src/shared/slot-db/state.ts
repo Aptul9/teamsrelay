@@ -178,8 +178,9 @@ export function healthOf(saved: SlotHealth, added = 0, now = Date.now() / 1000):
   return h;
 }
 
-// JSON of a state row; missing, broken or of another shape gives the fallback
-export function parseState<T>(schema: z.ZodType<T>, value: string | null | undefined, fallback: T): T {
+// JSON of a state row; missing, broken or of another shape gives the fallback, by default what the schema makes of
+// nothing (every field of the state schemas above falls back on its own)
+export function parseState<T>(schema: z.ZodType<T>, value: string | null | undefined, fallback: T = schema.parse({})): T {
   if (!value) return fallback;
   try {
     const r = schema.safeParse(JSON.parse(value));

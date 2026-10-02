@@ -17,7 +17,7 @@ export type FeedItem = {
   avsrc: string;
 };
 
-// The items the feed has in the page (it is virtualized: scrollActivityFeed brings the next ones)
+// The items the feed has in the page (it is virtualized: scrollList brings the next ones)
 export function readActivityFeed({ s, t }: { s: Selectors; t: Texts }): FeedItem[] {
   return [...document.querySelectorAll<HTMLElement>(s.feedItem)].map((it) => {
     const id = ((it.getAttribute("aria-labelledby") || "").match(s.feedItemId) || [])[1] || "";
@@ -60,14 +60,4 @@ export function readActivityFeed({ s, t }: { s: Selectors; t: Texts }): FeedItem
     const avatar = [...it.querySelectorAll("img")].find((i) => !i.alt && i.naturalWidth);
     return { id, title, kind, actor, emoji, preview: preview.slice(0, 300), tm, chat, channel, unread: weight >= 600, avsrc: avatar ? avatar.currentSrc || avatar.src : "" };
   });
-}
-
-// Scrolls the feed down by most of a screen. True when it moved.
-export function scrollActivityFeed(s: Selectors): boolean {
-  let e: HTMLElement | null = document.querySelector<HTMLElement>(s.feedItem);
-  while (e && !(e.scrollHeight > e.clientHeight + 5 && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement;
-  if (!e) return false;
-  const before = e.scrollTop;
-  e.scrollTop = before + e.clientHeight * 0.8;
-  return e.scrollTop > before;
 }

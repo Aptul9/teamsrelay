@@ -8,8 +8,6 @@ import { signInPage } from "../teams/scripts/sign-in";
 import { SEL, TEXTS } from "../teams/selectors";
 import { pressMicrosoft, pressTeamsSignIn } from "../teams/sign-in-actions";
 
-const NONE: SignInTry = { at: 0, pressed: [], microsoft: false };
-
 // What was logged for the sign-out of each agent (the one that started at `since`): the pages whose buttons were
 // listed, the attempt skipped for being too close to the last one, the pages listed once the owner was told
 const told = new WeakMap<Agent, { since: number; pages: Set<string>; skipped: boolean; listed: boolean }>();
@@ -26,11 +24,11 @@ const told = new WeakMap<Agent, { since: number; pages: Set<string>; skipped: bo
 // they show.
 export async function trySignIn(a: Agent) {
   const now = nowSeconds();
-  const w = parseState(Watch, a.store.getState(STATE.loginWatch), { since: 0, alerted: false });
+  const w = parseState(Watch, a.store.getState(STATE.loginWatch));
   const me = a.store.getState(STATE.me);
   if (!w.since || !me) return;
   const seen = toldOf(a, w.since);
-  let t = parseState(SignInTry, a.store.getState(STATE.signInTry), NONE);
+  let t = parseState(SignInTry, a.store.getState(STATE.signInTry));
   if (t.at < w.since) {
     if (w.alerted) {
       if (!seen.listed) for (const page of signOutPages(a)) await logButtons(page, seen);
@@ -63,7 +61,7 @@ export async function trySignIn(a: Agent) {
   const page = microsoftPage(a);
   if (!page) return;
   await logButtons(page, seen);
-  const done = await pressMicrosoft(page, parseState(Identity, me, { name: "", email: "", tenant: "", av: "" }).email);
+  const done = await pressMicrosoft(page, parseState(Identity, me).email);
   if (!done) return;
   t.microsoft = true;
   if (done === "account" || done === "button") t.pressed.push(done);

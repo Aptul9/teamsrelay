@@ -218,7 +218,7 @@ export class SlotReader {
   // chat since, marked before this leave arrived (a switch from one chat to the next).
   leaveViewing(chat: string) {
     this.db.transaction(() => {
-      const shown = parseState(Viewing, this.db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.viewing) as string | undefined, { chat: "", ts: 0 });
+      const shown = parseState(Viewing, this.db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.viewing) as string | undefined);
       if (shown.chat !== chat) return;
       this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.viewing, JSON.stringify({ chat: "", ts: Math.floor(Date.now() / 1000) }));
     })();

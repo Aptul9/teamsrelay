@@ -173,7 +173,7 @@ export function apiHandler(o: ApiOptions, failures = new Failures()): http.Reque
   async function api(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
     const route = `${req.method} ${url.pathname}`;
     if (route === "GET /api/state") {
-      const me = parseState(Identity, o.store.getState(STATE.me), Identity.parse({}));
+      const me = parseState(Identity, o.store.getState(STATE.me));
       return send(res, 200, {
         health: health(),
         me: { name: me.name, email: me.email, tenant: me.tenant },
