@@ -7,7 +7,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { chromium, type BrowserContext } from "playwright-core";
 import { ConfigError } from "@/shared/env";
-import { isLoginUrl, isTeamsUrl, pickTeamsPage } from "@/agent/logic/hosts";
+import { isTeamsUrl, pickTeamsPage } from "@/agent/logic/hosts";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { errorText, log } from "@/agent/log";
 import { runAgent } from "@/agent/loop";
@@ -166,7 +166,7 @@ async function login(config: Config): Promise<number> {
   process.on("exit", release);
   let context: BrowserContext | null = await launchBrowser({ profileDir: config.profileDir, channel: config.channel });
   context.on("close", () => (context = null));
-  if (!context.pages().some((p) => isTeamsUrl(p.url()) || isLoginUrl(p.url()))) await openTeams(context, config.teamsUrl);
+  if (!pickTeamsPage(context.pages())) await openTeams(context, config.teamsUrl);
   console.log("Sign in to Teams in the browser window that just opened, MFA included.");
   console.log('Answer "Yes" to "Stay signed in?": the session then survives restarts of the relay.');
   console.log("The window closes by itself once Teams shows your chats.");

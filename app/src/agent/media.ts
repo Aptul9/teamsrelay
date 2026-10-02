@@ -9,6 +9,27 @@ import { copyImage, fetchImage } from "./teams/scripts/media";
 // Maximum size of an image fetched from a message
 const MAX_IMAGE = 8e6;
 
+// Removes the files of a media folder no row names any more (`named`); `removed` hears the size of each. Number of
+// files removed.
+export function pruneMedia(dir: string, named: ReadonlySet<string>, removed?: (size: number) => void): number {
+  if (!fs.existsSync(dir)) return 0;
+  let n = 0;
+  for (const name of fs.readdirSync(dir)) {
+    if (!MEDIA_NAME.test(name) || named.has(name)) continue;
+    const file = path.join(dir, name);
+    const size = fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
+    try {
+      fs.rmSync(file);
+    } catch (e) {
+      log.warn("media", errorText(e), { file: name });
+      continue;
+    }
+    removed?.(size);
+    n++;
+  }
+  return n;
+}
+
 // Images, profile pictures (data/N/media) and attachments (data/N/files). A file is written once and kept while a row
 // names it: images and pictures no row names any more leave the media folder (prune).
 export class Media {
@@ -77,18 +98,7 @@ export class Media {
   // Removes the files of the media folder no row names any more (`named`: SlotStore.mediaFiles), such as the picture of
   // a chat that left the list; one that shows again is copied again under its name. Number of files removed.
   prune(named: ReadonlySet<string>): number {
-    if (!fs.existsSync(this.mediaDir)) return 0;
-    let removed = 0;
-    for (const name of fs.readdirSync(this.mediaDir)) {
-      if (!MEDIA_NAME.test(name) || named.has(name)) continue;
-      try {
-        fs.rmSync(path.join(this.mediaDir, name));
-        removed++;
-      } catch (e) {
-        log.warn("media", errorText(e), { file: name });
-      }
-    }
-    return removed;
+    return pruneMedia(this.mediaDir, named);
   }
 
   // SharePoint or OneDrive attachment downloaded with the browser session (from the phone the link would ask

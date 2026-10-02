@@ -2,7 +2,8 @@
 // always inserted as text, never as HTML. The token of the relay stays in this browser (localStorage).
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const REACTIONS = [["like", "👍"], ["heart", "❤️"], ["laugh", "😂"], ["surprised", "😮"], ["cry", "😢"], ["angry", "😠"]];
+// the quick reactions as Teams draws them (REACTION_EMOJI of src/shared/slot-db/rows.ts)
+const REACTIONS = [["like", "👍"], ["heart", "❤️"], ["laugh", "😆"], ["surprised", "😮"], ["cry", "😢"], ["angry", "😠"]];
 const TOKEN_KEY = "teamsrelay-token";
 
 const saved = {

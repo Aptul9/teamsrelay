@@ -49,11 +49,11 @@ import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ApiError, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message, type OpenReason, type OpenStatus } from "@/lib/client";
+import { REACTION_EMOJI } from "@/shared/slot-db/rows";
 import { useInUse } from "@/lib/in-use";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
 import { dayLabel, fullTime, placeMessages, sentAt, timeLabel } from "@/lib/message-times";
 
-const EMO: Record<string, string> = { like: "👍", heart: "❤️", laugh: "😆", surprised: "😮", cry: "😢", angry: "😠" };
 const EMO_LABEL: Record<string, string> = { like: "Like", heart: "Heart", laugh: "Laugh", surprised: "Surprised", cry: "Sad", angry: "Angry" };
 
 // The agent already rebuilds message bodies from a short list of tags; sanitized again before rendering.
@@ -258,7 +258,7 @@ export function Conversation({
   async function doReact(mid: string, key: string) {
     setSheetFor(null);
     const m = messages.find((x) => String(x.mid) === mid);
-    const mineAlready = m?.reactions?.some((r) => r.e === EMO[key] && r.mine);
+    const mineAlready = m?.reactions?.some((r) => r.e === REACTION_EMOJI[key] && r.mine);
     if (!mineAlready) setLocalReacts((s) => ({ ...s, [mid]: [...new Set([...(s[mid] || []), key])] }));
     const r = await runCmd("/api/react", { name: chat, mid, emoji: key }, acc);
     setLocalReacts((s) => ({ ...s, [mid]: (s[mid] || []).filter((k) => k !== key) }));
@@ -269,7 +269,7 @@ export function Conversation({
   async function tapPill(mid: string, emoji: string) {
     const m = messages.find((x) => String(x.mid) === mid);
     const wasMine = !!m?.reactions?.find((x) => x.e === emoji)?.mine;
-    const key = Object.keys(EMO).find((k) => EMO[k] === emoji);
+    const key = Object.keys(REACTION_EMOJI).find((k) => REACTION_EMOJI[k] === emoji);
     if (wasMine) setPillPending((s) => ({ ...s, [mid]: { ...(s[mid] || {}), [emoji]: true } }));
     else if (key) setLocalReacts((s) => ({ ...s, [mid]: [...new Set([...(s[mid] || []), key])] }));
     const r = await runCmd("/api/react", { name: chat, mid, pill: emoji }, acc);
@@ -498,7 +498,7 @@ export function Conversation({
       .filter((r) => !pillPending[mid]?.[r.e])
       .map((r) => ({ e: r.e, n: r.n, mine: r.mine, pend: false }));
     const localOnly = (localReacts[mid] || [])
-      .map((k) => EMO[k])
+      .map((k) => REACTION_EMOJI[k])
       .filter((x) => x && !(m.reactions || []).some((r) => r.e === x))
       .map((x) => ({ e: x, n: 1, mine: true, pend: true }));
     const reacts = [...teamsReacts, ...localOnly];
@@ -620,7 +620,7 @@ export function Conversation({
                   mine ? "right-2" : "left-2",
                 )}
               >
-                {Object.entries(EMO).map(([k, e]) => (
+                {Object.entries(REACTION_EMOJI).map(([k, e]) => (
                   <Tooltip key={k}>
                     <TooltipTrigger asChild>
                       <button
@@ -1050,7 +1050,7 @@ export function Conversation({
           {sheetMsg && (
             <>
               <div className="flex justify-between gap-1 px-1">
-                {Object.entries(EMO).map(([k, e]) => (
+                {Object.entries(REACTION_EMOJI).map(([k, e]) => (
                   <button
                     key={k}
                     type="button"

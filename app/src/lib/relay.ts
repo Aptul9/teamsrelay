@@ -11,6 +11,7 @@ import { FcmSender, loadServiceAccount } from "@/agent/push/fcm";
 import { Notifier, type PushDevices } from "@/agent/push/notifier";
 import { loadVapidKeys } from "@/agent/push/vapid";
 import { AppStore } from "@/agent/store/app-store";
+import { pruneMedia } from "@/agent/media";
 import { mediaFilesOf, SlotStore } from "@/agent/store/slot-store";
 import { bearerToken } from "@/shared/bearer";
 import { LIVE_KEYS, RELAY_FILE_NAME, type CommandsAnswer, type HaveBody, type PushBody, type ServerCommand, type SyncBody } from "@/shared/relay-sync";
@@ -319,21 +320,10 @@ export function missingRelayFiles(slot: number, have: HaveBody): HaveBody {
 // messages no longer kept. One that shows again goes again: the relay asks about the files of every sync that names
 // them. Their bytes go back to the room of the account. Attachments stay until the account is removed.
 function pruneRelayMedia(caller: RelayCaller, named: ReadonlySet<string>) {
-  const dir = folderOf(caller.slot, "media");
-  if (!fs.existsSync(dir)) return;
   const room = rooms().get(caller.slot);
-  for (const name of fs.readdirSync(dir)) {
-    if (!RELAY_FILE_NAME.media.test(name) || named.has(name)) continue;
-    const file = path.join(dir, name);
-    const size = fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
-    try {
-      fs.rmSync(file);
-    } catch (e) {
-      console.error(`relay ${caller.slot}: ${(e as Error).message}`);
-      continue;
-    }
+  pruneMedia(folderOf(caller.slot, "media"), named, (size) => {
     if (room) room.used -= size;
-  }
+  });
 }
 
 // Bytes of the files of a folder, 0 without the folder
