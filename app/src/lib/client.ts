@@ -1,7 +1,7 @@
 // Browser-side helpers of the PWA: API calls, command follow-up, formatting.
 
 import type { CallReason } from "@/shared/slot-db/commands";
-import { hasTeamsId, type ActivityItem } from "@/shared/slot-db/rows";
+import { hasTeamsId, IMAGE_TYPES, MAX_UPLOAD, type ActivityItem } from "@/shared/slot-db/rows";
 
 export type Account = {
   slot: number;
@@ -130,12 +130,12 @@ export async function runCmd(path: string, body: unknown, acc: number, tries?: n
 }
 
 // Images the app sends, as /api/sendimage takes them (it checks the content again)
-export const IMAGE_ACCEPT = "image/png,image/jpeg,image/gif,image/webp";
+export const IMAGE_ACCEPT = Object.values(IMAGE_TYPES).join(",");
 
 export function imageProblem(f: File): string | null {
   if (!IMAGE_ACCEPT.split(",").includes(f.type)) return "Only PNG, JPEG, GIF or WebP images can be sent from here: send other files from Teams";
   if (!f.size) return "Empty image";
-  if (f.size > 10e6) return "Image larger than 10 MB";
+  if (f.size > MAX_UPLOAD) return "Image larger than 10 MB";
   return null;
 }
 

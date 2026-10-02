@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { COMMAND_STATUSES } from "./slot-db/commands";
+import { FILE_NAME, MEDIA_NAME } from "./slot-db/rows";
+import { STATE } from "./slot-db/state";
 
 // /api/relay/* between the local relay of an account on another computer (src/local/server-link.ts) and the web app
 // of the server it joins (src/lib/relay.ts): docs/design/2026-09-27-relay-joins-server.md. Rows go as the slot
@@ -31,6 +33,13 @@ const text = (max: number) => z.string().max(max);
 
 // name of the computer of the relay (HOST_LABEL), as long as the server takes it
 export const HOST_LENGTH = 100;
+// the most rows of a table one sync carries (messages: of one chat); the relay keeps to them
+export const SYNC_MAX = { chats: 2000, messages: 2000, activity: 2000, calls: 500 } as const;
+// state the relay reads right before the rows go and the server reads by its own clock: the health the agent rewrites
+// every few seconds, the call while it rings, the call in progress
+export const LIVE_KEYS: readonly string[] = [STATE.health, STATE.call, STATE.inCall];
+// the files the relay uploads, by kind: images and profile pictures (media), downloaded attachments (files)
+export const RELAY_FILE_NAME = { media: MEDIA_NAME, files: FILE_NAME } as const;
 export const ChatName = text(1000);
 export const StateKey = text(1000);
 export const StateValue = text(2_000_000);
@@ -93,10 +102,10 @@ export const SyncBody = z.object({
   host: text(HOST_LENGTH),
   // the clock of the relay when it sent this (ms): the server reads the times of the relay by its own clock from it
   now: int.positive(),
-  chats: z.array(ChatRow).max(2000).optional(),
+  chats: z.array(ChatRow).max(SYNC_MAX.chats).optional(),
   // rows of each chat that changed; [] for a chat whose rows are gone
   messages: z
-    .record(ChatName, z.array(MessageRow).max(2000))
+    .record(ChatName, z.array(MessageRow).max(SYNC_MAX.messages))
     .refine((m) => Object.keys(m).length <= 2000, "too many chats")
     .optional(),
   // keys that changed; null for a key gone
@@ -104,8 +113,8 @@ export const SyncBody = z.object({
     .record(StateKey, StateValue.nullable())
     .refine((s) => Object.keys(s).length <= 5000, "too many keys")
     .optional(),
-  activity: z.array(ActivityRow).max(2000).optional(),
-  calls: z.array(CallRow).max(500).optional(),
+  activity: z.array(ActivityRow).max(SYNC_MAX.activity).optional(),
+  calls: z.array(CallRow).max(SYNC_MAX.calls).optional(),
   // rows that changed
   readby: z.array(ReadByRow).max(20_000).optional(),
   // status of the commands of the server (their id there) that changed

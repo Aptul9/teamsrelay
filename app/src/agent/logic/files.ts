@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { IMAGE_TYPES } from "@/shared/slot-db/rows";
 
 // Names of the files in data/N/media and data/N/files. Same names as the Python agent: switching agent keeps
 // the files already downloaded, and the web app serves only 16 hex characters plus an extension.
 const sha16 = (s: string) => createHash("sha1").update(s, "utf8").digest("hex").slice(0, 16);
 
-export const MEDIA_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
+export const MEDIA_EXT: Record<string, string> = Object.fromEntries(Object.entries(IMAGE_TYPES).map(([ext, type]) => [type, ext]));
 
 // Image number `index` of message `mid`, without the extension (it comes from the content type)
 export const imageKey = (chat: string, mid: string, index: number) => sha16(`${chat}|${mid}|${index}`);

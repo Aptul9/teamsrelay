@@ -45,6 +45,7 @@ export const STATE = {
 
 // JSON result of command <id>, e.g. DownloadResult
 export const cmdResultKey = (id: number) => `cmd_result:${id}`;
+export const CMD_RESULT_KEY = /^cmd_result:(\d+)$/;
 // "1": 1:1 chat, where Teams has no "Read by" entry
 export const oneToOneKey = (chat: string) => `chat_1to1:${chat}`;
 // JSON Members of a chat, read by the agent on a members command

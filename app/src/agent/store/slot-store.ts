@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
-import { HAS_TEAMS_ID, type Message, type MessageExtra, type ReadBy } from "@/shared/slot-db/rows";
+import { HAS_TEAMS_ID, parseExtra, type Message, type MessageExtra, type ReadBy } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE, ensureSlotSchema } from "@/shared/slot-db/schema";
 import { Identity, parseState, STATE } from "@/shared/slot-db/state";
 import { nowSeconds } from "../context";
@@ -272,16 +272,6 @@ export function mediaFilesOf(db: Database.Database): Set<string> {
   }
   add(parseState(Identity, db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.me) as string | null | undefined, null)?.av);
   return files;
-}
-
-function parseExtra(v: string | null): MessageExtra {
-  if (!v) return {};
-  try {
-    const extra: unknown = JSON.parse(v);
-    return extra && typeof extra === "object" ? (extra as MessageExtra) : {};
-  } catch {
-    return {};
-  }
 }
 
 function parseNames(v: string | null): string[] {

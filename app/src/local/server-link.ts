@@ -19,17 +19,20 @@ import {
   ReadByRow,
   SERVER_COMMAND_KEY,
   serverCommandKey,
+  RELAY_FILE_NAME,
   StateKey,
   StateValue,
+  SYNC_MAX,
+  LIVE_KEYS,
   type CommandsAnswer,
   type HaveBody,
   type PushBody,
   type ServerCommand,
   type SyncBody,
 } from "@/shared/relay-sync";
-import { DownloadResult, ImageArgs, parseArgs, UPLOAD_NAME, WithAudio, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
-import { FILE_NAME, MEDIA_NAME, type MessageExtra } from "@/shared/slot-db/rows";
-import { cmdResultKey, Identity, parseState, STATE, Viewing } from "@/shared/slot-db/state";
+import { DownloadResult, ImageArgs, parseArgs, WithAudio, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
+import { MEDIA_NAME, parseExtra } from "@/shared/slot-db/rows";
+import { CMD_RESULT_KEY, cmdResultKey, Identity, parseState, STATE, Viewing } from "@/shared/slot-db/state";
 
 // The relay of an account on another computer, joined to a TeamsRelay server (docs/design/2026-09-27-relay-joins-
 // server.md): relay.db mirrored into data/N/messages.db of the server, the commands the app queues there run here,
@@ -45,9 +48,8 @@ const SYNC_EVERY_MS = 1000;
 // a notification waits its turn this long at most: later it would only confuse
 const PUSH_STALE_MS = 120_000;
 const PUSH_TIMEOUT_MS = 10_000;
-// read right before the rows go (live()): the server takes them by their age, and the files before the rows may take a
-// while; none names a file. The call in progress is one of them: the app offers Hang up and Mute only while it is fresh
-const LIVE: readonly string[] = [STATE.health, STATE.call, STATE.inCall];
+// LIVE_KEYS are read right before the rows go (live()): the server takes them by their age, and the files before the
+// rows may take a while; none names a file. The app offers Hang up and Mute only while the call in progress is fresh.
 
 const hash = (json: string) => crypto.createHash("sha1").update(json).digest("base64");
 const digest = (v: unknown) => hash(JSON.stringify(v));
@@ -261,7 +263,7 @@ export class ServerLink {
 
     const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind FROM chats ORDER BY pos")
       .filter((c) => this.fits(ChatRow, c, `chat ${c.name}`))
-      .slice(0, 2000);
+      .slice(0, SYNC_MAX.chats);
     const chatsDigest = digest(chats);
     if (chatsDigest !== this.sent.chats) {
       body.chats = chats;
@@ -287,7 +289,7 @@ export class ServerLink {
       if (this.sent.messages.get(chat) === d) continue;
       // never sent, never to remove there
       if (!this.fits(ChatName, chat, `messages of ${chat}`)) continue;
-      const fitting = rows.filter((m) => this.fits(MessageRow, m, `message ${m.mid ?? m.idx} of ${chat}`)).slice(0, 2000);
+      const fitting = rows.filter((m) => this.fits(MessageRow, m, `message ${m.mid ?? m.idx} of ${chat}`)).slice(0, SYNC_MAX.messages);
       if (!chatRoom.take(JSON.stringify(fitting).length)) {
         complete = false;
         continue;
@@ -295,14 +297,9 @@ export class ServerLink {
       messages[chat] = fitting;
       messageDigests.set(chat, d);
       for (const m of fitting) {
-        let extra: MessageExtra | null = null;
-        try {
-          extra = m.extra ? (JSON.parse(m.extra) as MessageExtra) : null;
-        } catch {
-          // not JSON: it names nothing
-        }
-        for (const im of extra?.images ?? []) picture(im.f);
-        picture(extra?.av);
+        const extra = parseExtra(m.extra);
+        for (const im of extra.images ?? []) picture(im.f);
+        picture(extra.av);
       }
     }
     for (const chat of this.sent.messages.keys()) {
@@ -323,14 +320,14 @@ export class ServerLink {
     const state = new Map<string, string>();
     let viewing: { raw: string; ts: number } | null = null;
     for (const { k, v } of all<{ k: string; v: string | null }>("SELECT k, v FROM state")) {
-      if (k === STATE.relay || LIVE.includes(k)) continue;
+      if (k === STATE.relay || LIVE_KEYS.includes(k)) continue;
       if (k === STATE.viewing) {
         const local = parseState(Viewing, v);
         const ts = local.ts + (this.offset ?? 0);
         if (this.offset !== null && ts > this.viewingTs) viewing = { raw: JSON.stringify({ ...local, ts }), ts };
         continue;
       }
-      const result = /^cmd_result:(\d+)$/.exec(k);
+      const result = CMD_RESULT_KEY.exec(k);
       if (!result) state.set(k, v ?? "");
       else if (serverIdOf.has(Number(result[1]))) state.set(cmdResultKey(serverIdOf.get(Number(result[1]))!), v ?? "");
     }
@@ -354,7 +351,7 @@ export class ServerLink {
       stateDigests.set(k, d);
     }
     for (const k of this.sent.state.keys()) {
-      if (state.has(k) || LIVE.includes(k)) continue;
+      if (state.has(k) || LIVE_KEYS.includes(k)) continue;
       if (!keyRoom.take(k.length)) {
         complete = false;
         continue;
@@ -366,7 +363,7 @@ export class ServerLink {
     if (Object.keys(stateOut).length) body.state = stateOut;
     for (const [k, v] of Object.entries(stateOut)) {
       if (k === STATE.me) picture(parseState(Identity, v).av);
-      else if (/^cmd_result:\d+$/.test(k)) {
+      else if (CMD_RESULT_KEY.test(k)) {
         const f = parseState(DownloadResult, v, null)?.f;
         if (f) named.files.add(f);
       }
@@ -374,7 +371,7 @@ export class ServerLink {
 
     const activity = all<ActivityRow>("SELECT id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av FROM activity ORDER BY pos")
       .filter((a) => this.fits(ActivityRow, a, `activity ${a.id}`))
-      .slice(0, 2000);
+      .slice(0, SYNC_MAX.activity);
     const activityDigest = digest(activity);
     if (activityDigest !== this.sent.activity) {
       body.activity = activity;
@@ -383,7 +380,7 @@ export class ServerLink {
     }
     const calls = all<CallRow>("SELECT since, caller, seconds FROM calls ORDER BY id")
       .filter((c) => this.fits(CallRow, c, `call ${c.since}`))
-      .slice(-500);
+      .slice(-SYNC_MAX.calls);
     const callsDigest = digest(calls);
     if (callsDigest !== this.sent.calls) {
       body.calls = calls;
@@ -437,7 +434,7 @@ export class ServerLink {
     const state: Record<string, string | null> = {};
     const digests = new Map<string, string | null>();
     const read = this.db.prepare("SELECT v FROM state WHERE k=?").pluck();
-    for (const k of LIVE) {
+    for (const k of LIVE_KEYS) {
       const row = read.get(k) as string | null | undefined;
       if (row === undefined) {
         if (this.sent.state.has(k)) {
@@ -488,11 +485,10 @@ export class ServerLink {
   // names any more) goes nowhere.
   private async uploadFiles(named: Named) {
     const dirOf = { media: this.o.mediaDir, files: this.o.filesDir };
-    const pattern = { media: MEDIA_NAME, files: FILE_NAME };
     const want: HaveBody = { media: [], files: [] };
     for (const kind of ["media", "files"] as const) {
       for (const name of new Set([...named[kind], ...this.retry[kind]])) {
-        if (!pattern[kind].test(name)) continue;
+        if (!RELAY_FILE_NAME[kind].test(name)) continue;
         if (fs.existsSync(path.join(dirOf[kind], name))) want[kind].push(name);
         else this.retry[kind].delete(name);
       }
@@ -585,7 +581,7 @@ export class ServerLink {
   private async queue(c: ServerCommand) {
     if (c.type === "sendimage") {
       const { file } = parseArgs(ImageArgs, c.arg2);
-      if (UPLOAD_NAME.test(file) && !fs.existsSync(path.join(this.o.uploadsDir, file))) {
+      if (MEDIA_NAME.test(file) && !fs.existsSync(path.join(this.o.uploadsDir, file))) {
         try {
           const data = Buffer.from(await (await this.call("GET", `/api/relay/uploads/${file}`, { timeout: 120_000 })).arrayBuffer());
           fs.mkdirSync(this.o.uploadsDir, { recursive: true });

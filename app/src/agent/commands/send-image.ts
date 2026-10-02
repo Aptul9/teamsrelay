@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { IMAGE_TYPES, ImageArgs, parseArgs, UPLOAD_NAME, type ImageExt } from "@/shared/slot-db/commands";
+import { ImageArgs, parseArgs } from "@/shared/slot-db/commands";
+import { IMAGE_TYPES, MEDIA_NAME, type ImageExt } from "@/shared/slot-db/rows";
 import { saveOpenChat } from "../jobs/conversation";
 import { log } from "../log";
 import { sendImage } from "../teams/actions";
@@ -11,7 +12,7 @@ import type { Handler } from "./index";
 // upload is deleted whatever happened: the app sends it again on a retry.
 export const sendImageCommand: Handler = async (a, { ts, arg1: chat, arg2 }) => {
   const { file, text } = parseArgs(ImageArgs, arg2);
-  if (!UPLOAD_NAME.test(file)) {
+  if (!MEDIA_NAME.test(file)) {
     log.warn("image", "not an upload", { file: file.slice(0, 60) });
     return "failed";
   }

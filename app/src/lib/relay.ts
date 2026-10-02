@@ -12,8 +12,7 @@ import { loadVapidKeys } from "@/agent/push/vapid";
 import { AppStore } from "@/agent/store/app-store";
 import { mediaFilesOf, SlotStore } from "@/agent/store/slot-store";
 import { bearerToken } from "@/shared/bearer";
-import type { CommandsAnswer, HaveBody, PushBody, ServerCommand, SyncBody } from "@/shared/relay-sync";
-import { FILE_NAME, MEDIA_NAME } from "@/shared/slot-db/rows";
+import { LIVE_KEYS, RELAY_FILE_NAME, type CommandsAnswer, type HaveBody, type PushBody, type ServerCommand, type SyncBody } from "@/shared/relay-sync";
 import { ensureSlotSchema } from "@/shared/slot-db/schema";
 import { parseState, STATE, Viewing } from "@/shared/slot-db/state";
 import { appDb, relayAccount, slotRow } from "./appdb";
@@ -113,7 +112,7 @@ const viewingTs = (v: string | null | undefined) => parseState(Viewing, v).ts;
 // the clock of the server: the app judges each by its age, and the clock of the other computer may be off. Each keeps
 // the age it had on the relay when it was sent (`at`: a time of the relay, ms, on the server's clock).
 function onServerClock(k: string, v: string, at: (ms: number) => number): string {
-  if (k !== STATE.health && k !== STATE.call && k !== STATE.inCall) return v;
+  if (!LIVE_KEYS.includes(k)) return v;
   try {
     const o = JSON.parse(v) as unknown;
     if (!o || typeof o !== "object" || Array.isArray(o)) return v;
@@ -298,8 +297,8 @@ export async function relayPush(caller: RelayCaller, b: PushBody): Promise<numbe
 
 // Images and profile pictures (media) and downloaded attachments (files) of the slot, uploaded by the relay
 const KINDS = {
-  media: { name: MEDIA_NAME, max: 10e6 },
-  files: { name: FILE_NAME, max: MAX_DOWNLOAD },
+  media: { name: RELAY_FILE_NAME.media, max: 10e6 },
+  files: { name: RELAY_FILE_NAME.files, max: MAX_DOWNLOAD },
 } as const;
 export type RelayFileKind = keyof typeof KINDS;
 
@@ -322,7 +321,7 @@ function pruneRelayMedia(caller: RelayCaller, named: ReadonlySet<string>) {
   if (!fs.existsSync(dir)) return;
   const room = rooms().get(caller.slot);
   for (const name of fs.readdirSync(dir)) {
-    if (!MEDIA_NAME.test(name) || named.has(name)) continue;
+    if (!RELAY_FILE_NAME.media.test(name) || named.has(name)) continue;
     const file = path.join(dir, name);
     const size = fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
     try {

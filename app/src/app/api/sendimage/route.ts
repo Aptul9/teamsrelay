@@ -4,7 +4,8 @@ import { idleReason, queue } from "@/lib/commands";
 import { chatName } from "@/shared/command-input";
 import { HttpError, route, text } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
-import { MAX_UPLOAD, saveUpload, uploadsDir } from "@/lib/uploads";
+import { saveUpload, uploadsDir } from "@/lib/uploads";
+import { MAX_UPLOAD } from "@/shared/slot-db/rows";
 
 // multipart/form-data: name (chat), file (image), text (caption, optional)
 export const POST = route(async (req) => {

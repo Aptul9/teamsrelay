@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { OpenResult, type CommandType, type OpenStatus } from "@/shared/slot-db/commands";
-import { HAS_TEAMS_ID, type ActivityItem, type CallLogEntry, type Chat, type Message, type MessageExtra } from "@/shared/slot-db/rows";
+import { HAS_TEAMS_ID, parseExtra, type ActivityItem, type CallLogEntry, type Chat, type Message } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
 import { CallState, cmdResultKey, healthOf, InCall, Members, membersKey, parseState, STATE, Viewing, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
@@ -87,7 +87,7 @@ export class SlotReader {
     return this.all<Message & { extra: string }>(
       "SELECT mid, author, text, mine, reacts, extra FROM chat_messages WHERE chat=? ORDER BY idx",
       chat,
-    ).map(({ extra, ...m }) => ({ ...m, ...parse<MessageExtra>(extra, {}) }));
+    ).map(({ extra, ...m }) => ({ ...m, ...parseExtra(extra) }));
   }
 
   activity(): { ts: number; items: ActivityItem[] } {

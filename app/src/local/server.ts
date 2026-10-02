@@ -10,8 +10,8 @@ import { sleep } from "@/agent/teams/page";
 import { chatName, commandOf } from "@/shared/command-input";
 import { bearerToken, sameToken } from "@/shared/bearer";
 import { HttpError } from "@/shared/http-error";
-import { COMMAND_KEY, IMAGE_TYPES, type CommandStatus, type ImageExt } from "@/shared/slot-db/commands";
-import { MEDIA_NAME, type Message } from "@/shared/slot-db/rows";
+import { COMMAND_KEY, type CommandStatus } from "@/shared/slot-db/commands";
+import { IMAGE_TYPES, MEDIA_NAME, type ImageExt, type Message } from "@/shared/slot-db/rows";
 import { AgentHealth, healthOf, Identity, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import type { RelayDevices } from "./devices";
 
