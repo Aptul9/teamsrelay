@@ -10,7 +10,11 @@ import { probePage, uncoveredPoint } from "../teams/scripts/page-state";
 import { SEL, TEXTS } from "../teams/selectors";
 import { ownerUses } from "./page-setup";
 
-// Health row read by the app (healthOf in src/lib/slotdb.ts and the status panel; /api/state of the local relay),
+// seconds Teams stays signed out, or the browser does not start, before the push (config.alerts may say otherwise)
+const SIGN_IN_AFTER = 60;
+const BROWSER_AFTER = 300;
+
+// Health row read by the app (healthOf in src/shared/slot-db/state.ts and the status panel; /api/state of the local relay),
 // about every 5 s
 export async function updateHealth(a: Agent): Promise<AgentHealth> {
   let probe: PageProbe | null = null;
@@ -81,7 +85,8 @@ async function watchSignIn(a: Agent, teams: TeamsState) {
   const w = parseState(Watch, a.store.getState(STATE.loginWatch));
   const tried = parseState(SignInTry, a.store.getState(STATE.signInTry));
   const pressed = w.since > 0 && tried.at >= w.since && tried.pressed.length > 0;
-  const after = pressed ? Math.max(a.config.alerts.signInAfter, tried.at - w.since + (a.config.alerts.signInTryWait ?? SIGN_IN_TRY_WAIT)) : a.config.alerts.signInAfter;
+  const signInAfter = a.config.alerts.signInAfter ?? SIGN_IN_AFTER;
+  const after = pressed ? Math.max(signInAfter, tried.at - w.since + (a.config.alerts.signInTryWait ?? SIGN_IN_TRY_WAIT)) : signInAfter;
   const { next, push } = watchProblem(state, w, { armed: !!a.store.getState(STATE.me), after, now: nowSeconds() });
   a.store.setState(STATE.loginWatch, JSON.stringify(next));
   if (push === "problem") {
@@ -98,7 +103,7 @@ async function watchSignIn(a: Agent, teams: TeamsState) {
 // One push when the browser has not started for a few minutes, one more when it runs again
 async function watchBrowser(a: Agent, down: boolean) {
   const w = parseState(Watch, a.store.getState(STATE.browserWatch));
-  const { next, push } = watchProblem(down ? "problem" : "fine", w, { armed: true, after: a.config.alerts.browserAfter, now: nowSeconds() });
+  const { next, push } = watchProblem(down ? "problem" : "fine", w, { armed: true, after: a.config.alerts.browserAfter ?? BROWSER_AFTER, now: nowSeconds() });
   a.store.setState(STATE.browserWatch, JSON.stringify(next));
   if (push === "problem") await a.notifier.alert("Relay browser down", `${a.config.alerts.browserDown}: see the log.`);
   else if (push === "fine") await a.notifier.alert("Relay browser back", "The browser runs again.");

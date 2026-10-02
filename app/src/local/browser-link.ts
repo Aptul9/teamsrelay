@@ -1,6 +1,6 @@
 import { Agent } from "undici";
 import { errorText, log } from "@/agent/log";
-import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH, toolError } from "@/shared/relay-sync";
+import { MAX_BROWSER_MESSAGE, RELAY_BROWSER_PATH, toolError, urlHost } from "@/shared/relay-sync";
 import { screenRequest, screenTools, type RpcRequest } from "./browser-allowlist";
 import type { HostAnswer } from "./browser-host";
 import { openLink, type LinkSocket, type OpenSocket } from "./link-socket";
@@ -21,16 +21,6 @@ export type BrowserLinkOptions = {
   host: { request(method: "tools/list" | "tools/call", params: unknown): Promise<HostAnswer>; close(): Promise<void> };
   open?: OpenSocket;
 };
-
-// the host of a URL a call opens, for the log; "" for the other tools
-function hostOf(r: RpcRequest): string {
-  const args = (r.params?.arguments ?? {}) as { url?: unknown };
-  try {
-    return typeof args.url === "string" ? new URL(args.url).host : "";
-  } catch {
-    return "";
-  }
-}
 
 export class BrowserLink {
   private socket: LinkSocket | null = null;
@@ -113,7 +103,7 @@ export class BrowserLink {
 
   private async run(s: LinkSocket, r: RpcRequest) {
     const tool = r.method === "tools/call" ? String(r.params?.name) : "";
-    if (tool) log.info("ai-browser", "call", { tool, host: hostOf(r) || undefined });
+    if (tool) log.info("ai-browser", "call", { tool, host: urlHost(r.params?.arguments) || undefined });
     let answer: HostAnswer;
     try {
       answer = await this.o.host.request(r.method as "tools/list" | "tools/call", r.params ?? {});

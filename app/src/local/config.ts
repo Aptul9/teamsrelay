@@ -105,8 +105,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     // server joined, whose commands (answer, hang up, mute) the call watch then runs in that window
     answerCalls: !!server,
     alerts: {
-      signInAfter: 60,
-      browserAfter: 300,
       signIn: `Sign in again in the relay window on ${e.HOST_LABEL}`,
       browserDown: `The browser of the relay on ${e.HOST_LABEL} does not start`,
     },

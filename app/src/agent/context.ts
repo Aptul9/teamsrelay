@@ -16,9 +16,10 @@ export type AgentSettings = {
   // calls answered and hung up from the app, sound through the remote desktop: an account of the browsers container only
   answerCalls: boolean;
   alerts: {
-    // seconds a problem lasts before its push: Teams signed out, browser not starting
-    signInAfter: number;
-    browserAfter: number;
+    // seconds a problem lasts before its push: Teams signed out, browser not starting (SIGN_IN_AFTER and BROWSER_AFTER
+    // of jobs/health.ts when not given)
+    signInAfter?: number;
+    browserAfter?: number;
     // seconds signed out before the one press of Sign in, and seconds it has to bring Teams back before the push
     // (SIGN_IN_TRY_AFTER and SIGN_IN_TRY_WAIT when not given)
     signInTryAfter?: number;

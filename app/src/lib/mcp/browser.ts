@@ -1,6 +1,6 @@
 import { appDb, logBrowserAction, slotRow, slotsOf } from "../appdb";
 import { browserHub, type BrowserTool, type ToolResult } from "../browser-hub";
-import { toolError } from "@/shared/relay-sync";
+import { toolError, urlHost } from "@/shared/relay-sync";
 import { ToolError } from "./tools";
 
 // The browser of the relays of a user for its MCP clients (docs/design/2026-10-01-relay-browser-mcp.md): the tools of
@@ -46,15 +46,6 @@ export function withAccount(schema: Record<string, unknown>, slots: number[]): R
 }
 
 
-// the host of the page a tool opens, for the log
-function hostOf(args: Record<string, unknown>): string {
-  try {
-    return typeof args.url === "string" ? new URL(args.url).host : "";
-  } catch {
-    return "";
-  }
-}
-
 // One call of a browser tool by an OAuth client of the user. Checks, in order: the user owns the account (an account of
 // someone else is not found, and nothing is written under it), it is an account on another computer, the owner did
 // not switch its browser off, its relay is connected with the browser on. Then the hub runs it on that relay.
@@ -63,7 +54,7 @@ export async function callBrowserTool(o: { userId: string; clientId: string; slo
   if (typeof slot !== "number" || !Number.isInteger(slot)) throw new ToolError("account: the slot number of the account, as list_accounts gives it");
   const row = slotRow(appDb(), slot);
   if (!row || row.owner_id !== o.userId) throw new ToolError("Account not found");
-  const log = (outcome: string) => logBrowserAction(appDb(), { userId: o.userId, clientId: o.clientId, slot, tool: o.name, host: hostOf(o.args), outcome });
+  const log = (outcome: string) => logBrowserAction(appDb(), { userId: o.userId, clientId: o.clientId, slot, tool: o.name, host: urlHost(o.args), outcome });
   const refuse = (outcome: string, text: string) => {
     log(outcome);
     return toolError(text);

@@ -34,8 +34,6 @@ describe("relay configuration", () => {
       subject: "mailto:admin@example.com",
     });
     expect(c.alerts).toEqual({
-      signInAfter: 60,
-      browserAfter: 300,
       signIn: `Sign in again in the relay window on ${os.hostname()}`,
       browserDown: `The browser of the relay on ${os.hostname()} does not start`,
     });
