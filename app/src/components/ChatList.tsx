@@ -15,6 +15,23 @@ import { isSelf, post, sleep, type Chat } from "@/lib/client";
 
 type Filter = "all" | "unread" | "mentions";
 
+// The agent reads the chat list and the open conversation of Teams again; refreshing while it does, and a moment after
+export function useResync(acc: number) {
+  const [refreshing, setRefreshing] = useState(false);
+  async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await post("/api/resync", undefined, acc);
+      await sleep(900);
+    } catch {
+      toast.error("Refresh failed");
+    }
+    setRefreshing(false);
+  }
+  return { refreshing, refresh };
+}
+
 export function ChatList({
   acc,
   chats,
@@ -29,23 +46,10 @@ export function ChatList({
   const [filter, setFilter] = useState<Filter>("all");
   const [newestFirst, setNewestFirst] = useState(true);
   const [query, setQuery] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
+  const { refreshing, refresh } = useResync(acc);
   const [pullText, setPullText] = useState("");
   const pull = useRef({ y: 0, active: false });
   const listRef = useRef<HTMLDivElement>(null);
-
-  // the agent reads the chat list of Teams again
-  async function refresh() {
-    if (refreshing) return;
-    setRefreshing(true);
-    try {
-      await post("/api/resync", undefined, acc);
-      await sleep(900);
-    } catch {
-      toast.error("Refresh failed");
-    }
-    setRefreshing(false);
-  }
 
   // pull to refresh, on touch screens
   const onTouchStart = (e: React.TouchEvent) => {

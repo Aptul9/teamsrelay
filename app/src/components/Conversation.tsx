@@ -25,6 +25,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { toast } from "sonner";
 import { cn } from "cn";
 import { Avatar } from "./Avatar";
+import { useResync } from "./ChatList";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -148,7 +149,7 @@ export function Conversation({
   const touch = useSyncExternalStore(onHoverChange, () => window.matchMedia(NO_HOVER).matches, () => false);
   const [downloads, setDownloads] = useState<Record<string, "busy" | "failed">>({});
   const [restoring, setRestoring] = useState<Record<string, boolean>>({});
-  const [refreshing, setRefreshing] = useState(false);
+  const { refreshing, refresh } = useResync(acc);
   const [now, setNow] = useState(() => Date.now());
   const boxRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -234,16 +235,6 @@ export function Conversation({
     const b = boxRef.current;
     if (b) atBottom.current = b.scrollHeight - b.scrollTop - b.clientHeight < 70;
   };
-
-  async function refresh() {
-    setRefreshing(true);
-    try {
-      await post("/api/resync", undefined, acc);
-    } catch {
-      toast.error("Refresh failed");
-    }
-    setTimeout(() => setRefreshing(false), 900);
-  }
 
   async function doReact(mid: string, key: string) {
     setSheetFor(null);
