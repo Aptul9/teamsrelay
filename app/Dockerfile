@@ -7,8 +7,9 @@ RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # web app (.next/standalone), agent (dist/agent.cjs), supervisor (dist/supervisor.cjs) and the socket of the sound of the
-# calls of accounts on another computer (dist/call-audio.cjs), loaded before the server of the web app
-RUN npm run build
+# calls of accounts on another computer (dist/call-audio.cjs), loaded before the server of the web app; the local relay
+# and the fleet bundles are no image's
+RUN npx next build && node scripts/bundles.mjs agent supervisor hub
 # What the agent loads at runtime besides its bundle. The standalone output traces only the web app, so these
 # are copied explicitly: playwright-core whole (no dependencies), better-sqlite3 without its sources and with
 # the binary of this architecture only (the image is built on the machine that runs it).
