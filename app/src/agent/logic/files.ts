@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
-import { IMAGE_TYPES } from "@/shared/slot-db/rows";
+import { IMAGE_TYPES, MEDIA_NAME } from "@/shared/slot-db/rows";
+import { errorText, log } from "../log";
 
 // Names of the files in data/N/media and data/N/files. Same names as the Python agent: switching agent keeps
 // the files already downloaded, and the web app serves only 16 hex characters plus an extension.
@@ -35,3 +37,24 @@ export function isSharePointUrl(url: string): boolean {
 export const downloadUrl = (url: string) => `${url}${url.includes("?") ? "&" : "?"}download=1`;
 
 export const MAX_DOWNLOAD = 100e6;
+
+// Removes the files of a media folder no row names any more (`named`); `removed` hears the size of each. Number of
+// files removed.
+export function pruneMedia(dir: string, named: ReadonlySet<string>, removed?: (size: number) => void): number {
+  if (!fs.existsSync(dir)) return 0;
+  let n = 0;
+  for (const name of fs.readdirSync(dir)) {
+    if (!MEDIA_NAME.test(name) || named.has(name)) continue;
+    const file = path.join(dir, name);
+    const size = fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
+    try {
+      fs.rmSync(file);
+    } catch (e) {
+      log.warn("media", errorText(e), { file: name });
+      continue;
+    }
+    removed?.(size);
+    n++;
+  }
+  return n;
+}

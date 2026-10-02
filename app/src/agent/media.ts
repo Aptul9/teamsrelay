@@ -1,34 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Page } from "playwright-core";
-import { MEDIA_NAME } from "@/shared/slot-db/rows";
-import { avatarFile, downloadFile, downloadUrl, isPlaceholderImage, isSharePointUrl, MAX_DOWNLOAD, MEDIA_EXT } from "./logic/files";
+import { avatarFile, downloadFile, downloadUrl, isPlaceholderImage, isSharePointUrl, MAX_DOWNLOAD, MEDIA_EXT, pruneMedia } from "./logic/files";
 import { errorText, log } from "./log";
 import { copyImage, fetchImage } from "./teams/scripts/media";
 
 // Maximum size of an image fetched from a message
 const MAX_IMAGE = 8e6;
-
-// Removes the files of a media folder no row names any more (`named`); `removed` hears the size of each. Number of
-// files removed.
-export function pruneMedia(dir: string, named: ReadonlySet<string>, removed?: (size: number) => void): number {
-  if (!fs.existsSync(dir)) return 0;
-  let n = 0;
-  for (const name of fs.readdirSync(dir)) {
-    if (!MEDIA_NAME.test(name) || named.has(name)) continue;
-    const file = path.join(dir, name);
-    const size = fs.statSync(file, { throwIfNoEntry: false })?.size ?? 0;
-    try {
-      fs.rmSync(file);
-    } catch (e) {
-      log.warn("media", errorText(e), { file: name });
-      continue;
-    }
-    removed?.(size);
-    n++;
-  }
-  return n;
-}
 
 // Images, profile pictures (data/N/media) and attachments (data/N/files). A file is written once and kept while a row
 // names it: images and pictures no row names any more leave the media folder (prune).
