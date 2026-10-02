@@ -34,6 +34,7 @@ import {
 } from "@/shared/relay-sync";
 import { DownloadResult, ImageArgs, parseArgs, WithAudio, type CommandStatus, type CommandType } from "@/shared/slot-db/commands";
 import { MEDIA_NAME, parseExtra } from "@/shared/slot-db/rows";
+import { rowColumns } from "@/shared/slot-db/schema";
 import { CMD_RESULT_KEY, cmdResultKey, Identity, parseState, STATE, Viewing } from "@/shared/slot-db/state";
 
 // The relay of an account on another computer, joined to a TeamsRelay server (docs/design/2026-09-27-relay-joins-
@@ -259,7 +260,7 @@ export class ServerLink {
     const all = <T>(sql: string, ...args: unknown[]) => this.db.prepare(sql).all(...args) as T[];
     let complete = true;
 
-    const chats = all<ChatRow>("SELECT name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind FROM chats ORDER BY pos")
+    const chats = all<ChatRow>(`SELECT ${rowColumns("chats")} FROM chats ORDER BY pos`)
       .filter((c) => this.fits(ChatRow, c, `chat ${c.name}`))
       .slice(0, SYNC_MAX.chats);
     const chatsDigest = digest(chats);
@@ -273,7 +274,7 @@ export class ServerLink {
     // and a chat that leaves it has its rows removed there
     const listed = new Set(chats.map((c) => c.name));
     const byChat = new Map<string, MessageRow[]>();
-    for (const { chat, ...m } of all<MessageRow & { chat: string }>("SELECT chat, idx, mid, author, text, mine, reacts, extra FROM chat_messages ORDER BY chat, idx")) {
+    for (const { chat, ...m } of all<MessageRow & { chat: string }>(`SELECT ${rowColumns("chat_messages")} FROM chat_messages ORDER BY chat, idx`)) {
       if (!listed.has(chat)) continue;
       const rows = byChat.get(chat);
       if (rows) rows.push(m);
@@ -367,7 +368,7 @@ export class ServerLink {
       }
     }
 
-    const activity = all<ActivityRow>("SELECT id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av FROM activity ORDER BY pos")
+    const activity = all<ActivityRow>(`SELECT ${rowColumns("activity")} FROM activity ORDER BY pos`)
       .filter((a) => this.fits(ActivityRow, a, `activity ${a.id}`))
       .slice(0, SYNC_MAX.activity);
     const activityDigest = digest(activity);
@@ -376,7 +377,7 @@ export class ServerLink {
       next.activity = activityDigest;
       for (const a of activity) picture(a.av);
     }
-    const calls = all<CallRow>("SELECT since, caller, seconds FROM calls ORDER BY id")
+    const calls = all<CallRow>(`SELECT ${rowColumns("calls")} FROM calls ORDER BY id`)
       .filter((c) => this.fits(CallRow, c, `call ${c.since}`))
       .slice(-SYNC_MAX.calls);
     const callsDigest = digest(calls);
@@ -388,7 +389,7 @@ export class ServerLink {
     const readby: ReadByRow[] = [];
     const readbyDigests = new Map<string, string>();
     const readbyRoom = new Room(PER_SYNC.readby);
-    for (const r of all<ReadByRow>("SELECT mid, chat, label, names, ts FROM readby")) {
+    for (const r of all<ReadByRow>(`SELECT ${rowColumns("readby")} FROM readby`)) {
       const json = JSON.stringify(r);
       const d = hash(json);
       if (this.sent.readby.get(r.mid) === d) continue;

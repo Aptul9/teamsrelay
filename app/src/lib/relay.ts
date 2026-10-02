@@ -14,7 +14,7 @@ import { AppStore } from "@/agent/store/app-store";
 import { mediaFilesOf, SlotStore } from "@/agent/store/slot-store";
 import { bearerToken } from "@/shared/bearer";
 import { LIVE_KEYS, RELAY_FILE_NAME, type CommandsAnswer, type HaveBody, type PushBody, type ServerCommand, type SyncBody } from "@/shared/relay-sync";
-import { ensureSlotSchema } from "@/shared/slot-db/schema";
+import { ensureSlotSchema, insertRow } from "@/shared/slot-db/schema";
 import { parseState, STATE, Viewing } from "@/shared/slot-db/state";
 import { appDb, relayAccount, slotRow } from "./appdb";
 import { config } from "./config";
@@ -138,12 +138,12 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
     db.transaction(() => {
       if (b.chats) {
         db.prepare("DELETE FROM chats").run();
-        const insert = db.prepare("INSERT OR REPLACE INTO chats(name, preview, pos, ts, tm, unread, mention, muted, av, presence, kind) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
+        const insert = db.prepare(insertRow("chats"));
         for (const c of b.chats) insert.run(c.name, c.preview, c.pos, c.ts, c.tm, c.unread, c.mention, c.muted, c.av, c.presence ?? null, c.kind ?? "");
       }
       if (b.messages) {
         const clear = db.prepare("DELETE FROM chat_messages WHERE chat=?");
-        const insert = db.prepare("INSERT INTO chat_messages(chat, idx, mid, author, text, mine, reacts, extra) VALUES(?,?,?,?,?,?,?,?)");
+        const insert = db.prepare(insertRow("chat_messages"));
         for (const [chat, rows] of Object.entries(b.messages)) {
           clear.run(chat);
           for (const m of rows) insert.run(chat, m.idx, m.mid, m.author, m.text, m.mine, m.reacts, m.extra);
@@ -151,18 +151,16 @@ export function applySync(caller: RelayCaller, b: SyncBody, now = Date.now()) {
       }
       if (b.activity) {
         db.prepare("DELETE FROM activity").run();
-        const insert = db.prepare(
-          "INSERT OR REPLACE INTO activity(id, pos, kind, actor, title, emoji, preview, tm, chat, channel, unread, ts, av) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        );
+        const insert = db.prepare(insertRow("activity"));
         for (const a of b.activity) insert.run(a.id, a.pos, a.kind, a.actor, a.title, a.emoji, a.preview, a.tm, a.chat, a.channel, a.unread, a.ts, a.av);
       }
       if (b.calls) {
         db.prepare("DELETE FROM calls").run();
-        const insert = db.prepare("INSERT INTO calls(since, caller, seconds) VALUES(?,?,?)");
+        const insert = db.prepare(insertRow("calls"));
         for (const c of b.calls) insert.run(c.since, c.caller, c.seconds);
       }
       if (b.readby) {
-        const upsert = db.prepare("INSERT OR REPLACE INTO readby(mid, chat, label, names, ts) VALUES(?,?,?,?,?)");
+        const upsert = db.prepare(insertRow("readby"));
         for (const r of b.readby) upsert.run(r.mid, r.chat, r.label, r.names, r.ts);
       }
       if (b.state) {

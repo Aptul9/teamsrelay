@@ -5,7 +5,7 @@ import { nowSeconds } from "@/agent/context";
 import { OpenResult, type CommandType, type OpenStatus } from "@/shared/slot-db/commands";
 import { HAS_TEAMS_ID, parseExtra, type ActivityItem, type CallLogEntry, type Chat, type Message } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE } from "@/shared/slot-db/schema";
-import { CallState, cmdResultKey, healthOf, InCall, Members, membersKey, parseState, STATE, Viewing, type SlotHealth } from "@/shared/slot-db/state";
+import { CallState, cmdResultKey, healthOf, Identity, InCall, Members, membersKey, parseState, RelayLink, STATE, Viewing, type SlotHealth } from "@/shared/slot-db/state";
 import { config } from "./config";
 
 // data/N/messages.db is created and written by the agent of slot N; the web app reads it and
@@ -20,22 +20,11 @@ export class SlotNotReady extends Error {
 export type Health = SlotHealth;
 export type CommandStatus = { status: string; result: unknown };
 
-export function slotDbPath(slot: number): string {
-  return path.join(config.dataDir, String(slot), "messages.db");
-}
-
 export function slotDir(slot: number): string {
   return path.join(config.dataDir, String(slot));
 }
 
-function parse<T>(v: unknown, fallback: T): T {
-  if (typeof v !== "string" || !v) return fallback;
-  try {
-    return JSON.parse(v) as T;
-  } catch {
-    return fallback;
-  }
-}
+export const slotDbPath = (slot: number) => path.join(slotDir(slot), "messages.db");
 
 export class SlotReader {
   private constructor(private db: Database.Database) {}
@@ -51,6 +40,16 @@ export class SlotReader {
     return SlotReader.open(slotDbPath(slot));
   }
 
+  // The same, null while the agent has not created the database yet
+  static tryForSlot(slot: number): SlotReader | null {
+    try {
+      return SlotReader.forSlot(slot);
+    } catch (e) {
+      if (e instanceof SlotNotReady) return null;
+      throw e;
+    }
+  }
+
   close() {
     this.db.close();
   }
@@ -64,14 +63,32 @@ export class SlotReader {
     }
   }
 
+  private raw(key: string): string | undefined {
+    return this.all<{ v: string }>("SELECT v FROM state WHERE k=?", key)[0]?.v;
+  }
+
+  private put(key: string, value: unknown) {
+    this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(key, JSON.stringify(value));
+  }
+
   state<T>(key: string, fallback: T): T {
-    const r = this.all<{ v: string }>("SELECT v FROM state WHERE k=?", key)[0];
-    return parse(r?.v, fallback);
+    const v = this.raw(key);
+    if (!v) return fallback;
+    try {
+      return JSON.parse(v) as T;
+    } catch {
+      return fallback;
+    }
   }
 
   // Chat the agent last opened for the app, plain text: Teams shows it while it is in use (viewing)
   activeChat(): string {
-    return this.all<{ v: string }>("SELECT v FROM state WHERE k=?", STATE.activeChat)[0]?.v ?? "";
+    return this.raw(STATE.activeChat) ?? "";
+  }
+
+  // The computer of an account on another computer and its last sync
+  relayLink(): RelayLink {
+    return parseState(RelayLink, this.raw(STATE.relay));
   }
 
   chats(): Chat[] {
@@ -102,8 +119,8 @@ export class SlotReader {
     return this.all("SELECT id, ts, title, body FROM messages ORDER BY id DESC LIMIT 150");
   }
 
-  identity(): { name?: string; email?: string; tenant?: string; av?: string } {
-    return this.state(STATE.me, {});
+  identity(): Identity {
+    return parseState(Identity, this.raw(STATE.me));
   }
 
   // People of a chat as the agent read them last; ts 0 when never read
@@ -147,14 +164,12 @@ export class SlotReader {
 
   // The incoming call as the agent keeps it, null before the first one
   call(): CallState | null {
-    const v = this.all<{ v: string }>("SELECT v FROM state WHERE k=?", STATE.call)[0]?.v;
-    return v ? parseState(CallState, v, null) : null;
+    return parseState(CallState, this.raw(STATE.call), null);
   }
 
   // The call in progress as the agent keeps it, null before the first one
   inCall(): InCall | null {
-    const v = this.all<{ v: string }>("SELECT v FROM state WHERE k=?", STATE.inCall)[0]?.v;
-    return v ? parseState(InCall, v, null) : null;
+    return parseState(InCall, this.raw(STATE.inCall), null);
   }
 
   // The calls the agent saw ring, newest first
@@ -210,25 +225,21 @@ export class SlotReader {
   // The app shows this chat now. Teams keeps a visible page, which reads what is open: without a recent mark
   // the agent goes back to the self chat (wantedChat in src/agent/logic/parking.ts).
   markViewing(chat: string) {
-    this.db
-      .prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)")
-      .run(STATE.viewing, JSON.stringify({ chat, ts: nowSeconds() }));
+    this.put(STATE.viewing, { chat, ts: nowSeconds() });
   }
 
   // The app stopped showing this chat: the agent goes back to the self chat at once. Not when the app shows another
   // chat since, marked before this leave arrived (a switch from one chat to the next).
   leaveViewing(chat: string) {
     this.db.transaction(() => {
-      const shown = parseState(Viewing, this.db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.viewing) as string | undefined);
-      if (shown.chat !== chat) return;
-      this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.viewing, JSON.stringify({ chat: "", ts: nowSeconds() }));
+      if (parseState(Viewing, this.raw(STATE.viewing)).chat === chat) this.put(STATE.viewing, { chat: "", ts: nowSeconds() });
     })();
   }
 
   // The owner opens the remote desktop of the account: its agent leaves Teams as it is for a while
   // (src/agent/logic/owner.ts)
   markDesktop() {
-    this.db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(STATE.desktop, JSON.stringify({ ts: nowSeconds() }));
+    this.put(STATE.desktop, { ts: nowSeconds() });
   }
 }
 
@@ -236,7 +247,16 @@ const appStatus = (s: string) => (s === "running" ? "pending" : s === "unconfirm
 
 // Opens the slot database for the duration of one call.
 export function withSlot<T>(slot: number, fn: (r: SlotReader) => T): T {
-  const r = SlotReader.forSlot(slot);
+  return using(SlotReader.forSlot(slot), fn);
+}
+
+// The same, `fallback` while the agent has not created the database yet
+export function withSlotOr<T>(slot: number, fn: (r: SlotReader) => T, fallback: T): T {
+  const r = SlotReader.tryForSlot(slot);
+  return r ? using(r, fn) : fallback;
+}
+
+function using<T>(r: SlotReader, fn: (r: SlotReader) => T): T {
   try {
     return fn(r);
   } finally {

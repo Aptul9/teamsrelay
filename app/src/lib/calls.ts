@@ -1,5 +1,5 @@
 import type { Slot } from "./appdb";
-import { SlotNotReady, SlotReader } from "./slotdb";
+import { SlotReader } from "./slotdb";
 import { inCallOf, ringingCall, type RingingCall } from "@/shared/slot-db/state";
 
 // An account whose browser runs now, where a call can ring: always on, or checked every N hours during a check
@@ -39,12 +39,8 @@ export class CallReaders {
   private reader(slot: number): SlotReader | null {
     let r = this.readers.get(slot);
     if (!r) {
-      try {
-        r = SlotReader.forSlot(slot);
-      } catch (e) {
-        if (e instanceof SlotNotReady) return null;
-        throw e;
-      }
+      r = SlotReader.tryForSlot(slot) ?? undefined;
+      if (!r) return null;
       this.readers.set(slot, r);
     }
     return r;

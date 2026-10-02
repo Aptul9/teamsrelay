@@ -3,7 +3,7 @@ import { controlClient } from "@/lib/control";
 import { HttpError, route } from "@/lib/http";
 import { ON_ANOTHER_COMPUTER } from "@/lib/relay";
 import { currentUser } from "@/lib/session";
-import { SlotNotReady, withSlot } from "@/lib/slotdb";
+import { withSlotOr } from "@/lib/slotdb";
 
 type Ctx = { params: Promise<{ slot: string }> };
 
@@ -20,11 +20,7 @@ function ownAccount(userId: string, slot: string): number {
 // The window of the account to the front of the one desktop; false when the supervisor could not do it
 async function toFront(n: number): Promise<boolean> {
   // the agent leaves Teams to the owner from now: no chat switch, no presence keeper while the owner looks
-  try {
-    withSlot(n, (r) => r.markDesktop());
-  } catch (e) {
-    if (!(e instanceof SlotNotReady)) throw e;
-  }
+  withSlotOr(n, (r) => r.markDesktop(), undefined);
   return controlClient()
     .show(n)
     .catch(() => false);

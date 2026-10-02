@@ -6,7 +6,7 @@ import { askCheck, CHECK_INTERVALS, claimSlot, listSlots, releaseSlot, setCheckE
 import type { ControlClient } from "./control";
 import { HttpError } from "./http";
 import { createRelaySlot, forgetRelay, newRelayToken, ON_ANOTHER_COMPUTER, relayDigest } from "./relay";
-import { SlotNotReady, withSlot } from "./slotdb";
+import { withSlotOr } from "./slotdb";
 
 export type SlotPaths = { dataDir: string };
 export type SlotOptions = SlotPaths & { db: Database.Database; slotCount: number; perUser: number };
@@ -30,11 +30,7 @@ async function startOrUndo(ctl: ControlClient, n: number) {
 // The next check of the account starts from what it finds (src/agent/commands/check.ts): nothing it would compare with
 // is left from before a change of mode or a start. An account whose agent has not created its database has nothing.
 function forgetLastCheck(n: number) {
-  try {
-    withSlot(n, (r) => r.forgetLastCheck());
-  } catch (e) {
-    if (!(e instanceof SlotNotReady)) throw e;
-  }
+  withSlotOr(n, (r) => r.forgetLastCheck(), undefined);
 }
 
 // Browser profile (the Microsoft session) and agent data of the slot, with the slot stopped. The web app has
