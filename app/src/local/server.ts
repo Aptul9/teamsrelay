@@ -10,6 +10,7 @@ import { sleep } from "@/agent/teams/page";
 import { chatName, commandOf } from "@/shared/command-input";
 import { bearerToken, sameToken } from "@/shared/bearer";
 import { HttpError } from "@/shared/http-error";
+import { subscriptionOf } from "@/shared/push-subscription";
 import { COMMAND_KEY, type CommandStatus } from "@/shared/slot-db/commands";
 import { IMAGE_TYPES, MEDIA_NAME, type ImageExt, type Message } from "@/shared/slot-db/rows";
 import { AgentHealth, healthOf, Identity, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
@@ -97,17 +98,6 @@ function refusal(h: SlotHealth): HttpError | null {
   if (h.browser === "down") return new HttpError(503, "The browser of the relay does not start: see its log");
   if (h.teams === "login") return new HttpError(409, "Teams is signed out: sign in again in the relay window");
   return null;
-}
-
-// A Web Push subscription as the browser gives it (PushSubscription.toJSON())
-function subscriptionOf(b: Record<string, unknown>): { endpoint: string; json: string } {
-  const { endpoint, keys } = b as { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } };
-  if (typeof endpoint !== "string" || !endpoint.startsWith("https://") || endpoint.length > 2000) throw new HttpError(400, "Invalid subscription endpoint");
-  const b64 = /^[A-Za-z0-9_-]{16,200}=*$/;
-  if (typeof keys?.p256dh !== "string" || typeof keys.auth !== "string" || !b64.test(keys.p256dh) || !b64.test(keys.auth)) {
-    throw new HttpError(400, "Invalid subscription keys");
-  }
-  return { endpoint, json: JSON.stringify({ endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } }) };
 }
 
 // What the app shows of a message: text only (the reduced HTML stays in the database)

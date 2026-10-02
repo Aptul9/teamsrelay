@@ -148,12 +148,15 @@ describe("slots", () => {
   });
 });
 
+// keys as a browser gives them (base64url)
+const KEYS = { p256dh: "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM", auth: "tBHItJI5svbpez7KI4CCXg" };
+
 describe("push subscriptions", () => {
   it("belong to one user and move with a new subscribe", () => {
-    savePushSubscription(db, "u1", { endpoint: "https://push/x", keys: {} });
-    savePushSubscription(db, "u2", { endpoint: "https://push/y", keys: {} });
+    savePushSubscription(db, "u1", { endpoint: "https://push/x", keys: KEYS });
+    savePushSubscription(db, "u2", { endpoint: "https://push/y", keys: KEYS });
     expect(countPushSubscriptions(db, "u1")).toBe(1);
-    savePushSubscription(db, "u2", { endpoint: "https://push/x", keys: {} });
+    savePushSubscription(db, "u2", { endpoint: "https://push/x", keys: KEYS });
     expect(countPushSubscriptions(db, "u1")).toBe(0);
     expect(countPushSubscriptions(db, "u2")).toBe(2);
     deletePushSubscriptionsOf(db, "u2");
@@ -161,6 +164,7 @@ describe("push subscriptions", () => {
   });
 
   it("rejects a subscription without endpoint", () => {
-    expect(() => savePushSubscription(db, "u1", { keys: {} })).toThrow(/endpoint/);
+    expect(() => savePushSubscription(db, "u1", { keys: KEYS })).toThrow(/endpoint/);
+    expect(() => savePushSubscription(db, "u1", { endpoint: "https://push/z", keys: {} })).toThrow(/keys/);
   });
 });

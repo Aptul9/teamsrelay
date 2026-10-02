@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { nowSeconds } from "@/agent/context";
+import { subscriptionOf } from "@/shared/push-subscription";
 import { config } from "./config";
 import { HttpError } from "./http";
 
@@ -223,14 +224,8 @@ export function relayAccount(db: Database.Database, digest: string): { slot: num
 }
 
 export function savePushSubscription(db: Database.Database, userId: string, sub: Record<string, unknown>) {
-  const endpoint = sub.endpoint;
-  if (typeof endpoint !== "string" || !/^https:\/\//.test(endpoint)) throw new HttpError(400, "Subscription without endpoint");
-  db.prepare("INSERT OR REPLACE INTO push_subscriptions(endpoint, user_id, sub, created) VALUES(?,?,?,?)").run(
-    endpoint,
-    userId,
-    JSON.stringify(sub),
-    nowSeconds(),
-  );
+  const { endpoint, json } = subscriptionOf(sub);
+  db.prepare("INSERT OR REPLACE INTO push_subscriptions(endpoint, user_id, sub, created) VALUES(?,?,?,?)").run(endpoint, userId, json, nowSeconds());
 }
 
 // A phone of the Android app (mobile/), a push device as a browser is: endpoint fcm:<token>, sub {fcm: {token, key,
