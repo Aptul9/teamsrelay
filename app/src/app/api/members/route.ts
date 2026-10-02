@@ -1,4 +1,5 @@
-import { chatName, idleReason, queue } from "@/lib/commands";
+import { idleReason, queue } from "@/lib/commands";
+import { chatName } from "@/shared/command-input";
 import { body, route } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
 import { withSlot } from "@/lib/slotdb";

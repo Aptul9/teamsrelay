@@ -8,9 +8,9 @@ import { nowSeconds } from "@/agent/context";
 import { errorText, log } from "@/agent/log";
 import type { SlotStore } from "@/agent/store/slot-store";
 import { sleep } from "@/agent/teams/page";
-import { chatName, messageArgs, messageText, reactArgs, textArgs } from "@/shared/command-input";
+import { chatName, commandOf } from "@/shared/command-input";
 import { HttpError } from "@/shared/http-error";
-import { COMMAND_KEY, IMAGE_TYPES, type CommandStatus, type CommandType, type ImageExt } from "@/shared/slot-db/commands";
+import { COMMAND_KEY, IMAGE_TYPES, type CommandStatus, type ImageExt } from "@/shared/slot-db/commands";
 import { MEDIA_NAME, type Message } from "@/shared/slot-db/rows";
 import { AgentHealth, healthOf, Identity, parseState, STATE, type SlotHealth } from "@/shared/slot-db/state";
 import type { RelayDevices } from "./devices";
@@ -47,9 +47,6 @@ const STATIC: Record<string, { dir: "web" | "public"; file: string; type: string
 
 // The files of the app on disk, for the check of the bundle
 export const appFiles = (webDir: string, publicDir: string) => Object.values(STATIC).map((f) => path.join(f.dir === "web" ? webDir : publicDir, f.file));
-
-// The commands of the app: text only, no Activity feed, image, mention or download
-export const RELAY_COMMANDS = ["open", "send", "reply", "react", "edit", "delete", "undodelete", "resync", "recheck"] as const satisfies readonly CommandType[];
 
 // The page loads only what the relay serves; messages are shown as text, never as HTML
 const CSP =
@@ -88,29 +85,6 @@ export class Failures {
 }
 
 const digest = (s: string) => createHash("sha256").update(s, "utf8").digest();
-
-// The command of a POST /api/cmd body as the agent reads it (arg1, arg2); 400 when it is not one
-export function commandOf(b: Record<string, unknown>): { type: CommandType; arg1: string; arg2: string } {
-  const type = b.type as (typeof RELAY_COMMANDS)[number];
-  if (typeof type !== "string" || !(RELAY_COMMANDS as readonly string[]).includes(type)) throw new HttpError(400, "Unknown command");
-  switch (type) {
-    case "open":
-      return { type, arg1: chatName(b.chat), arg2: "" };
-    case "send":
-      return { type, arg1: chatName(b.chat), arg2: messageText(b.text) };
-    case "reply":
-    case "edit":
-      return { type, arg1: chatName(b.chat), arg2: textArgs(b.mid, b.text) };
-    case "delete":
-    case "undodelete":
-      return { type, arg1: chatName(b.chat), arg2: messageArgs(b.mid) };
-    case "react":
-      return { type, arg1: chatName(b.chat), arg2: reactArgs(b.mid, b.emoji, b.pill) };
-    case "resync":
-    case "recheck":
-      return { type, arg1: "", arg2: "" };
-  }
-}
 
 // The key the app gives a command, or null: the same key queues it once (a retry after a lost answer)
 function keyOf(b: Record<string, unknown>): string | null {

@@ -1,11 +1,10 @@
+import { commandOf, type AppCommand } from "@/shared/command-input";
 import type { CommandType } from "@/shared/slot-db/commands";
 import { RelayLink, STATE } from "@/shared/slot-db/state";
 import { appDb, slotRow } from "./appdb";
-import { HttpError } from "./http";
+import { body, HttpError, route } from "./http";
+import { requireSlot } from "./session";
 import { withSlot } from "./slotdb";
-
-// The checks of what the app sends, shared with the API of the local relay
-export { chatName, mentionNames, messageArgs, messageId, messageText, reactArgs, REACTIONS, textArgs } from "@/shared/command-input";
 
 // Why the account takes no command, null when it takes them: stopped by its owner, checked every N hours (its agent
 // runs only during a check, which stops it right after reading), or on another computer whose relay is not connected
@@ -24,14 +23,26 @@ export function idleReason(slot: number): string | null {
 // Commands are rows in data/N/messages.db; the agent of slot N runs them on the Teams page. An account without a
 // running agent refuses them.
 export function queue(slot: number, type: CommandType, arg1 = "", arg2 = ""): number {
-  const why = idleReason(slot);
-  if (why) throw new HttpError(409, why);
+  takesCommands(slot);
   return withSlot(slot, (r) => r.enqueue(type, arg1, arg2));
 }
 
 // The same, but a request sent again while its command still waits (a double tap) gets that command
 export function queueOnce(slot: number, type: CommandType, arg1 = "", arg2 = ""): number {
-  const why = idleReason(slot);
-  if (why) throw new HttpError(409, why);
+  takesCommands(slot);
   return withSlot(slot, (r) => r.enqueueOnce(type, arg1, arg2));
 }
+
+function takesCommands(slot: number) {
+  const why = idleReason(slot);
+  if (why) throw new HttpError(409, why);
+}
+
+// The route of a command made of what the app sends alone, the chat named `name` as the web app always called it
+export const commandRoute = (type: Exclude<AppCommand, "send" | "resync" | "recheck">) =>
+  route(async (req) => {
+    const { slot } = await requireSlot(req);
+    const b = await body(req);
+    const c = commandOf({ ...b, type, chat: b.name });
+    return Response.json({ ok: true, id: queue(slot, c.type, c.arg1, c.arg2) });
+  });

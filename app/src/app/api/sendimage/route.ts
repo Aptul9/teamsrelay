@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { chatName, idleReason, queue } from "@/lib/commands";
+import { idleReason, queue } from "@/lib/commands";
+import { chatName } from "@/shared/command-input";
 import { HttpError, route, text } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
 import { MAX_UPLOAD, saveUpload, uploadsDir } from "@/lib/uploads";
