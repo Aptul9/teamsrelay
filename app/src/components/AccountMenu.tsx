@@ -17,12 +17,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { accName, checkLine, idleChecked, lastCheck, relayOffline, statusText, type Account, type Unread } from "@/lib/client";
+import { accName, capped, checkLine, idleChecked, lastCheck, relayOffline, statusText, type Account, type Unread } from "@/lib/client";
 
 
 // chats and notifications share the purple count; missed calls have a red one of their own
 const total = (u: Unread) => u.chats + u.notifications;
-const capped = (n: number) => (n > 99 ? "99+" : String(n));
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const unreadText = (u: Unread) =>
   [u.chats > 0 && plural(u.chats, "unread chat", "unread chats"), u.notifications > 0 && plural(u.notifications, "new notification", "new notifications")]

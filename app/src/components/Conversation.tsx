@@ -48,7 +48,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { errorText, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, omit, post, reasonText, runCmd, sendImage, type Chat, type Message, type OpenStatus } from "@/lib/client";
+import { capped, errorText, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, omit, post, reasonText, runCmd, sendImage, type Chat, type Message, type OpenStatus } from "@/lib/client";
 import { REACTION_EMOJI } from "@/shared/slot-db/rows";
 import { useInUse } from "@/lib/in-use";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
@@ -725,7 +725,7 @@ export function Conversation({
           <ArrowLeftIcon className="size-5" />
           {others - otherCalls > 0 && (
             <span aria-hidden className="absolute top-0.5 left-5 min-w-4 rounded-full bg-primary px-1 text-center text-[0.625rem] leading-4 font-semibold text-primary-foreground tabular-nums">
-              {others - otherCalls > 99 ? "99+" : others - otherCalls}
+              {capped(others - otherCalls)}
             </span>
           )}
           {otherCalls > 0 && <span aria-hidden className="absolute bottom-1 left-6 size-2.5 rounded-full bg-destructive ring-2 ring-background" />}

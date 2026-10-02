@@ -60,6 +60,7 @@ import {
   CALL_CMD_TRIES,
   CALL_START_TRIES,
   callsSnapshot,
+  capped,
   checkLine,
   clock,
   desktopTarget,
@@ -125,7 +126,7 @@ function CountBadge({ n, red }: { n: number; red?: boolean }) {
         red ? "bg-destructive text-white" : "bg-primary text-primary-foreground",
       )}
     >
-      {n > 99 ? "99+" : n}
+      {capped(n)}
     </span>
   );
 }
@@ -716,7 +717,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
                   t.red ? "bg-destructive text-white" : "bg-primary text-primary-foreground",
                 )}
               >
-                {t.count > 99 ? "99+" : t.count}
+                {capped(t.count)}
               </span>
             )}
           </span>

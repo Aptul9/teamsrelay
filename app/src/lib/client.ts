@@ -187,7 +187,10 @@ export function appBadgeCount(accounts: Account[], unreadOf: (a: Account) => Unr
 }
 
 // The same number in the title of the page, for the tab and the taskbar: "(5) TeamsRelay"
-export const pageTitle = (n: number) => (n > 0 ? `(${n > 99 ? "99+" : n}) TeamsRelay` : "TeamsRelay");
+// A count as a badge shows it
+export const capped = (n: number) => (n > 99 ? "99+" : String(n));
+
+export const pageTitle = (n: number) => (n > 0 ? `(${capped(n)}) TeamsRelay` : "TeamsRelay");
 
 // An account never signed in to Microsoft has no name nor email yet: it shows as an account being added, not as a
 // numbered one, until its first sign-in. One signed out since keeps who it was.
