@@ -5,9 +5,9 @@ import { DESKTOP_BRIDGE } from "../logic/desktop";
 import { OWNER_PAUSE, ownerBusy } from "../logic/owner";
 import { shownInApp, wantedChat } from "../logic/parking";
 import { errorText, log } from "../log";
-import { byAgent, withInput } from "../teams/input";
+import { ownerInput, withInput } from "../teams/input";
 import { installMicHook } from "../teams/scripts/calls";
-import { drainInput, drainNotifications, installNotificationHook, makeVisible, watchInput } from "../teams/scripts/page-state";
+import { drainNotifications, installNotificationHook, makeVisible, watchInput } from "../teams/scripts/page-state";
 import { SEL, TEXTS } from "../teams/selectors";
 
 const initScripts = new WeakSet<Page>();
@@ -34,7 +34,7 @@ export async function preparePage(a: Agent) {
 export async function noteOwnerInput(a: Agent) {
   const page = a.tp.page;
   await page.evaluate(watchInput);
-  const owner = ((await page.evaluate(drainInput)) ?? []).filter((t) => !byAgent(page, t));
+  const owner = await ownerInput(page);
   if (owner.length) a.ownerAt = Math.max(a.ownerAt ?? 0, ...owner);
   notePause(a);
 }

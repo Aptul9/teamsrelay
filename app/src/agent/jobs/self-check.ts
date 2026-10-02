@@ -1,8 +1,7 @@
-import { STATE } from "@/shared/slot-db/state";
-import { nowSeconds, type Agent } from "../context";
+import type { Agent } from "../context";
 import { selfCheckWindow } from "../logic/self-check";
 import { errorText, log } from "../log";
-import { notifyNew, readList, withoutPictures } from "./chat-list";
+import { readChats } from "./chat-list";
 import { updateHealth } from "./health";
 
 // Real check: Teams connected and the new message detection running
@@ -11,11 +10,7 @@ export async function selfCheck(a: Agent): Promise<{ ok: boolean; why: string }>
   if (h.teams === "login") return { ok: false, why: "Teams signed out: sign in again" };
   if (h.teams !== "ok") return { ok: false, why: "Teams not fully loaded" };
   try {
-    const rows = await readList(a);
-    if (!rows.length) return { ok: false, why: "Chat list not readable" };
-    a.store.saveChats(withoutPictures(rows));
-    a.store.setState(STATE.lastScanTs, String(nowSeconds()));
-    await notifyNew(a, rows);
+    if (!(await readChats(a, false))) return { ok: false, why: "Chat list not readable" };
   } catch (e) {
     return { ok: false, why: `New message detection failed: ${errorText(e)}` };
   }

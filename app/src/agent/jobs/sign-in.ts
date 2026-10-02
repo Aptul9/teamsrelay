@@ -84,23 +84,17 @@ function toldOf(a: Agent, since: number) {
   return fresh;
 }
 
-// The page on Microsoft's sign-in host: the popup Teams' Sign in opened, or the Teams tab itself sent there
-function microsoftPage(a: Agent): Page | null {
-  const pages = a.tp.page
+// The pages on Microsoft's sign-in host: the popup Teams' Sign in opened, or the Teams tab itself sent there
+const loginPages = (a: Agent): Page[] =>
+  a.tp.page
     .context()
     .pages()
     .filter((p) => !p.isClosed() && isLoginUrl(p.url()));
-  return pages.at(-1) ?? null;
-}
+
+const microsoftPage = (a: Agent): Page | null => loginPages(a).at(-1) ?? null;
 
 // The pages of a sign-out: the Teams tab (or the page the agent drives), and those on Microsoft's sign-in host
-function signOutPages(a: Agent): Page[] {
-  const login = a.tp.page
-    .context()
-    .pages()
-    .filter((p) => p !== a.tp.page && !p.isClosed() && isLoginUrl(p.url()));
-  return [a.tp.page, ...login];
-}
+const signOutPages = (a: Agent): Page[] => [a.tp.page, ...loginPages(a).filter((p) => p !== a.tp.page)];
 
 // Once per sign-out and page address (without its query)
 async function logButtons(page: Page, seen: { pages: Set<string> }) {

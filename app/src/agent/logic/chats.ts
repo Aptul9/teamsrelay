@@ -1,9 +1,14 @@
+import { TEXTS } from "../teams/selectors";
+
 // A chat of the Teams list, as the agent keeps it (tm in the chats table is time here)
 // presence: a word of shared/presence, "" or absent when the list shows none; kind: a ChatKind of shared/slot-db/rows,
 // "" or absent when the list shows none
 export type ChatEntry = { name: string; preview: string; time: string; unread: boolean; mention: boolean; muted: boolean; av: string; presence?: string; kind?: string };
 
 export const CHAT_LIMIT = 40;
+
+// The chat with yourself ("Name (You)")
+export const isSelfChat = (name: string) => name.toLowerCase().includes(TEXTS.selfChat.toLowerCase());
 
 // Teams virtualizes the list: only the rows that fit the window are in the page, and the window changes with
 // whoever looks at the remote desktop. The visible chats go first, in Teams order; the others stay, in their

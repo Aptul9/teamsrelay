@@ -1,6 +1,6 @@
 import type { Page } from "playwright-core";
-import { byAgent, cdpClick, withInput } from "./input";
-import { drainInput, watchInput } from "./scripts/page-state";
+import { cdpClick, ownerInput, withInput } from "./input";
+import { watchInput } from "./scripts/page-state";
 import { signInPage } from "./scripts/sign-in";
 import { SEL, TEXTS } from "./selectors";
 
@@ -25,7 +25,7 @@ export type MicrosoftPress = "asks" | "owner" | "account" | "button";
 export async function pressMicrosoft(page: Page, email: string): Promise<MicrosoftPress | null> {
   if ((await page.evaluate(watchInput).catch(() => null)) !== "already") return null;
   return withInput(page, async () => {
-    const owner = ((await page.evaluate(drainInput).catch(() => null)) ?? []).filter((t) => !byAgent(page, t));
+    const owner = await ownerInput(page).catch(() => []);
     if (owner.length) return "owner";
     const r = (await page.evaluate(signInPage, { s: SEL, t: TEXTS, email }).catch(() => null))?.microsoft;
     if (!r) return null;

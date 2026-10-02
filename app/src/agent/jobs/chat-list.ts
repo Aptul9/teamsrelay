@@ -25,14 +25,20 @@ export async function notifyNew(a: Agent, rows: readonly ListRow[]) {
   }
 }
 
-// The chats Teams has in the page: pictures (up to 8 new ones), list saved on top of the known one, new messages
+// The chats Teams has in the page: saved on top of the known ones, pictures copied (up to 8 new ones) or not, then
+// their new messages. False when Teams shows no row.
+export async function readChats(a: Agent, pictures: boolean): Promise<boolean> {
+  const rows = await readList(a);
+  if (!rows.length) return false;
+  a.store.saveChats(pictures ? await a.media.avatars(a.tp.page, rows) : withoutPictures(rows));
+  a.store.setState(STATE.lastScanTs, String(nowSeconds()));
+  await notifyNew(a, rows);
+  return true;
+}
+
 export async function scanChats(a: Agent) {
   try {
-    const rows = await readList(a);
-    if (!rows.length) return;
-    a.store.saveChats(await a.media.avatars(a.tp.page, rows));
-    a.store.setState(STATE.lastScanTs, String(nowSeconds()));
-    await notifyNew(a, rows);
+    await readChats(a, true);
   } catch (e) {
     log.warn("chats", errorText(e));
   }

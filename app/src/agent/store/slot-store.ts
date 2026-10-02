@@ -5,6 +5,7 @@ import type { CommandStatus, CommandType } from "@/shared/slot-db/commands";
 import { HAS_TEAMS_ID, type Message, type MessageExtra, type ReadBy } from "@/shared/slot-db/rows";
 import { CALL_LOG_SIZE, ensureSlotSchema } from "@/shared/slot-db/schema";
 import { Identity, parseState, STATE } from "@/shared/slot-db/state";
+import { nowSeconds } from "../context";
 import { mergeChats, type ChatEntry } from "../logic/chats";
 
 // The agent side of data/N/messages.db (src/shared/slot-db), or of relay.db for the local relay, where the API
@@ -27,7 +28,6 @@ export type ActivityEntry = {
   av: string;
 };
 
-const nowSeconds = () => Math.floor(Date.now() / 1000);
 const bit = (v: boolean) => (v ? 1 : 0);
 
 export class SlotStore {
