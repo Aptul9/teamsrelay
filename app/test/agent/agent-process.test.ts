@@ -6,6 +6,7 @@ import net from "node:net";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { build } from "esbuild";
+import { bundleOptions } from "../../scripts/bundles.mjs";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tempDir } from "../helpers";
@@ -85,17 +86,7 @@ const exited = (p: ChildProcess) => new Promise<{ code: number | null; signal: s
 beforeAll(async () => {
   dir = tempDir("teamsrelay-agent-process-");
   bundle = path.join(dir, "agent.cjs");
-  await build({
-    absWorkingDir: APP,
-    entryPoints: ["src/agent/main.ts"],
-    bundle: true,
-    platform: "node",
-    target: "node24",
-    format: "cjs",
-    external: ["playwright-core", "better-sqlite3"],
-    outfile: bundle,
-    logLevel: "warning",
-  });
+  await build(bundleOptions("agent", bundle));
   port = await freePort();
   await startChrome();
   startAgent();
