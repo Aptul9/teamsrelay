@@ -8,8 +8,8 @@ import { HttpError } from "./http";
 import { createRelaySlot, forgetRelay, newRelayToken, ON_ANOTHER_COMPUTER, relayDigest } from "./relay";
 import { withSlotOr } from "./slotdb";
 
-export type SlotPaths = { dataDir: string };
-export type SlotOptions = SlotPaths & { db: Database.Database; slotCount: number; perUser: number };
+type SlotPaths = { dataDir: string };
+type SlotOptions = SlotPaths & { db: Database.Database; slotCount: number; perUser: number };
 
 // Browser and agent of the slot, in the browsers container: the supervisor starts the browser before the agent
 // and stops them the other way round.

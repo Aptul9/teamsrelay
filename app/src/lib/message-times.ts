@@ -2,7 +2,7 @@
 // from the id, with no column of its own.
 
 // Consecutive messages of one person make one group, as in Teams, until a pause longer than this or another day
-export const GROUP_GAP = 5 * 60_000;
+const GROUP_GAP = 5 * 60_000;
 
 // When a message was sent, from its Teams id; null for an id that is not a time
 export function sentAt(mid: string | number | undefined): number | null {

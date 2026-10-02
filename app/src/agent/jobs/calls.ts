@@ -14,8 +14,8 @@ import { SEL, TEXTS } from "../teams/selectors";
 // of the page, 1.5 ms on prod (2026-09-30): the timer is what the ring in the app and a tap on Answer wait for.
 export const CALL_LOOK_MS = 200;
 // An answer, a hang-up or a mute shows on the page within CONFIRM_TRIES looks CONFIRM_EVERY ms apart (5 s), or it failed
-export const CONFIRM_TRIES = 20;
-export const CONFIRM_EVERY = 250;
+const CONFIRM_TRIES = 20;
+const CONFIRM_EVERY = 250;
 // looks after a click that did not take (the toast still there, no microphone) before the Accept shortcut (1.5 s)
 const SHORTCUT_AFTER = 6;
 // looks after the mute shortcut that changed nothing before the click on the microphone button (1.5 s)

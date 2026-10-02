@@ -15,7 +15,7 @@ const ServiceAccount = z.object({
   client_email: z.string().min(1),
   private_key: z.string().min(1),
 });
-export type ServiceAccount = z.infer<typeof ServiceAccount>;
+type ServiceAccount = z.infer<typeof ServiceAccount>;
 
 // The service account key file of the Firebase project; none means FCM off
 export function loadServiceAccount(file: string): ServiceAccount | null {

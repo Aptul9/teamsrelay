@@ -12,7 +12,7 @@ import { openLink, type LinkSocket, type OpenSocket } from "./link-socket";
 // server (/api/call/audio/socket, src/server/call-audio-hub.ts). A call answered in the Teams window of this computer
 // is never the app's: Teams gets the microphone of the computer, and nothing leaves.
 
-export const BRIDGE_BINDING = "__teamsRelayCallBridge";
+const BRIDGE_BINDING = "__teamsRelayCallBridge";
 
 // an arm with no microphone asked for within this long is dropped: that answer or call did not happen
 const ARM_MS = 90_000;
@@ -25,7 +25,7 @@ const RECONNECT_MS = 1_000;
 
 type Msg = { op?: unknown; p?: unknown; channels?: unknown; host?: unknown };
 
-export type CallBridgeOptions = {
+type CallBridgeOptions = {
   // the server the relay joined, and its token
   url: string;
   token: string;

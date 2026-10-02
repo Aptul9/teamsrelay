@@ -12,11 +12,11 @@ import { acceptUpgrades, askWebApp } from "./upgrade";
 // Who may open which side is the web app's to say (GET /api/call/audio): the session of the page, the token of the relay.
 
 // the page waits this long for the relay of the account to be there, at the start and after the relay left
-export const RELAY_WAIT_MS = 20_000;
+const RELAY_WAIT_MS = 20_000;
 // the largest message taken: a packet of Opus is a few hundred bytes
 const MAX_PAYLOAD = 64 * 1024;
 
-export type Side = { slot: number; side: "app" | "relay" };
+type Side = { slot: number; side: "app" | "relay" };
 // The side a request may open, null when it may open none
 export type Check = (req: http.IncomingMessage) => Promise<Side | null>;
 

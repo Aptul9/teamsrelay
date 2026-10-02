@@ -29,7 +29,7 @@ const unreadText = (u: Unread) =>
     .join(", ");
 const callsText = (n: number) => plural(n, "missed call", "missed calls");
 
-export function MissedBadge({ n, className }: { n: number; className?: string }) {
+function MissedBadge({ n, className }: { n: number; className?: string }) {
   if (!n) return null;
   return (
     <Badge className={cn("h-5 min-w-5 rounded-full bg-destructive px-1.5 text-white tabular-nums", className)} title={callsText(n)}>
@@ -58,7 +58,7 @@ function relayState(a: Account): { text: string; warn: boolean } | null {
 }
 
 // What the account is doing, when it is not simply running: stopped, checked, starting, a sign-in to do...
-export function accState(a: Account): { text: string; warn: boolean } | null {
+function accState(a: Account): { text: string; warn: boolean } | null {
   if (a.relay) return relayState(a);
   if (a.stopped) return { text: "Stopped · still signed in", warn: false };
   if (idleChecked(a)) {
@@ -74,10 +74,10 @@ export function accState(a: Account): { text: string; warn: boolean } | null {
 }
 
 // Who the account is: the accounts of one person share the name
-export const accIdentity = (a: Account) => [a.email, a.tenant].filter(Boolean).join(" · ");
+const accIdentity = (a: Account) => [a.email, a.tenant].filter(Boolean).join(" · ");
 
 // The line under the name on the account menu button: what the account is doing, else who it is
-export function accSub(a: Account): { text: string; warn: boolean } {
+function accSub(a: Account): { text: string; warn: boolean } {
   return accState(a) ?? { text: accIdentity(a), warn: false };
 }
 

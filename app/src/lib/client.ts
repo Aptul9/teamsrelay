@@ -12,9 +12,9 @@ export type { OpenReason, OpenStatus } from "@/shared/slot-db/commands";
 export { CHECK_INTERVALS } from "@/shared/checks";
 export type { RingingCall, SlotHealth as Health } from "@/shared/slot-db/state";
 // detail: why the web app refused the command, when it did
-export type CommandResult = { status: string; result: { f?: string } | null; detail?: string };
+type CommandResult = { status: string; result: { f?: string } | null; detail?: string };
 
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -159,7 +159,7 @@ export function unseenIds(ids: string[], seen: string[] | null): number {
 
 export type Unread = { chats: number; notifications: number; calls: number };
 
-export const unreadTotal = (u: Unread) => u.chats + u.notifications + u.calls;
+const unreadTotal = (u: Unread) => u.chats + u.notifications + u.calls;
 
 // What waits in an account the app does not show: unread chats, the notifications and the missed calls this device has
 // not shown yet, the numbers its Chats, Notifications and Calls tabs would have. A stopped account reads nothing new
@@ -217,7 +217,7 @@ export function markShown(stored: string[] | null, items: ActivityItem[], list: 
 
 // The seen list the Calls list compares with while it is open, for its dots: the one of when it opened, and the one of
 // the new account when the account changes under it
-export type CallsSnapshot = { acc: number; seen: string[] | null };
+type CallsSnapshot = { acc: number; seen: string[] | null };
 export const callsSnapshot = (s: CallsSnapshot | null, acc: number, seen: string[] | null): CallsSnapshot => (s?.acc === acc ? s : { acc, seen });
 
 export function parseSeen(raw: string | null): string[] | null {
@@ -267,13 +267,6 @@ export function initials(s: string): string {
   s = (s || "?").trim().replace(/\(.*?\)/g, "").trim();
   const p = s.split(/[\s,]+/).filter(Boolean);
   return ((p[0]?.[0] || "") + (p[1]?.[0] || "") || s[0] || "?").toUpperCase();
-}
-
-const COLORS = ["#6264a7", "#0a7cbb", "#498205", "#c19c00", "#ca5010", "#b4009e", "#008272", "#e3008c", "#5c2e91", "#986f0b"];
-export function avColor(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return COLORS[h % COLORS.length];
 }
 
 export function ago(ts?: number): string {

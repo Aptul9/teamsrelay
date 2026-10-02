@@ -22,8 +22,8 @@ import { asAgent } from "./teams/input";
 import { sleep, TeamsPage } from "./teams/page";
 
 // Seconds between two inputs on the Teams page
-export const ACTIVE_EVERY = 60;
-export const ACTIVITY_RETRY = 30;
+const ACTIVE_EVERY = 60;
+const ACTIVITY_RETRY = 30;
 // The automatic check judges Teams once it had time to load: a start or a reload inside a window of the check shows
 // Teams within a minute; Teams not ready this many seconds into the window is the problem the check reports
 export const SELF_CHECK_GRACE = 300;

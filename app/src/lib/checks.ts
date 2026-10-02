@@ -24,7 +24,7 @@ export type SlotPort = {
   commandStatus(n: number, id: number): string | null;
 };
 
-export type CheckDeps = {
+type CheckDeps = {
   ctl: ControlClient;
   db: Database.Database;
   slot: SlotPort;
@@ -39,7 +39,7 @@ export type CheckDeps = {
 export const TEAMS_WAIT = 240;
 export const SIGNED_OUT = SIGN_IN_TRY_AFTER + SIGN_IN_TRY_WAIT + 15;
 // Seconds for the check command, and for the agent's sign-in alert once a sign-in is found to do
-export const COMMAND_WAIT = 180;
+const COMMAND_WAIT = 180;
 export const ALERT_WAIT = 30;
 // A check its owner asks for, of an account whose last check found a sign-in to do, waits that long for the sign-in
 // in the remote desktop

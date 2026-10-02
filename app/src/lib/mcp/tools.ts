@@ -15,7 +15,7 @@ export class ToolError extends Error {}
 
 type Account = { account?: number };
 
-export type ToolMessage = {
+type ToolMessage = {
   id: string;
   time?: string;
   author: string;
@@ -68,7 +68,7 @@ function toolMessage(m: Message): ToolMessage {
   return out;
 }
 
-export function chatMessages(r: SlotReader, s: Slot, chat: string) {
+function chatMessages(r: SlotReader, s: Slot, chat: string) {
   const messages = r.messages(chat).map(toolMessage);
   if (!messages.length && !r.chats().some((c) => c.name === chat)) throw new ToolError("No chat with this name: use a name as list_chats gives it");
   return {

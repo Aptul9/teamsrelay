@@ -16,7 +16,7 @@ export type Job<C> = {
   catchUp?: boolean;
 };
 
-export type RoundContext = { onTeams: boolean };
+type RoundContext = { onTeams: boolean };
 
 export class Scheduler<C extends RoundContext> {
   private rounds = 0;

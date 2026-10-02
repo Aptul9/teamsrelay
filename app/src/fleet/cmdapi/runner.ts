@@ -38,7 +38,7 @@ export interface Result {
 
 
 // Find an executable on PATH. On Windows the name may be given without its extension, so PATHEXT is tried.
-export function whichSync(name: string): string | null {
+function whichSync(name: string): string | null {
   if (path.isAbsolute(name)) return fs.existsSync(name) ? name : null;
   const exts = process.platform === "win32" ? (process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";") : [""];
   for (const dir of (process.env.PATH || "").split(path.delimiter)) {

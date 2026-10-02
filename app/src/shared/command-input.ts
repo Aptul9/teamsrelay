@@ -33,14 +33,14 @@ export function mentionNames(v: unknown): string[] {
 const REACTIONS = new Set<string>(REACTION_NAMES);
 
 // delete, undodelete
-export const messageArgs = (mid: unknown) => JSON.stringify({ mid: messageId(mid) } satisfies MessageArgs);
+const messageArgs = (mid: unknown) => JSON.stringify({ mid: messageId(mid) } satisfies MessageArgs);
 
 // reply, edit
-export const textArgs = (mid: unknown, text: unknown) => JSON.stringify({ mid: messageId(mid), text: messageText(text) } satisfies TextArgs);
+const textArgs = (mid: unknown, text: unknown) => JSON.stringify({ mid: messageId(mid), text: messageText(text) } satisfies TextArgs);
 
 // react. emoji: one of the six quick reactions. pill: the emoji of a reaction already under the message, clicked like
 // in Teams (removed if it is yours, added otherwise).
-export function reactArgs(mid: unknown, emoji: unknown, pill: unknown): string {
+function reactArgs(mid: unknown, emoji: unknown, pill: unknown): string {
   const id = messageId(mid);
   if (pill) {
     if (typeof pill !== "string" || pill.length > 16) throw new HttpError(400, "Invalid reaction");

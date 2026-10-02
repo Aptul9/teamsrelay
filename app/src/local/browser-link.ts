@@ -14,7 +14,7 @@ import { openLink, type LinkSocket, type OpenSocket } from "./link-socket";
 const RETRY_FIRST_MS = 1000;
 const RETRY_LONGEST_MS = 30_000;
 
-export type BrowserLinkOptions = {
+type BrowserLinkOptions = {
   // the server the relay joined, and its token
   url: string;
   token: string;

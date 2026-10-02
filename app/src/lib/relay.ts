@@ -35,7 +35,7 @@ export const ON_ANOTHER_COMPUTER = "This Teams account runs on another computer:
 
 // The account a request of a relay comes from: its slot, when the account took the slot, and the digest of the token
 // the request came with
-export type RelayCaller = { slot: number; added: number; digest: string };
+type RelayCaller = { slot: number; added: number; digest: string };
 
 const refused = () => new HttpError(401, "Missing or wrong token", { "WWW-Authenticate": 'Bearer realm="teamsrelay"' });
 
@@ -303,7 +303,7 @@ const KINDS = {
   media: { name: RELAY_FILE_NAME.media, max: 10e6 },
   files: { name: RELAY_FILE_NAME.files, max: MAX_DOWNLOAD },
 } as const;
-export type RelayFileKind = keyof typeof KINDS;
+type RelayFileKind = keyof typeof KINDS;
 
 // Folder names written out: the build traces the files a path can reach, and a folder named by a variable makes it
 // take in the whole project

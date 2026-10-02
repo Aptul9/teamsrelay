@@ -23,7 +23,7 @@ const Env = z.object({
 const BROWSER_ENV = ["TZ", "LANG", "LANGUAGE", "LC_ALL", "PULSE_RUNTIME_PATH"];
 const AGENT_ENV = ["TZ", "VAPID_SUBJECT", "NTFY_ENABLED", "NTFY_URL", "NTFY_TOPIC"];
 
-export type SupervisorConfig = { socket: string; accounts: AccountsConfig };
+type SupervisorConfig = { socket: string; accounts: AccountsConfig };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): SupervisorConfig {
   const e = parseEnv(Env, env);

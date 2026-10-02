@@ -20,7 +20,7 @@ import type { RelayDevices } from "./devices";
 // for is a row of relay.db, or a command the agent runs on Teams. No browser, no desktop, nothing of the Microsoft
 // session goes out through here.
 
-export type ApiOptions = {
+type ApiOptions = {
   store: SlotStore;
   devices: RelayDevices;
   token: string;

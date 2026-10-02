@@ -17,7 +17,7 @@ export async function pressTeamsSignIn(page: Page): Promise<boolean> {
 
 // What became of Microsoft's page: asks, a field to type in (nothing pressed); owner, the owner's input on it (nothing
 // pressed); account or button, pressed; null, nothing to press yet (loading, redirecting, or first seen).
-export type MicrosoftPress = "asks" | "owner" | "account" | "button";
+type MicrosoftPress = "asks" | "owner" | "account" | "button";
 
 // Microsoft's sign-in page: the tile of this account, else its one Sign in or Continue, with one real click. The page
 // is watched for the owner's input from the first look on, and pressed at a later one only, when no input of the owner

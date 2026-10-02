@@ -78,7 +78,7 @@ export async function sendText(tp: TeamsPage, chat: string, raw: string, sent?: 
   return confirmSent({ area: "send", shown: () => page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before }), tries: 50, sent, fields: { chat } });
 }
 
-export type ImageFile = { name: string; type: string; data: Buffer };
+type ImageFile = { name: string; type: string; data: Buffer };
 
 // The image goes in as a paste, then the caption, and Enter sends both, as a person does. Refused when Teams
 // shows another chat or the compose box holds a draft, which would go out with the image. Sent once Teams shows

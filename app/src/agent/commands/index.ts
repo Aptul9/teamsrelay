@@ -31,7 +31,7 @@ export const COMMAND_MAX_AGE = 120;
 const byCallWatch: Handler = async () => "failed";
 
 // One handler per command type of the web app and of the local relay (src/shared/slot-db/commands.ts)
-export const HANDLERS: Record<CommandType, Handler> = {
+const HANDLERS: Record<CommandType, Handler> = {
   open,
   send,
   reply,

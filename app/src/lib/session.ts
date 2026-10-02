@@ -3,7 +3,7 @@ import { auth } from "./auth";
 import { pickSlot } from "./authz";
 import { HttpError } from "./http";
 
-export type SessionUser = { id: string; email: string; name: string; role?: string | null };
+type SessionUser = { id: string; email: string; name: string; role?: string | null };
 
 export async function currentUser(headers: Headers): Promise<SessionUser | null> {
   const s = await auth().api.getSession({ headers });

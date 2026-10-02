@@ -195,7 +195,7 @@ export function setBrowserOff(db: Database.Database, slot: number, off: boolean)
   db.prepare("UPDATE teams_accounts SET browser_off=? WHERE slot=?").run(off ? 1 : 0, slot);
 }
 
-export type BrowserAction = { id: number; ts: number; user_id: string; client_id: string; slot: number; tool: string; host: string; outcome: string };
+type BrowserAction = { id: number; ts: number; user_id: string; client_id: string; slot: number; tool: string; host: string; outcome: string };
 
 // actions kept per account; Settings shows the last 50
 const BROWSER_ACTIONS_KEPT = 500;

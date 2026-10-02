@@ -5,7 +5,7 @@ import type { Selectors, Texts } from "../selectors";
 
 type Point = { x: number; y: number };
 
-export type SignInPage = {
+type SignInPage = {
   // Teams' own Sign in, while Teams says to sign in again
   teams: { asks: boolean; found: number; at: Point | null };
   // Microsoft's sign-in page: whether it asks for something to type (a password, a code, an email: then nothing is

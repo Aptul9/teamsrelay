@@ -36,7 +36,7 @@ const FILE_ARGUMENT = "filename";
 export type RpcId = number | string;
 export type RpcRequest = { jsonrpc: "2.0"; id: RpcId; method: string; params?: Record<string, unknown> };
 // a request that may go to Playwright MCP, or the answer the relay gives in its place (null: nothing to answer) and why
-export type Screened = { ok: true; request: RpcRequest } | { ok: false; reply: object | null; why: string };
+type Screened = { ok: true; request: RpcRequest } | { ok: false; reply: object | null; why: string };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isId = (v: unknown): v is RpcId => (typeof v === "number" && Number.isFinite(v)) || typeof v === "string";

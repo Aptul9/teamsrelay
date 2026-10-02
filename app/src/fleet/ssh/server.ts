@@ -13,7 +13,7 @@ import { defaultShell, run, shellFamily } from "@/fleet/cmdapi/runner";
 import { generateEd25519, parsesAsKey } from "./keys";
 import { wireSftp } from "./sftp";
 
-export interface SshServerOptions {
+interface SshServerOptions {
   port: number;
   host?: string;
   // private host key (OpenSSH or PEM); loadOrCreateHostKey makes one if none exists

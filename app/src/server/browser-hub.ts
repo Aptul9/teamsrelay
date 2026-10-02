@@ -12,7 +12,7 @@ import { acceptUpgrades, askWebApp } from "./upgrade";
 // the socket of which account is the web app's to say (GET /api/relay/browser): the token of the relay.
 
 // a call of a tool with no answer by then is given up: a page that never loads, a relay gone silent
-export const CALL_LIMIT_MS = 90_000;
+const CALL_LIMIT_MS = 90_000;
 
 // The account of a request, null when it may open none
 export type Check = (req: http.IncomingMessage) => Promise<number | null>;

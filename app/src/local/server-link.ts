@@ -65,7 +65,7 @@ function takeDigests(sent: Map<string, string>, taken: Map<string, string | null
   }
 }
 
-export class ServerError extends Error {
+class ServerError extends Error {
   constructor(
     readonly status: number,
     detail: string,

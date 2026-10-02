@@ -7,7 +7,7 @@ import { notePause } from "./page-setup";
 
 // How the desktop is read: the connections of this network namespace (the agent runs in the browsers container, as
 // root), and the compositor, asked as the desktop user whether the window of this account is in front
-export type DesktopIo = {
+type DesktopIo = {
   read: (file: string) => string;
   focused: (d: DesktopWatch) => Promise<boolean>;
 };

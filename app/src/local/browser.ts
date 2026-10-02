@@ -15,7 +15,7 @@ const KEEP_UPDATING = ["--disable-background-networking", "--disable-component-u
 const BLANK_TAB_MS = 5_000;
 const OTHER_PAGE_MS = 10 * 60_000;
 
-export type LaunchOptions = { profileDir: string; channel: string; headless?: boolean; extraArgs?: string[] };
+type LaunchOptions = { profileDir: string; channel: string; headless?: boolean; extraArgs?: string[] };
 
 // The browser of the relay, on a profile of its own. Never the profile of the everyday browser: since Chromium 136
 // remote debugging, the pipe Playwright drives it through included, is ignored on the default user data directory,
