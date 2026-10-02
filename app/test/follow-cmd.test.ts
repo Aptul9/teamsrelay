@@ -2,7 +2,7 @@
 // Teams shows it within a second, so the app reads its outcome every CALL_CMD_EVERY ms, for about ten seconds, and the
 // other commands as before.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CALL_CMD_EVERY, CALL_CMD_TRIES, CALL_START_TRIES, callProblem, followCmd } from "@/lib/client";
+import { CALL_CMD_EVERY, CALL_CMD_TRIES, CALL_START_TRIES, followCmd, reasonText } from "@/lib/client";
 import { CALL_REASONS } from "@/shared/slot-db/commands";
 
 afterEach(() => {
@@ -49,11 +49,11 @@ describe("following a command", () => {
   });
 
   it("says why a call was not placed, and a reason of its own for a call that got no answer", () => {
-    const texts = CALL_REASONS.map((reason) => callProblem({ reason }));
+    const texts = CALL_REASONS.map((reason) => reasonText({ reason }));
     expect(new Set(texts).size).toBe(CALL_REASONS.length);
-    expect(callProblem({ reason: "not-one" })).toBe("Only a 1:1 chat can be called.");
-    expect(callProblem({ reason: "busy" })).toBe("A call rings or is on in this account.");
-    for (const none of [null, {}, { reason: "unreadable" }, "busy"]) expect(callProblem(none)).toBe("Teams did not get to it in time.");
+    expect(reasonText({ reason: "not-one" })).toBe("Only a 1:1 chat can be called.");
+    expect(reasonText({ reason: "busy" })).toBe("A call rings or is on in this account.");
+    for (const none of [null, {}, { reason: "other" }, "busy"]) expect(reasonText(none)).toBe("Teams did not get to it in time.");
   });
 
   it("gives up as failed after its tries", async () => {

@@ -7,7 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useAppStart } from "@/lib/android-app";
 import type { CallAudioState } from "@/lib/call-audio/call-audio";
 import { type MuteView, shownMuted } from "@/lib/call-audio/mute";
-import type { Account, RingingCall } from "@/lib/client";
+import { noSubscribe, type Account, type RingingCall } from "@/lib/client";
 import type { Ringer } from "@/lib/ring";
 import { relayHost } from "./RelayToken";
 
@@ -41,7 +41,6 @@ const without = (b: Busy, key: string): Busy => Object.fromEntries(Object.entrie
 // The account a call rings in, as its notifications name it: organization, otherwise email
 export const accountLabel = (a: Account | undefined, acc: number) => (a && (a.tenant || a.email || a.name)) || `Account ${acc}`;
 
-const noSubscribe = () => () => {};
 
 // Whether the page may play the ring; before hydration it counts as allowed, so the server shows no hint
 function useRingAllowed(ringer: Ringer | null) {

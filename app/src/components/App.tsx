@@ -58,7 +58,6 @@ import {
   CALL_CMD_EVERY,
   CALL_CMD_TRIES,
   CALL_START_TRIES,
-  callProblem,
   callsSnapshot,
   checkLine,
   clock,
@@ -70,8 +69,10 @@ import {
   isMissedCall,
   isSelf,
   loadSeen,
+  noSubscribe,
   noteShown,
   pageTitle,
+  reasonText,
   patch,
   post,
   readStorage,
@@ -102,7 +103,6 @@ type ListTab = "chats" | "activity" | "calls";
 type User = { name: string; email: string; role: string };
 
 // On a PC (mouse, no touch) the remote desktop opens in a browser tab; elsewhere it has a view of its own
-const noSubscribe = () => () => {};
 const isPcNow = () => window.matchMedia("(hover:hover) and (pointer:fine)").matches && !("ontouchstart" in window);
 
 // The app on screen: the event stream names the open chat, whose messages it brings. Reading it takes the window in use
@@ -521,7 +521,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       return failed(errorText(e, "The server could not be reached"));
     }
     const r = await followCmd(id, n, CALL_START_TRIES, CALL_CMD_EVERY);
-    if (r.status !== "done") return failed(callProblem(r.result));
+    if (r.status !== "done") return failed(reasonText(r.result));
     // placed: the event stream brings the call in progress within a look, and the banner of the call takes over
     setTimeout(done, 10_000);
   }

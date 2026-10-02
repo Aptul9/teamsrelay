@@ -48,7 +48,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { errorText, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message, type OpenReason, type OpenStatus } from "@/lib/client";
+import { errorText, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, reasonText, runCmd, sendImage, type Chat, type Message, type OpenStatus } from "@/lib/client";
 import { REACTION_EMOJI } from "@/shared/slot-db/rows";
 import { useInUse } from "@/lib/in-use";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
@@ -77,16 +77,6 @@ function readStatus(m: Message): { label: string; seen: boolean } {
   if (/seen|read/i.test(m.status || "")) return { label: "Seen", seen: true };
   return { label: "Sent", seen: false };
 }
-
-// Why Teams did not open the chat, as the agent tells it (cmd_result of the open); an open failed without a reason
-// waited too long for the agent, or was cut by its restart
-const OPEN_FAILED: Record<OpenReason, string> = {
-  "signed-out": "Teams is signed out: sign in again, then try again.",
-  "not-listed": "Teams has no chat with this name in its list.",
-  "not-shown": "Teams did not show it.",
-  unreadable: "Teams showed it, but its messages could not be read.",
-};
-const NO_ANSWER = "Teams did not get to it in time.";
 
 // Away from the app this long, the chat is opened in Teams again on return, with its progress on screen. Teams leaves
 // the chat as soon as the app is out of use (lib/in-use.ts, lib/viewing.ts) and the agent opens it again at its first
@@ -223,7 +213,7 @@ export function Conversation({
             ? "live"
             : "failed"
         : "opening";
-  const whyNot = mine?.error ?? (open?.reason ? OPEN_FAILED[open.reason] : NO_ANSWER);
+  const whyNot = mine?.error ?? reasonText(open);
 
   // a pending message that never shows up on Teams turns into "Not sent"
   useEffect(() => {

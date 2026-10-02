@@ -3,7 +3,7 @@
 // server (account menu, sign-in page) goes back there, to its form (#change). The device keeps it: the server page
 // also loads without it (a tapped notification, the page after a sign-in). Only the app's own pages count.
 import { useSyncExternalStore } from "react";
-import { readStorage, writeStorage } from "./client";
+import { noSubscribe, readStorage, writeStorage } from "./client";
 
 const KEY = "appstart";
 
@@ -30,7 +30,6 @@ export function keepAppStart(page: string | null) {
   if (page) writeStorage(KEY, page);
 }
 
-const noSubscribe = () => () => {};
 const appStartNow = () => appStart(window.location.search);
 
 // The start page of the Android app that opened this server; null in a browser, and while the page renders on the server

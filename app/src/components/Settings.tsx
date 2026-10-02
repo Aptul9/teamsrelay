@@ -34,12 +34,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { authClient } from "@/lib/auth-client";
-import { accountStatus, bellOn, call, CHECK_INTERVALS, errorText, hours, patch, post, setBellOn, toLogin, type Account } from "@/lib/client";
+import { accountStatus, bellOn, call, CHECK_INTERVALS, errorText, hours, noSubscribe, patch, post, setBellOn, toLogin, type Account } from "@/lib/client";
 import { PASSWORD_MIN } from "@/shared/password";
 import { enablePush, pushState, type PushState } from "@/lib/push";
 import { Ringer } from "@/lib/ring";
 
-const noSubscribe = () => () => {};
 
 // the bell setting of this device, in the storage of the browser: the switch follows its changes
 const bellWatchers = new Set<() => void>();
