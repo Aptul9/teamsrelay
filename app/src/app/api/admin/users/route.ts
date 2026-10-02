@@ -4,6 +4,7 @@ import { config } from "@/lib/config";
 import { isEnvAdmin } from "@/lib/env-admin";
 import { body, HttpError, route, text } from "@/lib/http";
 import { requireAdmin } from "@/lib/session";
+import { PASSWORD_MAX, PASSWORD_MIN } from "@/shared/password";
 
 // Users with the slots they own. Administrators see who owns a slot, never its chats.
 export const GET = route(async (req) => {
@@ -31,8 +32,8 @@ export const POST = route(async (req) => {
   await requireAdmin(req);
   const b = await body(req);
   const role = b.role === "admin" ? "admin" : "user";
-  const password = text(b.password, "password", 256);
-  if (password.length < 10) throw new HttpError(400, "Password: at least 10 characters");
+  const password = text(b.password, "password", PASSWORD_MAX);
+  if (password.length < PASSWORD_MIN) throw new HttpError(400, `Password: at least ${PASSWORD_MIN} characters`);
   const { user } = await auth().api.createUser({
     body: { email: text(b.email, "email", 254).trim(), name: text(b.name, "name", 100).trim(), password, role },
     headers: req.headers,

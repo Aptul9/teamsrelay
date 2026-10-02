@@ -1,5 +1,5 @@
 import { appDb, slotsOf } from "@/lib/appdb";
-import { safeNext } from "@/lib/authz";
+import { loginUrl, safeNext } from "@/lib/authz";
 import { route } from "@/lib/http";
 import { currentUser } from "@/lib/session";
 
@@ -10,7 +10,7 @@ export const GET = route(async (req) => {
   const uri = req.headers.get("x-forwarded-uri") || "/";
   const user = await currentUser(req.headers);
   if (!user) {
-    return new Response(null, { status: 302, headers: { Location: `/login?next=${encodeURIComponent(safeNext(uri))}` } });
+    return new Response(null, { status: 302, headers: { Location: loginUrl(safeNext(uri)) } });
   }
   if (!slotsOf(appDb(), user.id).some((s) => !s.relay)) {
     return Response.json({ detail: "No Teams account on this user" }, { status: 403 });

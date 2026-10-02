@@ -36,6 +36,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError, call, post } from "@/lib/client";
+import { PASSWORD_MIN } from "@/shared/password";
 
 type UserRow = { id: string; name: string; email: string; role: string; banned: boolean; managed: boolean; slots: number[] };
 type Data = { users: UserRow[]; slotCount: number; free: number };
@@ -64,7 +65,7 @@ function NewUserDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpe
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (form.password.length < 10) return setError("Password: at least 10 characters");
+    if (form.password.length < PASSWORD_MIN) return setError(`Password: at least ${PASSWORD_MIN} characters`);
     setBusy(true);
     setError("");
     try {
@@ -138,7 +139,7 @@ function SetPasswordDialog({ user, onClose }: { user: UserRow | null; onClose: (
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!user) return;
-    if (password.length < 10) return setError("At least 10 characters");
+    if (password.length < PASSWORD_MIN) return setError(`At least ${PASSWORD_MIN} characters`);
     setBusy(true);
     setError("");
     try {

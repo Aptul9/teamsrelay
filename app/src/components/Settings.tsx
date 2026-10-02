@@ -35,6 +35,7 @@ import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { authClient } from "@/lib/auth-client";
 import { accountStatus, ApiError, bellOn, call, CHECK_INTERVALS, hours, post, setBellOn, toLogin, type Account } from "@/lib/client";
+import { PASSWORD_MIN } from "@/shared/password";
 import { enablePush, pushState, type PushState } from "@/lib/push";
 import { Ringer } from "@/lib/ring";
 
@@ -220,7 +221,7 @@ export function Settings({ user, passwordManaged }: { user: { name: string; emai
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
     const found: typeof errors = {};
-    if (next.length < 10) found.next = "At least 10 characters";
+    if (next.length < PASSWORD_MIN) found.next = `At least ${PASSWORD_MIN} characters`;
     if (confirm !== next) found.confirm = "The two passwords differ";
     setErrors(found);
     if (Object.keys(found).length) return;

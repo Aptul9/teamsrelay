@@ -19,6 +19,9 @@ export function safeNext(next: string | null): string {
   return new URL(next, "http://relay.invalid").origin === "http://relay.invalid" ? next : "/";
 }
 
+// The sign-in page, then `next`
+export const loginUrl = (next: string) => `/login?next=${encodeURIComponent(next)}`;
+
 // The sign-in page for a visit to the app without a session: the account asked by a tapped notification (a) and the
 // start page of the Android app (app) come back with the page after the sign-in
 export function loginFor(params: Record<string, string | string[] | undefined>): string {
@@ -27,5 +30,5 @@ export function loginFor(params: Record<string, string | string[] | undefined>):
     const v = params[k];
     if (typeof v === "string" && v) back.set(k, v);
   }
-  return String(back) ? `/login?next=${encodeURIComponent(`/?${back}`)}` : "/login";
+  return String(back) ? loginUrl(`/?${back}`) : "/login";
 }

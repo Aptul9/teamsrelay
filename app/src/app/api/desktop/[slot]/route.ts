@@ -1,4 +1,5 @@
 import { appDb, slotOwner, slotRow } from "@/lib/appdb";
+import { loginUrl } from "@/lib/authz";
 import { controlClient } from "@/lib/control";
 import { HttpError, route } from "@/lib/http";
 import { ON_ANOTHER_COMPUTER } from "@/lib/relay";
@@ -30,7 +31,7 @@ async function toFront(n: number): Promise<boolean> {
 // container: the window of this account comes to the front, then the desktop opens.
 export const GET = route<Ctx>(async (req, { params }) => {
   const user = await currentUser(req.headers);
-  if (!user) return redirect(`/login?next=${encodeURIComponent(new URL(req.url).pathname)}`);
+  if (!user) return redirect(loginUrl(new URL(req.url).pathname));
   const n = ownAccount(user.id, (await params).slot);
   // the desktop is still useful with the windows as they are
   await toFront(n);
