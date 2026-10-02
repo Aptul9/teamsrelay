@@ -237,9 +237,10 @@ function relayNotifier(caller: RelayCaller): Notifier {
   const known = pushers().get(caller.slot);
   if (known?.added === caller.added) return known.notifier;
   if (known) forgetRelay(caller.slot);
+  const push = config.push;
   let vapid = null;
   try {
-    vapid = loadVapidKeys(config.vapidPrivateFile, config.vapidAppKeyFile);
+    vapid = loadVapidKeys(push.vapid.privateKeyFile, push.vapid.appKeyFile);
   } catch (e) {
     console.error(`relay ${caller.slot}: push keys: ${(e as Error).message}`);
   }
@@ -247,7 +248,7 @@ function relayNotifier(caller: RelayCaller): Notifier {
   // without notifications, and the browsers with theirs
   let fcm: FcmSender | null = null;
   try {
-    const sa = loadServiceAccount(config.fcmCredentialsFile);
+    const sa = loadServiceAccount(push.fcmCredentials);
     if (sa) fcm = new FcmSender(sa);
   } catch (e) {
     console.error(`relay ${caller.slot}: FCM key: ${(e as Error).message}`);
@@ -263,7 +264,7 @@ function relayNotifier(caller: RelayCaller): Notifier {
     remove: (endpoint) => app.remove(endpoint),
     account: (me) => app.account(me),
   };
-  const notifier = new Notifier({ store, devices, vapid, subject: config.vapidSubject, ntfy: config.ntfy, fcm, answerable: true });
+  const notifier = new Notifier({ store, devices, vapid, subject: push.vapid.subject, ntfy: push.ntfy, fcm, answerable: true });
   pushers().set(slot, { added, store, notifier });
   return notifier;
 }

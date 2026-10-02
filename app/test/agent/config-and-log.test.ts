@@ -1,6 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ConfigError, loadConfig } from "@/agent/config";
+import { loadConfig } from "@/agent/config";
+import { ConfigError } from "@/shared/env";
 import { errorText, format } from "@/agent/log";
 
 describe("agent configuration", () => {

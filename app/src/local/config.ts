@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import { ConfigError } from "@/agent/config";
+import { ConfigError, NtfyUrl, parseEnv, VapidSubject } from "@/shared/env";
 import type { AgentSettings } from "@/agent/context";
 
 // Environment of the local relay, from relay.env next to package.json or from the process (pm2). Checked once at
@@ -19,8 +19,8 @@ const Env = z.object({
   // HTTPS on the API itself, for a phone that reaches it without a proxy that terminates TLS
   RELAY_TLS_CERT: z.string().optional(),
   RELAY_TLS_KEY: z.string().optional(),
-  VAPID_SUBJECT: z.string().regex(/^(mailto:|https:\/\/)/, "must be a mailto: or https:// URL").default("mailto:admin@example.com"),
-  NTFY_URL: z.url({ protocol: /^https?$/ }).default("https://ntfy.sh"),
+  VAPID_SUBJECT: VapidSubject,
+  NTFY_URL: NtfyUrl,
   NTFY_TOPIC: z.string().default(""),
   // name of this machine in the alerts ("sign in again in the relay window on <HOST_LABEL>")
   HOST_LABEL: z.string().default(os.hostname()),
@@ -62,13 +62,7 @@ export type Config = AgentSettings & {
 };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env, cwd = process.cwd()): Config {
-  // an empty variable (FOO= in relay.env) counts as unset
-  const given = Object.fromEntries(Object.keys(Env.shape).map((k) => [k, env[k] === "" ? undefined : env[k]]));
-  const r = Env.safeParse(given);
-  if (!r.success) {
-    throw new ConfigError(r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
-  }
-  const e = r.data;
+  const e = parseEnv(Env, env);
   if (!!e.RELAY_TLS_CERT !== !!e.RELAY_TLS_KEY) throw new ConfigError("RELAY_TLS_CERT and RELAY_TLS_KEY go together");
   if (!!e.SERVER_URL !== !!e.SERVER_TOKEN) throw new ConfigError("SERVER_URL and SERVER_TOKEN go together");
   if (e.RELAY_BROWSER === "1" && !e.SERVER_URL) throw new ConfigError("RELAY_BROWSER=1 needs SERVER_URL and SERVER_TOKEN: the browser is driven through the server joined");

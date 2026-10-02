@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ConfigError, loadConfig } from "@/supervisor/config";
+import { ConfigError } from "@/shared/env";
+import { loadConfig } from "@/supervisor/config";
 
 describe("loadConfig", () => {
   it("has the paths of the browsers image by default", () => {

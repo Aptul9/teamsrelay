@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { chromium, type BrowserContext } from "playwright-core";
-import { ConfigError } from "@/agent/config";
+import { ConfigError } from "@/shared/env";
 import { isLoginUrl, isTeamsUrl, pickTeamsPage } from "@/agent/logic/hosts";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { errorText, log } from "@/agent/log";

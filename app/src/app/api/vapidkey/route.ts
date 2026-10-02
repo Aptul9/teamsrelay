@@ -5,7 +5,7 @@ import { config } from "@/lib/config";
 export function GET() {
   let key = "";
   try {
-    key = fs.readFileSync(config.vapidAppKeyFile, "utf8").trim();
+    key = fs.readFileSync(config.push.vapid.appKeyFile, "utf8").trim();
   } catch {
     // no VAPID keys generated: push stays off
   }

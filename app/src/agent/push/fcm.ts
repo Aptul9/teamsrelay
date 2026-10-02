@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { JWT } from "google-auth-library";
 import { z } from "zod";
-import { ConfigError } from "../config";
+import { ConfigError } from "@/shared/env";
 
 // Firebase Cloud Messaging, HTTP v1 API (https://firebase.google.com/docs/cloud-messaging/send/v1-api), for the phones
 // that run the TeamsRelay app of mobile/: one data message per phone, its content sealed with the key of that phone

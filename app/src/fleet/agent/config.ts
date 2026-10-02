@@ -3,7 +3,7 @@
 // enabled component must carry what it needs (a VM loopback port, plus a token for cmdapi or at least one key for ssh).
 import fs from "node:fs";
 import { z } from "zod";
-import { ConfigError } from "@/agent/config";
+import { ConfigError, issuesText } from "@/shared/env";
 
 const Port = z.number().int().min(1).max(65535);
 
@@ -57,7 +57,7 @@ export type AgentConfig = z.infer<typeof Schema>;
 
 export function parseAgentConfig(obj: unknown): AgentConfig {
   const r = Schema.safeParse(obj);
-  if (!r.success) throw new ConfigError(r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
+  if (!r.success) throw new ConfigError(issuesText(r.error));
   return r.data;
 }
 

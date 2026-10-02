@@ -2,7 +2,7 @@
 // reverse tunnels that publish them on the hub VM. node dist/fleet-agent.cjs. Config is fleet.config.json next to
 // package.json (or FLEET_CONFIG). Runs under pm2 beside the relay; pm2 keeps it alive and brings it back at logon.
 import path from "node:path";
-import { ConfigError } from "@/agent/config";
+import { ConfigError } from "@/shared/env";
 import { errorText, log } from "@/agent/log";
 import { loadCmdApiConfig } from "@/fleet/cmdapi/config";
 import { startCmdApi, type CmdApiServer } from "@/fleet/cmdapi/server";

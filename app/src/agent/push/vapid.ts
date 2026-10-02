@@ -1,6 +1,6 @@
 import { createPrivateKey } from "node:crypto";
 import fs from "node:fs";
-import { ConfigError } from "../config";
+import { ConfigError } from "@/shared/env";
 
 export type VapidKeys = { publicKey: string; privateKey: string };
 

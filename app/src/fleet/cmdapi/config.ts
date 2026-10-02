@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { ConfigError } from "@/agent/config";
+import { ConfigError, parseEnv } from "@/shared/env";
 import { defaultShell } from "./runner";
 
 const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -38,13 +38,7 @@ export interface CmdApiConfig {
 }
 
 export function loadCmdApiConfig(env: Record<string, string | undefined> = process.env): CmdApiConfig {
-  // an empty variable (FOO= in relay.env) counts as unset, so a default applies
-  const given = Object.fromEntries(Object.keys(Env.shape).map((k) => [k, env[k] === "" ? undefined : env[k]]));
-  const r = Env.safeParse(given);
-  if (!r.success) {
-    throw new ConfigError(r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
-  }
-  const e = r.data;
+  const e = parseEnv(Env, env);
 
   let cwd: string | null = null;
   if (e.CMDAPI_CWD) {

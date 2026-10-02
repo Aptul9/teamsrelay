@@ -3,7 +3,7 @@
 // relay host under pm2 next to the relay; reached from the hub VM through the reverse tunnel.
 import fs from "node:fs";
 import path from "node:path";
-import { ConfigError } from "@/agent/config";
+import { ConfigError } from "@/shared/env";
 import { loadCmdApiConfig } from "./config";
 import { startCmdApi, type CmdApiServer } from "./server";
 

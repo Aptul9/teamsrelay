@@ -9,7 +9,8 @@ import http from "node:http";
 import path from "node:path";
 import { errorText, format } from "../agent/log";
 import { Accounts } from "./accounts";
-import { ConfigError, loadConfig } from "./config";
+import { ConfigError } from "@/shared/env";
+import { loadConfig } from "./config";
 import { controlServer, listen } from "./server";
 
 const say = (message: string) => console.log(format("supervisor", message));
