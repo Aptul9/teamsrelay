@@ -1,6 +1,7 @@
 import { openMicrophone } from "./devices";
 import { MIC_ENCODER, MIC_RATE, micFrame } from "./frames";
 import { addWorklet } from "./player";
+import { rms } from "@/lib/ring";
 
 // The worklet that hands the microphone to the page, one render quantum (128 samples) at a time
 const MIC = `
@@ -36,10 +37,6 @@ export class MicSender {
     private readonly send: (frame: Uint8Array) => void,
     private readonly onChange: () => void = () => undefined,
   ) {}
-
-  get muted() {
-    return this.silenced;
-  }
 
   set muted(on: boolean) {
     this.silenced = on;
@@ -160,9 +157,7 @@ export class MicSender {
 
   private samples(chunk: Float32Array<ArrayBuffer>) {
     const frames = chunk.length;
-    let sum = 0;
-    for (let i = 0; i < frames; i++) sum += chunk[i] * chunk[i];
-    this.peak = Math.max(Math.sqrt(sum / Math.max(1, frames)), this.peak * 0.9);
+    this.peak = Math.max(rms(chunk), this.peak * 0.9);
     const encoder = this.encoder;
     if (!this.silenced && encoder?.state === "configured") {
       const data = new AudioData({ format: "f32", sampleRate: MIC_RATE, numberOfFrames: frames, numberOfChannels: 1, timestamp: this.timestamp, data: chunk });
