@@ -13,6 +13,7 @@
 // to type after the @). The HTML goes to stdout.
 import { chromium, type Page } from "playwright-core";
 import { pickTeamsPage } from "../src/agent/logic/hosts";
+import { composerLeft } from "../src/agent/teams/scripts/compose";
 import { composerText } from "../src/agent/teams/scripts/message-actions";
 import { SEL, TEXTS, type Selectors } from "../src/agent/teams/selectors";
 
@@ -203,11 +204,7 @@ async function emptyComposeBox(page: Page) {
     await page.keyboard.press("Control+A");
     await page.keyboard.press("Delete");
     await page.waitForTimeout(300);
-    const left = await page.evaluate((s) => {
-      const box = [...document.querySelectorAll(s.editor)].find((x) => !x.closest(s.item) && (x as HTMLElement).offsetParent !== null);
-      return box ? (box.textContent || "").replace(/[\u2060\u200b\s]/g, "").length + box.querySelectorAll(s.composerMention).length : 0;
-    }, SEL);
-    if (!left) return;
+    if (!(await page.evaluate(composerLeft, SEL))) return;
   }
   throw new Error("the compose box is not empty: empty it by hand, without pressing Enter");
 }

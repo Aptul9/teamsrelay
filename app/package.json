@@ -15,7 +15,6 @@
     "build:cmdapi": "esbuild src/fleet/cmdapi/main.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/cmdapi.cjs --log-level=warning",
     "build:fleet": "esbuild src/fleet/cli/main.ts --bundle --platform=node --target=node24 --format=cjs --outfile=dist/fleet.cjs --log-level=warning",
     "build:fleet-agent": "esbuild src/fleet/agent/main.ts --bundle --platform=node --target=node24 --format=cjs --external:ssh2 --external:better-sqlite3 --outfile=dist/fleet-agent.cjs --log-level=warning",
-    "agent": "node --enable-source-maps dist/agent.cjs",
     "relay": "node dist/relay.cjs",
     "relay:login": "node dist/relay.cjs login",
     "relay:setup": "node scripts/relay-setup.mjs",

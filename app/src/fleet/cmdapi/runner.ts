@@ -13,8 +13,6 @@ const POSIX = process.platform !== "win32";
 // is the bounded fallback so the reader cannot spin forever.
 const DRAIN_GRACE_MS = 5000;
 
-const POWERSHELL = new Set(["powershell", "powershell.exe", "pwsh", "pwsh.exe"]);
-
 export interface RunOptions {
   command?: string;
   args?: string[];
@@ -24,8 +22,8 @@ export interface RunOptions {
   timeout?: number;
   // bytes kept per stream; the rest is dropped and flagged
   maxOutput?: number;
-  // the shell a string command runs through: true = the platform default, a string = that interpreter
-  shell?: boolean | string;
+  // the shell a string command runs through; the platform default without one
+  shell?: string;
 }
 
 export interface Result {
@@ -76,12 +74,19 @@ export function defaultShell(): string {
 // on spawn's own shell handling, whose Windows path only reaches cmd.exe. This makes PowerShell the Windows default and
 // lets any shell be named on either platform.
 export function shellArgv(shell: string, command: string): string[] {
-  // split on both separators: a Windows shell path must still be recognized when this runs on a POSIX host (tests),
-  // where path.basename would not treat a backslash as a separator
-  const name = (shell.split(/[\\/]/).pop() ?? shell).toLowerCase();
-  if (POWERSHELL.has(name)) return [shell, "-NoProfile", "-NonInteractive", "-Command", command];
-  if (name === "cmd" || name === "cmd.exe") return [shell, "/c", command];
+  const family = shellFamily(shell);
+  if (family === "powershell") return [shell, "-NoProfile", "-NonInteractive", "-Command", command];
+  if (family === "cmd") return [shell, "/c", command];
   return [shell, "-c", command];
+}
+
+// The family of a shell by its file name. Split on both separators: a Windows shell path must still be recognized when
+// this runs on a POSIX host (tests), where path.basename would not treat a backslash as a separator.
+export function shellFamily(shell: string): "powershell" | "cmd" | "posix" {
+  const name = (shell.split(/[\\/]/).pop() ?? shell).toLowerCase();
+  if (name.includes("pwsh") || name.includes("powershell")) return "powershell";
+  if (name === "cmd" || name === "cmd.exe") return "cmd";
+  return "posix";
 }
 
 function terminate(pid: number): void {
@@ -159,7 +164,7 @@ export async function run(opts: RunOptions): Promise<Result> {
     argv = opts.args!;
     shown = argv.join(" ");
   } else {
-    const shell = typeof opts.shell === "string" ? opts.shell : defaultShell();
+    const shell = opts.shell || defaultShell();
     argv = shellArgv(shell, opts.command!);
     shown = opts.command!;
   }

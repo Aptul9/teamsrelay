@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Server, utils, type AuthContext, type Connection, type ParsedKey } from "ssh2";
 import { errorText, log } from "@/agent/log";
-import { defaultShell, run } from "@/fleet/cmdapi/runner";
+import { defaultShell, run, shellFamily } from "@/fleet/cmdapi/runner";
 import { generateEd25519, parsesAsKey } from "./keys";
 import { wireSftp } from "./sftp";
 
@@ -76,10 +76,8 @@ function authorize(ctx: AuthContext, allowed: ParsedKey[]): void {
 }
 
 function interactiveArgs(shell: string): string[] {
-  const name = (shell.split(/[\\/]/).pop() ?? shell).toLowerCase();
-  if (name.includes("pwsh") || name.includes("powershell")) return ["-NoLogo", "-NoProfile"];
-  if (name === "cmd" || name === "cmd.exe") return [];
-  return ["-i"];
+  const family = shellFamily(shell);
+  return family === "powershell" ? ["-NoLogo", "-NoProfile"] : family === "cmd" ? [] : ["-i"];
 }
 
 export function startSshServer(opts: SshServerOptions): Promise<SshServer> {

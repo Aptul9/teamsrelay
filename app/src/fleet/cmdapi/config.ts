@@ -39,17 +39,30 @@ export interface CmdApiConfig {
 
 export function loadCmdApiConfig(env: Record<string, string | undefined> = process.env): CmdApiConfig {
   const e = parseEnv(Env, env);
+  return cmdApiConfig({
+    host: e.CMDAPI_HOST,
+    port: e.CMDAPI_PORT,
+    token: e.CMDAPI_TOKEN,
+    timeout: e.CMDAPI_TIMEOUT,
+    maxOutput: e.CMDAPI_MAX_OUTPUT,
+    cwd: e.CMDAPI_CWD,
+    shell: e.CMDAPI_SHELL,
+  });
+}
 
+// The configuration from its parts, as the environment above or fleet.config.json give them ("" for cwd and shell:
+// the defaults), checked the same way whichever gave them
+export function cmdApiConfig(o: { host: string; port: number; token: string; timeout: number; maxOutput?: number; cwd: string; shell?: string }): CmdApiConfig {
   let cwd: string | null = null;
-  if (e.CMDAPI_CWD) {
-    cwd = path.resolve(e.CMDAPI_CWD);
+  if (o.cwd) {
+    cwd = path.resolve(o.cwd);
     if (!fs.existsSync(cwd) || !fs.statSync(cwd).isDirectory()) throw new ConfigError(`CMDAPI_CWD is not a directory: ${cwd}`);
   }
 
-  const host = e.CMDAPI_HOST;
+  const host = o.host;
   const isLoopback = LOOPBACK.has(host);
   // anything that runs arbitrary commands and listens off loopback with no token is a shell for whoever finds the port
-  if (!isLoopback && !e.CMDAPI_TOKEN) {
+  if (!isLoopback && !o.token) {
     throw new ConfigError(
       `CMDAPI_HOST is ${host}, which is not loopback, and CMDAPI_TOKEN is empty. ` + "Set a token, or bind 127.0.0.1 and reach it through the tunnel.",
     );
@@ -57,12 +70,12 @@ export function loadCmdApiConfig(env: Record<string, string | undefined> = proce
 
   return {
     host,
-    port: e.CMDAPI_PORT,
-    token: e.CMDAPI_TOKEN,
-    timeout: e.CMDAPI_TIMEOUT,
-    maxOutput: e.CMDAPI_MAX_OUTPUT,
+    port: o.port,
+    token: o.token,
+    timeout: o.timeout,
+    maxOutput: o.maxOutput ?? 1_000_000,
     cwd,
-    shell: e.CMDAPI_SHELL || defaultShell(),
+    shell: o.shell || defaultShell(),
     isLoopback,
     get url() {
       const h = BIND_ALL.has(host) ? "127.0.0.1" : host;

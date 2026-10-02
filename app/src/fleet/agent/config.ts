@@ -1,9 +1,8 @@
 // The fleet agent's configuration, read from fleet.config.json (holds the cmdapi token and the ssh authorized keys, so
 // it is never committed). One hub VM; cmdapi and ssh are independent components, each off unless enabled, and an
 // enabled component must carry what it needs (a VM loopback port, plus a token for cmdapi or at least one key for ssh).
-import fs from "node:fs";
 import { z } from "zod";
-import { ConfigError, issuesText } from "@/shared/env";
+import { ConfigError, issuesText, readJsonFile } from "@/shared/env";
 
 const Port = z.number().int().min(1).max(65535);
 
@@ -61,18 +60,4 @@ export function parseAgentConfig(obj: unknown): AgentConfig {
   return r.data;
 }
 
-export function loadAgentConfigFile(file: string): AgentConfig {
-  let text: string;
-  try {
-    text = fs.readFileSync(file, "utf8");
-  } catch {
-    throw new ConfigError(`fleet config not found: ${file}`);
-  }
-  let obj: unknown;
-  try {
-    obj = JSON.parse(text);
-  } catch {
-    throw new ConfigError(`fleet config is not valid JSON: ${file}`);
-  }
-  return parseAgentConfig(obj);
-}
+export const loadAgentConfigFile = (file: string): AgentConfig => parseAgentConfig(readJsonFile(file, "fleet config"));

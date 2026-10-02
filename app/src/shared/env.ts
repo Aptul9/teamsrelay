@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { z } from "zod";
 
 // A setting that stops a process at start, with the reason: agent, supervisor, local relay, cmdapi, fleet agent
@@ -12,6 +13,21 @@ export function parseEnv<S extends z.ZodObject>(schema: S, env: Record<string, s
   const r = schema.safeParse(given);
   if (!r.success) throw new ConfigError(issuesText(r.error));
   return r.data;
+}
+
+// A JSON configuration file, parsed; `what` names it in the errors
+export function readJsonFile(file: string, what: string): unknown {
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    throw new ConfigError(`${what} not found: ${file}`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new ConfigError(`${what} is not valid JSON: ${file}`);
+  }
 }
 
 export const VapidSubject = z.string().regex(/^(mailto:|https:\/\/)/, "must be a mailto: or https:// URL").default("mailto:admin@example.com");

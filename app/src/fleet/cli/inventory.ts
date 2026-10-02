@@ -1,8 +1,8 @@
 // The fleet inventory: the relay hosts the CLI can reach, read from an untracked JSON file (tokens live in it, so it is
 // never committed). Each host names the hub VM it tunnels to, the VM loopback port its cmdapi is published on, its
 // bearer token, and the teamsrelay app directory on the host (where an update runs).
-import fs from "node:fs";
 import { z } from "zod";
+import { issuesText, readJsonFile } from "@/shared/env";
 
 const Host = z.object({
   vm: z.string().min(1),
@@ -24,25 +24,11 @@ export interface FleetHost {
 
 export function parseInventory(obj: unknown): FleetHost[] {
   const r = Inventory.safeParse(obj);
-  if (!r.success) throw new Error(`inventory: ${r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+  if (!r.success) throw new Error(`inventory: ${issuesText(r.error)}`);
   return Object.entries(r.data.hosts).map(([name, h]) => ({ name, ...h }));
 }
 
-export function loadInventory(file: string): FleetHost[] {
-  let text: string;
-  try {
-    text = fs.readFileSync(file, "utf8");
-  } catch {
-    throw new Error(`inventory not found: ${file}`);
-  }
-  let obj: unknown;
-  try {
-    obj = JSON.parse(text);
-  } catch {
-    throw new Error(`inventory is not valid JSON: ${file}`);
-  }
-  return parseInventory(obj);
-}
+export const loadInventory = (file: string): FleetHost[] => parseInventory(readJsonFile(file, "inventory"));
 
 export function hostByName(hosts: FleetHost[], name: string): FleetHost {
   const found = hosts.find((h) => h.name === name);
