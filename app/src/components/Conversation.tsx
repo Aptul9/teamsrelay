@@ -48,7 +48,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { errorText, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, reasonText, runCmd, sendImage, type Chat, type Message, type OpenStatus } from "@/lib/client";
+import { errorText, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, omit, post, reasonText, runCmd, sendImage, type Chat, type Message, type OpenStatus } from "@/lib/client";
 import { REACTION_EMOJI } from "@/shared/slot-db/rows";
 import { useInUse } from "@/lib/in-use";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
@@ -298,11 +298,7 @@ export function Conversation({
     setSheetFor(null);
     setPendingEdits((s) => ({ ...s, [mid]: "Deleting…" }));
     const r = await runCmd("/api/delete", { name: chat, mid }, acc);
-    setPendingEdits((s) => {
-      const rest = { ...s };
-      delete rest[mid];
-      return rest;
-    });
+    setPendingEdits((s) => omit(s, mid));
     if (r.status !== "done") toast.error("Message not deleted on Teams");
   }
 
@@ -322,11 +318,7 @@ export function Conversation({
       setDownloads((s) => ({ ...s, [url]: "failed" }));
       return;
     }
-    setDownloads((s) => {
-      const rest = { ...s };
-      delete rest[url];
-      return rest;
-    });
+    setDownloads((s) => omit(s, url));
     const a = document.createElement("a");
     a.href = `/files/${encodeURIComponent(r.result.f)}?a=${acc}&name=${encodeURIComponent(name)}`;
     a.download = name;
@@ -438,11 +430,7 @@ export function Conversation({
       setEditMid(null);
       setPendingEdits((s) => ({ ...s, [mid]: t }));
       const r = await runCmd("/api/edit", { name: chat, mid, text: t }, acc);
-      setPendingEdits((s) => {
-        const rest = { ...s };
-        delete rest[mid];
-        return rest;
-      });
+      setPendingEdits((s) => omit(s, mid));
       if (r.status !== "done") toast.error("Edit not applied on Teams");
       return;
     }

@@ -19,7 +19,7 @@ import {
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
-import { AccountMenu, accName, needsLogin } from "./AccountMenu";
+import { AccountMenu, needsLogin } from "./AccountMenu";
 import { Activity } from "./Activity";
 import { CallBanner, RingHint } from "./CallAlert";
 import { CallDevices } from "./CallDevices";
@@ -51,6 +51,7 @@ import { appStart, keepAppStart, useAppStart } from "@/lib/android-app";
 import { authClient } from "@/lib/auth-client";
 import {
   accountUnread,
+  accName,
   addingTitle,
   appBadgeCount,
   bellOn,
@@ -70,6 +71,7 @@ import {
   isSelf,
   loadSeen,
   noSubscribe,
+  omit,
   noteShown,
   pageTitle,
   reasonText,
@@ -196,12 +198,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       : new AnsweredCalls<CallAudio>({
           make: (n, url) =>
             new CallAudio({ url: url ?? callAudioUrl(window.location), devices: savedDevices(), onState: (st) => setCallAudio((m) => ({ ...m, [n]: st })) }),
-          onStop: (n) =>
-            setCallAudio((m) => {
-              const next = { ...m };
-              delete next[n];
-              return next;
-            }),
+          onStop: (n) => setCallAudio((m) => omit(m, n)),
         }),
   );
   const startCallAudio = useCallback(

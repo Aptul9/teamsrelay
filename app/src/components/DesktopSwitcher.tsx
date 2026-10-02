@@ -3,8 +3,7 @@
 import { ChevronDownIcon, ChevronUpIcon, MonitorIcon } from "lucide-react";
 import { cn } from "cn";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { accName } from "@/components/AccountMenu";
-import { errorText, onDesktop, post, type Account } from "@/lib/client";
+import { accName, errorText, onDesktop, post, type Account } from "@/lib/client";
 
 const label = (a: Account) => a.tenant || accName(a);
 

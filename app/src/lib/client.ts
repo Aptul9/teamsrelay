@@ -53,6 +53,9 @@ export const errorText = (e: unknown, fallback: string) => (e instanceof ApiErro
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// A copy of `o` without `key`
+export const omit = <V>(o: Record<string, V>, key: string | number): Record<string, V> => Object.fromEntries(Object.entries(o).filter(([k]) => k !== String(key)));
+
 // useSyncExternalStore of a value that never changes
 export const noSubscribe = () => () => {};
 
@@ -189,6 +192,7 @@ export const pageTitle = (n: number) => (n > 0 ? `(${n > 99 ? "99+" : n}) TeamsR
 // An account never signed in to Microsoft has no name nor email yet: it shows as an account being added, not as a
 // numbered one, until its first sign-in. One signed out since keeps who it was.
 export const NEW_ACCOUNT = "New Teams account";
+export const accName = (a: Pick<Account, "name" | "email">) => a.name || a.email || NEW_ACCOUNT;
 export const signedInOnce = (a: Pick<Account, "name" | "email">) => !!(a.name || a.email);
 export const addingTitle = (accounts: Account[]) =>
   accounts.some(signedInOnce) ? "Finish adding this Teams account" : "Add your first Teams account";

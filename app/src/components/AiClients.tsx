@@ -20,13 +20,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { call, errorText, patch, type Account } from "@/lib/client";
+import { accName, call, errorText, patch, type Account } from "@/lib/client";
 
 type Client = { clientId: string; name: string; since: string };
 type Action = { ts: number; client: string; tool: string; host: string; outcome: string };
 type Browser = { off: boolean; connected: boolean; actions: Action[] };
 
-const accName = (a: Account) => a.name || a.email || `Account ${a.slot}`;
 const when = (ts: number) => new Date(ts).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 // The browser of the relay of one account on another computer: its switch, and its last 50 actions
