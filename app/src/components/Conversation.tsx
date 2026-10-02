@@ -48,7 +48,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ApiError, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message, type OpenReason, type OpenStatus } from "@/lib/client";
+import { errorText, followCmd, IMAGE_ACCEPT, imageProblem, mediaUrl, post, runCmd, sendImage, type Chat, type Message, type OpenReason, type OpenStatus } from "@/lib/client";
 import { REACTION_EMOJI } from "@/shared/slot-db/rows";
 import { useInUse } from "@/lib/in-use";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
@@ -190,7 +190,7 @@ export function Conversation({
     let gone = false;
     post<{ id: number }>("/api/open", { name: chat }, acc).then(
       (r) => !gone && setAsked({ ask: asks, id: r.id }),
-      (e: unknown) => !gone && setAsked({ ask: asks, error: e instanceof ApiError ? e.message : "No answer from the server." }),
+      (e: unknown) => !gone && setAsked({ ask: asks, error: errorText(e, "No answer from the server.") }),
     );
     return () => {
       gone = true;
@@ -327,13 +327,7 @@ export function Conversation({
   async function getFile(url: string, name: string) {
     if (downloads[url] === "busy") return;
     setDownloads((s) => ({ ...s, [url]: "busy" }));
-    let r: { status: string; result: { f?: string } | null } = { status: "failed", result: null };
-    try {
-      const c = await post<{ id: number }>("/api/download", { url, name }, acc);
-      r = await followCmd(c.id, acc);
-    } catch {
-      // reported below
-    }
+    const r = await runCmd("/api/download", { url, name }, acc);
     if (r.status !== "done" || !r.result?.f) {
       setDownloads((s) => ({ ...s, [url]: "failed" }));
       return;

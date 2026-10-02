@@ -42,15 +42,16 @@ export async function call<T>(path: string, init: RequestInit | undefined, acc: 
   return j as T;
 }
 
-export function post<T>(path: string, body: unknown, acc: number): Promise<T> {
-  return call<T>(
-    path,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) },
-    acc,
-  );
-}
+const send = <T>(method: string, path: string, body: unknown, acc: number) =>
+  call<T>(path, { method, headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }, acc);
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+export const post = <T>(path: string, body: unknown, acc: number) => send<T>("POST", path, body, acc);
+export const patch = <T>(path: string, body: unknown, acc: number) => send<T>("PATCH", path, body, acc);
+
+// What to tell of a call that threw: the reason the server gave, or `fallback` when it never answered
+export const errorText = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
+
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // The commands of a call (answer, hang-up, mute): the agent takes them within a look of its call watch and Teams shows
 // them within a second, so their outcome is read every CALL_CMD_EVERY ms, for about ten seconds

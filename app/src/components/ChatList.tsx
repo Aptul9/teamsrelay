@@ -11,11 +11,9 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { isSelf, post, type Chat } from "@/lib/client";
+import { isSelf, post, sleep, type Chat } from "@/lib/client";
 
 type Filter = "all" | "unread" | "mentions";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function ChatList({
   acc,

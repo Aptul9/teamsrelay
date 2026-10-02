@@ -20,7 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ApiError, call, type Account } from "@/lib/client";
+import { call, errorText, patch, type Account } from "@/lib/client";
 
 type Client = { clientId: string; name: string; since: string };
 type Action = { ts: number; client: string; tool: string; host: string; outcome: string };
@@ -49,11 +49,11 @@ function RelayBrowser({ a }: { a: Account }) {
   async function turn(on: boolean) {
     setSaving(true);
     try {
-      await call(`/api/accounts/${a.slot}/browser`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ off: !on }) }, 0);
+      await patch(`/api/accounts/${a.slot}/browser`, { off: !on }, 0);
       await load();
       toast.success(on ? `Browser of ${accName(a)}: on for AI clients` : `Browser of ${accName(a)}: off for AI clients`);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Not changed");
+      toast.error(errorText(e, "Not changed"));
     } finally {
       setSaving(false);
     }
@@ -130,7 +130,7 @@ export function AiClients() {
       await loadClients();
       toast.success(`${c.name}: access revoked`);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Not revoked");
+      toast.error(errorText(e, "Not revoked"));
     } finally {
       setRevoking("");
     }
