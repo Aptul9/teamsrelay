@@ -3,7 +3,7 @@
 // to sign in again; on Microsoft's page this account's tile, or a lone Sign in or Continue; nothing on a page that asks
 // for a field, nothing when two could be meant.
 import { describe, expect, it } from "vitest";
-import { microsoftSignIn, teamsSignIn, visibleButtons } from "@/agent/teams/scripts/sign-in";
+import { signInPage } from "@/agent/teams/scripts/sign-in";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
 import { fixture, withChrome } from "./chrome";
 
@@ -20,8 +20,10 @@ const hit = (at: { x: number; y: number } | null) =>
     if (!target) return null;
     return ((target as HTMLInputElement).value || target.getAttribute("data-test-id") || target.textContent || "").replace(/\s+/g, " ").trim();
   }, at);
-const teams = () => chrome.page.evaluate(teamsSignIn, { s: SEL, t: TEXTS });
-const onMicrosoft = (email = EMAIL) => chrome.page.evaluate(microsoftSignIn, { s: SEL, t: TEXTS, email });
+const scan = (email = EMAIL) => chrome.page.evaluate(signInPage, { s: SEL, t: TEXTS, email });
+const teams = async () => (await scan()).teams;
+const onMicrosoft = async (email = EMAIL) => (await scan(email)).microsoft;
+const visibleButtons = async () => (await scan()).buttons;
 
 describe("Teams asking to sign in again", () => {
   it("gives a point of its one Sign in button", async () => {
@@ -88,8 +90,8 @@ describe("the Microsoft sign-in page", () => {
 describe("buttons of a page, for the log", () => {
   it("lists the buttons, tiles and links on screen by their text, once each", async () => {
     await chrome.page.setContent(microsoft("pick-account"));
-    expect(await chrome.page.evaluate(visibleButtons, SEL)).toEqual(["Test User test.user@contoso.example ...", "...", "Someone Else xtest.user@contoso.example", "Use another account"]);
+    expect(await visibleButtons()).toEqual(["Test User test.user@contoso.example ...", "...", "Someone Else xtest.user@contoso.example", "Use another account"]);
     await chrome.page.setContent(microsoft("password"));
-    expect(await chrome.page.evaluate(visibleButtons, SEL)).toEqual(["Forgot my password", "Sign in"]);
+    expect(await visibleButtons()).toEqual(["Forgot my password", "Sign in"]);
   });
 });

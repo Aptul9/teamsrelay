@@ -1,7 +1,7 @@
 import type { ReactionName } from "@/shared/slot-db/commands";
 import type { ReadBy } from "@/shared/slot-db/rows";
 import { errorText, log } from "../log";
-import { afterPress, messageSelector, sleep, type AfterPress, type SendResult, type TeamsPage } from "./page";
+import { confirmSent, messageSelector, sleep, until, type AfterPress, type SendResult, type TeamsPage } from "./page";
 import { composerImages, composerLeft, imageMessageSent, messageIds, ownMessageSent, pasteImage } from "./scripts/compose";
 import {
   composerText,
@@ -19,14 +19,6 @@ import {
 import { ACTIONS, BAR_REACTIONS, PICKER_REACTIONS, SEL, TEXTS } from "./selectors";
 
 // The actions on Teams. Each one checks on the page that Teams applied it and answers true only then.
-
-async function until(check: () => Promise<boolean>, tries: number, ms: number): Promise<boolean> {
-  for (let i = 0; i < tries; i++) {
-    await sleep(ms);
-    if (await check().catch(() => false)) return true;
-  }
-  return false;
-}
 
 // A click or a key that threw may have sent the message or not: the page says which. The text still in the compose
 // box and no new message: it never left (a panel over the Send button caught the click), the box is emptied and the
@@ -52,7 +44,7 @@ async function afterFailedPress(tp: TeamsPage, text: string, before: string[]): 
 // `sent` runs as soon as the message went.
 export async function sendText(tp: TeamsPage, chat: string, raw: string, sent?: AfterPress): Promise<SendResult> {
   const text = raw.trim();
-  if (!text || !(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return "failed";
+  if (!text || !(await tp.toChat(chat, true))) return "failed";
   const page = tp.page;
   // a draft already there is someone's: left as it is, nothing sent
   if (await page.evaluate(composerLeft, SEL)) {
@@ -79,10 +71,7 @@ export async function sendText(tp: TeamsPage, chat: string, raw: string, sent?: 
     await tp.emptyComposeBox();
     return "failed";
   }
-  await afterPress(sent);
-  if (await until(() => page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before }), 50, 300)) return "sent";
-  log.warn("send", "message not shown sent on Teams: unconfirmed", { chat });
-  return "unconfirmed";
+  return confirmSent({ area: "send", shown: () => page.evaluate(ownMessageSent, { s: SEL, t: TEXTS, before }), tries: 50, sent, fields: { chat } });
 }
 
 export type ImageFile = { name: string; type: string; data: Buffer };
@@ -92,7 +81,7 @@ export type ImageFile = { name: string; type: string; data: Buffer };
 // the new message with the image as sent (upload included, 30 s at most), unconfirmed when it does not. `sent` runs as
 // soon as the message went.
 export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, caption: string, sent?: AfterPress): Promise<SendResult> {
-  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return "failed";
+  if (!(await tp.toChat(chat, true))) return "failed";
   const page = tp.page;
   if ((await page.evaluate(composerText, SEL)).trim() || (await page.evaluate(composerImages, SEL))) {
     log.warn("image", "compose box not empty", { chat });
@@ -116,10 +105,7 @@ export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, c
     await tp.emptyComposeBox();
     return "failed";
   }
-  await afterPress(sent);
-  if (await until(() => page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before }), 100, 300)) return "sent";
-  log.warn("image", "message not shown sent on Teams: unconfirmed", { chat });
-  return "unconfirmed";
+  return confirmSent({ area: "image", shown: () => page.evaluate(imageMessageSent, { s: SEL, t: TEXTS, before }), tries: 100, sent, fields: { chat } });
 }
 
 // Reply with quote: on the bar for other people's messages, in More options for yours. Refused when Teams shows
@@ -128,7 +114,7 @@ export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, c
 // the reply went.
 export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, raw: string, sent?: AfterPress): Promise<SendResult> {
   const text = raw.trim();
-  if (!text || !(await tp.clearOverlays()) || !(await tp.openChat(chat)) || !(await tp.isOpen(chat))) return "failed";
+  if (!text || !(await tp.toChat(chat, true))) return "failed";
   const page = tp.page;
   if (await page.evaluate(composerLeft, SEL)) {
     log.warn("reply", "compose box not empty", { chat });
@@ -163,14 +149,11 @@ export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, r
   } finally {
     await tp.mouseAway();
   }
-  await afterPress(sent);
-  if (await until(() => page.evaluate(lastMessageQuotes, { s: SEL, before, text: text.slice(0, 40) }), 20, 300)) return "sent";
-  log.warn("reply", "reply not shown on Teams: unconfirmed", { mid });
-  return "unconfirmed";
+  return confirmSent({ area: "reply", shown: () => page.evaluate(lastMessageQuotes, { s: SEL, before, text: text.slice(0, 40) }), tries: 20, sent, fields: { mid } });
 }
 
 export async function deleteMessage(tp: TeamsPage, chat: string, mid: string): Promise<boolean> {
-  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat))) return false;
+  if (!(await tp.toChat(chat))) return false;
   try {
     if (!(await tp.clickBarButton(mid, ACTIONS.more))) return false;
     await tp.page.locator(`${SEL.menu} [data-tid="${ACTIONS.delete}"]:visible`).first().click({ timeout: 4000 });
@@ -188,7 +171,7 @@ export async function deleteMessage(tp: TeamsPage, chat: string, mid: string): P
 }
 
 export async function undoDelete(tp: TeamsPage, chat: string, mid: string): Promise<boolean> {
-  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat))) return false;
+  if (!(await tp.toChat(chat))) return false;
   const point = await tp.page.evaluate(undoButtonPoint, { s: SEL, mid });
   if (!point) return false;
   await tp.page.mouse.click(point.x, point.y);
@@ -202,11 +185,7 @@ export async function react(tp: TeamsPage, chat: string, mid: string, emoji: str
   const barButton = BAR_REACTIONS[name];
   const pickerButton = PICKER_REACTIONS[name];
   if (!barButton && !pickerButton) return false;
-  if (!(await tp.clearOverlays())) {
-    log.warn("react", "a window is open over the chat");
-    return false;
-  }
-  if (!(await tp.openChat(chat))) return false;
+  if (!(await tp.toChat(chat))) return false;
   const mine = () => tp.page.evaluate(ownReactions, { s: SEL, mid });
   const before = JSON.stringify(await mine());
   try {
@@ -229,7 +208,7 @@ export async function react(tp: TeamsPage, chat: string, mid: string, emoji: str
 
 // Click on the pill of reaction `emoji` under the message, like in Teams: removed if yours, added otherwise
 export async function togglePill(tp: TeamsPage, chat: string, mid: string, emoji: string): Promise<boolean> {
-  if (!emoji || !(await tp.clearOverlays()) || !(await tp.openChat(chat))) return false;
+  if (!emoji || !(await tp.toChat(chat))) return false;
   const m = tp.page.locator(messageSelector(mid));
   if ((await m.count()) === 0) return false;
   await m.evaluate((e) => e.scrollIntoView({ block: "center" }));
@@ -258,12 +237,7 @@ export async function togglePill(tp: TeamsPage, chat: string, mid: string, emoji
 // Edits one of your messages. True when the text on Teams is the new one.
 export async function editMessage(tp: TeamsPage, chat: string, mid: string, raw: string): Promise<boolean> {
   const text = raw.trim();
-  if (!text) return false;
-  if (!(await tp.clearOverlays())) {
-    log.warn("edit", "a window is open over the chat");
-    return false;
-  }
-  if (!(await tp.openChat(chat))) return false;
+  if (!text || !(await tp.toChat(chat))) return false;
   const item = tp.page.locator(`${SEL.item}:has(${messageSelector(mid)})`);
   try {
     if (!(await tp.clickBarButton(mid, ACTIONS.edit))) {
@@ -297,7 +271,7 @@ export async function editMessage(tp: TeamsPage, chat: string, mid: string, raw:
 // Who read one of your messages: "Read by X of Y" in More options and its submenu with the names. A menu
 // without that entry is a 1:1 chat (label ""); null when the menu could not be read.
 export async function readReceipts(tp: TeamsPage, chat: string, mid: string): Promise<ReadBy | null> {
-  if (!(await tp.clearOverlays()) || !(await tp.openChat(chat))) return null;
+  if (!(await tp.toChat(chat))) return null;
   const page = tp.page;
   try {
     const entry = page.locator(`[data-tid="${ACTIONS.readReceipt}"]:visible`).first();

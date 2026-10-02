@@ -1,7 +1,7 @@
 import type { Page } from "playwright-core";
 import type { OpenProblem } from "@/shared/slot-db/commands";
 import { sameChat } from "../logic/chats";
-import { errorText, log } from "../log";
+import { errorText, log, type Fields } from "../log";
 import type { SlotStore } from "../store/slot-store";
 import { openChatTitle, clickChatRow, scrollChatList } from "./scripts/chat-list";
 import { composerLeft } from "./scripts/compose";
@@ -11,6 +11,15 @@ import { SEL, TEXTS } from "./selectors";
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// True as soon as `check` is, asked `tries` times `ms` apart; a check that throws counts as false
+export async function until(check: () => Promise<boolean>, tries: number, ms: number): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    await sleep(ms);
+    if (await check().catch(() => false)) return true;
+  }
+  return false;
+}
+
 // What became of a message the agent sent: sent (Teams shows it sent), failed (it never left the compose box), or
 // unconfirmed (Enter went, Teams did not show it sent in time: it may be out, sending it again may make two)
 export type SendResult = "sent" | "failed" | "unconfirmed";
@@ -19,12 +28,21 @@ export type SendResult = "sent" | "failed" | "unconfirmed";
 // that the web app, which waits for the message in the saved chat, sees it at once
 export type AfterPress = () => Promise<unknown>;
 
-export async function afterPress(fn?: AfterPress) {
+async function afterPress(fn?: AfterPress) {
   try {
     await fn?.();
   } catch (e) {
     log.warn("send", `after the send: ${errorText(e)}`);
   }
+}
+
+// The end of every send, once the message went: `sent` at once, then Teams watched (every 300 ms, `tries` times) until
+// `shown` says it has the message
+export async function confirmSent(o: { area: string; shown: () => Promise<boolean>; tries: number; sent?: AfterPress; fields: Fields }): Promise<SendResult> {
+  await afterPress(o.sent);
+  if (await until(o.shown, o.tries, 300)) return "sent";
+  log.warn(o.area, "not shown sent on Teams: unconfirmed", o.fields);
+  return "unconfirmed";
 }
 
 // A message by id, for Node-side locators
@@ -55,6 +73,12 @@ export class TeamsPage {
 
   async openChat(name: string): Promise<boolean> {
     return (await this.showChat(name)) === null;
+  }
+
+  // Menus closed, then the chat open. `typing`: Teams is asked once more that it still shows the chat, right before
+  // something is typed in it (text in another chat goes to the wrong people).
+  async toChat(name: string, typing = false): Promise<boolean> {
+    return (await this.clearOverlays()) && (await this.openChat(name)) && (!typing || (await this.isOpen(name)));
   }
 
   // Opens the chat unless Teams shows it already: clicks its row and waits until Teams shows it (the messages of

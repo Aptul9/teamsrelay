@@ -1,16 +1,16 @@
 import type { Page } from "playwright-core";
 import { byAgent, cdpClick, withInput } from "./input";
 import { drainInput, watchInput } from "./scripts/page-state";
-import { microsoftSignIn, teamsSignIn } from "./scripts/sign-in";
+import { signInPage } from "./scripts/sign-in";
 import { SEL, TEXTS } from "./selectors";
 
 // Teams' own Sign in while Teams says to sign in again: one real click (its popup opens only for a trusted click).
 // False when Teams does not say it, or shows none or several, or all of it is covered.
 export async function pressTeamsSignIn(page: Page): Promise<boolean> {
   return withInput(page, async () => {
-    const r = await page.evaluate(teamsSignIn, { s: SEL, t: TEXTS }).catch(() => null);
-    if (!r?.at) return false;
-    await cdpClick(page, r.at);
+    const at = (await page.evaluate(signInPage, { s: SEL, t: TEXTS }).catch(() => null))?.teams.at;
+    if (!at) return false;
+    await cdpClick(page, at);
     return true;
   });
 }
@@ -27,7 +27,7 @@ export async function pressMicrosoft(page: Page, email: string): Promise<Microso
   return withInput(page, async () => {
     const owner = ((await page.evaluate(drainInput).catch(() => null)) ?? []).filter((t) => !byAgent(page, t));
     if (owner.length) return "owner";
-    const r = await page.evaluate(microsoftSignIn, { s: SEL, t: TEXTS, email }).catch(() => null);
+    const r = (await page.evaluate(signInPage, { s: SEL, t: TEXTS, email }).catch(() => null))?.microsoft;
     if (!r) return null;
     if (r.asks) return "asks";
     const at = r.account ?? r.button;

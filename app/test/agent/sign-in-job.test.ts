@@ -45,9 +45,13 @@ function fakePage(f: Fake): object {
     url: () => f.url,
     isClosed: () => false,
     evaluate: async (fn: { name: string }) => {
-      if (fn.name === "teamsSignIn") return f.shown.teams ?? { asks: false, found: 0, at: null };
-      if (fn.name === "microsoftSignIn") return f.shown.microsoft ?? { asks: false, accounts: 0, account: null, buttons: 0, button: null };
-      if (fn.name === "visibleButtons") return ["Sign in"];
+      if (fn.name === "signInPage") {
+        return {
+          teams: f.shown.teams ?? { asks: false, found: 0, at: null },
+          microsoft: f.shown.microsoft ?? { asks: false, accounts: 0, account: null, buttons: 0, button: null },
+          buttons: ["Sign in"],
+        };
+      }
       if (fn.name === "watchInput") {
         const first = !f.watched;
         f.watched = true;

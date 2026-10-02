@@ -36,8 +36,8 @@ export function composerImages(s: Selectors): number {
 
 // A message of yours, not among `before`, whose status icon says Teams has it: not sending any more (it then also
 // has its final id), not failed. Teams draws the icon under the last message of yours only: without it, nothing is
-// known yet.
-export function ownMessageSent({ s, t, before }: { s: Selectors; t: Texts; before: string[] }): boolean {
+// known yet. `names`: people the message must tag, every one of them.
+export function ownMessageSent({ s, t, before, names = [] }: { s: Selectors; t: Texts; before: string[]; names?: string[] }): boolean {
   const known = new Set(before);
   return [...document.querySelectorAll(s.message)].some((m) => {
     const mid = m.getAttribute("data-mid") || "";
@@ -45,7 +45,12 @@ export function ownMessageSent({ s, t, before }: { s: Selectors; t: Texts; befor
     if (!mid || known.has(mid) || !mine) return false;
     const icon = mine.querySelector(s.statusIcon);
     const status = ((icon && icon.getAttribute("aria-label")) || "").trim();
-    return !!status && !t.sending.test(status) && !t.sendFailed.test(status);
+    if (!status || t.sending.test(status) || t.sendFailed.test(status)) return false;
+    if (!names.length) return true;
+    const tagged = [...m.querySelectorAll("[itemtype]")]
+      .filter((e) => s.mentionType.test(e.getAttribute("itemtype") || ""))
+      .map((e) => (e.textContent || "").replace(/[\s ]+/g, " ").trim());
+    return names.every((n) => tagged.includes(n));
   });
 }
 

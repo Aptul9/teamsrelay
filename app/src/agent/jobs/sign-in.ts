@@ -4,7 +4,7 @@ import { Identity, parseState, SignInTry, STATE, Watch } from "@/shared/slot-db/
 import { nowSeconds, type Agent } from "../context";
 import { hostOf, isLoginUrl, isTeamsUrl } from "../logic/hosts";
 import { log } from "../log";
-import { teamsSignIn, visibleButtons } from "../teams/scripts/sign-in";
+import { signInPage } from "../teams/scripts/sign-in";
 import { SEL, TEXTS } from "../teams/selectors";
 import { pressMicrosoft, pressTeamsSignIn } from "../teams/sign-in-actions";
 
@@ -45,7 +45,7 @@ export async function trySignIn(a: Agent) {
     }
     const page = a.tp.page;
     const onTeams = isTeamsUrl(page.url());
-    const button = onTeams && !!(await page.evaluate(teamsSignIn, { s: SEL, t: TEXTS }).catch(() => null))?.at;
+    const button = onTeams && !!(await page.evaluate(signInPage, { s: SEL, t: TEXTS }).catch(() => null))?.teams.at;
     if (!button && !microsoftPage(a)) return;
     t = { at: now, pressed: [], microsoft: false };
     save(a, t);
@@ -108,7 +108,7 @@ function signOutPages(a: Agent): Page[] {
 async function logButtons(page: Page, seen: { pages: Set<string> }) {
   const where = page.url().split("?")[0];
   if (seen.pages.has(where)) return;
-  const buttons = await page.evaluate(visibleButtons, SEL).catch(() => null);
+  const buttons = (await page.evaluate(signInPage, { s: SEL, t: TEXTS }).catch(() => null))?.buttons;
   if (!buttons) return;
   seen.pages.add(where);
   log.info("SESSION", "sign-in page buttons", { host: hostOf(page.url()), buttons: buttons.join(" | ") });
