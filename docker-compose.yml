@@ -3,6 +3,16 @@
 # Three containers. "browsers" runs every Teams account: one Chromium (profile in ./config/N) and one agent
 # per account, started and stopped by its supervisor on request of the web app; one remote desktop shows the
 # window of every browser. "webapp" serves the app and the API, "caddy" HTTPS.
+
+# what the agents (browsers) and the web app (accounts on another computer) both read: the slots, and how a
+# notification goes out
+x-notify-env: &notify-env
+  SLOT_COUNT: ${SLOT_COUNT:-4}
+  VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
+  NTFY_ENABLED: ${NTFY_ENABLED:-0}
+  NTFY_URL: ${NTFY_URL:-https://ntfy.sh}
+  NTFY_TOPIC: ${NTFY_TOPIC:-}
+
 services:
   browsers:
     build:
@@ -27,11 +37,7 @@ services:
       # while Teams records (docs/design/2026-09-28-answer-calls.md)
       SELKIES_MICROPHONE_ENABLED: "true"
       SELKIES_MICROPHONE_ON_START: demand
-      SLOT_COUNT: ${SLOT_COUNT:-4}
-      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
-      NTFY_ENABLED: ${NTFY_ENABLED:-0}
-      NTFY_URL: ${NTFY_URL:-https://ntfy.sh}
-      NTFY_TOPIC: ${NTFY_TOPIC:-}
+      <<: *notify-env
       # time for the supervisor to close the browsers when the container stops
       S6_SERVICES_GRACETIME: "20000"
     volumes:
@@ -74,7 +80,6 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       # bearer token of /mcp (AI clients, read only); empty turns the endpoint off
       MCP_TOKEN: ${MCP_TOKEN:-}
-      SLOT_COUNT: ${SLOT_COUNT:-4}
       ACCOUNTS_PER_USER: ${ACCOUNTS_PER_USER:-}
       DESKTOP_URL: ${DESKTOP_URL:-}
       APP_DB: /data/app.db
@@ -82,11 +87,8 @@ services:
       VAPID_APPKEY: /vapid/appkey.txt
       # the web app sends the notifications of the accounts on another computer (their relay joined this server)
       VAPID_PRIVATE: /vapid/private_key.pem
-      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
       FCM_CREDENTIALS: /fcm/service-account.json
-      NTFY_ENABLED: ${NTFY_ENABLED:-0}
-      NTFY_URL: ${NTFY_URL:-https://ntfy.sh}
-      NTFY_TOPIC: ${NTFY_TOPIC:-}
+      <<: *notify-env
     volumes:
       - ./vapid:/vapid:ro
       # the service account key of the Firebase project too, for their phones of the Android app
