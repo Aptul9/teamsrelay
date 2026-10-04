@@ -19,7 +19,7 @@ const Cmdapi = z.object({
 
 const Ssh = z.object({
   enabled: z.boolean().default(false),
-  // "library": the embedded ssh2 server (no admin, no OpenSSH Server). "system": a tunnel to the host's own sshd on
+  // "library": the embedded ssh2 server. "system": a tunnel to the host's own sshd on
   // localPort (default 22), a real OS login shell, which needs sshd installed on the host.
   mode: z.enum(["library", "system"]).default("library"),
   vmPort: Port.optional(),

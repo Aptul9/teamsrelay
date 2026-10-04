@@ -1,73 +1,48 @@
 # TeamsRelay
 
-Microsoft Teams on the phone for accounts whose organization allows Teams only in a desktop browser. A Chromium on your server keeps Teams web signed in, an agent reads and drives it, and an installable web app shows the chats, sends push notifications and performs the Teams actions: send, reply, react, edit, delete.
+Self-hosted bridge that mirrors Microsoft Teams chats to a phone web app with push notifications, for your own accounts. Not affiliated with Microsoft.
 
-> Use TeamsRelay only with your own accounts and within the policies of your organization. The project is not affiliated with or endorsed by Microsoft; "Microsoft Teams" is a trademark of Microsoft.
+## Requirements
 
-## How it works
+- Server: Linux with Docker Compose, a DNS name, ports 80 and 443.
+- Local relay: Node 24+ and Chrome or Edge.
 
-```mermaid
-flowchart LR
-  PH["Phone or PC<br/>TeamsRelay web app"] -- HTTPS --> CA["caddy"]
-  subgraph Server["Linux server, Docker Compose"]
-    CA --> WA["webapp<br/>Next.js: users, API, events"]
-    CA -- "/desktop/, users with an account" --> DK
-    subgraph BR["browsers: every Teams account"]
-      SV["supervisor"]
-      DK["remote desktop<br/>one window per account"]
-      CH["Chromium of account N<br/>Teams web signed in"]
-      AG["agent of account N<br/>Node, Playwright over CDP"]
-      SV -- "starts, stops" --> CH
-      SV -- "starts, stops" --> AG
-      AG -- CDP --> CH
-    end
-    DB[("data/N/messages.db")]
-    WA -- "commands, reads" --> DB
-    AG -- "chats, messages, state" --> DB
-    WA -- "start, stop, wipe<br/>unix socket" --> SV
-    WA --> APP[("data/app.db<br/>users, accounts, devices")]
-  end
-  AG -- "Web Push" --> PH
-```
-
-- The Teams accounts of a server belong to one person. Each account has its own browser profile (`config/N`), agent and database; all of them run in one container, `browsers`, whose supervisor starts and stops them on request of the web app.
-- The Microsoft sign-in (password, MFA) happens in the remote desktop, at `/desktop/`, where every account has its browser window. Opening the desktop of an account brings its window to the front.
-- Actions in the web app become commands in the database of the account. The agent performs them on the Teams page and confirms once Teams shows the change.
-- Web app, agent and supervisor are one TypeScript package (`app/`) with two images: `teamsrelay` runs the web app, `teamsrelay-browsers` Chromium, the agents and the supervisor.
-- AI clients (Claude Code, opencode) can read the chats through the MCP endpoint `/mcp`, read only, when `MCP_TOKEN` is set: [docs/mcp.md](docs/mcp.md).
-- **Local relay**: for one account there is a lighter way, with no server and no containers. A Node process on an always-on machine drives Chrome or Edge on a profile of its own, signed in once in its window, and relays the chats to a small app on the phone: [docs/setup.md](docs/setup.md#local-relay). Both use the same agent code.
-- **Android app**: a Tauri app (`mobile/`) that opens the web app of a server and gets its notifications through Firebase: calls ring with the phone locked; GitHub Actions builds a debug APK: [mobile/README.md](mobile/README.md).
-
-## Quick start
-
-A Linux server with Docker Compose, a DNS name pointing to it, ports 80 and 443 reachable.
+## Server (Docker Compose)
 
 ```bash
-git clone <repository> /opt/teamsrelay && cd /opt/teamsrelay
-cp .env.example .env          # DOMAIN, BETTER_AUTH_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
+cp .env.example .env            # DOMAIN, BETTER_AUTH_SECRET, ADMIN_EMAIL, ADMIN_PASSWORD
 docker run --rm -v "$PWD:/w" -w /w node:24-slim node app/scripts/gen-vapid.mjs vapid
 docker compose up -d --build
 ```
 
-Open `https://<DOMAIN>`, sign in as the administrator, add a Teams account and sign in to Microsoft in its remote desktop. Step by step: [docs/setup.md](docs/setup.md).
+Then open `https://<DOMAIN>` and sign in as `ADMIN_EMAIL`.
 
-## Documentation
+## Local relay (one account, no server)
 
-| Topic | Page |
-|---|---|
-| Installation, users, first account, phone, local development, local relay | [docs/setup.md](docs/setup.md) |
-| `.env` variables | [docs/configuration.md](docs/configuration.md) |
-| Containers, agent loop, data | [docs/architecture.md](docs/architecture.md) |
-| Deploy pipeline, updates, backup, troubleshooting | [docs/operations.md](docs/operations.md) |
-| Security model | [docs/security.md](docs/security.md) |
-| HTTP API | [docs/api.md](docs/api.md) |
-| Remote update and inspection of relay hosts (fleet) | [docs/setup.md](docs/setup.md#remote-management-of-relay-hosts) |
-| AI clients over MCP: setup, tools, limits | [docs/mcp.md](docs/mcp.md) |
-| Teams selectors used by the agent | [docs/teams-selectors.md](docs/teams-selectors.md) |
-| Known limitations | [docs/limitations.md](docs/limitations.md) |
-| Android app (Tauri, notifications through Firebase) | [mobile/README.md](mobile/README.md) |
-| Decisions and plans | [docs/decisions/](docs/decisions/), [docs/design/](docs/design/) |
+```bash
+cd app && npm ci
+npm run relay:setup             # writes relay.env and the API token
+npm run relay:login             # sign in once
+npm run relay                   # start
+```
 
-## License
+## Fleet (optional, multi-host)
 
-See [LICENSE](LICENSE).
+```bash
+cd app
+npm run fleet:agent             # agent, from fleet.config.json
+npm run fleet -- status all     # control hosts in fleet.hosts.json: exec | update | status
+```
+
+## Development
+
+```bash
+cd app && npm ci
+npm run dev                     # next dev on :8090
+npm test
+npm run typecheck
+npm run lint
+npm run build
+```
+
+Config: `.env.example` (server), `app/relay.env.example` (local relay), `app/fleet.config.example.json` and `app/fleet.hosts.example.json` (fleet).
