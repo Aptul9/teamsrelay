@@ -276,7 +276,7 @@ First, `app/fleet.config.json` (copy from `fleet.config.example.json`; untracked
 }
 ```
 
-Each `vmPort` is unique per host; generate the token with `node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))"`. The ssh host key is created on first run under `state/` and persisted.
+Each `vmPort` is unique per host; generate the token with `node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))"`. The ssh host key is created on first run under `state/` and persisted. To run a second agent on one host, set `"instance": N`: it shifts every local port the agent binds (`cmdapi.localPort`, library-mode `ssh.localPort`) by N, so the two agents do not clash on the machine; each still needs its own `vmPort`, since that is the shared resource on the hub VM.
 
 Second, `FLEET_AGENT=on` in `app/relay.env`, so pm2 starts the agent beside the relay:
 

@@ -16,6 +16,9 @@ const Env = z.object({
   // address of the API: loopback unless the phone reaches it some other way (docs/setup.md, Local relay)
   RELAY_BIND: z.union([z.ipv4(), z.ipv6()]).default("127.0.0.1"),
   RELAY_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
+  // run a second relay on this machine: shifts RELAY_PORT by N and, unless STATE_DIR is set, keeps its own state under
+  // state-N, so one number stands up another relay instead of a hand-picked port and directory
+  INSTANCE: z.coerce.number().int().min(0).max(65535).default(0),
   // HTTPS on the API itself, for a phone that reaches it without a proxy that terminates TLS
   RELAY_TLS_CERT: z.string().optional(),
   RELAY_TLS_KEY: z.string().optional(),
@@ -70,7 +73,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new ConfigError("SERVER_URL: https:// needed, the token must not travel in clear (http:// only for localhost)");
   }
   const server = e.SERVER_URL && e.SERVER_TOKEN ? { url: e.SERVER_URL.replace(/\/+$/, ""), token: e.SERVER_TOKEN } : null;
-  const stateDir = path.resolve(cwd, e.STATE_DIR);
+  const port = e.RELAY_PORT + e.INSTANCE;
+  if (port > 65535) throw new ConfigError(`RELAY_PORT + INSTANCE is ${port}, over 65535 (port ${e.RELAY_PORT}, instance ${e.INSTANCE})`);
+  // an explicit STATE_DIR is the user's to own; otherwise a non-zero instance gets state-N so two relays never share a db
+  const rawStateDir = env.STATE_DIR && env.STATE_DIR.length > 0 ? env.STATE_DIR : undefined;
+  const stateDir = path.resolve(cwd, rawStateDir ?? (e.INSTANCE > 0 ? `state-${e.INSTANCE}` : e.STATE_DIR));
   const vapidDir = path.join(stateDir, "vapid");
   return {
     stateDir,
@@ -89,7 +96,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     teamsUrl: e.TEAMS_URL,
     api: {
       bind: e.RELAY_BIND,
-      port: e.RELAY_PORT,
+      port,
       tls: e.RELAY_TLS_CERT && e.RELAY_TLS_KEY ? { cert: path.resolve(cwd, e.RELAY_TLS_CERT), key: path.resolve(cwd, e.RELAY_TLS_KEY) } : null,
     },
     vapid: { privateKeyFile: path.join(vapidDir, "private_key.pem"), appKeyFile: path.join(vapidDir, "appkey.txt"), subject: e.VAPID_SUBJECT },

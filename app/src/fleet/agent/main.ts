@@ -7,7 +7,7 @@ import { errorText, log } from "@/agent/log";
 import { cmdApiConfig } from "@/fleet/cmdapi/config";
 import { startCmdApi, type CmdApiServer } from "@/fleet/cmdapi/server";
 import { loadOrCreateHostKey, startSshServer, type SshServer } from "@/fleet/ssh/server";
-import { loadAgentConfigFile, type AgentConfig } from "./config";
+import { cmdapiLocalPort, loadAgentConfigFile, sshLocalPort, type AgentConfig } from "./config";
 import { superviseTunnel, type TunnelHandle } from "./tunnel";
 
 function configPath(): string {
@@ -19,17 +19,18 @@ async function start(config: AgentConfig): Promise<void> {
   const tunnels: TunnelHandle[] = [];
 
   if (config.cmdapi.enabled) {
-    const { localPort: port, token, timeout, cwd } = config.cmdapi;
+    const { token, timeout, cwd } = config.cmdapi;
+    const port = cmdapiLocalPort(config);
     const server: CmdApiServer = await startCmdApi(cmdApiConfig({ host: "127.0.0.1", port, token, timeout, cwd }));
     log.info("fleet", `cmdapi: listening on ${server.url}`);
     closers.push(() => server.close());
-    tunnels.push(superviseTunnel("cmdapi", config.vm, config.cmdapi.vmPort as number, config.cmdapi.localPort));
+    tunnels.push(superviseTunnel("cmdapi", config.vm, config.cmdapi.vmPort as number, port));
   }
 
   if (config.ssh.enabled) {
     // library: run the embedded ssh2 server on localPort (default 2022). system: no server, tunnel straight to the
     // host's own sshd (default :22), a real OS login shell that the host's sshd authenticates.
-    const localPort = config.ssh.localPort ?? (config.ssh.mode === "system" ? 22 : 2022);
+    const localPort = sshLocalPort(config);
     if (config.ssh.mode === "library") {
       const hostKey = loadOrCreateHostKey(path.resolve(process.cwd(), config.ssh.hostKeyFile));
       const server: SshServer = await startSshServer({ port: localPort, host: "127.0.0.1", hostKey, authorizedKeys: config.ssh.authorizedKeys });

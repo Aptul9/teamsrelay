@@ -86,6 +86,7 @@ The browsers image also carries the Chromium policy `AudioCaptureAllowedUrls` (`
 | `BROWSER_CHANNEL` | `chrome` | Installed browser the relay drives on its own profile: `chrome` or `msedge` |
 | `TEAMS_URL` | `https://teams.cloud.microsoft/` | Page opened in the relay browser |
 | `RELAY_BIND`, `RELAY_PORT` | `127.0.0.1`, `8787` | Address of the API and the app; an IP address, not a name |
+| `INSTANCE` | `0` | Run a second relay here: shifts `RELAY_PORT` by N and, unless `STATE_DIR` is set, uses `state-N` |
 | `RELAY_TLS_CERT`, `RELAY_TLS_KEY` | empty | PEM files for HTTPS on the API itself, both or neither, relative to `app/` |
 | `VAPID_SUBJECT` | `mailto:admin@example.com` | Contact for the push services, `mailto:` or `https://` |
 | `NTFY_URL`, `NTFY_TOPIC` | `https://ntfy.sh`, empty | ntfy as a second channel, on when the topic is set |

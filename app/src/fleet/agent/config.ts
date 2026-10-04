@@ -34,6 +34,10 @@ const Schema = z
   .object({
     // ssh alias of the hub VM (an entry in this user's ~/.ssh/config), shared by every component's tunnel
     vm: z.string().min(1),
+    // run a second agent on this host: shifts the local port of every component we bind by N (the VM port stays the
+    // explicit per-host one, so a fleet clash still fails loudly). System-mode ssh is the host's own sshd, not ours, so
+    // it does not shift.
+    instance: z.coerce.number().int().min(0).default(0),
     // a missing section means the component is absent: default to its fully-defaulted (disabled) form
     cmdapi: Cmdapi.default(() => Cmdapi.parse({})),
     ssh: Ssh.default(() => Ssh.parse({})),
@@ -42,17 +46,33 @@ const Schema = z
     if (c.cmdapi.enabled) {
       if (!c.cmdapi.vmPort) ctx.addIssue({ code: "custom", message: "cmdapi.vmPort is required when cmdapi.enabled", path: ["cmdapi", "vmPort"] });
       if (c.cmdapi.token.length < 16) ctx.addIssue({ code: "custom", message: "cmdapi.token (>= 16 chars) is required when cmdapi.enabled", path: ["cmdapi", "token"] });
+      if (c.cmdapi.localPort + c.instance > 65535) ctx.addIssue({ code: "custom", message: "cmdapi.localPort + instance exceeds 65535", path: ["cmdapi", "localPort"] });
     }
     if (c.ssh.enabled) {
       if (!c.ssh.vmPort) ctx.addIssue({ code: "custom", message: "ssh.vmPort is required when ssh.enabled", path: ["ssh", "vmPort"] });
       // library mode runs our own server and needs the keys; system mode leaves auth to the host's sshd
-      if (c.ssh.mode === "library" && c.ssh.authorizedKeys.length === 0) {
-        ctx.addIssue({ code: "custom", message: "ssh.authorizedKeys needs at least one key in library mode", path: ["ssh", "authorizedKeys"] });
+      if (c.ssh.mode === "library") {
+        if (c.ssh.authorizedKeys.length === 0) {
+          ctx.addIssue({ code: "custom", message: "ssh.authorizedKeys needs at least one key in library mode", path: ["ssh", "authorizedKeys"] });
+        }
+        if ((c.ssh.localPort ?? 2022) + c.instance > 65535) {
+          ctx.addIssue({ code: "custom", message: "ssh.localPort + instance exceeds 65535", path: ["ssh", "localPort"] });
+        }
       }
     }
   });
 
 export type AgentConfig = z.infer<typeof Schema>;
+
+// The local port a component binds, once the instance offset is applied. Only ports we bind shift: system-mode ssh
+// tunnels to the host's own sshd on a fixed port, so it is left alone.
+export function cmdapiLocalPort(c: AgentConfig): number {
+  return c.cmdapi.localPort + c.instance;
+}
+export function sshLocalPort(c: AgentConfig): number {
+  const base = c.ssh.localPort ?? (c.ssh.mode === "system" ? 22 : 2022);
+  return c.ssh.mode === "system" ? base : base + c.instance;
+}
 
 export function parseAgentConfig(obj: unknown): AgentConfig {
   const r = Schema.safeParse(obj);
