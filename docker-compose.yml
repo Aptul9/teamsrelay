@@ -115,6 +115,8 @@ services:
     environment:
       - DOMAIN=${DOMAIN:?set DOMAIN in .env}
       - HTTPS_PORT=${HTTPS_PORT:-443}
+      # name of the upper-manager photo reader; the default serves nothing real (see caddy/Caddyfile)
+      - OCR_DOMAIN=${OCR_DOMAIN:-http://ocr.localhost}
     ports:
       - "80:80"
       - "${HTTPS_BIND:-0.0.0.0}:${HTTPS_PORT:-443}:${HTTPS_PORT:-443}"

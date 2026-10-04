@@ -26,3 +26,14 @@
 		reverse_proxy webapp:8090
 	}
 }
+
+# Photo reader of upper-manager (its own compose project, container upper-manager-ocr on this network).
+# OCR_DOMAIN comes from .env through docker-compose.yml; its default http://ocr.localhost answers nothing real
+# and asks for no certificate, so the local stack and CI load this block unchanged.
+{$OCR_DOMAIN} {
+	# the reader caps its own body below this: Caddy must not answer 413 before the reader can explain
+	request_body {
+		max_size 50MB
+	}
+	reverse_proxy upper-manager-ocr:8080
+}

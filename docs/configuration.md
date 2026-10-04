@@ -18,6 +18,7 @@ Every setting is in `.env`, next to `docker-compose.yml`. Template: [.env.exampl
 | `VAPID_SUBJECT` | no | Contact required by the Web Push standard, `mailto:` or `https:` URL. Used by the agents, and by the web app for the accounts on another computer. |
 | `TZ` | no | Time zone of the automatic checks (8-11 and 17-20). Default `UTC`. |
 | `HTTPS_PORT`, `HTTPS_BIND` | no | Port and bind address of Caddy for HTTPS. Default `443` on `0.0.0.0`. |
+| `OCR_DOMAIN` | no | Name Caddy serves the upper-manager photo reader on (container `upper-manager-ocr`, its own compose project on this network). Default `http://ocr.localhost`, which serves nothing real. |
 | `NTFY_ENABLED`, `NTFY_URL`, `NTFY_TOPIC` | no | Notifications through ntfy as well (`NTFY_ENABLED=1` and a topic). Every account of the server posts to the same topic, the accounts on another computer included (the web app sends theirs). A call rings there at priority 5 and turns quiet (priority 2) when it ends: with the ntfy setting *Keep alerting for highest priority* the phone rings until the notification is swiped or opened. |
 
 ## Agent environment
