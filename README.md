@@ -34,6 +34,14 @@ npm run fleet:agent             # agent, from fleet.config.json
 npm run fleet -- status all     # control hosts in fleet.hosts.json: exec | update | status
 ```
 
+Each host's cmdapi tunnel claims the first free VM port from `vmPort` up to `vmPort + vmPortSpan - 1` (default 6). A host that wakes from sleep is back at once, on the next port, while the VM still holds its old session. `fleet` finds the host by trying that pool with the host's token (`span` in `fleet.hosts.json`), so keep the hosts' ports at least a span apart. The ssh component keeps one fixed port.
+
+The agent logs one line per tunnel event, for example `fleet: tunnel cmdapi connected vm=oracle-vm port=8767`. Watch it with `npm run fleet:agent` in a terminal, or `npx pm2 logs teamsrelay-fleet` when pm2 runs it.
+
+The VM needs `ClientAliveInterval 30` and `ClientAliveCountMax 3` in sshd, so a dead session clears in two to three minutes instead of two hours.
+
+A host picks up a new agent with `npm run build:fleet-agent` and `npx pm2 restart teamsrelay-fleet`, run on the host: `fleet update` rebuilds and restarts the relay only.
+
 ## Development
 
 ```bash

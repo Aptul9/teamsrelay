@@ -5,11 +5,15 @@ import { z } from "zod";
 import { ConfigError, issuesText, readJsonFile } from "@/shared/env";
 
 const Port = z.number().int().min(1).max(65535);
+const Span = z.number().int().min(1).max(64);
 
 const Cmdapi = z.object({
   enabled: z.boolean().default(false),
   // the VM loopback port this host's cmdapi is published on by its reverse tunnel
   vmPort: Port.optional(),
+  // VM ports from vmPort up that the tunnel may float through when its own is held (1 = the one fixed port); the fleet
+  // CLI finds the host by trying the same pool with the host's token
+  vmPortSpan: Span.default(6),
   // the port cmdapi listens on locally (loopback)
   localPort: Port.default(8765),
   token: z.string().default(""),
@@ -23,6 +27,8 @@ const Ssh = z.object({
   // localPort (default 22), a real OS login shell, which needs sshd installed on the host.
   mode: z.enum(["library", "system"]).default("library"),
   vmPort: Port.optional(),
+  // the ssh port is typed by hand (ssh -p), so it stays fixed unless a span is asked for
+  vmPortSpan: Span.default(1),
   // the local port the tunnel targets; the agent defaults it by mode (2022 for library, 22 for system)
   localPort: Port.optional(),
   hostKeyFile: z.string().default("state/fleet/ssh_host_key"),
@@ -47,9 +53,11 @@ const Schema = z
       if (!c.cmdapi.vmPort) ctx.addIssue({ code: "custom", message: "cmdapi.vmPort is required when cmdapi.enabled", path: ["cmdapi", "vmPort"] });
       if (c.cmdapi.token.length < 16) ctx.addIssue({ code: "custom", message: "cmdapi.token (>= 16 chars) is required when cmdapi.enabled", path: ["cmdapi", "token"] });
       if (c.cmdapi.localPort + c.instance > 65535) ctx.addIssue({ code: "custom", message: "cmdapi.localPort + instance exceeds 65535", path: ["cmdapi", "localPort"] });
+      if ((c.cmdapi.vmPort ?? 0) + c.cmdapi.vmPortSpan - 1 > 65535) ctx.addIssue({ code: "custom", message: "cmdapi.vmPort + vmPortSpan exceeds 65535", path: ["cmdapi", "vmPortSpan"] });
     }
     if (c.ssh.enabled) {
       if (!c.ssh.vmPort) ctx.addIssue({ code: "custom", message: "ssh.vmPort is required when ssh.enabled", path: ["ssh", "vmPort"] });
+      if ((c.ssh.vmPort ?? 0) + c.ssh.vmPortSpan - 1 > 65535) ctx.addIssue({ code: "custom", message: "ssh.vmPort + vmPortSpan exceeds 65535", path: ["ssh", "vmPortSpan"] });
       // library mode runs our own server and needs the keys; system mode leaves auth to the host's sshd
       if (c.ssh.mode === "library") {
         if (c.ssh.authorizedKeys.length === 0) {

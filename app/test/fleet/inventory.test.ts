@@ -18,6 +18,13 @@ describe("inventory", () => {
     expect(z).toMatchObject({ vm: "oracle-vm", port: 8766, token: "z".repeat(32), appDir: "C:/teamsrelay/app" });
   });
 
+  it("gives a host the default pool of 6 VM ports unless it names its own", () => {
+    const hosts = parseInventory({ hosts: { ...raw.hosts, fixed: { vm: "oracle-vm", port: 8800, span: 1, token: "f".repeat(32) } } });
+    expect(hosts.find((h) => h.name === "zurich")!.span).toBe(6);
+    expect(hosts.find((h) => h.name === "fixed")!.span).toBe(1);
+    expect(() => parseInventory({ hosts: { bad: { vm: "oracle-vm", port: 8766, span: 0, token: "t" } } })).toThrow();
+  });
+
   it("rejects a host missing a required field", () => {
     expect(() => parseInventory({ hosts: { bad: { vm: "oracle-vm", port: 8766 } } })).toThrow();
     expect(() => parseInventory({ hosts: { bad: { port: 8766, token: "t".repeat(32) } } })).toThrow();

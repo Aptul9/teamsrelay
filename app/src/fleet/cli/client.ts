@@ -35,6 +35,23 @@ function capture(argv: string[], stdin?: string): Promise<{ code: number | null;
   });
 }
 
+// A host's cmdapi floats in a pool of VM ports (the agent takes the first free one), so the CLI asks the VM which port
+// answers to this host's token before it uses one: another host's cmdapi on a neighbouring port refuses the token with
+// 401. One ssh runs the whole probe on the VM; a port with nothing behind it fails at once, a dead tunnel's times out.
+export function probeScript(host: FleetHost): string {
+  const ports = Array.from({ length: host.span }, (_, i) => host.port + i).join(" ");
+  return `for p in ${ports}; do c=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer ${host.token}' "http://127.0.0.1:$p/command?c=echo"); [ "$c" = 200 ] && { echo $p; exit 0; }; done; exit 1`;
+}
+
+// The host with its port set to the one that answers, or null when none does. A fixed host (span 1) and a host with no
+// token (nothing tells it from its neighbours) keep the configured port.
+export async function resolve(host: FleetHost): Promise<FleetHost | null> {
+  if (host.span <= 1 || !host.token) return host;
+  const { code, stdout } = await capture(["ssh", host.vm, probeScript(host)]);
+  const port = Number.parseInt(stdout.trim(), 10);
+  return code === 0 && Number.isInteger(port) ? { ...host, port } : null;
+}
+
 // Run a command on a host and return the cmdapi result. Throws when the hop itself fails (SSH down, tunnel down, cmdapi
 // unreachable) - told apart from a command that merely exited non-zero, which comes back as a result.
 export async function exec(host: FleetHost, request: RunRequest): Promise<Result> {

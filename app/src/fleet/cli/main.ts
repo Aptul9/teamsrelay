@@ -3,9 +3,10 @@
 //   fleet update <host|all>                pull, npm ci, build the relay, restart it under pm2
 //   fleet status <host|all>                cmdapi reachable? relay online under pm2? how many restarts?
 // Hosts come from the inventory JSON (FLEET_INVENTORY, else fleet.hosts.json next to package.json). Fan-out is
-// sequential: a bad update is seen before it reaches the next host.
+// sequential: a bad update is seen before it reaches the next host. A host's cmdapi floats in a pool of VM ports, so
+// each host is resolved to the port that answers to its token before anything is sent.
 import path from "node:path";
-import { exec, health, type RunRequest } from "./client";
+import { exec, health, resolve, type RunRequest } from "./client";
 import { loadInventory, targets, type FleetHost } from "./inventory";
 import { updateRequest } from "./update";
 
@@ -15,8 +16,12 @@ function inventoryPath(): string {
   return process.env.FLEET_INVENTORY || path.resolve(process.cwd(), "fleet.hosts.json");
 }
 
-function header(host: FleetHost): void {
-  console.log(`\n=== ${host.name} (${host.vm}:${host.port})`);
+// the VM ports a host may be on, for the lines that say none of them answered
+const pool = (host: FleetHost) => (host.span > 1 ? `${host.port}-${host.port + host.span - 1}` : `${host.port}`);
+
+// at: the host resolved to its live port, or null when none answered
+function header(host: FleetHost, at: FleetHost | null): void {
+  console.log(`\n=== ${host.name} (${host.vm}:${at ? at.port : pool(host)})`);
 }
 
 // Print a cmdapi result the way a shell would show it, and return true when the command succeeded
@@ -33,9 +38,15 @@ function report(r: Awaited<ReturnType<typeof exec>>): boolean {
 async function runExec(hosts: FleetHost[], request: (host: FleetHost) => RunRequest): Promise<boolean> {
   let ok = true;
   for (const host of hosts) {
-    header(host);
+    const at = await resolve(host);
+    header(host, at);
+    if (!at) {
+      console.error(`${host.name}: no cmdapi on ${host.vm}:${pool(host)} answers to its token`);
+      ok = false;
+      continue;
+    }
     try {
-      ok = report(await exec(host, request(host))) && ok;
+      ok = report(await exec(at, request(at))) && ok;
     } catch (e) {
       console.error((e as Error).message);
       ok = false;
@@ -47,15 +58,16 @@ async function runExec(hosts: FleetHost[], request: (host: FleetHost) => RunRequ
 async function runStatus(hosts: FleetHost[]): Promise<boolean> {
   let ok = true;
   for (const host of hosts) {
-    header(host);
-    if (!(await health(host))) {
+    const at = await resolve(host);
+    header(host, at);
+    if (!at || !(await health(at))) {
       console.log("cmdapi: unreachable");
       ok = false;
       continue;
     }
     console.log("cmdapi: ok");
     try {
-      const r = await exec(host, { command: "npx pm2 jlist", cwd: host.appDir, timeout: 30 });
+      const r = await exec(at, { command: "npx pm2 jlist", cwd: host.appDir, timeout: 30 });
       const relay = (JSON.parse(r.stdout) as Array<{ name: string; pm2_env?: { status?: string; restart_time?: number } }>).find((p) => p.name === "teamsrelay");
       if (!relay) console.log("relay: not under pm2");
       else {

@@ -52,6 +52,26 @@ describe("agent config", () => {
   });
 });
 
+describe("vm port pool", () => {
+  it("floats cmdapi through 6 VM ports by default and keeps the hand-typed ssh port fixed", () => {
+    const c = parseAgentConfig({ vm: "oracle-vm", cmdapi: { enabled: true, vmPort: 8766, token: "t".repeat(32) }, ssh: { enabled: true, vmPort: 8822, authorizedKeys: [KEY] } });
+    expect(c.cmdapi.vmPortSpan).toBe(6);
+    expect(c.ssh.vmPortSpan).toBe(1);
+  });
+
+  it("takes an explicit span for either component", () => {
+    const c = parseAgentConfig({ vm: "oracle-vm", cmdapi: { enabled: true, vmPort: 8766, vmPortSpan: 1, token: "t".repeat(32) }, ssh: { enabled: true, vmPort: 8822, vmPortSpan: 4, authorizedKeys: [KEY] } });
+    expect(c.cmdapi.vmPortSpan).toBe(1);
+    expect(c.ssh.vmPortSpan).toBe(4);
+  });
+
+  it("refuses a span of 0 and a pool that runs past 65535", () => {
+    expect(() => parseAgentConfig({ vm: "oracle-vm", cmdapi: { enabled: true, vmPort: 8766, vmPortSpan: 0, token: "t".repeat(32) } })).toThrow();
+    expect(() => parseAgentConfig({ vm: "oracle-vm", cmdapi: { enabled: true, vmPort: 65535, token: "t".repeat(32) } })).toThrow(/65535/);
+    expect(() => parseAgentConfig({ vm: "oracle-vm", ssh: { enabled: true, vmPort: 65534, vmPortSpan: 4, authorizedKeys: [KEY] } })).toThrow(/65535/);
+  });
+});
+
 describe("instance offset", () => {
   it("defaults to 0: local ports are the bases", () => {
     const c = parseAgentConfig({ vm: "oracle-vm", cmdapi: { enabled: true, vmPort: 8766, token: "t".repeat(32) }, ssh: { enabled: true, vmPort: 8822, authorizedKeys: [KEY] } });
