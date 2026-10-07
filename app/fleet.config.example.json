@@ -1,5 +1,7 @@
 {
   "vm": "oracle-vm",
+  "_instance_note": "instance N shifts every LOCAL port we bind (cmdapi.localPort, library ssh.localPort) by N, for a second agent on one host; vmPort stays the explicit per-host port. Omit or 0 for a single agent.",
+  "instance": 0,
   "cmdapi": {
     "enabled": true,
     "vmPort": 8766,

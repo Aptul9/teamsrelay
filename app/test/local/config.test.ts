@@ -53,6 +53,29 @@ describe("relay configuration", () => {
     expect(loadConfig({ VAPID_SUBJECT: "", RELAY_PORT: "", NTFY_TOPIC: "" }, CWD)).toMatchObject({ api: { port: 8787 }, vapid: { subject: "mailto:admin@example.com" }, ntfy: null });
   });
 
+  it("runs a second relay from one number: shifts the port and keeps its own state", () => {
+    const c = loadConfig({ INSTANCE: "1" }, CWD);
+    expect(c.api.port).toBe(8788);
+    expect(c.stateDir).toBe(path.join(CWD, "state-1"));
+    expect(c.dbPath).toBe(path.join(CWD, "state-1", "relay.db"));
+  });
+
+  it("adds the instance to a custom RELAY_PORT, and leaves an explicit STATE_DIR alone", () => {
+    const c = loadConfig({ RELAY_PORT: "9000", INSTANCE: "5", STATE_DIR: "/srv/relay" }, CWD);
+    expect(c.api.port).toBe(9005);
+    expect(c.stateDir).toBe(path.resolve("/srv/relay"));
+  });
+
+  it("instance 0 is the bases untouched", () => {
+    const c = loadConfig({ INSTANCE: "0" }, CWD);
+    expect(c.api.port).toBe(8787);
+    expect(c.stateDir).toBe(path.join(CWD, "state"));
+  });
+
+  it("refuses an instance that pushes the port past 65535", () => {
+    expect(() => loadConfig({ RELAY_PORT: "65535", INSTANCE: "1" }, CWD)).toThrow(/over 65535/);
+  });
+
   it("stops on a wrong value and says which", () => {
     expect(() => loadConfig({ RELAY_PORT: "http" }, CWD)).toThrow(ConfigError);
     expect(() => loadConfig({ RELAY_PORT: "http" }, CWD)).toThrow(/RELAY_PORT/);
