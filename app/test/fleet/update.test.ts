@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { FleetHost } from "@/fleet/cli/inventory";
 import { UPDATE_STEPS, updateCommand, updateRequest } from "@/fleet/cli/update";
 
-const host: FleetHost = { name: "zurich", vm: "oracle-vm", port: 8766, token: "z".repeat(32), appDir: "C:/teamsrelay/app" };
+const host: FleetHost = { name: "zurich", vm: "oracle-vm", port: 8766, span: 1, token: "z".repeat(32), appDir: "C:/teamsrelay/app" };
 
 describe("update", () => {
   it("runs pull, ci --ignore-scripts, build:relay, pm2 restart, in order", () => {

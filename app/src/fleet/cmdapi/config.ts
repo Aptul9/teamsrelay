@@ -1,6 +1,6 @@
 // cmdapi configuration, from the process environment (pm2 passes it, loaded from relay.env by the entry point). Checked
 // once at start: the only combination refused is a non-loopback bind with an empty token, so a bad posture fails loudly
-// instead of handing an open shell to whoever finds the port.
+// instead of being left open on the network.
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
@@ -61,7 +61,7 @@ export function cmdApiConfig(o: { host: string; port: number; token: string; tim
 
   const host = o.host;
   const isLoopback = LOOPBACK.has(host);
-  // anything that runs arbitrary commands and listens off loopback with no token is a shell for whoever finds the port
+  // off loopback with no token would be open on the network
   if (!isLoopback && !o.token) {
     throw new ConfigError(
       `CMDAPI_HOST is ${host}, which is not loopback, and CMDAPI_TOKEN is empty. ` + "Set a token, or bind 127.0.0.1 and reach it through the tunnel.",

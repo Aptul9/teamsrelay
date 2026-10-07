@@ -24,7 +24,7 @@ async function start(config: AgentConfig): Promise<void> {
     const server: CmdApiServer = await startCmdApi(cmdApiConfig({ host: "127.0.0.1", port, token, timeout, cwd }));
     log.info("fleet", `cmdapi: listening on ${server.url}`);
     closers.push(() => server.close());
-    tunnels.push(superviseTunnel("cmdapi", config.vm, config.cmdapi.vmPort as number, port));
+    tunnels.push(superviseTunnel("cmdapi", config.vm, config.cmdapi.vmPort as number, port, { span: config.cmdapi.vmPortSpan }));
   }
 
   if (config.ssh.enabled) {
@@ -39,7 +39,7 @@ async function start(config: AgentConfig): Promise<void> {
     } else {
       log.info("fleet", `ssh: system mode, tunnel to the host's sshd on 127.0.0.1:${localPort}`);
     }
-    tunnels.push(superviseTunnel("ssh", config.vm, config.ssh.vmPort as number, localPort));
+    tunnels.push(superviseTunnel("ssh", config.vm, config.ssh.vmPort as number, localPort, { span: config.ssh.vmPortSpan }));
   }
 
   if (!config.cmdapi.enabled && !config.ssh.enabled) {

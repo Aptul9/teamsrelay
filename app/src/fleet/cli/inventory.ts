@@ -7,6 +7,8 @@ import { issuesText, readJsonFile } from "@/shared/env";
 const Host = z.object({
   vm: z.string().min(1),
   port: z.number().int().min(1).max(65535),
+  // the pool the host's cmdapi tunnel may float through, from port up; the agent's vmPortSpan, 1 for a fixed host
+  span: z.number().int().min(1).max(64).default(6),
   token: z.string(),
   // teamsrelay app/ on the host; the default suits a checkout in the home directory
   appDir: z.string().default("teamsrelay/app"),
@@ -18,6 +20,7 @@ export interface FleetHost {
   name: string;
   vm: string;
   port: number;
+  span: number;
   token: string;
   appDir: string;
 }

@@ -1,4 +1,4 @@
-// The embedded SSH server: a shell into a relay host with no OpenSSH Server and no admin, run inside the host's Node
+// The embedded SSH server: a shell into a relay host, run inside the host's Node
 // process (ssh2, pure JavaScript). Public-key auth only. An `exec` request runs the command through the same runner
 // cmdapi uses; a `shell` request spawns an interactive shell piped to the channel (no pseudo-tty: a real one needs a
 // native module, so line editing and full-screen programs are limited; `exec` is unaffected). Reached only through the

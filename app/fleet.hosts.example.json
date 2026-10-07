@@ -1,4 +1,5 @@
 {
+  "_span_note": "span = the host's agent vmPortSpan, default 6: the CLI tries port .. port+span-1 with the host's token and uses the one that answers. Space the hosts' ports at least a span apart; span 1 pins a host to its port.",
   "hosts": {
     "zurich": {
       "vm": "oracle-vm",
@@ -8,7 +9,7 @@
     },
     "office": {
       "vm": "oracle-vm",
-      "port": 8767,
+      "port": 8772,
       "token": "a different token, this host's own",
       "appDir": "/home/you/teamsrelay/app"
     }
