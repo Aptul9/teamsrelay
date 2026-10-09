@@ -37,7 +37,7 @@ jobs:
           node dist/relay.cjs --check
 
       - name: Shell syntax
-        run: bash -n deploy/remote-deploy.sh
+        run: bash -n deploy/remote-deploy.sh && bash -n deploy/render-env.sh
 
       - name: Compose files
         env:
@@ -96,6 +96,37 @@ jobs:
             --exclude .git/ --exclude .github/ --exclude .env --exclude node_modules/ --exclude .next/ \
             --exclude /config/ --exclude /data/ --exclude /vapid/ --exclude /fcm/ --exclude .deployed-sha --exclude .caddyfile-sum \
             ./ "$TARGET:$TR_DIR/"
+
+      # .env is rendered from the secrets and variables of the repository (Settings > Secrets and variables > Actions),
+      # so a value is changed there and applied by the next deploy; the file on the server is never edited by hand
+      - name: Write .env
+        env:
+          TR_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          TR_APP_URL: ${{ vars.APP_URL }}
+          TR_BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          TR_SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          TR_ADMIN_EMAIL: ${{ vars.ADMIN_EMAIL }}
+          TR_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          TR_MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
+          TR_SLOT_COUNT: ${{ vars.SLOT_COUNT }}
+          TR_ACCOUNTS_PER_USER: ${{ vars.ACCOUNTS_PER_USER }}
+          TR_DESKTOP_USER: ${{ vars.DESKTOP_USER }}
+          TR_DESKTOP_PASS: ${{ secrets.DESKTOP_PASS }}
+          TR_DESKTOP_URL: ${{ vars.DESKTOP_URL }}
+          TR_VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
+          TR_TZ: ${{ vars.TZ }}
+          TR_HTTPS_PORT: ${{ vars.HTTPS_PORT }}
+          TR_HTTPS_BIND: ${{ vars.HTTPS_BIND }}
+          TR_NTFY_ENABLED: ${{ vars.NTFY_ENABLED }}
+          TR_NTFY_URL: ${{ vars.NTFY_URL }}
+          TR_NTFY_TOPIC: ${{ vars.NTFY_TOPIC }}
+        run: |
+          deploy/render-env.sh > /tmp/tr.env
+          grep -Eq '^(BETTER_AUTH_SECRET|SESSION_SECRET)=.{32,}' /tmp/tr.env || { echo "no session key of at least 32 characters in the pipeline variables" >&2; exit 1; }
+          # previous .env kept outside TR_DIR (rsync --delete and the code rollback do not touch it)
+          ssh "$TARGET" "umask 077; test ! -f $TR_DIR/.env || cp -p $TR_DIR/.env /var/tmp/teamsrelay-env.prev"
+          ssh "$TARGET" "umask 077; cat > $TR_DIR/.env.new && mv $TR_DIR/.env.new $TR_DIR/.env" < /tmp/tr.env
+          rm -f /tmp/tr.env
 
       - name: Build and restart
         run: ssh "$TARGET" "$TR_DIR/deploy/remote-deploy.sh up ${{ github.sha }}"
