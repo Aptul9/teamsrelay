@@ -108,7 +108,7 @@ services:
 
   caddy:
     # Reverse proxy with automatic HTTPS certificates (Let's Encrypt)
-    image: caddy:2.11.4-alpine
+    image: caddy:2.11.7-alpine
     container_name: teams-caddy
     environment:
       - DOMAIN=${DOMAIN:?set DOMAIN in .env}
