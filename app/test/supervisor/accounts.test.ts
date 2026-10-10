@@ -15,7 +15,6 @@ beforeEach(() => {
     dataDir: "/root/data",
     vapidDir: "/root/vapid",
     fcmDir: "/root/fcm",
-    slotCount: 4,
     uid: 1000,
     gid: 1000,
     chromium: "/usr/bin/chromium",
@@ -179,12 +178,21 @@ describe("Accounts", () => {
     expect(calls).toEqual(["stop agent-1", "stop browser-1", "start browser-1", "start agent-1"]);
   });
 
-  it("refuses accounts outside 1..slotCount", async () => {
+  it("refuses account numbers that are not positive integers", async () => {
     const a = accounts();
-    for (const n of [0, 5, 1.5, Number.NaN]) {
+    for (const n of [0, -1, 1.5, Number.NaN]) {
       await expect(a.start(n)).rejects.toMatchObject({ status: 404 });
     }
     expect(calls).toEqual([]);
+  });
+
+  it("takes any account number from 1, there is no upper bound", async () => {
+    const a = accounts();
+
+    await a.start(5);
+    await a.start(40);
+
+    expect(calls).toEqual(["start browser-5", "start agent-5", "start browser-40", "start agent-40"]);
   });
 
   it("deletes the profile of a stopped account, its directory included", async () => {

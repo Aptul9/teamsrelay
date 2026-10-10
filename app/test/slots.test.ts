@@ -36,7 +36,7 @@ beforeEach(() => {
   calls = [];
 });
 
-const opts = () => ({ db, dataDir, slotCount: 4, perUser: 4 });
+const opts = () => ({ db, dataDir, perUser: 4 });
 
 function oldData(n: number) {
   fs.mkdirSync(path.join(dataDir, String(n)), { recursive: true });

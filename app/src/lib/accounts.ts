@@ -1,5 +1,5 @@
 import { healthOf, STATE } from "@/shared/slot-db/state";
-import { appDb, countPushSubscriptions, listSlots, slotsOf, type Slot } from "./appdb";
+import { appDb, countPushSubscriptions, slotsOf, type Slot } from "./appdb";
 import { config, desktopUrlOf } from "./config";
 import { HttpError } from "./http";
 import { withSlotOr, type Health } from "./slotdb";
@@ -103,12 +103,9 @@ export function accountSummary(s: Slot): AccountSummary {
 }
 
 export function accountsOf(userId: string) {
-  const db = appDb();
-  const taken = listSlots(db).length;
   return {
-    accounts: slotsOf(db, userId).map(accountSummary),
+    accounts: slotsOf(appDb(), userId).map(accountSummary),
     max: config.accountsPerUser,
-    free: Math.max(0, config.slotCount - taken),
   };
 }
 

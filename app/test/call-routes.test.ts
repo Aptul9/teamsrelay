@@ -29,8 +29,8 @@ beforeAll(() => {
   const dataDir = tempDir();
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
-  slot = claimSlot(appDb(), "u1", { slotCount: 4, perUser: 4 });
-  relaySlot = claimSlot(appDb(), "u1", { slotCount: 4, perUser: 4 });
+  slot = claimSlot(appDb(), "u1", { perUser: 4 });
+  relaySlot = claimSlot(appDb(), "u1", { perUser: 4 });
   setRelayToken(appDb(), relaySlot, "0".repeat(64));
   slotDb = createSlotDb(path.join(dataDir, String(slot), "messages.db"));
   relayDb = createSlotDb(path.join(dataDir, String(relaySlot), "messages.db"));

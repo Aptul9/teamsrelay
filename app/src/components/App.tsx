@@ -153,7 +153,7 @@ function SignInButton({
 export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const [acc, setAcc] = useState(0);
   const [accounts, setAccounts] = useState<Account[] | null>(null);
-  const [limits, setLimits] = useState({ max: 4, free: 0 });
+  const [limits, setLimits] = useState<{ max: number | null }>({ max: null });
   const [listTab, setListTab] = useState<ListTab>("chats");
   const [pane, setPane] = useState<"main" | "desktop">("main");
   const [openChat, setOpenChat] = useState<string | null>(null);
@@ -309,10 +309,10 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   );
 
   const applyAccounts = useCallback(
-    (d: { accounts: Account[]; max: number; free: number }) => {
+    (d: { accounts: Account[]; max: number | null }) => {
       accountsRef.current = d.accounts;
       setAccounts(d.accounts);
-      setLimits({ max: d.max, free: d.free });
+      setLimits({ max: d.max });
       // the account menu counts the notifications of every account, not only of the selected one
       setSeenAct(loadSeen(d.accounts));
       if (d.accounts.some((a) => a.slot === accRef.current)) return;
@@ -325,7 +325,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
 
   const loadAccounts = useCallback(async () => {
     try {
-      applyAccounts(await call<{ accounts: Account[]; max: number; free: number }>("/api/accounts", undefined, 0));
+      applyAccounts(await call<{ accounts: Account[]; max: number | null }>("/api/accounts", undefined, 0));
     } catch {
       // the event stream retries
     }
@@ -674,8 +674,9 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   useEffect(() => {
     if (badge !== null) document.title = pageTitle(badge);
   }, [badge]);
-  const canAdd = !!accounts && accounts.length < limits.max && limits.free > 0;
-  const addLabel = canAdd ? "Add a Teams account" : accounts && accounts.length >= limits.max ? `At most ${limits.max} accounts` : "No free slot on this server";
+  const cap = limits.max;
+  const canAdd = !!accounts && (cap === null || accounts.length < cap);
+  const addLabel = accounts && cap !== null && accounts.length >= cap ? `At most ${cap} accounts` : "Add a Teams account";
   const noAccounts = !!accounts && !accounts.length;
   // the account on screen, while it was never signed in to Microsoft: an account still being added
   const beingAdded = current && !current.relay && !signedInOnce(current) ? current : null;

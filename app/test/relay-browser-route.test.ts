@@ -14,8 +14,8 @@ beforeAll(async () => {
   dataDir = tempDir();
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
-  claimSlot(appDb(), "u1", { slotCount: 6, perUser: 6 });
-  relay = await addRelayAccount("u1", { db: appDb(), dataDir, slotCount: 6, perUser: 6 });
+  claimSlot(appDb(), "u1", { perUser: 6 });
+  relay = await addRelayAccount("u1", { db: appDb(), dataDir, perUser: 6 });
 });
 
 const get = (headers: Record<string, string>) => GET(new Request("http://localhost:8090/api/relay/browser", { headers }), undefined);

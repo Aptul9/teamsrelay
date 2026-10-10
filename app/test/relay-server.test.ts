@@ -30,7 +30,7 @@ const ctl: ControlClient = {
   wipe: async (n) => void calls.push(`wipe ${n}`),
   show: async (n) => (calls.push(`show ${n}`), true),
 };
-const opts = () => ({ db: appDb(), dataDir, slotCount: 50, perUser: 6 });
+const opts = () => ({ db: appDb(), dataDir, perUser: 6 });
 const bearer = (token: string, extra: Record<string, string> = {}) => new Request("http://localhost:8090/api/relay/sync", { headers: { Authorization: `Bearer ${token}`, ...extra } });
 // the account a request of its relay comes from, as the routes take it
 const caller = (token: string) => requireRelay(bearer(token));
@@ -79,7 +79,7 @@ describe("an account on another computer", () => {
 
   it("is never started, stopped or checked through the supervisor", async () => {
     const { slot } = await addRelayAccount("u3", opts());
-    const container = claimSlot(appDb(), "u3", { slotCount: 50, perUser: 6 });
+    const container = claimSlot(appDb(), "u3", { perUser: 6 });
     calls.length = 0;
     clearInterval(keepSlotsUp(ctl, appDb(), 3_600_000));
     await new Promise((r) => setTimeout(r, 50));
@@ -96,7 +96,7 @@ describe("an account on another computer", () => {
     expect(fresh).not.toBe(token);
     expect(() => requireRelay(bearer(token))).toThrow(HttpError);
     expect(requireRelay(bearer(fresh)).slot).toBe(slot);
-    const container = claimSlot(appDb(), "u4", { slotCount: 50, perUser: 6 });
+    const container = claimSlot(appDb(), "u4", { perUser: 6 });
     await expect(renewRelayToken(container, appDb())).rejects.toMatchObject({ status: 409 });
   });
 

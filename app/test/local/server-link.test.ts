@@ -127,7 +127,7 @@ const joined: Joined[] = [];
 // One more account on another computer, with a relay.db and a link of its own. `seed` fills relay.db (and the slot
 // database of the server) before the link starts; start() starts it.
 async function join(owner: string, o: Partial<ServerLinkOptions> = {}, seed?: (r: Relay) => void): Promise<Joined> {
-  const { slot: n, token: t } = await addRelayAccount(owner, { db: appDb(), dataDir, slotCount: 16, perUser: 4 });
+  const { slot: n, token: t } = await addRelayAccount(owner, { db: appDb(), dataDir, perUser: 4 });
   const dir = path.join(root, `relay-${owner}`);
   const r: Relay = { slot: n, token: t, added: slotRow(appDb(), n)!.added, dir, store: SlotStore.open(path.join(dir, "relay.db")) };
   seed?.(r);
@@ -166,7 +166,7 @@ beforeAll(async () => {
   relayDir = path.join(root, "relay");
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
-  ({ slot, token } = await addRelayAccount("owner-1", { db: appDb(), dataDir, slotCount: 16, perUser: 4 }));
+  ({ slot, token } = await addRelayAccount("owner-1", { db: appDb(), dataDir, perUser: 4 }));
   server = serve();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   serverUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

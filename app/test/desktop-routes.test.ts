@@ -21,7 +21,7 @@ let showFails: boolean;
 beforeAll(() => {
   process.env.APP_DB = path.join(tempDir(), "app.db");
   migrateAppSchema(appDb());
-  slot = claimSlot(appDb(), "u1", { slotCount: 4, perUser: 4 });
+  slot = claimSlot(appDb(), "u1", { perUser: 4 });
 });
 
 beforeEach(() => {
@@ -131,7 +131,7 @@ describe("POST /api/desktop/N", () => {
     }
     vi.mocked(currentUser).mockResolvedValue(null);
     expect((await bring(slot)).status).toBe(401);
-    const relay = claimSlot(appDb(), "u1", { slotCount: 4, perUser: 4 });
+    const relay = claimSlot(appDb(), "u1", { perUser: 4 });
     setRelayToken(appDb(), relay, "1".repeat(64));
     vi.mocked(currentUser).mockResolvedValue(u1);
     expect((await bring(relay)).status).toBe(409);
@@ -152,12 +152,12 @@ describe("GET /api/authcheck", () => {
 
   it("refuses users whose accounts all run on another computer: the desktop shows none of their windows", async () => {
     const u3 = { id: "u3", email: "u3@contoso.example", name: "U3" };
-    setRelayToken(appDb(), claimSlot(appDb(), "u3", { slotCount: 4, perUser: 4 }), "0".repeat(64));
+    setRelayToken(appDb(), claimSlot(appDb(), "u3", { perUser: 4 }), "0".repeat(64));
     vi.mocked(currentUser).mockResolvedValue(u3);
     expect((await check("/desktop/")).status).toBe(403);
 
     // one account in the browsers container is enough
-    claimSlot(appDb(), "u3", { slotCount: 4, perUser: 4 });
+    claimSlot(appDb(), "u3", { perUser: 4 });
     expect((await check("/desktop/")).status).toBe(200);
   });
 

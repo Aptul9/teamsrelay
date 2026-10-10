@@ -108,7 +108,6 @@ jobs:
           TR_ADMIN_EMAIL: ${{ vars.ADMIN_EMAIL }}
           TR_ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           TR_MCP_TOKEN: ${{ secrets.MCP_TOKEN }}
-          TR_SLOT_COUNT: ${{ vars.SLOT_COUNT }}
           TR_ACCOUNTS_PER_USER: ${{ vars.ACCOUNTS_PER_USER }}
           TR_DESKTOP_USER: ${{ vars.DESKTOP_USER }}
           TR_DESKTOP_PASS: ${{ secrets.DESKTOP_PASS }}

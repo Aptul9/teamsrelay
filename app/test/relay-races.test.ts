@@ -18,7 +18,7 @@ const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 
 let dataDir: string;
 const ctl: ControlClient = { start: async () => undefined, stop: async () => undefined, wipe: async () => undefined, show: async () => true };
-const opts = () => ({ db: appDb(), dataDir, slotCount: 8, perUser: 4 });
+const opts = () => ({ db: appDb(), dataDir, perUser: 4 });
 
 beforeAll(() => {
   dataDir = tempDir();

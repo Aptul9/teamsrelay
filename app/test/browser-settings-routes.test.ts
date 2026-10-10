@@ -22,8 +22,8 @@ beforeAll(async () => {
   const dataDir = tempDir();
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
-  relay = (await addRelayAccount("u1", { db: appDb(), dataDir, slotCount: 6, perUser: 6 })).slot;
-  container = claimSlot(appDb(), "u1", { slotCount: 6, perUser: 6 });
+  relay = (await addRelayAccount("u1", { db: appDb(), dataDir, perUser: 6 })).slot;
+  container = claimSlot(appDb(), "u1", { perUser: 6 });
   // the tables of the OAuth plugin, as far as these routes read them
   appDb().exec(`
     CREATE TABLE oauthClient(id TEXT PRIMARY KEY, clientId TEXT, name TEXT);
