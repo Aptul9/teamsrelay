@@ -17,7 +17,7 @@ export async function selfCheck(a: Agent): Promise<{ ok: boolean; why: string }>
   return { ok: true, why: "" };
 }
 
-// Twice a day, 8-11 and 17-20, with a push of the outcome
+// Twice a day, 8-11 and 17-20, with a push when it finds a problem: one that passed is only logged
 export function selfCheckDue(a: Agent): string | null {
   const key = selfCheckWindow(new Date());
   return key && a.store.getState(key) !== "1" ? key : null;
@@ -28,7 +28,6 @@ export async function scheduledSelfCheck(a: Agent) {
   if (!key) return;
   const { ok, why } = await selfCheck(a);
   a.store.setState(key, "1");
-  // a check that passed can wait for the phone to wake up; a problem cannot
-  await a.notifier.alert(ok ? "Teams OK" : "Teams: problem", ok ? "Automatic check: the whole chain works." : why, ok ? "normal" : "high");
+  if (!ok) await a.notifier.alert("Teams: problem", why, "high");
   log.info("SELFCHECK", ok ? "ok" : "problem", { why: why || undefined });
 }
