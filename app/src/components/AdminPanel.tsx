@@ -3,7 +3,6 @@
 import { EyeIcon, EyeOffIcon, KeyRoundIcon, LogOutIcon, MoreHorizontalIcon, UnplugIcon, UserPlusIcon, UserXIcon, UsersIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { cn } from "cn";
 import { Avatar } from "./Avatar";
 import { PageHeader } from "./PageHeader";
 import {
@@ -39,7 +38,7 @@ import { call, errorText, post } from "@/lib/client";
 import { PASSWORD_MIN } from "@/shared/password";
 
 type UserRow = { id: string; name: string; email: string; role: string; banned: boolean; managed: boolean; slots: number[] };
-type Data = { users: UserRow[]; slotCount: number; free: number };
+type Data = { users: UserRow[]; used: number };
 type Confirm = { title: string; description: string; action: string; destructive?: boolean; run: () => Promise<unknown>; done: string };
 
 function PasswordInput({ id, value, onChange, invalid }: { id: string; value: string; onChange: (v: string) => void; invalid?: boolean }) {
@@ -318,8 +317,6 @@ export function AdminPanel({ selfId }: { selfId: string }) {
       <span className="text-sm text-muted-foreground">None</span>
     );
 
-  const used = data ? data.slotCount - data.free : 0;
-
   return (
     <div className="min-h-dvh bg-background">
       <PageHeader title="Users">
@@ -344,17 +341,9 @@ export function AdminPanel({ selfId }: { selfId: string }) {
               </CardContent>
             </Card>
             <Card className="py-4">
-              <CardContent className="space-y-2">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-sm text-muted-foreground">Teams slots in use</span>
-                  <span className="text-2xl font-semibold tabular-nums">
-                    {used}
-                    <span className="text-base font-normal text-muted-foreground"> / {data.slotCount}</span>
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={used} aria-valuemin={0} aria-valuemax={data.slotCount} aria-label="Teams slots in use">
-                  <div className={cn("h-full rounded-full bg-primary transition-all", data.free === 0 && "bg-warning")} style={{ width: `${data.slotCount ? (used / data.slotCount) * 100 : 0}%` }} />
-                </div>
+              <CardContent className="flex items-baseline justify-between">
+                <span className="text-sm text-muted-foreground">Teams accounts</span>
+                <span className="text-2xl font-semibold tabular-nums">{data.used}</span>
               </CardContent>
             </Card>
           </div>

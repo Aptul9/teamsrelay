@@ -34,7 +34,6 @@ function accounts() {
       dataDir: "/root/data",
       vapidDir: "/root/vapid",
       fcmDir: "/root/fcm",
-      slotCount: 4,
       uid: 1000,
       gid: 1000,
       chromium: "/usr/bin/chromium",
@@ -104,11 +103,20 @@ describe("control server", () => {
     expect(reply.body).toEqual([expect.objectContaining({ account: 3, browser: expect.objectContaining({ running: true }) })]);
   });
 
-  it("answers 404 for an account out of range and for other paths, 405 for other methods", async () => {
+  it("starts an account with any number from 1", async () => {
     await serve();
     desktopUp();
 
-    expect(await request("POST", "/accounts/9/start")).toEqual({ status: 404, body: { detail: "No account 9: accounts are 1 to 4" } });
+    expect((await request("POST", "/accounts/9/start")).status).toBe(204);
+    expect((await request("POST", "/accounts/40/start")).status).toBe(204);
+    expect(calls).toEqual(["start browser-9", "start agent-9", "start browser-40", "start agent-40"]);
+  });
+
+  it("answers 404 for an account number below 1 and for other paths, 405 for other methods", async () => {
+    await serve();
+    desktopUp();
+
+    expect(await request("POST", "/accounts/0/start")).toEqual({ status: 404, body: { detail: "No account 0: accounts are numbered from 1" } });
     expect((await request("POST", "/accounts/x/start")).status).toBe(404);
     expect((await request("POST", "/elsewhere")).status).toBe(404);
     expect((await request("GET", "/accounts/1/start")).status).toBe(405);

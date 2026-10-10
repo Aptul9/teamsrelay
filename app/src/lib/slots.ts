@@ -9,7 +9,7 @@ import { createRelaySlot, forgetRelay, newRelayToken, ON_ANOTHER_COMPUTER, relay
 import { withSlotOr } from "./slotdb";
 
 type SlotPaths = { dataDir: string };
-type SlotOptions = SlotPaths & { db: Database.Database; slotCount: number; perUser: number };
+type SlotOptions = SlotPaths & { db: Database.Database; perUser: number | null };
 
 // Browser and agent of the slot, in the browsers container: the supervisor starts the browser before the agent
 // and stops them the other way round.
@@ -52,7 +52,7 @@ export function exclusive<T>(fn: () => Promise<T>): Promise<T> {
 
 export function addAccount(userId: string, ctl: ControlClient, o: SlotOptions): Promise<number> {
   return exclusive(async () => {
-    const n = claimSlot(o.db, userId, { slotCount: o.slotCount, perUser: o.perUser });
+    const n = claimSlot(o.db, userId, { perUser: o.perUser });
     try {
       await slotDown(ctl, n).catch(() => undefined);
       await wipeSlot(ctl, n, o);
@@ -69,7 +69,7 @@ export function addAccount(userId: string, ctl: ControlClient, o: SlotOptions): 
 // once: only its digest is kept). The supervisor has nothing to start.
 export function addRelayAccount(userId: string, o: SlotOptions): Promise<{ slot: number; token: string }> {
   return exclusive(async () => {
-    const n = claimSlot(o.db, userId, { slotCount: o.slotCount, perUser: o.perUser });
+    const n = claimSlot(o.db, userId, { perUser: o.perUser });
     try {
       // a notifier left from an earlier account of the slot (a push that raced its removal) writes nowhere any more
       forgetRelay(n);
@@ -97,7 +97,7 @@ export function renewRelayToken(n: number, db: Database.Database): Promise<strin
 }
 
 // An account on another computer loses its data here; its relay, refused from now on, keeps its own until stopped
-export function removeAccount(n: number, ctl: ControlClient, o: Omit<SlotOptions, "slotCount" | "perUser">): Promise<void> {
+export function removeAccount(n: number, ctl: ControlClient, o: Omit<SlotOptions, "perUser">): Promise<void> {
   return exclusive(async () => {
     if (slotRow(o.db, n)?.relay) {
       forgetRelay(n);

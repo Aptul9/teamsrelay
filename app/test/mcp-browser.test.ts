@@ -28,9 +28,9 @@ beforeAll(async () => {
   dataDir = tempDir();
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
-  const o = { db: appDb(), dataDir, slotCount: 10, perUser: 10 };
+  const o = { db: appDb(), dataDir, perUser: 10 };
   slots.relay = (await addRelayAccount("u1", o)).slot;
-  slots.container = claimSlot(appDb(), "u1", { slotCount: 10, perUser: 10 });
+  slots.container = claimSlot(appDb(), "u1", { perUser: 10 });
   slots.off = (await addRelayAccount("u1", o)).slot;
   slots.offline = (await addRelayAccount("u1", o)).slot;
   slots.other = (await addRelayAccount("u2", o)).slot;

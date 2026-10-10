@@ -2,9 +2,9 @@ import path from "node:path";
 import { parseEnv, PushEnv, pushSettings } from "@/shared/env";
 import { DEFAULT_DESKTOP_URL } from "./client";
 
-function positiveInt(name: string, fallback: number): number {
+function positiveInt(name: string): number | null {
   const v = Number.parseInt(process.env[name] ?? "", 10);
-  return Number.isFinite(v) && v > 0 ? v : fallback;
+  return Number.isFinite(v) && v > 0 ? v : null;
 }
 
 // Read at call time, so tests and the standalone server see the environment they run with.
@@ -19,11 +19,9 @@ export const config = {
   get controlSocket() {
     return process.env.CONTROL_SOCKET || "/run/teamsrelay/control.sock";
   },
-  get slotCount() {
-    return positiveInt("SLOT_COUNT", 4);
-  },
+  // Accounts one user may add, null for no cap: the memory of the server is the only limit
   get accountsPerUser() {
-    return positiveInt("ACCOUNTS_PER_USER", config.slotCount);
+    return positiveInt("ACCOUNTS_PER_USER");
   },
   // Remote desktop of a slot, {n} is the slot number. The default brings the window of the slot to the front
   // of the one desktop, then opens it.

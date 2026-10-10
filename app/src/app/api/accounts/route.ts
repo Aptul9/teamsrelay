@@ -17,7 +17,7 @@ export const GET = route(async (req) => {
 export const POST = route(async (req) => {
   const user = await requireUser(req);
   const b = (await req.json().catch(() => ({}))) as { relay?: unknown };
-  const o = { db: appDb(), dataDir: config.dataDir, slotCount: config.slotCount, perUser: config.accountsPerUser };
+  const o = { db: appDb(), dataDir: config.dataDir, perUser: config.accountsPerUser };
   if (b?.relay === true) {
     const { slot, token } = await addRelayAccount(user.id, o);
     return Response.json({ ok: true, slot, token, server: config.appUrl });

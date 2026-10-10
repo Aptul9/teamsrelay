@@ -10,7 +10,6 @@ export type AccountsConfig = {
   vapidDir: string;
   // service account key of the Firebase project, for the Android app
   fcmDir: string;
-  slotCount: number;
   // owner of the profiles and of the desktop session (PUID/PGID of the image)
   uid: number;
   gid: number;
@@ -211,7 +210,7 @@ export class Accounts {
   }
 
   private check(n: number) {
-    if (!Number.isInteger(n) || n < 1 || n > this.cfg.slotCount) throw new AccountError(404, `No account ${n}: accounts are 1 to ${this.cfg.slotCount}`);
+    if (!Number.isInteger(n) || n < 1) throw new AccountError(404, `No account ${n}: accounts are numbered from 1`);
   }
 
   private queued<T>(n: number, fn: () => Promise<T>): Promise<T> {

@@ -18,7 +18,7 @@ beforeAll(() => {
   const dataDir = tempDir();
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
-  const limits = { slotCount: 4, perUser: 4 };
+  const limits = { perUser: 4 };
   mine = claimSlot(appDb(), "u1", limits);
   other = claimSlot(appDb(), "u2", limits);
   empty = claimSlot(appDb(), "u1", limits);

@@ -171,16 +171,14 @@ export function slotOwner(db: Database.Database, slot: number): string | null {
   return r?.owner_id ?? null;
 }
 
-export function claimSlot(db: Database.Database, userId: string, limits: { slotCount: number; perUser: number }): number {
+export function claimSlot(db: Database.Database, userId: string, limits: { perUser: number | null }): number {
   return db.transaction(() => {
-    if (slotsOf(db, userId).length >= limits.perUser) throw new HttpError(409, `You can have at most ${limits.perUser} accounts`);
+    if (limits.perUser !== null && slotsOf(db, userId).length >= limits.perUser) throw new HttpError(409, `You can have at most ${limits.perUser} accounts`);
     const taken = new Set(listSlots(db).map((s) => s.slot));
-    for (let n = 1; n <= limits.slotCount; n++) {
-      if (taken.has(n)) continue;
-      db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(?,?,?)").run(n, userId, nowSeconds());
-      return n;
-    }
-    throw new HttpError(409, `No free slot: all ${limits.slotCount} are in use`);
+    let n = 1;
+    while (taken.has(n)) n++;
+    db.prepare("INSERT INTO teams_accounts(slot, owner_id, added) VALUES(?,?,?)").run(n, userId, nowSeconds());
+    return n;
   }).immediate();
 }
 

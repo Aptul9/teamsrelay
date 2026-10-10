@@ -80,7 +80,6 @@ beforeAll(async () => {
     PGID: String(process.getgid?.()),
     CHROMIUM: chromium,
     AGENT_SCRIPT: agent,
-    SLOT_COUNT: "2",
     TZ: "Europe/Rome",
   };
   supervisor = spawn(process.execPath, [bundle], { env: env as NodeJS.ProcessEnv });

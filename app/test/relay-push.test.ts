@@ -92,7 +92,7 @@ async function phone(token: string): Promise<string> {
 
 // A new account of the owner on another computer, and the caller its relay's requests come as
 async function relayAccount() {
-  const { slot, token } = await addRelayAccount(owner, { db: appDb(), dataDir: dir, slotCount: 8, perUser: 8 });
+  const { slot, token } = await addRelayAccount(owner, { db: appDb(), dataDir: dir, perUser: 8 });
   return { slot, caller: requireRelay(new Request("http://localhost:8090/api/relay/push", { headers: { Authorization: `Bearer ${token}` } })) };
 }
 

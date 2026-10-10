@@ -1,6 +1,5 @@
 import { appDb, listSlots } from "@/lib/appdb";
 import { auth } from "@/lib/auth";
-import { config } from "@/lib/config";
 import { isEnvAdmin } from "@/lib/env-admin";
 import { body, HttpError, route, text } from "@/lib/http";
 import { requireAdmin } from "@/lib/session";
@@ -23,8 +22,7 @@ export const GET = route(async (req) => {
       createdAt: u.createdAt,
       slots: slots.filter((s) => s.owner_id === u.id).map((s) => s.slot),
     })),
-    slotCount: config.slotCount,
-    free: Math.max(0, config.slotCount - slots.length),
+    used: slots.length,
   });
 });
 

@@ -17,8 +17,8 @@ beforeAll(() => {
   // better-auth's user table, as far as /mcp reads it
   appDb().exec('CREATE TABLE IF NOT EXISTS "user"(id TEXT PRIMARY KEY, email TEXT NOT NULL)');
   appDb().prepare('INSERT INTO "user"(id, email) VALUES(?, ?)').run("admin-id", "admin@teamsrelay.test");
-  slot = claimSlot(appDb(), "admin-id", { slotCount: 4, perUser: 4 });
-  claimSlot(appDb(), "someone-else", { slotCount: 4, perUser: 4 });
+  slot = claimSlot(appDb(), "admin-id", { perUser: 4 });
+  claimSlot(appDb(), "someone-else", { perUser: 4 });
   const db = createSlotDb(path.join(dataDir, String(slot), "messages.db"));
   db.prepare("INSERT INTO chats(name, preview, pos, tm, unread, mention, muted) VALUES('BIANCHI Luca', 'Hi', 0, '14:07', 1, 0, 0)").run();
   db.prepare("INSERT INTO chat_messages(chat, idx, mid, author, text, mine, reacts, extra) VALUES('BIANCHI Luca', 0, '1790431664072', 'BIANCHI Luca', 'Hi', 0, '', '')").run();

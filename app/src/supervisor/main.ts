@@ -47,7 +47,7 @@ function status(socket: string): Promise<number> {
 
 async function main() {
   const cfg = loadConfig();
-  if (process.argv.includes("--check")) return say(`check ok accounts=${cfg.accounts.slotCount}`);
+  if (process.argv.includes("--check")) return say("check ok");
   if (process.argv[2] === "status") process.exit(await status(cfg.socket));
   const accounts = new Accounts(cfg.accounts, { log: (line) => console.log(line) });
   const { XDG_RUNTIME_DIR, WAYLAND_DISPLAY } = cfg.accounts.session;
@@ -60,7 +60,7 @@ async function main() {
   }
   fs.mkdirSync(path.dirname(cfg.socket), { recursive: true });
   await listen(server, cfg.socket);
-  say(`listening socket=${cfg.socket} accounts=1-${cfg.accounts.slotCount}`);
+  say(`listening socket=${cfg.socket}`);
 }
 
 main().catch((e: unknown) => {

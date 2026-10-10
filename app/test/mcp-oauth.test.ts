@@ -201,7 +201,7 @@ describe("authorization", () => {
   });
 
   it("gives the token the browser tools of a relay of the user that is connected, and calls it", async () => {
-    const { slot } = await addRelayAccount(userId, { db: appDb(), dataDir: path.dirname(process.env.APP_DB!), slotCount: 6, perUser: 6 });
+    const { slot } = await addRelayAccount(userId, { db: appDb(), dataDir: path.dirname(process.env.APP_DB!), perUser: 6 });
     const calls: unknown[] = [];
     const hub: BrowserHub = {
       tools: (n) => (n === slot ? [{ name: "browser_snapshot", description: "Snapshot", inputSchema: { type: "object", properties: {} } }] : null),

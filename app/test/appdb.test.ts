@@ -51,7 +51,7 @@ describe("schema", () => {
 
 describe("checked accounts", () => {
   it("get their first check one interval after being switched to checks, none once back to always on", () => {
-    const n = claimSlot(db, "u1", { slotCount: 4, perUser: 4 });
+    const n = claimSlot(db, "u1", { perUser: 4 });
     setCheckEvery(db, n, 7200, 1000);
     expect(slotRow(db, n)).toMatchObject({ check_every: 7200, check_due: 8200 });
     setCheckEvery(db, n, 0, 2000);
@@ -60,7 +60,7 @@ describe("checked accounts", () => {
   });
 
   it("record a check as it starts and as it ends: time, outcome and the next one; an interrupted check records nothing", () => {
-    const n = claimSlot(db, "u1", { slotCount: 4, perUser: 4 });
+    const n = claimSlot(db, "u1", { perUser: 4 });
     setCheckEvery(db, n, 3600, 1000);
     beginCheck(db, n, 5000);
     expect(slotRow(db, n)).toMatchObject({ checking: 5000 });
@@ -72,7 +72,7 @@ describe("checked accounts", () => {
   });
 
   it("are due in the order of their due time, one asked by its owner first; never stopped or always-on ones", () => {
-    for (let i = 0; i < 4; i++) claimSlot(db, "u1", { slotCount: 4, perUser: 4 });
+    for (let i = 0; i < 4; i++) claimSlot(db, "u1", { perUser: 4 });
     setCheckEvery(db, 1, 3600, 0);
     setCheckEvery(db, 2, 3600, -10);
     setCheckEvery(db, 3, 3600, -20);
@@ -86,7 +86,7 @@ describe("checked accounts", () => {
 
 describe("stopped accounts", () => {
   it("keep their owner; a start records its time", () => {
-    const n = claimSlot(db, "u1", { slotCount: 4, perUser: 4 });
+    const n = claimSlot(db, "u1", { perUser: 4 });
     setSlotStopped(db, n, true);
     expect(isSlotStopped(db, n)).toBe(true);
     expect(slotOwner(db, n)).toBe("u1");
@@ -128,23 +128,29 @@ describe("legacy data", () => {
 
 describe("slots", () => {
   it("claims the lowest free slot", () => {
-    expect(claimSlot(db, "u1", { slotCount: 4, perUser: 4 })).toBe(1);
-    expect(claimSlot(db, "u2", { slotCount: 4, perUser: 4 })).toBe(2);
+    expect(claimSlot(db, "u1", { perUser: 4 })).toBe(1);
+    expect(claimSlot(db, "u2", { perUser: 4 })).toBe(2);
     releaseSlot(db, 1);
-    expect(claimSlot(db, "u2", { slotCount: 4, perUser: 4 })).toBe(1);
+    expect(claimSlot(db, "u2", { perUser: 4 })).toBe(1);
     expect(slotsOf(db, "u2").map((s) => s.slot)).toEqual([1, 2]);
     expect(slotOwner(db, 1)).toBe("u2");
   });
 
-  it("refuses when every slot is taken", () => {
-    claimSlot(db, "u1", { slotCount: 2, perUser: 4 });
-    claimSlot(db, "u2", { slotCount: 2, perUser: 4 });
-    expect(() => claimSlot(db, "u3", { slotCount: 2, perUser: 4 })).toThrow(/No free slot/);
+  it("has no limit on the number of slots", () => {
+    for (let n = 1; n <= 12; n++) expect(claimSlot(db, `u${n}`, { perUser: 4 })).toBe(n);
+    releaseSlot(db, 5);
+    expect(claimSlot(db, "u13", { perUser: 4 })).toBe(5);
+    expect(claimSlot(db, "u14", { perUser: 4 })).toBe(13);
+  });
+
+  it("gives one user as many slots as they ask when there is no per-user cap", () => {
+    for (let n = 1; n <= 9; n++) expect(claimSlot(db, "u1", { perUser: null })).toBe(n);
+    expect(slotsOf(db, "u1")).toHaveLength(9);
   });
 
   it("refuses beyond the per-user cap", () => {
-    claimSlot(db, "u1", { slotCount: 4, perUser: 1 });
-    expect(() => claimSlot(db, "u1", { slotCount: 4, perUser: 1 })).toThrow(/at most 1/);
+    claimSlot(db, "u1", { perUser: 1 });
+    expect(() => claimSlot(db, "u1", { perUser: 1 })).toThrow(/at most 1/);
   });
 });
 

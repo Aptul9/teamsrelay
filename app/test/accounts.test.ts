@@ -18,7 +18,7 @@ const summary = (user: string, n: number) => accountSummary(slotsOf(appDb(), use
 
 describe("a stopped account", () => {
   it("shows grey whatever its agent wrote last, and takes no commands", () => {
-    const n = claimSlot(appDb(), "u1", { slotCount: 4, perUser: 4 });
+    const n = claimSlot(appDb(), "u1", { perUser: 4 });
     const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
     slotDb.prepare("INSERT INTO state(k, v) VALUES('health', ?)").run(JSON.stringify({ ts: Date.now() / 1000, teams: "ok", overall: "green" }));
     expect(summary("u1", n)).toMatchObject({ teams: "ok", overall: "green", stopped: false });
@@ -32,7 +32,7 @@ describe("a stopped account", () => {
   });
 
   it("counts as starting again from its start, not from the day it was added", () => {
-    const n = claimSlot(appDb(), "u2", { slotCount: 4, perUser: 4 });
+    const n = claimSlot(appDb(), "u2", { perUser: 4 });
     appDb().prepare("UPDATE teams_accounts SET added=? WHERE slot=?").run(Math.floor(Date.now() / 1000) - 86400, n);
     expect(summary("u2", n)).toMatchObject({ teams: "unknown", overall: "red" });
 
@@ -45,7 +45,7 @@ describe("a stopped account", () => {
 
 describe("the unread counts of an account", () => {
   it("carry the unread chats and, once the agent read the feed, the ids of the unread notifications", () => {
-    const n = claimSlot(appDb(), "u3", { slotCount: 4, perUser: 4 });
+    const n = claimSlot(appDb(), "u3", { perUser: 4 });
     expect(summary("u3", n)).toMatchObject({ unread: 0, unreadActivity: null });
 
     const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
@@ -62,25 +62,25 @@ describe("the unread counts of an account", () => {
   });
 
   it("carry when the account took its slot, which changes when another account takes the slot", () => {
-    const n = claimSlot(appDb(), "u4", { slotCount: 4, perUser: 4 });
+    const n = claimSlot(appDb(), "u4", { perUser: 4 });
     appDb().prepare("UPDATE teams_accounts SET added=? WHERE slot=?").run(1790000000, n);
     expect(summary("u4", n).added).toBe(1790000000);
     releaseSlot(appDb(), n);
-    expect(claimSlot(appDb(), "u4", { slotCount: 4, perUser: 4 })).toBe(n);
+    expect(claimSlot(appDb(), "u4", { perUser: 4 })).toBe(n);
     expect(summary("u4", n).added).toBeGreaterThan(1790000000);
   });
 });
 
 describe("the sound of a call of an account on another computer", () => {
   it("comes to the app only when its relay says it sends it: a relay of before says nothing", () => {
-    const n = claimSlot(appDb(), "u9", { slotCount: 16, perUser: 4 });
+    const n = claimSlot(appDb(), "u9", { perUser: 4 });
     setRelayToken(appDb(), n, "1".repeat(64));
     const db = createSlotDb(path.join(dataDir, String(n), "messages.db"));
     expect(summary("u9", n)).toMatchObject({ relay: true, callAudio: false });
     db.prepare("INSERT INTO state(k, v) VALUES(?, '1')").run(STATE.callAudio);
     expect(summary("u9", n)).toMatchObject({ relay: true, callAudio: true });
     // an account of the browsers container has its sound through its remote desktop, whatever its database says
-    const m = claimSlot(appDb(), "u9", { slotCount: 16, perUser: 4 });
+    const m = claimSlot(appDb(), "u9", { perUser: 4 });
     createSlotDb(path.join(dataDir, String(m), "messages.db")).prepare("INSERT INTO state(k, v) VALUES(?, '1')").run(STATE.callAudio);
     expect(summary("u9", m)).toMatchObject({ relay: false, callAudio: false });
   });
@@ -88,7 +88,7 @@ describe("the sound of a call of an account on another computer", () => {
 
 describe("an account checked every N hours", () => {
   it("between two checks: grey, its last and next check, the counts of that check, and no commands", () => {
-    const n = claimSlot(appDb(), "u5", { slotCount: 8, perUser: 4 });
+    const n = claimSlot(appDb(), "u5", { perUser: 4 });
     const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
     slotDb.prepare("INSERT INTO state(k, v) VALUES('health', ?)").run(JSON.stringify({ ts: Date.now() / 1000 - 3600, teams: "ok", overall: "green" }));
     slotDb.prepare("INSERT INTO chats(name,preview,pos,ts,tm,unread,mention,muted,av) VALUES('Anna Rossi','hi',0,0,'',1,0,0,'')").run();
@@ -101,7 +101,7 @@ describe("an account checked every N hours", () => {
   });
 
   it("during a check: the health its agent writes, starting from the start of the check; still no commands", () => {
-    const n = claimSlot(appDb(), "u6", { slotCount: 8, perUser: 4 });
+    const n = claimSlot(appDb(), "u6", { perUser: 4 });
     const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
     slotDb.prepare("INSERT INTO state(k, v) VALUES('health', ?)").run(JSON.stringify({ ts: Date.now() / 1000 - 3600, teams: "ok", overall: "green" }));
     appDb().prepare("UPDATE teams_accounts SET added=? WHERE slot=?").run(1790000000, n);
@@ -117,7 +117,7 @@ describe("an account checked every N hours", () => {
 
 describe("the owner's own presence", () => {
   it("surfaces the presence word the agent stored, empty when there is none", () => {
-    const n = claimSlot(appDb(), "pres", { slotCount: 24, perUser: 4 });
+    const n = claimSlot(appDb(), "pres", { perUser: 4 });
     const slotDb = createSlotDb(path.join(dataDir, String(n), "messages.db"));
     expect(summary("pres", n).presence).toBe("");
     slotDb.prepare("INSERT INTO state(k, v) VALUES('presence', ?)").run(JSON.stringify("available"));
