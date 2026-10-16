@@ -245,6 +245,12 @@ describe("statusText", () => {
     expect(statusText(account({ checkEvery: 3600, nextCheck: 0 }), now)).toBe("Updating soon");
     expect(statusText(account({ checkEvery: 3600, nextCheck: now - 30 }), now)).toBe("Updating soon");
   });
+
+  it("says signed out, never active, for an account running on the Microsoft sign-in page, here or on a relay", () => {
+    expect(statusText(account({ checkEvery: 0, teams: "login" }), now)).toBe("Signed out");
+    expect(statusText(account({ relay: true, teams: "login" }), now)).toBe("Signed out");
+    expect(statusText(account({ stopped: true, teams: "login" }), now)).toBe("Stopped");
+  });
 });
 
 describe("untilText", () => {

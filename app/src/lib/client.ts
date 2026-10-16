@@ -327,9 +327,13 @@ export function untilText(seconds: number): string {
   return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
 }
 
-// The status of an account on its row of the account menu: stopped, active (always on), or when the next check
-// updates it. A check asked from the app has no time yet; a due one waits for the check of another account.
+// A running account whose Teams sits on the Microsoft sign-in page: it reads nothing until the owner signs in again
+export const signedOut = (a: Partial<Pick<Account, "stopped" | "teams">>) => !a.stopped && a.teams === "login";
+
+// The status of an account on its row of the account menu: stopped, signed out, active (always on), or when the next
+// check updates it. A check asked from the app has no time yet; a due one waits for the check of another account.
 export function statusText(a: Pick<Account, "stopped" | "checkEvery" | "checking" | "nextCheck"> & Partial<Pick<Account, "relay" | "teams">>, now = Date.now() / 1000): string {
+  if (signedOut(a)) return "Signed out";
   if (a.relay) return relayOffline(a) ? "Not connected" : "Active";
   if (a.stopped) return "Stopped";
   if (!a.checkEvery) return "Active";

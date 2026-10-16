@@ -17,7 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { accName, capped, checkLine, idleChecked, lastCheck, relayOffline, statusText, type Account, type Unread } from "@/lib/client";
+import { accName, capped, checkLine, idleChecked, lastCheck, relayOffline, signedOut, statusText, type Account, type Unread } from "@/lib/client";
 
 
 // chats and notifications share the purple count; missed calls have a red one of their own
@@ -103,7 +103,11 @@ function AccountStatus({ a }: { a: Account }) {
   return (
     <span className="flex shrink-0 flex-col items-end text-right text-xs leading-tight text-muted-foreground">
       <span className="flex items-center gap-1.5">
-        {checked ? <ClockIcon className="size-3" /> : <span className={cn("size-2 rounded-full", a.stopped || relayOffline(a) ? "bg-muted-foreground/40" : "bg-success")} />}
+        {checked && !signedOut(a) ? (
+          <ClockIcon className="size-3" />
+        ) : (
+          <span className={cn("size-2 rounded-full", signedOut(a) ? "bg-destructive" : a.stopped || relayOffline(a) ? "bg-muted-foreground/40" : "bg-success")} />
+        )}
         {head}
       </span>
       {rest && <span className="whitespace-nowrap">{rest}</span>}
