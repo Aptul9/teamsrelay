@@ -1,7 +1,7 @@
 // Chat list page scripts against a static copy of the Teams chat list.
 import { describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
-import { clickChatRow, openChatTitle, readChatList, scrollList } from "@/agent/teams/scripts/chat-list";
+import { clickChatRow, openChatHeader, openChatTitle, readChatList, scrollList } from "@/agent/teams/scripts/chat-list";
 import { picture, withChrome } from "./chrome";
 
 const row = (id: string, text: string, extra = "") => `<div role="treeitem" aria-level="2" id="${id}" ${extra}>${text}</div>`;
@@ -114,5 +114,23 @@ describe("chat list page scripts", () => {
         <span data-tid="participant-8:orgid:00000000-0000-0000-0000-000000000001"><div data-tid="persona-presence-paceholder"></div><span>Anna Rossi</span></span>
       </li></ul><div><span> +2</span></div></div></h2>`);
     expect(await chrome.page.evaluate(openChatTitle, SEL)).toBe("Anna Rossi, +2");
+  });
+
+  // header of a group chat without a name with names written "Surname, Name" (Tesco tenant, October 2026): as many
+  // people as fit, one per list item, "+N" for the others, and the participant count in the header
+  it("reads every person of a group chat header and its participant count", async () => {
+    const person = (n: number, name: string) =>
+      `<li role="listitem" data-tid="chat-topic-menu-list-item"><span data-tid="participant-8:orgid:${n}"><span id="chat-topic-person-8:orgid:${n}">${name}</span></span><div data-tid="presence"></div></li>`;
+    await chrome.page.setContent(`
+      <h2 data-tid="chat-title"><div><ul role="list" data-tid="chat-topic-menu">
+        ${person(1, "Mohamed, Faraz")}${person(2, "P, Pravin")}${person(3, "Renton, John")}
+      </ul><span>+3</span></div></h2>
+      <button data-tid="chat-header-participant-count" aria-label="View and add participants, 6 participants">6</button>`);
+    expect(await chrome.page.evaluate(openChatHeader, { s: SEL, t: TEXTS })).toEqual({
+      title: "Mohamed, Faraz",
+      people: ["Mohamed, Faraz", "P, Pravin", "Renton, John"],
+      more: 3,
+      count: 6,
+    });
   });
 });
