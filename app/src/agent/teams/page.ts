@@ -1,9 +1,9 @@
 import type { Page } from "playwright-core";
 import type { OpenProblem } from "@/shared/slot-db/commands";
-import { sameChat } from "../logic/chats";
+import { isOpenChat } from "../logic/chats";
 import { errorText, log, type Fields } from "../log";
 import type { SlotStore } from "../store/slot-store";
-import { openChatTitle, clickChatRow, scrollList } from "./scripts/chat-list";
+import { openChatHeader, clickChatRow, scrollList } from "./scripts/chat-list";
 import { composerLeft } from "./scripts/compose";
 import { barButtonPoint, centerElement, openOverlayNames } from "./scripts/message-actions";
 import { uncoveredPoint } from "./scripts/page-state";
@@ -59,16 +59,9 @@ export class TeamsPage {
     private readonly store: SlotStore,
   ) {}
 
-  openTitle(): Promise<string> {
-    return this.page.evaluate(openChatTitle, SEL);
-  }
-
-  sameChat(title: string, name: string): boolean {
-    return sameChat(title, name, (n) => this.store.isKnownChat(n));
-  }
-
   async isOpen(name: string): Promise<boolean> {
-    return this.sameChat(await this.openTitle(), name);
+    const header = await this.page.evaluate(openChatHeader, { s: SEL, t: TEXTS });
+    return isOpenChat(header, name, (n) => this.store.isKnownChat(n));
   }
 
   async openChat(name: string): Promise<boolean> {

@@ -1,5 +1,6 @@
 // Page scripts of the chat list. They run inside the Teams page (page.evaluate): self-contained, type
 // imports only, selectors and texts come in as argument.
+import type { OpenHeader } from "../../logic/chats";
 import type { Selectors, Texts } from "../selectors";
 
 // presence: the label of the badge on the picture of the person ("Away"), "" on a group chat; kind: one (1:1), group,
@@ -89,6 +90,21 @@ export function openChatTitle(s: Selectors): string {
   if (!title) return "";
   const [first = "", next = ""] = (title.innerText || "").split("\n").map((line) => line.trim());
   return /^\+\d+$/.test(next) ? `${first}, ${next}` : first;
+}
+
+// The header of the open chat, to tell which chat it is: its title as above, and for a group chat without a name every
+// person it names, the "+N" of the others and the participant count of the header (null where it shows none). With
+// names written "Surname, Name" the first person alone is the name of a 1:1 chat as well.
+export function openChatHeader({ s, t }: ListArgs): OpenHeader {
+  const title = document.querySelector<HTMLElement>(s.chatTitle);
+  if (!title) return { title: "", people: [], more: 0, count: null };
+  const lines = (title.innerText || "").split("\n").map((line) => line.trim());
+  const plus = lines.find((line) => /^\+\d+$/.test(line)) ?? "";
+  const [first = "", next = ""] = lines;
+  const people = [...title.querySelectorAll<HTMLElement>(s.topicParticipant)].map((p) => (p.innerText || "").trim()).filter(Boolean);
+  const counter = document.querySelector<HTMLElement>(s.participantCount);
+  const n = counter && `${counter.getAttribute("aria-label") || ""} ${counter.innerText || ""}`.match(t.participantCount);
+  return { title: /^\+\d+$/.test(next) ? `${first}, ${next}` : first, people, more: plus ? Number(plus.slice(1)) : 0, count: n ? Number(n[1]) : null };
 }
 
 // Scrolls a virtualized list (the chats, the Activity feed), found by one of its `item`s, to the top or down by most of
