@@ -61,7 +61,11 @@ export class TeamsPage {
 
   async isOpen(name: string): Promise<boolean> {
     const header = await this.page.evaluate(openChatHeader, { s: SEL, t: TEXTS });
-    return isOpenChat(header, name, (n) => this.store.isKnownChat(n));
+    return isOpenChat(
+      header,
+      name,
+      this.store.chats().map((c) => c.name),
+    );
   }
 
   async openChat(name: string): Promise<boolean> {
