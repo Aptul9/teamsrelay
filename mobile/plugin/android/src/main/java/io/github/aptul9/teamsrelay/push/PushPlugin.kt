@@ -72,6 +72,9 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
     override fun load(webView: WebView) {
         this.webView = webView
         Core.load(activity)
+        // The web app reads the open chat only while its window has the focus (app/src/lib/in-use.ts), as a page in
+        // Chrome has it once shown; a WebView has none until it is touched
+        webView.requestFocus()
         Notices.channels(activity)
         Shortcuts.publish(activity)
         // Tauri registers the plugin once the activity has resumed, and calls no onResume for it then
