@@ -54,24 +54,30 @@ impl Store {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    // Changes the state and writes it when it changed: the new file whole, then renamed over the old one
-    pub fn update<T>(&self, f: impl FnOnce(&mut State) -> T) -> Result<T, String> {
+    // Changes the state and writes it when it changed: the new file whole, then renamed over the old one. A file that
+    // cannot be written (a full disk) keeps the change for as long as the app runs: the result comes back with the error,
+    // so that a ringing call still shows.
+    pub fn update<T>(&self, f: impl FnOnce(&mut State) -> T) -> (T, Result<(), String>) {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let before = state.clone();
         let out = f(&mut state);
-        if *state != before {
-            let tmp = self.file.with_extension("json.tmp");
-            let json = serde_json::to_vec(&*state).map_err(|e| e.to_string())?;
-            fs::write(&tmp, json)
-                .and_then(|_| fs::rename(&tmp, &self.file))
-                .map_err(|e| format!("{}: {e}", self.file.display()))?;
+        if *state == before {
+            return (out, Ok(()));
         }
-        Ok(out)
+        let tmp = self.file.with_extension("json.tmp");
+        let saved = serde_json::to_vec(&*state)
+            .map_err(|e| e.to_string())
+            .and_then(|json| {
+                fs::write(&tmp, json)
+                    .and_then(|_| fs::rename(&tmp, &self.file))
+                    .map_err(|e| format!("{}: {e}", self.file.display()))
+            });
+        (out, saved)
     }
 
     // Another server: the token and the key of the previous one go. Returns the previous server and the token it knows
     // the phone by, for it to forget the phone (server::forget).
-    pub fn use_relay(&self, origin: &str) -> Result<Option<(String, String)>, String> {
+    pub fn use_relay(&self, origin: &str) -> (Option<(String, String)>, Result<(), String>) {
         self.update(|s| {
             if s.relay == origin {
                 return None;
@@ -98,11 +104,17 @@ pub(crate) mod tests {
         d
     }
 
+    // the result of a change that reached the disk
+    pub fn saved<T>((out, saved): (T, Result<(), String>)) -> T {
+        saved.unwrap();
+        out
+    }
+
     #[test]
     fn keeps_the_state_across_starts() {
         let d = dir("keeps");
         let s = Store::open(&d);
-        s.update(|st| {
+        saved(s.update(|st| {
             st.relay = "https://relay.example.com".into();
             st.calls.insert(
                 2,
@@ -111,8 +123,7 @@ pub(crate) mod tests {
                     ended: true,
                 },
             );
-        })
-        .unwrap();
+        }));
         let again = Store::open(&d).get();
         assert_eq!(again.relay, "https://relay.example.com");
         assert_eq!(
@@ -132,18 +143,30 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_file_that_cannot_be_written_keeps_the_change_while_the_app_runs() {
+        // a folder that does not exist: nothing can be written there
+        let s = Store::open(&dir("unwritable").join("missing"));
+        let (out, saved) = s.update(|st| {
+            st.key = "KEY".into();
+            7
+        });
+        assert_eq!(out, 7);
+        assert!(saved.unwrap_err().contains("push.json"));
+        assert_eq!(s.get().key, "KEY");
+    }
+
+    #[test]
     fn another_server_drops_token_and_key_and_names_the_previous_one() {
         let s = Store::open(&dir("another"));
-        assert_eq!(s.use_relay("https://a.example.com").unwrap(), None);
-        s.update(|st| {
+        assert_eq!(saved(s.use_relay("https://a.example.com")), None);
+        saved(s.update(|st| {
             st.token = "tok".into();
             st.key = "key".into();
-        })
-        .unwrap();
-        assert_eq!(s.use_relay("https://a.example.com").unwrap(), None);
+        }));
+        assert_eq!(saved(s.use_relay("https://a.example.com")), None);
         assert_eq!(s.get().key, "key");
         assert_eq!(
-            s.use_relay("https://b.example.com").unwrap(),
+            saved(s.use_relay("https://b.example.com")),
             Some(("https://a.example.com".into(), "tok".into()))
         );
         let st = s.get();

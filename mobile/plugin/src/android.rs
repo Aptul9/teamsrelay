@@ -82,16 +82,16 @@ pub extern "system" fn Java_io_github_aptul9_teamsrelay_push_Core_useRelay(
 ) {
     let origin = text(&mut env, &origin);
     let Some(store) = store() else { return };
-    match store.use_relay(&origin) {
-        Ok(Some((previous, token))) => {
-            thread::spawn(move || {
-                if let Err(e) = server::forget(store, &previous, &token) {
-                    log(WARN, &format!("previous server: {e}"));
-                }
-            });
-        }
-        Ok(None) => {}
-        Err(e) => log(WARN, &e),
+    let (previous, saved) = store.use_relay(&origin);
+    if let Err(e) = saved {
+        log(WARN, &e);
+    }
+    if let Some((previous, token)) = previous {
+        thread::spawn(move || {
+            if let Err(e) = server::forget(store, &previous, &token) {
+                log(WARN, &format!("previous server: {e}"));
+            }
+        });
     }
 }
 
@@ -139,7 +139,14 @@ pub extern "system" fn Java_io_github_aptul9_teamsrelay_push_Core_notice(
 ) -> jstring {
     let (data, shown) = (text(&mut env, &data), text(&mut env, &shown));
     let plan = match store() {
-        Some(store) => notice::plan(store, &data, &shown),
+        Some(store) => {
+            // a state that did not reach the disk still shows the notification
+            let (plan, saved) = notice::plan(store, &data, &shown);
+            if let Err(e) = saved {
+                log(WARN, &e);
+            }
+            plan
+        }
         None => notice::Plan::None {
             why: "no store".into(),
         },

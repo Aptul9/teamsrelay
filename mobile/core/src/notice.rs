@@ -60,8 +60,9 @@ pub struct Shown {
 
 // data: the data of the push message as the platform received it (v, iv, ct); shown: the notifications of the app on
 // screen. Nothing of the chats is kept on the phone: the text of the newest message of a chat is the one on screen.
-pub fn plan(store: &Store, data: &str, shown: &str) -> Plan {
-    let none = |why: String| Plan::None { why };
+// Also whether the state reached the disk: the plan stands either way.
+pub fn plan(store: &Store, data: &str, shown: &str) -> (Plan, Result<(), String>) {
+    let none = |why: String| (Plan::None { why }, Ok(()));
     let data: Value = serde_json::from_str(data).unwrap_or_default();
     if data["v"] != "1" {
         return none("not a message of the server".into());
@@ -80,10 +81,7 @@ pub fn plan(store: &Store, data: &str, shown: &str) -> Plan {
     };
     let message: Value = serde_json::from_str(&text).unwrap_or_default();
     let shown: Vec<Shown> = serde_json::from_str(shown).unwrap_or_default();
-    match store.update(|s| decide(s, &message, &shown)) {
-        Ok(p) => p,
-        Err(e) => none(format!("state not saved: {e}")),
-    }
+    store.update(|s| decide(s, &message, &shown))
 }
 
 pub fn decide(state: &mut State, m: &Value, shown: &[Shown]) -> Plan {
@@ -165,9 +163,11 @@ pub fn decide(state: &mut State, m: &Value, shown: &[Shown]) -> Plan {
 // Answer taken in the app: pushes of the ring still on their way change nothing, the end of the call from the server
 // replaces the notification
 pub fn stop_ring(store: &Store, acc: i64, since: i64) -> Result<(), String> {
-    store.update(|s| {
-        s.calls.insert(acc, Call { since, ended: true });
-    })
+    store
+        .update(|s| {
+            s.calls.insert(acc, Call { since, ended: true });
+        })
+        .1
 }
 
 #[cfg(test)]
@@ -175,7 +175,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::store::tests::dir;
+    use crate::store::tests::{dir, saved};
 
     fn ringing(acc: i64, ts: i64) -> Value {
         json!({ "title": "Anna Rossi is calling", "body": "Teams call, ringing now", "acc": acc, "call": "ringing", "ts": ts, "answer": true })
@@ -330,37 +330,47 @@ mod tests {
     #[test]
     fn plan_opens_the_message_with_the_key_of_the_phone() {
         let store = Store::open(&dir("plan"));
-        // the message of seal.rs's test, sealed by the server code with key 1..32
-        let data = r#"{"v":"1","iv":"AAECAwQFBgcICQoL","ct":"ChJ1_ryxBCk1CfMvCvnX30bkzvxe9glcrikR0TW7VRmqitCPI_zbGxUHakzfRJUtAnCMgrK4PNikS7Wj4jEk55oPuWczek-E87mkFjhV-65Y6ag9GP2jMw4Zh3UA2L2qsu5CxFIj3la3iKMeKmEgzoCxJnbwC3602078X6uh"}"#;
+        let data = DATA;
         assert!(
-            matches!(plan(&store, data, "[]"), Plan::None { ref why } if why.starts_with("no key"))
+            matches!(saved(plan(&store, data, "[]")), Plan::None { ref why } if why.starts_with("no key"))
         );
-        store
-            .update(|s| s.key = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA".into())
-            .unwrap();
-        assert_eq!(
-            plan(&store, data, "[]"),
-            Plan::Ring {
-                acc: 2,
-                title: "Anna Rossi is calling".into(),
-                body: "Teams call, ringing now".into(),
-                since: 1790000000000,
-                answer: false
-            }
-        );
+        saved(store.update(|s| s.key = KEY.into()));
+        assert_eq!(saved(plan(&store, data, "[]")), ringing_anna());
         // the call is kept: the same push again rings no more once the answer stopped it
         stop_ring(&store, 2, 1790000000000).unwrap();
-        assert!(matches!(plan(&store, data, "[]"), Plan::None { .. }));
+        assert!(matches!(saved(plan(&store, data, "[]")), Plan::None { .. }));
         assert!(matches!(
-            plan(&store, r#"{"v":"2"}"#, "[]"),
+            saved(plan(&store, r#"{"v":"2"}"#, "[]")),
             Plan::None { .. }
         ));
-        store
-            .update(|s| s.key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into())
-            .unwrap();
+        saved(store.update(|s| s.key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".into()));
         assert!(
-            matches!(plan(&store, data, "[]"), Plan::None { ref why } if why.contains("another key"))
+            matches!(saved(plan(&store, data, "[]")), Plan::None { ref why } if why.contains("another key"))
         );
+    }
+
+    #[test]
+    fn a_call_rings_when_the_state_cannot_be_written() {
+        // a folder that does not exist: a full disk fails the same way
+        let store = Store::open(&dir("plan-unwritable").join("missing"));
+        let _ = store.update(|s| s.key = KEY.into());
+        let (p, saved) = plan(&store, DATA, "[]");
+        assert_eq!(p, ringing_anna());
+        assert!(saved.is_err());
+    }
+
+    // the message of seal.rs's test, sealed by the server code with key 1..32
+    const KEY: &str = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA";
+    const DATA: &str = r#"{"v":"1","iv":"AAECAwQFBgcICQoL","ct":"ChJ1_ryxBCk1CfMvCvnX30bkzvxe9glcrikR0TW7VRmqitCPI_zbGxUHakzfRJUtAnCMgrK4PNikS7Wj4jEk55oPuWczek-E87mkFjhV-65Y6ag9GP2jMw4Zh3UA2L2qsu5CxFIj3la3iKMeKmEgzoCxJnbwC3602078X6uh"}"#;
+
+    fn ringing_anna() -> Plan {
+        Plan::Ring {
+            acc: 2,
+            title: "Anna Rossi is calling".into(),
+            body: "Teams call, ringing now".into(),
+            since: 1790000000000,
+            answer: false,
+        }
     }
 
     #[test]

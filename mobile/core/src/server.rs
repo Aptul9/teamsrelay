@@ -74,7 +74,7 @@ pub fn sync(
                 .ok()
                 .and_then(|v| v["key"].as_str().map(String::from))
                 .ok_or("registration: no key in the answer")?;
-            let kept = store.update(|s| {
+            let (kept, saved) = store.update(|s| {
                 // the app changed server during the request: this answer belongs to the previous one
                 if s.relay != origin {
                     return false;
@@ -82,7 +82,8 @@ pub fn sync(
                 s.key = key;
                 s.token = token.to_string();
                 true
-            })?;
+            });
+            saved?;
             Ok(if kept {
                 Synced::Registered
             } else {
@@ -108,12 +109,14 @@ pub fn forget(store: &Store, origin: &str, token: &str) -> Result<(), String> {
     if status != 200 {
         return Err(format!("{origin} did not forget the phone: HTTP {status}"));
     }
-    store.update(|s| {
-        if s.relay == origin {
-            s.token.clear();
-            s.key.clear();
-        }
-    })
+    store
+        .update(|s| {
+            if s.relay == origin {
+                s.token.clear();
+                s.key.clear();
+            }
+        })
+        .1
 }
 
 // Answer on the notification of a ringing call, as Answer on the notification of the web app (app/public/sw.js): the
@@ -183,7 +186,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::store::tests::dir;
+    use crate::store::tests::{dir, saved};
 
     // A request the stand-in server got: request line, headers in lower case, body
     #[derive(Debug)]
@@ -263,7 +266,7 @@ mod tests {
     fn signed_in_registers_the_phone_and_keeps_its_key() {
         let (origin, got) = server(vec![(200, r#"{"key":"KEY"}"#)]);
         let store = Store::open(&dir("register"));
-        store.use_relay(&origin).unwrap();
+        saved(store.use_relay(&origin));
         assert_eq!(
             sync(&store, &origin, "tok123", SIGNED_IN, "Google Pixel 6").unwrap(),
             Synced::Registered
@@ -285,10 +288,8 @@ mod tests {
     fn signed_out_has_the_server_forget_the_phone() {
         let (origin, got) = server(vec![(200, r#"{"ok":true}"#)]);
         let store = Store::open(&dir("signed-out"));
-        store.use_relay(&origin).unwrap();
-        store
-            .update(|s| (s.token, s.key) = ("old".into(), "KEY".into()))
-            .unwrap();
+        saved(store.use_relay(&origin));
+        saved(store.update(|s| (s.token, s.key) = ("old".into(), "KEY".into())));
         assert_eq!(
             sync(&store, &origin, "tok123", "theme=dark", "phone").unwrap(),
             Synced::Forgotten
@@ -316,10 +317,8 @@ mod tests {
             (200, r#"{"ok":true}"#),
         ]);
         let store = Store::open(&dir("ended"));
-        store.use_relay(&origin).unwrap();
-        store
-            .update(|s| (s.token, s.key) = ("tok123".into(), "KEY".into()))
-            .unwrap();
+        saved(store.use_relay(&origin));
+        saved(store.update(|s| (s.token, s.key) = ("tok123".into(), "KEY".into())));
         assert_eq!(
             sync(&store, &origin, "tok123", SIGNED_IN, "phone").unwrap(),
             Synced::Forgotten
@@ -332,7 +331,7 @@ mod tests {
     #[test]
     fn nothing_for_a_server_no_longer_in_use() {
         let store = Store::open(&dir("moved"));
-        store.use_relay("https://now.example.com").unwrap();
+        saved(store.use_relay("https://now.example.com"));
         // no server listens there: a request would fail
         assert_eq!(
             sync(&store, "http://127.0.0.1:9", "tok", SIGNED_IN, "phone").unwrap(),
@@ -348,10 +347,8 @@ mod tests {
     fn a_refused_registration_keeps_what_was_known() {
         let (origin, _got) = server(vec![(500, "{}")]);
         let store = Store::open(&dir("refused"));
-        store.use_relay(&origin).unwrap();
-        store
-            .update(|s| (s.token, s.key) = ("tok".into(), "KEY".into()))
-            .unwrap();
+        saved(store.use_relay(&origin));
+        saved(store.update(|s| (s.token, s.key) = ("tok".into(), "KEY".into())));
         assert_eq!(
             sync(&store, &origin, "tok", SIGNED_IN, "phone").unwrap_err(),
             "registration refused by the server: HTTP 500"
@@ -363,15 +360,10 @@ mod tests {
     fn the_previous_server_forgets_the_phone_and_the_new_one_keeps_its_state() {
         let (origin, got) = server(vec![(200, r#"{"ok":true}"#)]);
         let store = Store::open(&dir("previous"));
-        store.use_relay(&origin).unwrap();
-        store
-            .update(|s| (s.token, s.key) = ("tok".into(), "KEY".into()))
-            .unwrap();
-        let (previous, token) = store
-            .use_relay("https://next.example.com")
-            .unwrap()
-            .unwrap();
-        store.update(|s| s.key = "NEXT".into()).unwrap();
+        saved(store.use_relay(&origin));
+        saved(store.update(|s| (s.token, s.key) = ("tok".into(), "KEY".into())));
+        let (previous, token) = saved(store.use_relay("https://next.example.com")).unwrap();
+        saved(store.update(|s| s.key = "NEXT".into()));
         forget(&store, &previous, &token).unwrap();
         assert_eq!(
             serde_json::from_str::<Value>(&got.recv().unwrap().body).unwrap(),
