@@ -62,8 +62,8 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
 
     private val watch = object : Runnable {
         override fun run() {
-            val now = Registration.session(activity)
-            if (now != session) Registration.sync(activity)
+            val now = Registration.session()
+            if (now != session) Registration.sync()
             session = now
             main.postDelayed(this, WATCH_MS)
         }
@@ -71,6 +71,10 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun load(webView: WebView) {
         this.webView = webView
+        Core.load(activity)
+        // The web app reads the open chat only while its window has the focus (app/src/lib/in-use.ts), as a page in
+        // Chrome has it once shown; a WebView has none until it is touched
+        webView.requestFocus()
         Notices.channels(activity)
         Shortcuts.publish(activity)
         // Tauri registers the plugin once the activity has resumed, and calls no onResume for it then
@@ -84,7 +88,7 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         val wanted = listOfNotNull(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.POST_NOTIFICATIONS else null, Manifest.permission.RECORD_AUDIO)
             .filter { activity.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (wanted.isNotEmpty()) activity.requestPermissions(wanted.toTypedArray(), 7301)
-        Registration.sync(activity)
+        Registration.sync()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -97,7 +101,7 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
             return
         }
         val acc = accountOf(intent)
-        val origin = Store(activity).relay
+        val origin = Core.relay()
         if (acc <= 0 || origin.isEmpty()) return
         if (intent.action == ACTION_ANSWER) {
             answer(acc, intent.getLongExtra(EXTRA_SINCE, 0L)).whenComplete { took, _ ->
@@ -110,7 +114,7 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun onResume(activity: AppCompatActivity) {
         shown = activity
-        Registration.sync(activity)
+        Registration.sync()
         startWatch()
     }
 
@@ -122,11 +126,9 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
     fun relay(invoke: Invoke) {
         val args = invoke.parseArgs(RelayArgs::class.java)
         if (!args.page.isNullOrEmpty()) startPage = args.page ?: ""
-        val store = Store(activity)
         // another server: the previous one forgets this phone
-        if (store.relay != args.origin) Registration.leave(activity, store.relay)
-        store.relay = args.origin
-        Registration.sync(activity)
+        Core.useRelay(args.origin)
+        Registration.sync()
         invoke.resolve()
     }
 
@@ -153,16 +155,18 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun accountOf(intent: Intent?): Int = intent?.getIntExtra(EXTRA_ACC, 0) ?: 0
 
-    // Answer on the notification of a ringing call: the ringtone stops, and the relay gets the answer, off the main
-    // thread
+    // Answer on the notification of a ringing call, as Answer on the notification of the web app (public/sw.js): the
+    // ringtone stops, and the relay gets the answer with the session cookie of the web page, off the main thread; its
+    // agent clicks Accept in Teams
     private fun answer(acc: Int, since: Long): CompletableFuture<Boolean> {
         Notices.stopRing(activity, acc, since)
-        val app = activity.applicationContext
-        return CompletableFuture.supplyAsync { CallAnswer.post(app, acc, since) }
+        val origin = Core.relay()
+        val cookies = Registration.cookies(origin)
+        return CompletableFuture.supplyAsync { Core.answer(origin, cookies, acc, since) }
     }
 
     private fun startWatch() {
-        session = Registration.session(activity)
+        session = Registration.session()
         main.removeCallbacks(watch)
         main.postDelayed(watch, WATCH_MS)
     }

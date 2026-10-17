@@ -1,8 +1,9 @@
-# Cargo and Tauri build output
+# Cargo and Tauri build output; gen/ is made by `tauri android init` and the build (README.md, Build)
 src-tauri/target/
-src-tauri/gen/schemas/
+src-tauri/gen/
+core/target/
 
-# Firebase configuration and signing keys stay out of git (docs/design/2026-09-26-android-client.md)
+# Firebase configuration and signing keys stay out of git (README.md, Firebase)
 google-services.json
 keystore.properties
 *.jks

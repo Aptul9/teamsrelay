@@ -32,11 +32,13 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      # start page tests run in the Google Chrome of the runner
+      # start page tests run in the Google Chrome of the runner; the shared Rust of the app (core/: what the server
+      # sends opened and turned into notifications, the requests to the server) against a stand-in server
       - name: Tests
         run: |
           npm ci --no-audit --no-fund
           npm test
+          cargo test --manifest-path core/Cargo.toml
 
       # the runner image carries the Android SDK and NDK; Tauri reads the NDK from NDK_HOME. The launcher icons go
       # into the Android project only once it exists, so they are made again after init.
@@ -97,10 +99,15 @@ jobs:
             exit 1
           fi
 
-      # unit tests of the Kotlin push plugin (it opens what the relay seals), in the Android project of the build
-      - name: Plugin tests
-        working-directory: mobile/src-tauri/gen/android
-        run: ./gradlew --no-daemon :tauri-plugin-push:testDebugUnitTest
+      # the Kotlin calls the shared Rust through JNI: every function Core.kt declares must be in the library of the app
+      - name: JNI functions
+        run: |
+          lib=$(find src-tauri/gen/android/app/src/main/jniLibs -name libteamsrelay_mobile_lib.so | head -1)
+          nm=$(find "$ANDROID_NDK_HOME" -name llvm-nm | head -1)
+          exported=$("$nm" -D --defined-only "$lib" | sed -n 's/.* T \(Java_io_github_aptul9_teamsrelay_push_Core_.*\)/\1/p' | sort)
+          declared=$(sed -n 's/.*external fun \([A-Za-z]*\)(.*/Java_io_github_aptul9_teamsrelay_push_Core_\1/p' plugin/android/src/main/java/io/github/aptul9/teamsrelay/push/Core.kt | sort)
+          echo "$exported"
+          [ -n "$declared" ] && [ "$exported" = "$declared" ] || { echo "::error::JNI functions of $lib differ from those Core.kt declares"; exit 1; }
 
       - uses: actions/upload-artifact@v7
         with:
