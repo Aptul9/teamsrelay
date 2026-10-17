@@ -10,5 +10,11 @@ links = "tauri-plugin-push"
 [dependencies]
 tauri = { version = "2.12.0", features = [] }
 
+# the Kotlin of android/ calls the shared Rust of the app (../core) through JNI (src/android.rs)
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+serde_json = "1"
+teamsrelay-core = { path = "../core" }
+
 [build-dependencies]
 tauri-plugin = { version = "2.7.0", features = ["build"] }

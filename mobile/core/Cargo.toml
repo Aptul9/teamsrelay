@@ -1,0 +1,15 @@
+[package]
+name = "teamsrelay-core"
+version = "0.1.0"
+description = "TeamsRelay app: what every build of the app shares (the requests to the server, what the app keeps, the messages of the server opened and turned into notifications), with no platform code"
+edition = "2021"
+publish = false
+
+[dependencies]
+base64 = "0.22"
+# AES-256-GCM of the sealed messages, and the TLS of ureq (rustls on ring)
+ring = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# rustls on ring, Mozilla's roots (webpki-roots); the answers of the server are small JSON, no gzip
+ureq = { version = "3", default-features = false, features = ["rustls"] }
