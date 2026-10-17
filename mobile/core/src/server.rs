@@ -90,8 +90,16 @@ pub fn sync(
                 Synced::Moved
             })
         }
-        // a session the server ended: as signed out
-        401 | 403 => forget(store, origin, token).map(|_| Synced::Forgotten),
+        // a session the server ended: as signed out, with the token the server knows (Firebase may have handed a new
+        // one since)
+        401 | 403 => {
+            let known = if state.token.is_empty() {
+                token
+            } else {
+                &state.token
+            };
+            forget(store, origin, known).map(|_| Synced::Forgotten)
+        }
         _ => Err(format!("registration refused by the server: HTTP {status}")),
     }
 }
@@ -141,7 +149,8 @@ pub fn answer(origin: &str, cookies: &str, acc: i64, since: i64) -> Result<(), S
     Ok(())
 }
 
-// A request to the server with a JSON body: its status and the text of its answer, any status
+// A request to the server with a JSON body: its status and the text of its answer, any status. No redirect is
+// followed: only the route itself answers, a redirect to a sign-in page is no 200.
 fn call(
     method: &str,
     origin: &str,
@@ -152,6 +161,7 @@ fn call(
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
         .http_status_as_error(false)
+        .max_redirects(0)
         .build()
         .into();
     let url = format!("{origin}{path}");
@@ -237,7 +247,13 @@ mod tests {
                 let mut body = vec![0; length];
                 reader.read_exact(&mut body).unwrap();
                 let mut stream = stream;
-                write!(stream, "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).unwrap();
+                // a redirect goes to another route of this same stand-in
+                let location = if (300..400).contains(&status) {
+                    "Location: /moved\r\n"
+                } else {
+                    ""
+                };
+                write!(stream, "HTTP/1.1 {status} X\r\n{location}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).unwrap();
                 tx.send(Got {
                     line: line.trim_end().to_string(),
                     headers,
@@ -318,14 +334,36 @@ mod tests {
         ]);
         let store = Store::open(&dir("ended"));
         saved(store.use_relay(&origin));
-        saved(store.update(|s| (s.token, s.key) = ("tok123".into(), "KEY".into())));
+        saved(store.update(|s| (s.token, s.key) = ("old".into(), "KEY".into())));
+        // Firebase handed a new token since the registration: the server is asked to forget the one it knows
         assert_eq!(
-            sync(&store, &origin, "tok123", SIGNED_IN, "phone").unwrap(),
+            sync(&store, &origin, "new", SIGNED_IN, "phone").unwrap(),
             Synced::Forgotten
         );
         assert_eq!(got.recv().unwrap().line, "POST /api/push/fcm HTTP/1.1");
-        assert_eq!(got.recv().unwrap().line, "DELETE /api/push/fcm HTTP/1.1");
+        let r = got.recv().unwrap();
+        assert_eq!(r.line, "DELETE /api/push/fcm HTTP/1.1");
+        assert_eq!(
+            serde_json::from_str::<Value>(&r.body).unwrap(),
+            json!({ "token": "old" })
+        );
         assert_eq!(store.get().key, "");
+    }
+
+    #[test]
+    fn a_redirect_is_no_answer_of_the_route() {
+        // without its own answer the route would hand over the 200 of the page it redirects to
+        let (origin, got) = server(vec![(302, ""), (200, r#"{"ok":true}"#)]);
+        assert!(answer(&origin, SIGNED_IN, 2, 5)
+            .unwrap_err()
+            .contains("HTTP 302"));
+        assert_eq!(
+            got.recv().unwrap().line,
+            "POST /api/call/answer?a=2 HTTP/1.1"
+        );
+        assert!(got
+            .recv_timeout(std::time::Duration::from_millis(300))
+            .is_err());
     }
 
     #[test]
