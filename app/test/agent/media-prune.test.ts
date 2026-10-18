@@ -45,8 +45,9 @@ describe("files the rows name", () => {
     ]);
     // a chat that left the list keeps the messages saved the last time it was open, and their images with them
     store.saveChatMessages("Old chat", [{ mid: "m3", author: "Old", text: "", mine: false, reacts: "", extra: { images: [{ f: "eeeeeeeeeeeeeee5.jpg" }] } }]);
-    store.setState(STATE.me, JSON.stringify({ name: "Test User", email: "test.user@contoso.example", tenant: "Contoso", av: "fffffffffffffff6.png" }));
+    store.setState(STATE.me, JSON.stringify({ name: "Test User", email: "test.user@contoso.example", tenant: "Contoso", av: "fffffffffffffff6.png", logo: "9999999999999997.png" }));
     expect([...store.mediaFiles()].sort()).toEqual([
+      "9999999999999997.png",
       "aaaaaaaaaaaaaaa1.png",
       "bbbbbbbbbbbbbbb2.png",
       "ccccccccccccccc3.png",

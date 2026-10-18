@@ -82,6 +82,8 @@ export const Identity = z.object({
   email: z.string().catch(""),
   tenant: z.string().catch(""),
   av: z.string().catch(""),
+  // the logo of the company (src/agent/media.ts), "" where the organization has none
+  logo: z.string().catch(""),
 });
 export type Identity = z.infer<typeof Identity>;
 

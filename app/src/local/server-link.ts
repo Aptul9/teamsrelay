@@ -369,8 +369,11 @@ export class ServerLink {
     if (viewing) stateOut[STATE.viewing] = viewing.raw;
     if (Object.keys(stateOut).length) body.state = stateOut;
     for (const [k, v] of Object.entries(stateOut)) {
-      if (k === STATE.me) picture(parseState(Identity, v).av);
-      else if (CMD_RESULT_KEY.test(k)) {
+      if (k === STATE.me) {
+        const me = parseState(Identity, v);
+        picture(me.av);
+        picture(me.logo);
+      } else if (CMD_RESULT_KEY.test(k)) {
         const f = parseState(DownloadResult, v, null)?.f;
         if (f) named.files.add(f);
       }

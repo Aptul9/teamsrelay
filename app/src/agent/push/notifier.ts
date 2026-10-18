@@ -79,9 +79,11 @@ export class Notifier {
     this.schedule = o.later ?? later;
   }
 
-  // The account the notifications come from, for an app that shows more than one
+  // The account the notifications come from, for an app that shows more than one, with the logo of its company
   private account() {
-    return this.o.devices.account?.(parseState(Identity, this.o.store.getState(STATE.me)));
+    const me = parseState(Identity, this.o.store.getState(STATE.me));
+    const account = this.o.devices.account?.(me);
+    return account && { ...account, logo: me.logo };
   }
 
   // A new Teams message: the same text within 150 s is notified once. On the device it replaces the notification
@@ -170,7 +172,12 @@ export class Notifier {
     if (!targets.length) return 0;
     const account = this.account();
     const c = content(account?.acc ?? 0);
-    const message = { ...c, title: pushTitle(c.title, account?.label ?? ""), ...(account ? { acc: account.acc } : {}) };
+    // the account apart (org) and the logo of its company too, for an app that draws them
+    const message = {
+      ...c,
+      title: pushTitle(c.title, account?.label ?? ""),
+      ...(account && { acc: account.acc, ...(account.label && { org: account.label }), ...(account.logo && { logo: account.logo }) }),
+    };
     const sends: Promise<boolean>[] = [];
     const browsers = targets.filter((t) => !isPhone(t));
     if (vapid && browsers.length) {

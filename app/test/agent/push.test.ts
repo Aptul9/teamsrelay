@@ -140,7 +140,14 @@ describe("notifier", () => {
     db.close();
     store.setState(STATE.me, JSON.stringify({ name: "Anna", email: "anna@contoso.example", tenant: "Contoso", av: "" }));
     await notifier().push("Anna Rossi", "ciao");
-    expect(sent[0].payload).toEqual({ title: "Anna Rossi · Contoso", body: "ciao", chat: "", acc: 1 });
+    // org: the account apart, for an app that shows it beside the title
+    expect(sent[0].payload).toEqual({ title: "Anna Rossi · Contoso", body: "ciao", chat: "", acc: 1, org: "Contoso" });
+  });
+
+  it("sends the logo of the company of the account, for an app that draws it", async () => {
+    store.setState(STATE.me, JSON.stringify({ name: "Anna", email: "anna@contoso.example", tenant: "Contoso", av: "", logo: "0123456789abcdef.png" }));
+    await notifier().alert("Teams signed out", "Sign in again");
+    expect(sent[0].payload).toEqual({ title: "Teams signed out", body: "Sign in again", chat: "", acc: 1, logo: "0123456789abcdef.png" });
   });
 
   it("tags a message with its chat, so the device keeps one notification per chat", async () => {
