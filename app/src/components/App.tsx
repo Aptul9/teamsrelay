@@ -49,6 +49,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { appStart, keepAppStart, useAppStart } from "@/lib/android-app";
 import { authClient } from "@/lib/auth-client";
+import { useBack } from "@/lib/back";
 import {
   accountUnread,
   accName,
@@ -682,6 +683,11 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   const beingAdded = current && !current.relay && !signedInOnce(current) ? current : null;
   // on a phone the list and the chat (or the remote desktop) take the whole screen in turn
   const phoneShowsMain = pane === "desktop" || !!openChat;
+  // Back closes the remote desktop, then the chat it was opened from, then the chat
+  useBack(pane === "desktop" ? (openChat ? 2 : 1) : openChat ? 1 : 0, (to) => {
+    if (to < 2) setPane("main");
+    if (to < 1) setOpenChat(null);
+  });
 
   const tabs: { id: ListTab | "desktop"; label: string; icon: React.ComponentType<{ className?: string }>; count: number; red?: boolean }[] = [
     { id: "chats", label: "Chats", icon: MessageSquareIcon, count: unreadChats },
