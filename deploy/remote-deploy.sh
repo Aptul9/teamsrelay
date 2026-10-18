@@ -13,7 +13,7 @@ export COMPOSE_PROFILES=accounts
 
 code_files() {
   # everything but the runtime data
-  find . -mindepth 1 -maxdepth 1 ! -name .env ! -name config ! -name data ! -name vapid ! -name fcm ! -name .caddyfile-sum -printf '%P\n'
+  find . -mindepth 1 -maxdepth 1 ! -name .env ! -name config ! -name data ! -name vapid ! -name fcm ! -name .caddyfile-sum ! -name .fcm-sum -printf '%P\n'
 }
 
 preflight() {
@@ -72,10 +72,18 @@ agents_ok() {
 start() {
   docker compose build
   docker compose create
+  # The agents and the web app read the Firebase key (fcm/, written by the Action from its secret) only at their
+  # start: a new, changed or removed key recreates both, which restarts every account. "create" replaces what it may
+  # have just made for a new image, so they start once.
+  fcm_sum="$(sha256sum fcm/service-account.json 2>/dev/null | cut -d' ' -f1 || true)"
+  if [ "$fcm_sum" != "$(cat .fcm-sum 2>/dev/null)" ]; then
+    docker compose create --force-recreate browsers webapp
+  fi
   # The services outside any profile. The containers of the old "accounts" profile (a rollback) stay created
   # and stopped: the web app of those releases starts the ones of its accounts.
   # shellcheck disable=SC2046
   docker compose up -d --remove-orphans $(COMPOSE_PROFILES='' docker compose config --services)
+  echo "$fcm_sum" > .fcm-sum
   # Caddy has no image to rebuild and reads the mounted Caddyfile: rsync replaces it with a new file and
   # the container would keep seeing the old one. If it changed, restart (certificates stay in the volume).
   caddy_sum="$(sha256sum caddy/Caddyfile | cut -d' ' -f1)"
