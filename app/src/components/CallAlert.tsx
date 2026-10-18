@@ -143,11 +143,13 @@ export function CallBanner({
           const ending = busyOf(key) === "hangup";
           const line = ending ? "Ending the call" : other ? relayCallLine(relayHost(other), sound, mute, muted) : callLine(sound, mute, muted);
           const devicesOpen = devicesOf === key && !!devicesPanel;
+          // the buttons go under the caller where both do not fit in a row (a phone), Mute and Desktop without their words
+          // where the card is narrower than 21rem
           return (
-            <div key={key} role="alert" className="pointer-events-auto w-full max-w-md rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
-              <div className="flex items-center gap-2">
+            <div key={key} role="alert" className="pointer-events-auto @container w-full max-w-md rounded-xl border bg-card px-3 py-2.5 text-card-foreground shadow-lg">
+              <div className="flex flex-wrap items-center gap-2">
                 <PhoneIcon className="size-5 shrink-0 text-success" />
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 basis-40">
                   <button type="button" onClick={() => onSelect(c.acc)} className="block w-full min-w-0 text-left outline-none focus-visible:underline">
                     <span className="block truncate text-sm font-semibold">{c.caller ? `In call with ${c.caller}` : "Call in progress"}</span>
                     {!sound?.needsTap && <span className="block truncate text-xs text-muted-foreground">{line ? `${line} (${label})` : `(${label})`}</span>}
@@ -159,37 +161,39 @@ export function CallBanner({
                     </button>
                   )}
                 </div>
-                {onMute && (sourceLive || mute?.teams !== undefined) && (
-                  <Button size="sm" variant="secondary" className={button} onClick={() => onMute(c.acc, !muted)}>
-                    {muted ? <MicOffIcon /> : <MicIcon />}
-                    {muted ? "Unmute" : "Mute"}
-                  </Button>
-                )}
-                {sound && devicesPanel && (
-                  <Button
-                    size="sm"
-                    variant={devicesOpen ? "secondary" : "ghost"}
-                    className={button}
-                    title="Microphone and speaker"
-                    aria-expanded={devicesOpen}
-                    onClick={() => setDevicesOf(devicesOpen ? null : key)}
-                  >
-                    <SlidersHorizontalIcon />
-                    <span className="sr-only">Devices</span>
-                  </Button>
-                )}
-                {onDesktop && !other && (
-                  <Button size="sm" variant="secondary" className={button} onClick={() => onDesktop(c.acc)}>
-                    <MonitorIcon />
-                    Desktop
-                  </Button>
-                )}
-                {onHangUp && (
-                  <Button size="sm" variant="destructive" className={button} disabled={ending} onClick={() => act(c, "hangup", onHangUp)}>
-                    {ending ? <Spinner /> : <PhoneOffIcon />}
-                    Hang up
-                  </Button>
-                )}
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                  {onMute && (sourceLive || mute?.teams !== undefined) && (
+                    <Button size="sm" variant="secondary" className={button} onClick={() => onMute(c.acc, !muted)}>
+                      {muted ? <MicOffIcon /> : <MicIcon />}
+                      <span className="@max-[21rem]:sr-only">{muted ? "Unmute" : "Mute"}</span>
+                    </Button>
+                  )}
+                  {sound && devicesPanel && (
+                    <Button
+                      size="sm"
+                      variant={devicesOpen ? "secondary" : "ghost"}
+                      className={button}
+                      title="Microphone and speaker"
+                      aria-expanded={devicesOpen}
+                      onClick={() => setDevicesOf(devicesOpen ? null : key)}
+                    >
+                      <SlidersHorizontalIcon />
+                      <span className="sr-only">Devices</span>
+                    </Button>
+                  )}
+                  {onDesktop && !other && (
+                    <Button size="sm" variant="secondary" className={button} onClick={() => onDesktop(c.acc)}>
+                      <MonitorIcon />
+                      <span className="@max-[21rem]:sr-only">Desktop</span>
+                    </Button>
+                  )}
+                  {onHangUp && (
+                    <Button size="sm" variant="destructive" className={button} disabled={ending} onClick={() => act(c, "hangup", onHangUp)}>
+                      {ending ? <Spinner /> : <PhoneOffIcon />}
+                      Hang up
+                    </Button>
+                  )}
+                </div>
               </div>
               {devicesOpen && <div className="mt-2.5 border-t pt-2.5">{devicesPanel(c.acc)}</div>}
             </div>
