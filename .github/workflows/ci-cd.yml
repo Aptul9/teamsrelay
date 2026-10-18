@@ -89,12 +89,28 @@ jobs:
       - name: Backup of the running version
         run: ssh "$TARGET" "test ! -x $TR_DIR/deploy/remote-deploy.sh || $TR_DIR/deploy/remote-deploy.sh backup"
 
+      # The service account key of the Firebase project, for the phones of the Android app (mobile/README.md, Firebase),
+      # from the secret FCM_SERVICE_ACCOUNT_JSON; without the secret fcm/ stays as it is. The agents and the web app read
+      # it only at their start: remote-deploy.sh up recreates browsers and webapp when it changed
+      - name: Write the Firebase key
+        env:
+          FCM_KEY: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
+        run: |
+          [ -n "$FCM_KEY" ] || { echo "no secret FCM_SERVICE_ACCOUNT_JSON: fcm/ left as it is"; exit 0; }
+          # what loadServiceAccount (app/src/agent/push/fcm.ts) takes, or the agents stop at their start; checked before
+          # the upload, stderr dropped since a JSON.parse error quotes the text
+          node -e 'const k = JSON.parse(process.env.FCM_KEY); process.exit(k?.type === "service_account" && ["project_id", "client_email", "private_key"].every((f) => typeof k[f] === "string" && k[f] !== "") ? 0 : 1)' 2>/dev/null \
+            || { echo "FCM_SERVICE_ACCOUNT_JSON is not the JSON key of a service account (type, project_id, client_email, private_key)" >&2; exit 1; }
+          # an fcm/ that Docker made (root) when it mounted the missing directory is replaced while empty: the deploy user
+          # owns TR_DIR, not fcm/, and has no sudo
+          printf '%s\n' "$FCM_KEY" | ssh "$TARGET" "cd $TR_DIR && { test -w fcm || { rm -df fcm && mkdir fcm; }; } && umask 077 && cat > fcm/service-account.json.new && mv fcm/service-account.json.new fcm/service-account.json"
+
       - name: Upload code
         run: |
           # runtime data (.env, Chromium profiles, databases, VAPID keys, Firebase key) stays on the server
           rsync -az --delete \
             --exclude .git/ --exclude .github/ --exclude .env --exclude node_modules/ --exclude .next/ \
-            --exclude /config/ --exclude /data/ --exclude /vapid/ --exclude /fcm/ --exclude .deployed-sha --exclude .caddyfile-sum \
+            --exclude /config/ --exclude /data/ --exclude /vapid/ --exclude /fcm/ --exclude .deployed-sha --exclude .caddyfile-sum --exclude .fcm-sum \
             ./ "$TARGET:$TR_DIR/"
 
       # .env is rendered from the secrets and variables of the repository (Settings > Secrets and variables > Actions),
