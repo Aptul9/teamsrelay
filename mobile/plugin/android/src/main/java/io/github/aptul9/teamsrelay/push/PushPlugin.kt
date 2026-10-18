@@ -2,11 +2,17 @@ package io.github.aptul9.teamsrelay.push
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
+import android.app.NotificationManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -18,6 +24,7 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.io.File
 import java.util.concurrent.CompletableFuture
 
 // the account a tapped notification opens, in the intent that starts the app
@@ -45,7 +52,8 @@ class RelayArgs {
 // relay take the call, and opens its account on the sound of the call once the relay took it (call=1). While the app
 // is on screen, a sign-in or a sign-out in its web page registers the phone or has it forgotten within WATCH_MS: a
 // page of the server cannot call the app. Asked at first start: the notification permission (Android 13 and later)
-// and the microphone, which the WebView asks Android for when a call answered in the app takes it.
+// and the microphone, which the WebView asks Android for when a call answered in the app takes it; once, on Android 14
+// and later, the full-screen notifications a call rings with over the lock screen.
 @TauriPlugin
 class PushPlugin(private val activity: Activity) : Plugin(activity) {
     private var webView: WebView? = null
@@ -88,7 +96,30 @@ class PushPlugin(private val activity: Activity) : Plugin(activity) {
         val wanted = listOfNotNull(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.POST_NOTIFICATIONS else null, Manifest.permission.RECORD_AUDIO)
             .filter { activity.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (wanted.isNotEmpty()) activity.requestPermissions(wanted.toTypedArray(), 7301)
+        askFullScreen()
         Registration.sync()
+    }
+
+    // Android 14 and later let only calling and alarm apps ring full screen over the lock screen (CallActivity) unless
+    // the user allows it on its settings screen: asked once, a call rings as a heads-up notification meanwhile
+    private fun askFullScreen() {
+        if (Build.VERSION.SDK_INT < 34) return
+        val allowed = activity.getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
+        Log.i(TAG, "full-screen calls ${if (allowed) "allowed" else "not allowed"}")
+        if (allowed || !File(activity.noBackupFilesDir, "asked-full-screen").createNewFile()) return
+        val app = Uri.parse("package:${activity.packageName}")
+        AlertDialog.Builder(activity)
+            .setTitle("Calls on the lock screen")
+            .setMessage("A Teams call rings full screen, over the lock screen too, once TeamsRelay may show full-screen notifications.")
+            .setPositiveButton("Allow") { _, _ ->
+                try {
+                    activity.startActivity(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, app))
+                } catch (e: ActivityNotFoundException) {
+                    activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, app))
+                }
+            }
+            .setNegativeButton("Not now", null)
+            .show()
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -4,7 +4,20 @@
     <!-- a call answered in the app: the WebView asks Android for these when the web page takes the microphone -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- a ringing call full screen over the lock screen (CallActivity): Android 14 and later grant it to calling and
+         alarm apps only, the user allows it for the others (PushPlugin asks once) -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <application>
+        <activity
+            android:name="io.github.aptul9.teamsrelay.push.CallActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+        <receiver
+            android:name="io.github.aptul9.teamsrelay.push.DeclineReceiver"
+            android:exported="false" />
         <!-- Firebase starts it for each message of the relay, the app open or not -->
         <service
             android:name="io.github.aptul9.teamsrelay.push.PushService"
