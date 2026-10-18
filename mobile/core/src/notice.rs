@@ -22,12 +22,16 @@ pub enum Plan {
         body: String,
         since: i64,
         answer: bool,
+        #[serde(skip_serializing_if = "Account::is_none")]
+        account: Account,
     },
     Ended {
         acc: i64,
         title: String,
         body: String,
         since: i64,
+        #[serde(skip_serializing_if = "Account::is_none")]
+        account: Account,
     },
     // tag: the chat, per account; again: the text on screen already, shown without alerting
     Message {
@@ -37,16 +41,79 @@ pub enum Plan {
         body: String,
         ts: i64,
         again: bool,
+        #[serde(skip_serializing_if = "Account::is_none")]
+        account: Account,
     },
     Alert {
         acc: i64,
         title: String,
         body: String,
+        #[serde(skip_serializing_if = "Account::is_none")]
+        account: Account,
     },
     // nothing to show, and why
     None {
         why: String,
     },
+}
+
+// Which account a notification is for, drawn beside its title: the organization (org, which the server sends where the
+// owner has more than one account), the logo of its company (a file of the server, "" without one) and, for a mark in
+// place of a missing logo, the hue and the initials of the organization, as the web app tints and letters an avatar
+// (app/src/components/Avatar.tsx, app/src/lib/client.ts)
+#[derive(Debug, Default, PartialEq, Serialize)]
+pub struct Account {
+    pub org: String,
+    pub logo: String,
+    pub hue: u32,
+    pub initials: String,
+}
+
+impl Account {
+    fn is_none(&self) -> bool {
+        self.org.is_empty() && self.logo.is_empty()
+    }
+}
+
+pub fn account_of(m: &Value) -> Account {
+    let org = m["org"].as_str().unwrap_or("").to_string();
+    Account {
+        logo: m["logo"].as_str().unwrap_or("").to_string(),
+        hue: hue(&org),
+        initials: initials(&org),
+        org,
+    }
+}
+
+pub fn hue(name: &str) -> u32 {
+    name.encode_utf16()
+        .fold(0u32, |h, c| h.wrapping_mul(31).wrapping_add(c.into()))
+        % 360
+}
+
+// The first letter of the first two words, what stands in parentheses left out
+pub fn initials(name: &str) -> String {
+    let mut depth = 0;
+    let bare: String = name
+        .chars()
+        .filter(|&c| match c {
+            '(' => {
+                depth += 1;
+                false
+            }
+            ')' if depth > 0 => {
+                depth -= 1;
+                false
+            }
+            _ => depth == 0,
+        })
+        .collect();
+    bare.split(|c: char| c.is_whitespace() || c == ',')
+        .filter(|w| !w.is_empty())
+        .take(2)
+        .filter_map(|w| w.chars().next())
+        .flat_map(char::to_uppercase)
+        .collect()
 }
 
 // A notification of the app on screen, as the platform reads it back: tag, the time of its message, its text
@@ -86,11 +153,17 @@ pub fn plan(store: &Store, data: &str, shown: &str) -> (Plan, Result<(), String>
 
 pub fn decide(state: &mut State, m: &Value, shown: &[Shown]) -> Plan {
     let acc = m["acc"].as_i64().unwrap_or(0);
+    let account = account_of(m);
     let title = m["title"]
         .as_str()
         .filter(|t| !t.is_empty())
-        .unwrap_or("TeamsRelay")
-        .to_string();
+        .unwrap_or("TeamsRelay");
+    // the name of the account off the title, which the server adds for the browsers: the platform draws it apart
+    let title = match title.strip_suffix(&format!(" · {}", account.org)) {
+        Some(t) if !account.org.is_empty() => t,
+        _ => title,
+    }
+    .to_string();
     let body = m["body"].as_str().unwrap_or("").to_string();
     let ts = m["ts"].as_i64().unwrap_or(0);
     let last = state.calls.get(&acc).copied().unwrap_or_default();
@@ -114,6 +187,7 @@ pub fn decide(state: &mut State, m: &Value, shown: &[Shown]) -> Plan {
                 body,
                 since: ts,
                 answer: m["answer"].as_bool().unwrap_or(false),
+                account,
             }
         }
         Some("ended") => {
@@ -134,12 +208,18 @@ pub fn decide(state: &mut State, m: &Value, shown: &[Shown]) -> Plan {
                 title,
                 body,
                 since: ts,
+                account,
             }
         }
         _ => {
             let tag = m["tag"].as_str().unwrap_or("");
             if !tag.starts_with("chat-") {
-                return Plan::Alert { acc, title, body };
+                return Plan::Alert {
+                    acc,
+                    title,
+                    body,
+                    account,
+                };
             }
             let on_screen = shown.iter().find(|s| s.tag == tag);
             if on_screen.is_some_and(|s| s.ts > ts) {
@@ -155,6 +235,7 @@ pub fn decide(state: &mut State, m: &Value, shown: &[Shown]) -> Plan {
                 body,
                 ts,
                 again,
+                account,
             }
         }
     }
@@ -195,7 +276,8 @@ mod tests {
                 title: "Anna Rossi is calling".into(),
                 body: "Teams call, ringing now".into(),
                 since: 100,
-                answer: true
+                answer: true,
+                account: Account::default()
             }
         );
         assert_eq!(
@@ -204,7 +286,8 @@ mod tests {
                 acc: 2,
                 title: "Call from Anna Rossi".into(),
                 body: "Ended after 9 s".into(),
-                since: 100
+                since: 100,
+                account: Account::default()
             }
         );
         assert_eq!(
@@ -277,7 +360,8 @@ mod tests {
                 title: "Anna Rossi".into(),
                 body: "hello".into(),
                 ts: 10,
-                again: false
+                again: false,
+                account: Account::default()
             }
         );
         // the same message pushed twice: shown again without alerting
@@ -316,7 +400,8 @@ mod tests {
             Plan::Alert {
                 acc: 4,
                 title: "TeamsRelay".into(),
-                body: "Teams signed out".into()
+                body: "Teams signed out".into(),
+                account: Account::default()
             }
         );
         // only a chat tag makes a chat
@@ -325,6 +410,69 @@ mod tests {
             decide(&mut State::default(), &m, &[]),
             Plan::Alert { .. }
         ));
+    }
+
+    #[test]
+    fn a_notification_names_its_account() {
+        let m = json!({ "title": "Anna Rossi · Npo Torino Srl", "body": "hello", "acc": 2, "tag": "chat-2-Anna Rossi", "ts": 10, "org": "Npo Torino Srl", "logo": "0123456789abcdef.png" });
+        assert_eq!(
+            decide(&mut State::default(), &m, &[]),
+            Plan::Message {
+                acc: 2,
+                tag: "chat-2-Anna Rossi".into(),
+                title: "Anna Rossi".into(),
+                body: "hello".into(),
+                ts: 10,
+                again: false,
+                account: Account {
+                    org: "Npo Torino Srl".into(),
+                    logo: "0123456789abcdef.png".into(),
+                    hue: 171,
+                    initials: "NT".into()
+                }
+            }
+        );
+        // the logo where the owner has a single account: no name of the account on the title
+        let ring = json!({ "title": "Marco Bianchi is calling", "body": "Teams call, ringing now", "acc": 4, "call": "ringing", "ts": 100, "logo": "fedcba9876543210.png" });
+        assert!(matches!(
+            decide(&mut State::default(), &ring, &[]),
+            Plan::Ring { ref title, ref account, .. }
+                if title == "Marco Bianchi is calling" && account.logo == "fedcba9876543210.png" && account.org.is_empty()
+        ));
+        // a title that does not end with the account keeps all of it
+        let alert = json!({ "title": "Teams signed out", "body": "", "acc": 4, "org": "Tesco" });
+        assert!(matches!(
+            decide(&mut State::default(), &alert, &[]),
+            Plan::Alert { ref title, .. } if title == "Teams signed out"
+        ));
+    }
+
+    #[test]
+    fn an_account_without_logo_gets_a_mark_tinted_and_lettered_as_in_the_web_app() {
+        // app/src/components/Avatar.tsx hue(), app/src/lib/client.ts initials()
+        assert_eq!(
+            account_of(&json!({ "org": "MSC Cruises SA" })),
+            Account {
+                org: "MSC Cruises SA".into(),
+                logo: "".into(),
+                hue: 131,
+                initials: "MC".into()
+            }
+        );
+        assert_eq!((hue("Tesco"), initials("Tesco")), (30, "T".into()));
+        assert_eq!(
+            (hue("Zurich Insurance"), initials("Zurich Insurance")),
+            (281, "ZI".into())
+        );
+        assert_eq!(
+            (hue("Contoso (EU), Ltd"), initials("Contoso (EU), Ltd")),
+            (176, "CL".into())
+        );
+        assert_eq!(
+            (hue("Società Ü"), initials("Società Ü")),
+            (347, "SÜ".into())
+        );
+        assert_eq!(account_of(&json!({})), Account::default());
     }
 
     #[test]
@@ -370,6 +518,7 @@ mod tests {
             body: "Teams call, ringing now".into(),
             since: 1790000000000,
             answer: false,
+            account: Account::default(),
         }
     }
 
@@ -381,6 +530,7 @@ mod tests {
             body: "b".into(),
             since: 5,
             answer: true,
+            account: Account::default(),
         };
         assert_eq!(
             serde_json::to_string(&p).unwrap(),
@@ -389,6 +539,17 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&Plan::None { why: "w".into() }).unwrap(),
             r#"{"show":"none","why":"w"}"#
+        );
+        // the account only where there is one to draw
+        let p = Plan::Alert {
+            acc: 4,
+            title: "t".into(),
+            body: "b".into(),
+            account: account_of(&json!({ "org": "Tesco", "logo": "fedcba9876543210.png" })),
+        };
+        assert_eq!(
+            serde_json::to_string(&p).unwrap(),
+            r#"{"show":"alert","acc":4,"title":"t","body":"b","account":{"org":"Tesco","logo":"fedcba9876543210.png","hue":30,"initials":"T"}}"#
         );
     }
 }
