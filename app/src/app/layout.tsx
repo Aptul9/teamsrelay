@@ -9,7 +9,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "TeamsRelay",
   manifest: "/manifest.webmanifest",
-  icons: { apple: "/static/icon-180.png", icon: "/static/icon-192.png" },
+  icons: { apple: "/static/icon-180.png", icon: [{ url: "/static/favicon.svg", type: "image/svg+xml" }, "/static/icon-192.png"] },
   appleWebApp: { capable: true, title: "TeamsRelay", statusBarStyle: "black-translucent" },
 };
 
