@@ -77,7 +77,7 @@ describe("state rows", () => {
   });
 
   it("fills the missing fields of the identity", () => {
-    expect(parseState(Identity, '{"email":"anna.rossi@contoso.example"}', null)).toEqual({ name: "", email: "anna.rossi@contoso.example", tenant: "", av: "" });
+    expect(parseState(Identity, '{"email":"anna.rossi@contoso.example"}', null)).toEqual({ name: "", email: "anna.rossi@contoso.example", tenant: "", av: "", logo: "" });
   });
 
   it("reads the members of a chat, as the agent saves them", () => {
