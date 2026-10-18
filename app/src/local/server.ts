@@ -41,6 +41,7 @@ const STATIC: Record<string, { dir: "web" | "public"; file: string; type: string
   "/app.css": { dir: "web", file: "app.css", type: "text/css; charset=utf-8" },
   "/sw.js": { dir: "public", file: "sw.js", type: "text/javascript; charset=utf-8" },
   "/manifest.webmanifest": { dir: "public", file: "manifest.webmanifest", type: "application/manifest+json" },
+  "/static/favicon.svg": { dir: "public", file: "static/favicon.svg", type: "image/svg+xml" },
   "/static/icon-180.png": { dir: "public", file: "static/icon-180.png", type: "image/png" },
   "/static/icon-192.png": { dir: "public", file: "static/icon-192.png", type: "image/png" },
   "/static/icon-512.png": { dir: "public", file: "static/icon-512.png", type: "image/png" },
