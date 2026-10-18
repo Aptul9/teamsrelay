@@ -149,6 +149,52 @@ pub fn answer(origin: &str, cookies: &str, acc: i64, since: i64) -> Result<(), S
     Ok(())
 }
 
+// A picture a notification shows, the logo of the company of an account: at most MAX_PICTURE bytes, within
+// PICTURE_TIMEOUT, since the notification waits for it
+const MAX_PICTURE: u64 = 512 * 1024;
+const PICTURE_TIMEOUT: Duration = Duration::from_secs(3);
+
+// A file of the media folder of the server (MEDIA_NAME of app/src/shared/slot-db/rows.ts), loaded as the web page loads
+// it: GET /media/<file>?a=N with the session cookie. Only an image: a session that ran out answers its sign-in page.
+pub fn picture(origin: &str, cookies: &str, acc: i64, file: &str) -> Result<Vec<u8>, String> {
+    let named = file.split_once('.').is_some_and(|(name, ext)| {
+        name.len() == 16
+            && name.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+            && ["png", "jpg", "gif", "webp"].contains(&ext)
+    });
+    if !named {
+        return Err(format!("not a picture of the server: {file}"));
+    }
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(PICTURE_TIMEOUT))
+        .http_status_as_error(false)
+        .max_redirects(0)
+        .build()
+        .into();
+    let mut request = agent.get(format!("{origin}/media/{file}?a={acc}"));
+    if !cookies.is_empty() {
+        request = request.header("Cookie", cookies);
+    }
+    let mut response = request
+        .call()
+        .map_err(|e| format!("{origin} not reached: {e}"))?;
+    let status = response.status().as_u16();
+    let image = response
+        .headers()
+        .get("content-type")
+        .and_then(|t| t.to_str().ok())
+        .is_some_and(|t| t.starts_with("image/"));
+    if status != 200 || !image {
+        return Err(format!("picture {file}: HTTP {status}"));
+    }
+    response
+        .body_mut()
+        .with_config()
+        .limit(MAX_PICTURE)
+        .read_to_vec()
+        .map_err(|e| format!("picture {file}: {e}"))
+}
+
 // A request to the server with a JSON body: its status and the text of its answer, any status. No redirect is
 // followed: only the route itself answers, a redirect to a sign-in page is no 200.
 fn call(
@@ -219,11 +265,23 @@ mod tests {
     // A stand-in for the TeamsRelay server on a free port of this computer: it answers each request with the next
     // (status, body), and hands over what it got
     fn server(answers: Vec<(u16, &'static str)>) -> (String, mpsc::Receiver<Got>) {
+        typed_server(
+            answers
+                .into_iter()
+                .map(|(status, answer)| (status, "application/json", answer))
+                .collect(),
+        )
+    }
+
+    // The same, each answer with its content type
+    fn typed_server(
+        answers: Vec<(u16, &'static str, &'static str)>,
+    ) -> (String, mpsc::Receiver<Got>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
-            for (status, answer) in answers {
+            for (status, content_type, answer) in answers {
                 let (stream, _) = listener.accept().unwrap();
                 let mut reader = BufReader::new(stream.try_clone().unwrap());
                 let mut line = String::new();
@@ -253,7 +311,7 @@ mod tests {
                 } else {
                     ""
                 };
-                write!(stream, "HTTP/1.1 {status} X\r\n{location}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).unwrap();
+                write!(stream, "HTTP/1.1 {status} X\r\n{location}Content-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).unwrap();
                 tx.send(Got {
                     line: line.trim_end().to_string(),
                     headers,
@@ -266,6 +324,40 @@ mod tests {
     }
 
     const SIGNED_IN: &str = "theme=dark; better-auth.session_token=abc.def";
+
+    #[test]
+    fn loads_a_picture_of_the_server_with_the_session_cookie() {
+        let (origin, got) = typed_server(vec![(200, "image/png", "PNG of the logo")]);
+        assert_eq!(
+            picture(&origin, SIGNED_IN, 2, "0123456789abcdef.png").unwrap(),
+            b"PNG of the logo"
+        );
+        let r = got.recv().unwrap();
+        assert_eq!(r.line, "GET /media/0123456789abcdef.png?a=2 HTTP/1.1");
+        assert_eq!(r.header("cookie"), SIGNED_IN);
+    }
+
+    #[test]
+    fn takes_no_picture_but_an_image_of_the_server() {
+        // the sign-in page of a session that ran out, a redirect to it, a picture gone
+        let (origin, _got) = typed_server(vec![
+            (200, "text/html", "<html>sign in</html>"),
+            (302, "text/html", ""),
+            (404, "application/json", "{}"),
+        ]);
+        for _ in 0..3 {
+            assert!(picture(&origin, SIGNED_IN, 2, "0123456789abcdef.png").is_err());
+        }
+        // only a file of the media folder of the server, asked for nowhere else
+        for file in [
+            "../../api/accounts.png",
+            "0123456789ABCDEF.png",
+            "0123456789abcdef.svg",
+            "",
+        ] {
+            assert!(picture("http://127.0.0.1:9", SIGNED_IN, 2, file).is_err());
+        }
+    }
 
     #[test]
     fn finds_the_session_cookie() {

@@ -266,7 +266,9 @@ export function mediaFilesOf(db: Database.Database): Set<string> {
     add(extra.av);
     for (const im of Array.isArray(extra.images) ? extra.images : []) add(im?.f);
   }
-  add(parseState(Identity, db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.me) as string | null | undefined, null)?.av);
+  const me = parseState(Identity, db.prepare("SELECT v FROM state WHERE k=?").pluck().get(STATE.me) as string | null | undefined, null);
+  add(me?.av);
+  add(me?.logo);
   return files;
 }
 

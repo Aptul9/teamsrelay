@@ -226,7 +226,7 @@ describe("relay joined to a server", () => {
         ["Anna Rossi", "ciao", "12:19", 1, "0123456789abcdef.png", "one"],
       ],
       anna: [["1790431664072", "ciao", "<p>ciao</p>"]],
-      me: { name: "Test User", email: "test.user@contoso.example", tenant: "Contoso", av: "" },
+      me: { name: "Test User", email: "test.user@contoso.example", tenant: "Contoso", av: "", logo: "" },
       activity: ["25006882909"],
       calls: [{ caller: "Anna Rossi", since: 1790500000000, seconds: 9 }],
       health: "green",
@@ -619,6 +619,22 @@ describe("what a relay sends when it joins", () => {
     await sleep(1500);
     expect(onServerAt(j.slot, (db) => db.prepare("SELECT DISTINCT chat FROM chat_messages").pluck().all())).toEqual(["Anna Rossi"]);
     expect(fs.readdirSync(path.join(dataDir, String(j.slot), "media"))).toEqual(["e5e5e5e5e5e5e5e5.png"]);
+    await j.stop();
+  });
+});
+
+describe("the logo of the company of the account", () => {
+  it("goes to the server with the identity that names it", async () => {
+    const j = await join("owner-logo", {}, (r) => {
+      fs.mkdirSync(path.join(r.dir, "media"), { recursive: true });
+      fs.writeFileSync(path.join(r.dir, "media", "1212121212121212.png"), PNG);
+      r.store.setState(STATE.me, JSON.stringify({ name: "Test User", email: "test.user@contoso.example", tenant: "Contoso", av: "", logo: "1212121212121212.png" }));
+    });
+    j.start();
+    const onServer = path.join(dataDir, String(j.slot), "media", "1212121212121212.png");
+    await until("the logo on the server", () => fs.existsSync(onServer));
+    expect(fs.readFileSync(onServer)).toEqual(PNG);
+    expect(withSlot(j.slot, (r) => r.identity().logo)).toBe("1212121212121212.png");
     await j.stop();
   });
 });

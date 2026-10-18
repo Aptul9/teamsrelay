@@ -11,7 +11,7 @@ use std::{
 
 use jni::{
     objects::{JClass, JString},
-    sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE},
+    sys::{jboolean, jbyteArray, jint, jlong, jstring, JNI_FALSE, JNI_TRUE},
     JNIEnv,
 };
 use teamsrelay_core::{notice, server, store::Store};
@@ -165,6 +165,31 @@ pub extern "system" fn Java_io_github_aptul9_teamsrelay_push_Core_stopRing(
     if let Some(Err(e)) = store().map(|s| notice::stop_ring(s, acc.into(), since)) {
         log(WARN, &e);
     }
+}
+
+// A picture of the server for a notification, the logo of the company of an account: its bytes, none when it could not
+// be loaded. Blocks while the server answers.
+#[no_mangle]
+pub extern "system" fn Java_io_github_aptul9_teamsrelay_push_Core_picture(
+    mut env: JNIEnv,
+    _: JClass,
+    origin: JString,
+    cookies: JString,
+    acc: jint,
+    file: JString,
+) -> jbyteArray {
+    let (origin, cookies, file) = (
+        text(&mut env, &origin),
+        text(&mut env, &cookies),
+        text(&mut env, &file),
+    );
+    let bytes = server::picture(&origin, &cookies, acc.into(), &file).unwrap_or_else(|e| {
+        log(WARN, &e);
+        Vec::new()
+    });
+    env.byte_array_from_slice(&bytes)
+        .map(|a| a.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 // Answer on the notification of a ringing call: whether the server took it. Blocks while the server answers.

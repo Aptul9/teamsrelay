@@ -40,10 +40,11 @@ async function badge(d) {
 // time it was sent (ts). The same message sent again (a retry) changes nothing; an older one (a retry, or a push
 // service that delivers out of order) leaves the newer one there, quiet. A push without a tag (checks, missed calls,
 // session expired) gets a notification of its own. What alerts rings the bell of the app when a window of it plays
-// one, quietly then.
+// one, quietly then. The icon is the logo of the company of the account, where the server has one.
 async function show(d) {
   const title = d.title || 'TeamsRelay';
-  const base = { icon: '/static/icon-192.png', badge: '/static/icon-192.png' };
+  const icon = d.acc && d.logo ? '/media/' + encodeURIComponent(d.logo) + '?a=' + d.acc : '/static/icon-192.png';
+  const base = { icon, badge: '/static/icon-192.png' };
   if (d.call) return showCall(title, d, base);
   if (!d.tag) {
     const quiet = await bellRung();

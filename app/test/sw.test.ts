@@ -13,6 +13,7 @@ type Shown = {
   vibrate?: number[];
   actions?: { action: string; title: string }[];
   timestamp?: number;
+  icon?: string;
   data: { lines?: string[]; body?: string };
 };
 
@@ -88,6 +89,16 @@ describe("service worker notifications", () => {
     expect(n.body).toBe("Automatic check: the whole chain works.");
     expect(n.tag).toMatch(/^teams-\d+$/);
     expect(n.renotify).toBeUndefined();
+  });
+
+  it("shows the logo of the company of the account as its icon where the server has one, the icon of the app otherwise", async () => {
+    const sw = serviceWorker();
+    const logo = "0123456789abcdef.png";
+    expect((await sw.push({ title: "Anna Rossi · Contoso", body: "ciao", acc: 2, tag: "chat-2-Anna Rossi", ts: 1, logo })).icon).toBe("/media/0123456789abcdef.png?a=2");
+    expect((await sw.push({ title: "Marco Bianchi is calling · Contoso", body: "", acc: 2, tag: "call-2", call: "ringing", ts: 5, logo })).icon).toBe("/media/0123456789abcdef.png?a=2");
+    expect((await sw.push({ title: "Teams signed out", body: "", acc: 2 })).icon).toBe("/static/icon-192.png");
+    // the local relay has no account
+    expect((await sw.push({ title: "Anna Rossi", body: "ciao", logo })).icon).toBe("/static/icon-192.png");
   });
 
   // user 2026-09-30: a notification that lists the previous messages looks broken, the newest one is enough

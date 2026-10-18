@@ -8,17 +8,69 @@ import { copyImage, fetchImage } from "./teams/scripts/media";
 // Maximum size of an image fetched from a message
 const MAX_IMAGE = 8e6;
 
-// Images, profile pictures (data/N/media) and attachments (data/N/files). A file is written once and kept while a row
-// names it: images and pictures no row names any more leave the media folder (prune).
+// The logo of the company of an account: largest file taken (the square logo of a sign-in page is 240x240 px, a few
+// KB), and how often it is asked for again (ms)
+const MAX_LOGO = 256_000;
+const LOGO_EVERY = 86_400_000;
+// Where Microsoft keeps the images of the sign-in branding of organizations (aadcdn.msauthimages.net,
+// aadcdn.msftauthimages.net)
+const BRANDING_HOST = /^https:\/\/[a-z0-9-]+\.(msauthimages|msftauthimages)\.net\//;
+const PNG_MAGIC = Buffer.from("89504e470d0a1a0a", "hex");
+// PNG or JPEG by the first bytes: the formats of a sign-in logo
+const logoExt = (d: Buffer) => (d.subarray(0, 8).equals(PNG_MAGIC) ? "png" : d[0] === 0xff && d[1] === 0xd8 && d[2] === 0xff ? "jpg" : null);
+
+// Images, profile pictures, the logo of the company of the account (data/N/media) and attachments (data/N/files). A
+// file is written once and kept while a row names it: images and pictures no row names any more leave the media
+// folder (prune).
 export class Media {
   // addresses the page could not fetch (Giphy GIFs without CORS...), per image: their public link stays, no new
   // attempt; another address of the same image (Teams loaded it meanwhile) is tried
   private readonly failed = new Set<string>();
+  private logoAsked = { tenant: "", at: 0 };
 
   constructor(
     private readonly mediaDir: string,
     private readonly filesDir: string,
+    private readonly get: typeof fetch = fetch,
   ) {}
+
+  // The logo of the company of the account: the square logo (TileLogo) of the Microsoft sign-in branding of its
+  // organization, which the sign-in page shows once the address is typed, asked for the same way. File name; "" when
+  // the organization has none (a banner alone does not fit a round icon), null when Microsoft could not be reached.
+  async logo(email: string): Promise<string | null> {
+    try {
+      const r = await this.get("https://login.microsoftonline.com/common/GetCredentialType", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: email }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!r.ok) return null;
+      const answer = (await r.json()) as { EstsProperties?: { UserTenantBranding?: { TileLogo?: unknown }[] } };
+      const url = String(answer.EstsProperties?.UserTenantBranding?.[0]?.TileLogo ?? "");
+      if (!BRANDING_HOST.test(url)) return "";
+      const img = await this.get(url, { signal: AbortSignal.timeout(15_000) });
+      if (!img.ok) return null;
+      const data = Buffer.from(await img.arrayBuffer());
+      const ext = data.length <= MAX_LOGO ? logoExt(data) : null;
+      if (!ext) return "";
+      const file = `${avatarFile(url).slice(0, 16)}.${ext}`;
+      fs.mkdirSync(this.mediaDir, { recursive: true });
+      fs.writeFileSync(path.join(this.mediaDir, file), data);
+      return file;
+    } catch (e) {
+      log.warn("media", `logo: ${errorText(e)}`);
+      return null;
+    }
+  }
+
+  // The logo of the company in the identity of the account, asked for once a day and at once for another
+  // organization: saved, the one known, stays while Microsoft cannot be reached
+  async companyLogo(me: { email: string; tenant: string }, saved: string): Promise<string> {
+    if (!me.email || (this.logoAsked.tenant === me.tenant && Date.now() - this.logoAsked.at < LOGO_EVERY)) return saved;
+    this.logoAsked = { tenant: me.tenant, at: Date.now() };
+    return (await this.logo(me.email)) ?? saved;
+  }
 
   // File of the image `key` of a message, fetched by the page; null when it cannot be read
   async image(page: Page, key: string, src: string): Promise<string | null> {

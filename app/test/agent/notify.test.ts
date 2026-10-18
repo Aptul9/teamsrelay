@@ -26,7 +26,7 @@ describe("push deduplication", () => {
 });
 
 describe("notification title", () => {
-  const me = { name: "Anna Rossi", email: "anna.rossi@contoso.example", tenant: "Contoso", av: "" };
+  const me = { name: "Anna Rossi", email: "anna.rossi@contoso.example", tenant: "Contoso", av: "", logo: "" };
 
   it("names the account only when the owner has more than one", () => {
     expect(accountLabel(false, me, 2)).toBe("");

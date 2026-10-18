@@ -44,4 +44,8 @@ object Core {
 
     // Answer on a ringing call: whether the server took it. Off the main thread, it waits for the server.
     @JvmStatic external fun answer(origin: String, cookies: String, acc: Int, since: Long): Boolean
+
+    // a picture of the server (the logo of the company of an account), empty when it could not be loaded; off the
+    // main thread, it waits for the server
+    @JvmStatic external fun picture(origin: String, cookies: String, acc: Int, file: String): ByteArray
 }
