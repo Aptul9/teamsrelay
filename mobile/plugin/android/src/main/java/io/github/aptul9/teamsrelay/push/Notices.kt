@@ -11,12 +11,13 @@ import android.media.RingtoneManager
 import android.os.Bundle
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
 import org.json.JSONArray
 import org.json.JSONObject
 
 // How the messages of the relay show on the phone. What each one shows is decided by the shared Rust (Core.notice,
 // mobile/core/src/notice.rs), drawn here: a call that rings has one notification per account on the Calls channel,
-// whose sound is the ringtone of the phone, repeated (FLAG_INSISTENT) until the call ends, the notification is tapped
+// full screen over the lock screen (CallActivity), whose sound is the ringtone of the phone, repeated (FLAG_INSISTENT) until the call ends, the notification is tapped
 // or the shade opened, and at most RING_FOR; once it ends a quiet notification says who called. A chat keeps one
 // notification with its newest message; each relay alert (sign-in needed, check results, a missed call a check found)
 // has one of its own.
@@ -87,18 +88,28 @@ object Notices {
         manager(context).notify("alert", (System.currentTimeMillis() % Int.MAX_VALUE).toInt(), n)
     }
 
-    // A call of an account that can take it from the app (answer) offers Answer, which takes it in the app (PushPlugin)
+    // A call rings full screen over the lock screen (CallActivity) where the phone is locked or its screen off, as a
+    // heads-up notification while it is in use, or as that alone where Android does not let the app (Android 14 and
+    // later, see PushPlugin). One of an account that can take it from the app (answer) is an incoming call with Answer,
+    // which takes it in the app (PushPlugin), and Decline, which silences this phone only
     private fun ring(context: Context, acc: Int, title: String, body: String, since: Long, answer: Boolean) {
+        val onDecline = decline(context, acc, since)
         val b = builder(context, CALLS, acc, title, body)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setTimeoutAfter(RING_FOR)
             .setWhen(since)
-        if (answer) b.addAction(0, "Answer", answer(context, acc, since))
+            .setFullScreenIntent(screen(context, acc, title, body, since, answer), true)
+        if (answer) b.setStyle(NotificationCompat.CallStyle.forIncomingCall(Person.Builder().setName(title).build(), onDecline, answer(context, acc, since)))
+        else b.addAction(0, "Decline", onDecline)
         val n = b.build()
         n.flags = n.flags or Notification.FLAG_INSISTENT
         manager(context).notify(CALL_TAG, acc, n)
     }
+
+    // Whether the call of the account still rings: its notification on the Calls channel is on screen
+    fun ringing(context: Context, acc: Int): Boolean =
+        manager(context).activeNotifications.any { it.tag == CALL_TAG && it.id == acc && it.notification.channelId == CALLS }
 
     // Answer taken in the app: the ringtone stops at once, and pushes of the ring still on their way change nothing; the
     // end of the call from the relay replaces the notification
@@ -143,13 +154,32 @@ object Notices {
     }
 
     // Answer opens the app, or brings it to the front, with the call to take: its account and when it started ringing
-    private fun answer(context: Context, acc: Int, since: Long): PendingIntent {
-        val intent = (context.packageManager.getLaunchIntentForPackage(context.packageName) ?: Intent()).apply {
+    fun answerIntent(context: Context, acc: Int, since: Long): Intent =
+        (context.packageManager.getLaunchIntentForPackage(context.packageName) ?: Intent()).apply {
             action = ACTION_ANSWER
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(EXTRA_ACC, acc)
             putExtra(EXTRA_SINCE, since)
         }
+
+    private fun answer(context: Context, acc: Int, since: Long): PendingIntent =
+        PendingIntent.getActivity(context, acc, answerIntent(context, acc, since), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+    // Decline: this phone stops ringing (DeclineReceiver)
+    private fun decline(context: Context, acc: Int, since: Long): PendingIntent {
+        val intent = Intent(context, DeclineReceiver::class.java).putExtra(EXTRA_ACC, acc).putExtra(EXTRA_SINCE, since)
+        return PendingIntent.getBroadcast(context, acc, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    // The ring screen of the call (CallActivity), which Android opens itself
+    private fun screen(context: Context, acc: Int, title: String, body: String, since: Long, answer: Boolean): PendingIntent {
+        val intent = Intent(context, CallActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .putExtra(EXTRA_ACC, acc)
+            .putExtra(EXTRA_SINCE, since)
+            .putExtra(EXTRA_TITLE, title)
+            .putExtra(EXTRA_BODY, body)
+            .putExtra(EXTRA_ANSWER, answer)
         return PendingIntent.getActivity(context, acc, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 

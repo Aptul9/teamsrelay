@@ -27,7 +27,8 @@ kotlin {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.9.0")
+    // NotificationCompat.CallStyle: 1.10 and later
+    implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.6.0")
     implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     implementation("com.google.firebase:firebase-messaging")
