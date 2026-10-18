@@ -41,6 +41,9 @@ object Notices {
     // the relay pushes a call for a minute at most while it rings (app/src/agent/logic/calls.ts)
     const val RING_FOR = 65_000L
     private const val CALL_TAG = "call"
+    // the quiet notification of a call that ended: a tag of its own, since the timeout of the ring (RING_FOR) cancels
+    // whatever shows under the tag of the ring when it runs out
+    private const val ENDED_TAG = "ended"
     // the summary of the notifications of an account, one per account (id: the account)
     private const val GROUP_TAG = "group"
     // size of a logo or mark, px
@@ -198,7 +201,7 @@ object Notices {
     private fun ended(context: Context, acc: Int, title: String, body: String, since: Long, account: Account?) {
         val nm = manager(context)
         nm.cancel(CALL_TAG, acc)
-        nm.notify(CALL_TAG, acc, builder(context, CALLS_ENDED, acc, title, body, account).setWhen(since).build())
+        nm.notify(ENDED_TAG, acc, builder(context, CALLS_ENDED, acc, title, body, account).setWhen(since).build())
         summary(context, CALLS_ENDED, acc, account)
     }
 
