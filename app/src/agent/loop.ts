@@ -15,7 +15,7 @@ import { awayFromChats, backToChats, drainHook, keepActive, ownerUses, park, pre
 import { prefetchReadBy } from "./jobs/read-by";
 import { scheduledSelfCheck, selfCheckDue } from "./jobs/self-check";
 import { trySignIn } from "./jobs/sign-in";
-import { hostOf, isTeamsUrl, pickTeamsPage } from "./logic/hosts";
+import { BLANK, hostOf, isTeamsUrl, pickTeamsPage } from "./logic/hosts";
 import { errorText, log } from "./log";
 import { Scheduler, type Job } from "./scheduler";
 import { asAgent } from "./teams/input";
@@ -27,8 +27,6 @@ const ACTIVITY_RETRY = 30;
 // The automatic check judges Teams once it had time to load: a start or a reload inside a window of the check shows
 // Teams within a minute; Teams not ready this many seconds into the window is the problem the check reports
 export const SELF_CHECK_GRACE = 300;
-// Pages that show nothing: a tab just opened, an error page of the browser
-const BLANK = /^(about:|chrome:|edge:|chrome-error:)/;
 
 type Round = { onTeams: boolean; want: string };
 
