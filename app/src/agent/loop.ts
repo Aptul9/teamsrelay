@@ -1,7 +1,7 @@
 import type { BrowserContext, Page } from "playwright-core";
 import { STATE } from "@/shared/slot-db/state";
 import { runPendingCommands } from "./commands";
-import type { Agent } from "./context";
+import { nowSeconds, type Agent } from "./context";
 import { readActivity } from "./jobs/activity";
 import { CallWatch } from "./jobs/calls";
 import { scanChats, scanChatsFull } from "./jobs/chat-list";
@@ -10,6 +10,7 @@ import { watchDesktop } from "./jobs/desktop";
 import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
 import { pruneMedia } from "./jobs/media";
+import { pushMentions } from "./jobs/mentions";
 import { FeedAfterCalls, pushMissedCalls } from "./jobs/missed-calls";
 import { awayFromChats, backToChats, drainHook, keepActive, ownerUses, park, preparePage, wanted } from "./jobs/page-setup";
 import { prefetchReadBy } from "./jobs/read-by";
@@ -24,6 +25,9 @@ import { sleep, TeamsPage } from "./teams/page";
 // Seconds between two inputs on the Teams page
 const ACTIVE_EVERY = 60;
 const ACTIVITY_RETRY = 30;
+// A muted chat with something new reads the feed out of its turn, at most once in this many seconds: muted chats are
+// often the busy ones, and each read takes Teams to the Activity view and back
+const MENTION_READ_GAP = 60;
 // The automatic check judges Teams once it had time to load: a start or a reload inside a window of the check shows
 // Teams within a minute; Teams not ready this many seconds into the window is the problem the check reports
 export const SELF_CHECK_GRACE = 300;
@@ -48,15 +52,20 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
   let parkedFor: string | undefined;
   // a feed read that failed is tried once more ACTIVITY_RETRY seconds later, not 150 rounds later
   let retryAt = 0;
+  const mentionReadDue = () => !!a.mentionsDue && nowSeconds() - Number(a.store.getState(STATE.activityTs) || 0) >= MENTION_READ_GAP;
   const activity = async () => {
     const retry = retryAt > 0;
     retryAt = 0;
     afterCalls.ran();
+    a.mentionsDue = false;
     if ((await own(() => readActivity(a))) === null) {
       if (!retry) retryAt = Date.now() + ACTIVITY_RETRY * 1000;
       return;
     }
-    if (!a.checkedOnly?.()) await pushMissedCalls(a);
+    if (!a.checkedOnly?.()) {
+      await pushMissedCalls(a);
+      await pushMentions(a);
+    }
   };
   // An account started only to be checked has its checks: its start would find Teams still loading. For the others
   // the check waits for Teams, for SELF_CHECK_GRACE at most: since when Teams was not ready while the check was due,
@@ -102,7 +111,7 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     a.config.activity && {
       name: "activity",
       every: { rounds: 150, offset: 5 },
-      force: () => (retryAt > 0 && Date.now() >= retryAt) || afterCalls.due(),
+      force: () => (retryAt > 0 && Date.now() >= retryAt) || afterCalls.due() || mentionReadDue(),
       when: () => free() && !!a.railReady,
       catchUp: true,
       run: activity,

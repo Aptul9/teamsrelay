@@ -36,6 +36,17 @@ describe("new message detection", () => {
     expect(d.scan([row("Anna Rossi (You)", "more notes", "9:05", true), row("Release notes", "build 1.4.2", "9:06", true, true)])).toEqual([]);
   });
 
+  // Teams mutes the messages of a muted chat, not the @mentions of you: the agent reads the Activity feed for them
+  it("notes a muted chat with something new apart, once, and never the self chat", () => {
+    const d = primed(row("Anna Rossi (You)", "notes", "9:00"), row("Release notes", "build 1.4.1", "9:00", false, true));
+    expect(d.takeMuted()).toEqual([]);
+    d.scan([row("Anna Rossi (You)", "more notes", "9:05", true), row("Release notes", "build 1.4.2", "9:06", true, true)]);
+    expect(d.takeMuted()).toEqual(["Release notes"]);
+    expect(d.takeMuted()).toEqual([]);
+    d.scan([row("Release notes", "build 1.4.2", "9:06", true, true)]);
+    expect(d.takeMuted()).toEqual([]);
+  });
+
   it("notifies a chat that appears unread, not one that appears read", () => {
     const d = primed(row("Anna Rossi", "ciao", "10:30"));
     expect(d.scan([row("Marco Neri", "hello", "10:40", true), row("Sara Gialli", "hi", "10:41", false)])).toEqual([{ chat: "Marco Neri", body: "hello" }]);

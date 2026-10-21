@@ -23,6 +23,11 @@ export async function notifyNew(a: Agent, rows: readonly ListRow[]) {
     log.info("NEWMSG", chat, { preview: body.slice(0, 50), inApp: shown || undefined });
     if (!shown) await a.notifier.message(chat, body, chat);
   }
+  const muted = a.detector.takeMuted();
+  if (muted.length) {
+    log.info("chats", "muted chat with something new: reading Activity for a mention", { chats: muted.join(", ") });
+    a.mentionsDue = true;
+  }
 }
 
 // The chats Teams has in the page: saved on top of the known ones, pictures copied (up to 8 new ones) or not, then
