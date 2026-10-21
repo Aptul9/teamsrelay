@@ -17,13 +17,15 @@ const SEEN_PER_CHAT = 8;
 // a chat change to an incoming text the chat did not show before. The row of a chat can show something else for a
 // while (someone typing the next message, prod 2026-09-30) and then its last message again, or an older one when the
 // last is deleted: those are no new messages. Fallback: the chat turns unread. The first list only primes the state;
-// the chat with yourself and muted chats never notify.
+// the chat with yourself and muted chats never notify. A muted chat with something new is noted apart (takeMuted):
+// Teams mutes its messages, not the @mentions of you, which the Activity feed tells.
 export class NewMessageDetector {
   private primed = false;
   private readonly last = new Map<string, { preview: string; time: string }>();
   private readonly seen = new Map<string, { preview: string; time: string }[]>();
   private readonly unread = new Map<string, boolean>();
   private readonly lastNotified = new Map<string, string>();
+  private mutedNews: string[] = [];
 
   scan(chats: readonly ListedChat[]): NewMessage[] {
     const out: NewMessage[] = [];
@@ -31,14 +33,15 @@ export class NewMessageDetector {
       if (!ch.name) continue;
       const preview = (ch.preview || "").trim();
       const sig = `${preview}|${ch.time}`;
-      if (this.primed && !isSelfChat(ch.name) && !ch.muted) {
+      if (this.primed && !isSelfChat(ch.name)) {
         const inbound = !!preview && !TEXTS.outbound.test(preview);
         const changed = inbound && this.last.has(ch.name) && !this.shown(ch.name, preview, ch.time);
         const becameUnread = this.unread.get(ch.name) !== true && ch.unread;
         if (changed || becameUnread) {
           const key = `${sig}|${ch.unread ? "u" : "r"}`;
           if (this.lastNotified.get(ch.name) !== key) {
-            out.push({ chat: ch.name, body: inbound ? preview : `New message from ${ch.name}` });
+            if (ch.muted) this.mutedNews.push(ch.name);
+            else out.push({ chat: ch.name, body: inbound ? preview : `New message from ${ch.name}` });
             this.lastNotified.set(ch.name, key);
           }
         }
@@ -49,6 +52,13 @@ export class NewMessageDetector {
     }
     this.primed = true;
     return out;
+  }
+
+  // Muted chats with something new since the last call
+  takeMuted(): string[] {
+    const chats = this.mutedNews;
+    this.mutedNews = [];
+    return chats;
   }
 
   // The chat showed this message before: same text at the same time, or at the time it had before it turned into a date

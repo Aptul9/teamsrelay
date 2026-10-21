@@ -46,6 +46,8 @@ export type Agent = {
   tp: TeamsPage;
   // last health row written, null until the first one
   health: AgentHealth | null;
+  // a muted chat showed something new: the Activity feed is read at the next round it can, for a mention of you
+  mentionsDue?: boolean;
   // the Activity button of the side bar could be clicked at the last health check: right after a start Teams shows
   // the chat list first, then the side bar under its loading bar
   railReady?: boolean;

@@ -27,6 +27,8 @@ export const STATE = {
   // JSON string[]: ids of the missed calls of the feed an account always on already alerted, newest first
   // (src/agent/jobs/missed-calls.ts)
   callsTold: "calls_told",
+  // JSON string[]: ids of the mentions of the feed already looked at for a push, newest first (src/agent/jobs/mentions.ts)
+  mentionsTold: "mentions_told",
   // JSON CallState: the incoming call Teams shows, written by the agent while it rings and once it ends
   call: "call",
   // JSON InCall: the call in progress, written by the agent while the Teams page records from the microphone

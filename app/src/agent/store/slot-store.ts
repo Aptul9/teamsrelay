@@ -103,6 +103,10 @@ export class SlotStore {
     })();
   }
 
+  isMutedChat(name: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM chats WHERE name=? AND muted=1").get(name);
+  }
+
   isKnownChat(name: string): boolean {
     return !!this.db.prepare("SELECT 1 FROM chats WHERE name=?").get(name);
   }
@@ -228,6 +232,20 @@ export class SlotStore {
   // Ids of the items with their Teams id the Activity feed shows unread (bold), in feed order
   unreadActivity(): string[] {
     return this.db.prepare(`SELECT id FROM activity WHERE unread=1 AND ${HAS_TEAMS_ID} ORDER BY pos`).pluck().all() as string[];
+  }
+
+  // Every mention of you in the feed that has its Teams id, in feed order
+  mentions(): { id: string; actor: string; preview: string; chat: string; channel: boolean; unread: boolean }[] {
+    return (
+      this.db.prepare(`SELECT id, actor, preview, chat, channel, unread FROM activity WHERE kind='mention' AND ${HAS_TEAMS_ID} ORDER BY pos`).all() as {
+        id: string;
+        actor: string;
+        preview: string;
+        chat: string;
+        channel: number;
+        unread: number;
+      }[]
+    ).map((m) => ({ ...m, channel: !!m.channel, unread: !!m.unread }));
   }
 
   // Every missed call of the feed that has its Teams id, in feed order: who called, and the time Teams shows. Teams
