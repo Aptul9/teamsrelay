@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-49 -71 700 700" width="700" height="700">
+<!-- Master of badge.png and of mobile/plugin/android/src/main/res/drawable-*/ic_stat_teamsrelay.png: icon.svg as the white silhouette Android keeps for the status bar, which reads the alpha channel only. From mobile/: npx tauri icon ../app/public/static/status-icon.svg -p 24,36,48,72,96 -o out, then 24x24.png to drawable-mdpi, 36x36 hdpi, 48x48 xhdpi, 72x72 xxhdpi, 96x96 xxxhdpi and to ../app/public/static/badge.png. Shapes and coordinates of icon.svg, back to front: a black stroke keeps each shape apart from the one behind it. -->
+  <defs>
+    <mask id="m" maskUnits="userSpaceOnUse" x="-49" y="-71" width="700" height="700">
+      <circle cx="402" cy="124.5" r="70" fill="#fff"/>
+      <path d="M250 222 H415 A85 85 0 0 1 500 307 V443 A85 85 0 0 1 415 528 H250 Z" fill="#fff"/>
+      <path d="M142 193 H249 A85 85 0 0 1 334 278 V443 A85 85 0 0 0 419 528 H197 A140 140 0 0 1 57 388 V278 A85 85 0 0 1 142 193 Z" fill="#fff" stroke="#000" stroke-width="32" paint-order="stroke"/>
+      <circle cx="194" cy="83" r="83" fill="#fff"/>
+      <rect x="-16" y="248" width="254" height="254" rx="61" fill="#000"/>
+      <rect x="0" y="264" width="222" height="222" rx="45" fill="#fff"/>
+      <rect x="55" y="308" width="112" height="30" fill="#000"/>
+      <rect x="95" y="308" width="32" height="138" fill="#000"/>
+      <path d="M470 258 V540 A66 18 0 0 0 602 540 V258 A66 18 0 0 0 470 258 Z" fill="#fff" stroke="#000" stroke-width="32" paint-order="stroke"/>
+      <ellipse cx="536" cy="258" rx="66" ry="18" fill="none" stroke="#000" stroke-width="12"/>
+    </mask>
+  </defs>
+  <rect x="-49" y="-71" width="700" height="700" fill="#fff" mask="url(#m)"/>
+</svg>

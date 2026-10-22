@@ -66,7 +66,7 @@ describe("app files", () => {
     expect(r.headers.get("content-type")).toMatch(/^text\/html/);
     expect(r.headers.get("content-security-policy")).toMatch(/default-src 'none'.*script-src 'self'.*connect-src 'self'.*frame-ancestors 'none'/);
     expect(r.headers.get("x-content-type-options")).toBe("nosniff");
-    for (const f of ["/app.js", "/app.css", "/sw.js", "/manifest.webmanifest", "/static/icon-180.png", "/static/icon-192.png", "/static/icon-512.png"]) {
+    for (const f of ["/app.js", "/app.css", "/sw.js", "/manifest.webmanifest", "/static/badge.png", "/static/icon-180.png", "/static/icon-192.png", "/static/icon-512.png"]) {
       expect((await call(f, { token: null })).status, f).toBe(200);
     }
   });

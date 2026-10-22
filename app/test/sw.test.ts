@@ -14,6 +14,7 @@ type Shown = {
   actions?: { action: string; title: string }[];
   timestamp?: number;
   icon?: string;
+  badge?: string;
   data: { lines?: string[]; body?: string };
 };
 
@@ -99,6 +100,13 @@ describe("service worker notifications", () => {
     expect((await sw.push({ title: "Teams signed out", body: "", acc: 2 })).icon).toBe("/static/icon-192.png");
     // the local relay has no account
     expect((await sw.push({ title: "Anna Rossi", body: "ciao", logo })).icon).toBe("/static/icon-192.png");
+  });
+
+  it("has the silhouette of the app icon for the status bar of Android, which shows the alpha channel only", async () => {
+    const sw = serviceWorker();
+    expect((await sw.push({ title: "Anna Rossi", body: "ciao", acc: 2, tag: "chat-2-Anna Rossi", ts: 1, logo: "0123456789abcdef.png" })).badge).toBe("/static/badge.png");
+    expect((await sw.push({ title: "Marco Bianchi is calling", body: "", acc: 2, tag: "call-2", call: "ringing", ts: 5 })).badge).toBe("/static/badge.png");
+    expect((await sw.push({ title: "Teams signed out", body: "" })).badge).toBe("/static/badge.png");
   });
 
   // user 2026-09-30: a notification that lists the previous messages looks broken, the newest one is enough
