@@ -21,7 +21,7 @@ RUN mkdir -p /agent/node_modules/better-sqlite3/prebuilds \
 
 # Every Teams account: Chromium and the remote desktop of linuxserver, the agents, and the supervisor that runs
 # them (s6 service svc-teamsrelay). The desktop no longer opens a browser by itself.
-FROM lscr.io/linuxserver/chromium:latest@sha256:cf6200ccdcb224feaf5d3bde4ce45b3783c926a7496c98059cae1e0db78e5b2f AS browsers
+FROM lscr.io/linuxserver/chromium:latest@sha256:2d32e1b2b28aa92973aa0f58c433c0b045db6e1224d7001eeaa9cde1a474ce13 AS browsers
 # wlrctl brings the window of an account to the front. abc, the user of the browsers, loses its passwordless
 # sudo: a browser taken over by a web page must not reach root and, with it, data/ and vapid/.
 RUN apt-get update \
