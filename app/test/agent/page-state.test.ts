@@ -1,7 +1,7 @@
 // Page scripts about the whole Teams page: visibility, notification hook, health probe, identity, images.
 import { describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
-import { copyImage, fetchImage } from "@/agent/teams/scripts/media";
+import { copyImage, fetchImage, squareLogo } from "@/agent/teams/scripts/media";
 import { drainInput, drainNotifications, installNotificationHook, makeVisible, probePage, readIdentity, watchInput } from "@/agent/teams/scripts/page-state";
 import { picture, withChrome } from "./chrome";
 
@@ -99,5 +99,55 @@ describe("page state scripts", () => {
     const png = await chrome.page.evaluate(copyImage, picture(40));
     expect(Buffer.from(png ?? "", "base64").subarray(1, 4).toString()).toBe("PNG");
     expect(await chrome.page.evaluate(copyImage, "https://elsewhere.example/a.png")).toBeNull();
+  });
+
+  // A banner as Microsoft's sign-in page shows it, 280x118: dark rectangles (x, y, width, height) on transparent
+  const banner = (rects: number[][]) =>
+    chrome.page.evaluate((rs) => {
+      const c = document.createElement("canvas");
+      c.width = 280;
+      c.height = 118;
+      const g = c.getContext("2d")!;
+      g.fillStyle = "#12205a";
+      for (const [x, y, w, h] of rs) g.fillRect(x, y, w, h);
+      return c.toDataURL("image/png").split(",")[1];
+    }, rects);
+  // Size of a PNG, and the opacity of one of its pixels
+  const sizeOf = (png: string | null) => {
+    const b = Buffer.from(png ?? "", "base64");
+    return [b.readUInt32BE(16), b.readUInt32BE(20)];
+  };
+  const alphaAt = (png: string | null, x: number, y: number) =>
+    chrome.page.evaluate(
+      async ({ png, x, y }) => {
+        const image = await createImageBitmap(new Blob([Uint8Array.from(atob(png ?? ""), (c) => c.charCodeAt(0))]));
+        const c = new OffscreenCanvas(image.width, image.height);
+        const g = c.getContext("2d")!;
+        g.drawImage(image, 0, 0);
+        return g.getImageData(x, y, 1, 1).data[3];
+      },
+      { png, x, y },
+    );
+
+  it("takes the mark of a banner where it stands out of the name beside it", async () => {
+    // a mark as tall as the banner, then the letters of the name
+    const png = await chrome.page.evaluate(squareLogo, await banner([[0, 9, 100, 100], [120, 38, 30, 42], [156, 38, 30, 42], [192, 38, 30, 42]]));
+    expect(sizeOf(png)).toEqual([100, 100]);
+    expect([await alphaAt(png, 0, 0), await alphaAt(png, 99, 99)]).toEqual([255, 255]);
+  });
+
+  it("takes all of a banner that is a name alone, or whose first group does not stand out, centered on a square", async () => {
+    const name = await chrome.page.evaluate(squareLogo, await banner([[0, 38, 30, 42], [36, 38, 30, 42], [72, 38, 30, 42]]));
+    expect(sizeOf(name)).toEqual([102, 102]);
+    // rows 30 to 71 hold the letters, the first one at the left edge, a gap of 6 columns after it
+    expect([await alphaAt(name, 0, 0), await alphaAt(name, 0, 40), await alphaAt(name, 33, 40)]).toEqual([0, 255, 0]);
+    // a first letter about as wide as tall, but not taller than the others: no mark
+    const letters = await chrome.page.evaluate(squareLogo, await banner([[0, 38, 40, 42], [46, 38, 30, 42], [82, 38, 30, 42]]));
+    expect(sizeOf(letters)).toEqual([112, 112]);
+  });
+
+  it("gives nothing for a banner with no ink, and for what is no image", async () => {
+    expect(await chrome.page.evaluate(squareLogo, await banner([]))).toBeNull();
+    expect(await chrome.page.evaluate(squareLogo, "bm90IGFuIGltYWdl")).toBeNull();
   });
 });

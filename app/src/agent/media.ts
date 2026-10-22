@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Page } from "playwright-core";
 import { avatarFile, downloadFile, downloadUrl, isPlaceholderImage, isSharePointUrl, MAX_DOWNLOAD, MEDIA_EXT, pruneMedia } from "./logic/files";
 import { errorText, log } from "./log";
-import { copyImage, fetchImage } from "./teams/scripts/media";
+import { copyImage, fetchImage, squareLogo } from "./teams/scripts/media";
 
 // Maximum size of an image fetched from a message
 const MAX_IMAGE = 8e6;
@@ -35,9 +35,10 @@ export class Media {
   ) {}
 
   // The logo of the company of the account: the square logo (TileLogo) of the Microsoft sign-in branding of its
-  // organization, which the sign-in page shows once the address is typed, asked for the same way. File name; "" when
-  // the organization has none (a banner alone does not fit a round icon), null when Microsoft could not be reached.
-  async logo(email: string): Promise<string | null> {
+  // organization, which the sign-in page shows once the address is typed, asked for the same way. Where the
+  // organization set only a banner, the page makes that square (squareLogo): without a page there is none. File name;
+  // "" when the organization has no logo to take, null when Microsoft or the page could not be reached.
+  async logo(email: string, page: Page | null = null): Promise<string | null> {
     try {
       const r = await this.get("https://login.microsoftonline.com/common/GetCredentialType", {
         method: "POST",
@@ -46,14 +47,21 @@ export class Media {
         signal: AbortSignal.timeout(15_000),
       });
       if (!r.ok) return null;
-      const answer = (await r.json()) as { EstsProperties?: { UserTenantBranding?: { TileLogo?: unknown }[] } };
-      const url = String(answer.EstsProperties?.UserTenantBranding?.[0]?.TileLogo ?? "");
-      if (!BRANDING_HOST.test(url)) return "";
+      const answer = (await r.json()) as { EstsProperties?: { UserTenantBranding?: { TileLogo?: unknown; BannerLogo?: unknown }[] } };
+      const branding = answer.EstsProperties?.UserTenantBranding?.[0];
+      const tile = String(branding?.TileLogo ?? "");
+      const url = tile || String(branding?.BannerLogo ?? "");
+      if (!BRANDING_HOST.test(url) || (!tile && !page)) return "";
       const img = await this.get(url, { signal: AbortSignal.timeout(15_000) });
       if (!img.ok) return null;
-      const data = Buffer.from(await img.arrayBuffer());
-      const ext = data.length <= MAX_LOGO ? logoExt(data) : null;
+      let data = Buffer.from(await img.arrayBuffer());
+      let ext = data.length <= MAX_LOGO ? logoExt(data) : null;
       if (!ext) return "";
+      if (!tile) {
+        data = Buffer.from((await page!.evaluate(squareLogo, data.toString("base64"))) ?? "", "base64");
+        ext = data.length > 0 && data.length <= MAX_LOGO ? "png" : null;
+        if (!ext) return "";
+      }
       const file = `${avatarFile(url).slice(0, 16)}.${ext}`;
       fs.mkdirSync(this.mediaDir, { recursive: true });
       fs.writeFileSync(path.join(this.mediaDir, file), data);
@@ -65,11 +73,14 @@ export class Media {
   }
 
   // The logo of the company in the identity of the account, asked for once a day and at once for another
-  // organization: saved, the one known, stays while Microsoft cannot be reached
-  async companyLogo(me: { email: string; tenant: string }, saved: string): Promise<string> {
+  // organization: saved, the one known, stays while Microsoft or the page cannot be reached, and the next round of the
+  // identity job asks again
+  async companyLogo(me: { email: string; tenant: string }, saved: string, page: Page | null = null): Promise<string> {
     if (!me.email || (this.logoAsked.tenant === me.tenant && Date.now() - this.logoAsked.at < LOGO_EVERY)) return saved;
     this.logoAsked = { tenant: me.tenant, at: Date.now() };
-    return (await this.logo(me.email)) ?? saved;
+    const logo = await this.logo(me.email, page);
+    if (logo === null) this.logoAsked = { tenant: "", at: 0 };
+    return logo ?? saved;
   }
 
   // File of the image `key` of a message, fetched by the page; null when it cannot be read
