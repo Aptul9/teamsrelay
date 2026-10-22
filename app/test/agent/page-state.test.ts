@@ -1,7 +1,7 @@
 // Page scripts about the whole Teams page: visibility, notification hook, health probe, identity, images.
 import { describe, expect, it } from "vitest";
 import { SEL, TEXTS } from "@/agent/teams/selectors";
-import { copyImage, fetchImage } from "@/agent/teams/scripts/media";
+import { copyImage, fetchImage, squareLogo } from "@/agent/teams/scripts/media";
 import { drainInput, drainNotifications, installNotificationHook, makeVisible, probePage, readIdentity, watchInput } from "@/agent/teams/scripts/page-state";
 import { picture, withChrome } from "./chrome";
 
@@ -99,5 +99,56 @@ describe("page state scripts", () => {
     const png = await chrome.page.evaluate(copyImage, picture(40));
     expect(Buffer.from(png ?? "", "base64").subarray(1, 4).toString()).toBe("PNG");
     expect(await chrome.page.evaluate(copyImage, "https://elsewhere.example/a.png")).toBeNull();
+  });
+
+  // A banner as Microsoft's sign-in page shows it, 280x118: dark rectangles (x, y, width, height) on transparent
+  const banner = (rects: number[][]) =>
+    chrome.page.evaluate((rs) => {
+      const c = document.createElement("canvas");
+      c.width = 280;
+      c.height = 118;
+      const g = c.getContext("2d")!;
+      g.fillStyle = "#12205a";
+      for (const [x, y, w, h] of rs) g.fillRect(x, y, w, h);
+      return c.toDataURL("image/png").split(",")[1];
+    }, rects);
+  // Size of a PNG, and whether one of its pixels is ink (dark) or paper (white)
+  const sizeOf = (png: string | null) => {
+    const b = Buffer.from(png ?? "", "base64");
+    return [b.readUInt32BE(16), b.readUInt32BE(20)];
+  };
+  const inkAt = (png: string | null, x: number, y: number) =>
+    chrome.page.evaluate(
+      async ({ png, x, y }) => {
+        const image = await createImageBitmap(new Blob([Uint8Array.from(atob(png ?? ""), (c) => c.charCodeAt(0))]));
+        const c = new OffscreenCanvas(image.width, image.height);
+        const g = c.getContext("2d")!;
+        g.drawImage(image, 0, 0);
+        const [r, , , a] = g.getImageData(x, y, 1, 1).data;
+        return a === 255 ? (r < 100 ? "ink" : r > 250 ? "paper" : "other") : "transparent";
+      },
+      { png, x, y },
+    );
+
+  it("takes the mark of a banner where it stands out of the name beside it, on a white square with a margin", async () => {
+    // a mark as tall as the banner, then the letters of the name
+    const png = await chrome.page.evaluate(squareLogo, await banner([[0, 9, 100, 100], [120, 38, 30, 42], [156, 38, 30, 42], [192, 38, 30, 42]]));
+    expect(sizeOf(png)).toEqual([112, 112]);
+    expect([await inkAt(png, 0, 0), await inkAt(png, 6, 6), await inkAt(png, 105, 105), await inkAt(png, 111, 111)]).toEqual(["paper", "ink", "ink", "paper"]);
+  });
+
+  it("takes all of a banner that is a name alone, or whose first group does not stand out, on a white square", async () => {
+    const name = await chrome.page.evaluate(squareLogo, await banner([[0, 38, 30, 42], [36, 38, 30, 42], [72, 38, 30, 42]]));
+    expect(sizeOf(name)).toEqual([114, 114]);
+    // rows 36 to 77 hold the letters, the first one from column 6, a gap of 6 columns after it
+    expect([await inkAt(name, 0, 0), await inkAt(name, 6, 40), await inkAt(name, 38, 40)]).toEqual(["paper", "ink", "paper"]);
+    // a first letter about as wide as tall, but not taller than the others: no mark
+    const letters = await chrome.page.evaluate(squareLogo, await banner([[0, 38, 40, 42], [46, 38, 30, 42], [82, 38, 30, 42]]));
+    expect(sizeOf(letters)).toEqual([126, 126]);
+  });
+
+  it("gives nothing for a banner with no ink, and for what is no image", async () => {
+    expect(await chrome.page.evaluate(squareLogo, await banner([]))).toBeNull();
+    expect(await chrome.page.evaluate(squareLogo, "bm90IGFuIGltYWdl")).toBeNull();
   });
 });
