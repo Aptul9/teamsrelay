@@ -112,38 +112,39 @@ describe("page state scripts", () => {
       for (const [x, y, w, h] of rs) g.fillRect(x, y, w, h);
       return c.toDataURL("image/png").split(",")[1];
     }, rects);
-  // Size of a PNG, and the opacity of one of its pixels
+  // Size of a PNG, and whether one of its pixels is ink (dark) or paper (white)
   const sizeOf = (png: string | null) => {
     const b = Buffer.from(png ?? "", "base64");
     return [b.readUInt32BE(16), b.readUInt32BE(20)];
   };
-  const alphaAt = (png: string | null, x: number, y: number) =>
+  const inkAt = (png: string | null, x: number, y: number) =>
     chrome.page.evaluate(
       async ({ png, x, y }) => {
         const image = await createImageBitmap(new Blob([Uint8Array.from(atob(png ?? ""), (c) => c.charCodeAt(0))]));
         const c = new OffscreenCanvas(image.width, image.height);
         const g = c.getContext("2d")!;
         g.drawImage(image, 0, 0);
-        return g.getImageData(x, y, 1, 1).data[3];
+        const [r, , , a] = g.getImageData(x, y, 1, 1).data;
+        return a === 255 ? (r < 100 ? "ink" : r > 250 ? "paper" : "other") : "transparent";
       },
       { png, x, y },
     );
 
-  it("takes the mark of a banner where it stands out of the name beside it", async () => {
+  it("takes the mark of a banner where it stands out of the name beside it, on a white square with a margin", async () => {
     // a mark as tall as the banner, then the letters of the name
     const png = await chrome.page.evaluate(squareLogo, await banner([[0, 9, 100, 100], [120, 38, 30, 42], [156, 38, 30, 42], [192, 38, 30, 42]]));
-    expect(sizeOf(png)).toEqual([100, 100]);
-    expect([await alphaAt(png, 0, 0), await alphaAt(png, 99, 99)]).toEqual([255, 255]);
+    expect(sizeOf(png)).toEqual([112, 112]);
+    expect([await inkAt(png, 0, 0), await inkAt(png, 6, 6), await inkAt(png, 105, 105), await inkAt(png, 111, 111)]).toEqual(["paper", "ink", "ink", "paper"]);
   });
 
-  it("takes all of a banner that is a name alone, or whose first group does not stand out, centered on a square", async () => {
+  it("takes all of a banner that is a name alone, or whose first group does not stand out, on a white square", async () => {
     const name = await chrome.page.evaluate(squareLogo, await banner([[0, 38, 30, 42], [36, 38, 30, 42], [72, 38, 30, 42]]));
-    expect(sizeOf(name)).toEqual([102, 102]);
-    // rows 30 to 71 hold the letters, the first one at the left edge, a gap of 6 columns after it
-    expect([await alphaAt(name, 0, 0), await alphaAt(name, 0, 40), await alphaAt(name, 33, 40)]).toEqual([0, 255, 0]);
+    expect(sizeOf(name)).toEqual([114, 114]);
+    // rows 36 to 77 hold the letters, the first one from column 6, a gap of 6 columns after it
+    expect([await inkAt(name, 0, 0), await inkAt(name, 6, 40), await inkAt(name, 38, 40)]).toEqual(["paper", "ink", "paper"]);
     // a first letter about as wide as tall, but not taller than the others: no mark
     const letters = await chrome.page.evaluate(squareLogo, await banner([[0, 38, 40, 42], [46, 38, 30, 42], [82, 38, 30, 42]]));
-    expect(sizeOf(letters)).toEqual([112, 112]);
+    expect(sizeOf(letters)).toEqual([126, 126]);
   });
 
   it("gives nothing for a banner with no ink, and for what is no image", async () => {

@@ -36,8 +36,8 @@ export function copyImage(src: string): string | null {
 // The banner of a company's sign-in page (a wide image, often a mark with the name beside it) made square for a round
 // icon: the mark alone where it stands out (the first group of columns with ink, about as wide as tall and at least
 // twice as tall as the middle one of the groups after it: MSC's compass beside its name), else all of it, centered on
-// a transparent square. Ink is what is opaque and not white, the banner being drawn on a white page. PNG as base64,
-// null when the image cannot be read or has no ink.
+// a white square with a margin: the banner is drawn for a white page, and a notification may be dark. Ink is what is
+// opaque and not white. PNG as base64, null when the image cannot be read or has no ink.
 export async function squareLogo(banner: string): Promise<string | null> {
   try {
     const image = await createImageBitmap(new Blob([Uint8Array.from(atob(banner), (c) => c.charCodeAt(0))]));
@@ -75,9 +75,13 @@ export async function squareLogo(banner: string): Promise<string | null> {
       ? first
       : { x0: first.x0, x1: groups[groups.length - 1].x1, y0: Math.min(...groups.map((g) => g.y0)), y1: Math.max(...groups.map((g) => g.y1)) };
     const [bw, bh] = [box.x1 - box.x0, box.y1 - box.y0];
-    const side = Math.max(bw, bh);
+    const side = Math.max(bw, bh) + 2 * Math.round(Math.max(bw, bh) * 0.06);
     const square = new OffscreenCanvas(side, side);
-    square.getContext("2d")?.drawImage(canvas, box.x0, box.y0, bw, bh, Math.round((side - bw) / 2), Math.round((side - bh) / 2), bw, bh);
+    const out = square.getContext("2d");
+    if (!out) return null;
+    out.fillStyle = "#fff";
+    out.fillRect(0, 0, side, side);
+    out.drawImage(canvas, box.x0, box.y0, bw, bh, Math.round((side - bw) / 2), Math.round((side - bh) / 2), bw, bh);
     const blob = await square.convertToBlob({ type: "image/png" });
     const url = await new Promise<string>((resolve) => {
       const reader = new FileReader();
