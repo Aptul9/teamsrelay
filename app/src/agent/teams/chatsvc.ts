@@ -144,6 +144,7 @@ export async function getOpenConversationId(page: Page): Promise<string | null> 
 // Cache of chat name (lowercase) -> conversation ID, and message ID -> conversation ID
 const convCache = new Map<string, { id: string; expiresAt: number }>();
 const midConvCache = new Map<string, string>();
+const lastMsgByConv = new Map<string, { id: string; cmid: string }>();
 let lastIdbSyncAt = 0;
 
 function cacheTitle(title: string | undefined | null, id: string, ttlMs = 15 * 60_000) {
@@ -498,6 +499,10 @@ export async function fetchChatMessages(
       return ta - tb;
     });
     const recent = rawList.slice(-40);
+    const lastRaw = recent.at(-1);
+    if (lastRaw?.id) {
+      lastMsgByConv.set(convId, { id: String(lastRaw.id), cmid: String(lastRaw.clientmessageid || lastRaw.id) });
+    }
 
     const myMids: string[] = [];
     for (const m of recent) {
@@ -934,4 +939,50 @@ export async function sendImageMessage(auth: TeamsAuth, convId: string, imageBuf
   const id = json.OriginalArrivalTime ? String(json.OriginalArrivalTime) : undefined;
   if (id) midConvCache.set(id, convId);
   return { ok: true, id };
+}
+
+export async function markConversationRead(auth: TeamsAuth, convId: string, fallbackMid?: string): Promise<boolean> {
+  try {
+    let last = lastMsgByConv.get(convId);
+    if (!last) {
+      const getUrl = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages?view=msnp24Equivalent&pageSize=1`;
+      const getResp = await fetch(getUrl, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": USER_AGENT,
+          Origin: SERVER,
+          Referer: `${SERVER}/v2/`,
+          Authorization: `Bearer ${auth.token}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (getResp.ok) {
+        const j = (await getResp.json()) as { messages?: RawTeamsMessage[] };
+        const m0 = j.messages?.[0];
+        if (m0?.id) last = { id: String(m0.id), cmid: String(m0.clientmessageid || m0.id) };
+      }
+    }
+    const mid = last?.id || fallbackMid || String(Date.now());
+    const cmid = last?.cmid || mid;
+    const horizon = `${mid};${Date.now()};${cmid}`;
+
+    const putUrl = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/properties?name=consumptionhorizon`;
+    const resp = await fetch(putUrl, {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+        Origin: SERVER,
+        Referer: `${SERVER}/v2/`,
+        Authorization: `Bearer ${auth.token}`,
+      },
+      body: JSON.stringify({ consumptionhorizon: horizon }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    return resp.ok;
+  } catch (e) {
+    log.warn("chatsvc", `markConversationRead failed: ${errorText(e)}`, { convId });
+    return false;
+  }
 }

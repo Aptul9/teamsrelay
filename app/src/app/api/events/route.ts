@@ -102,9 +102,12 @@ export const GET = route(async (req) => {
         if (closed) return;
         try {
           send("calls", calls.ringing(mine));
-          if (chat && reader) {
-            const open = reader.openOf(chat);
-            send("messages", { chat, rows: reader.messages(chat), open });
+          if (reader) {
+            send("chats", reader.chats());
+            if (chat) {
+              const open = reader.openOf(chat);
+              send("messages", { chat, rows: reader.messages(chat), open });
+            }
           }
         } catch (e) {
           if (!closed) console.error("events:", e);

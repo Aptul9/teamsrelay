@@ -1,7 +1,7 @@
 import type { OpenReason, OpenResult } from "@/shared/slot-db/commands";
 import { cmdResultKey, STATE } from "@/shared/slot-db/state";
 import type { Agent } from "../context";
-import { hasTeamsAuth, markViewing, saveChatViaApi, saveOpenChat } from "../jobs/conversation";
+import { hasTeamsAuth, markReadViaApi, markViewing, saveChatViaApi, saveOpenChat } from "../jobs/conversation";
 import type { Handler, Outcome } from "./index";
 
 // arg1: chat. The app shows the chat: Teams opens it and the agent saves its messages. Done once they are saved, so
@@ -14,12 +14,14 @@ export const open: Handler = async (a, { id, ts, arg1: chat }) => {
   // Instant fast-path when chatsvc is active and messages are already cached: mark done at 0 ms and refresh in background
   if ((await hasTeamsAuth(a)) && a.store.messages(chat).length > 0) {
     a.store.setState(STATE.activeChat, chat);
+    void markReadViaApi(a, chat);
     void saveChatViaApi(a, chat).catch(() => undefined);
     return "done";
   }
   // Fast path: fetch messages directly via chatsvc API (~150 ms) without touching the DOM
   if (await saveChatViaApi(a, chat)) {
     a.store.setState(STATE.activeChat, chat);
+    void markReadViaApi(a, chat);
     return "done";
   }
   const problem = await a.tp.showChat(chat);

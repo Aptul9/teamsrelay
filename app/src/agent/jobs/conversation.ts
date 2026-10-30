@@ -3,7 +3,7 @@ import { nowSeconds, type Agent } from "../context";
 import { imageKey } from "../logic/files";
 import { extraOf } from "../logic/messages";
 import { errorText, log } from "../log";
-import { fetchChatMessages, getTeamsAuth, resolveConversationId } from "../teams/chatsvc";
+import { fetchChatMessages, getTeamsAuth, markConversationRead, resolveConversationId } from "../teams/chatsvc";
 import { readMessages } from "../teams/scripts/conversation";
 import { SEL, TEXTS } from "../teams/selectors";
 import type { SavedMessage } from "../store/slot-store";
@@ -56,6 +56,37 @@ export async function readOpenMessages(a: Agent, chat: string): Promise<SavedMes
     out.push({ mid: m.mid, author: m.author, text: m.text, mine: m.mine, reacts: m.reacts, extra });
   }
   return out;
+}
+
+const recentlyReadChats = new Map<string, { preview: string; until: number }>();
+
+export function isRecentlyRead(chat: string, preview: string): boolean {
+  const entry = recentlyReadChats.get(chat);
+  if (!entry) return false;
+  if (Date.now() > entry.until || (preview && entry.preview && preview !== entry.preview)) {
+    recentlyReadChats.delete(chat);
+    return false;
+  }
+  return true;
+}
+
+export async function markReadViaApi(a: Agent, chat: string): Promise<void> {
+  try {
+    const entry = a.store.chats().find((c) => c.name === chat);
+    recentlyReadChats.set(chat, { preview: entry?.preview ?? "", until: Date.now() + 20_000 });
+    a.store.markChatRead(chat);
+
+    const page = a.tp?.page;
+    if (!page || typeof page.context !== "function") return;
+    const auth = await getTeamsAuth(page.context(), page);
+    if (!auth) return;
+    const convId = await resolveConversationId(auth, page, chat);
+    if (!convId) return;
+    const lastMid = a.store.messages(chat).at(-1)?.mid;
+    await markConversationRead(auth, convId, lastMid);
+  } catch (e) {
+    log.warn("messages", `markReadViaApi failed: ${errorText(e)}`, { chat });
+  }
 }
 
 export async function hasTeamsAuth(a: Agent): Promise<boolean> {

@@ -6,12 +6,20 @@ import { errorText, log } from "../log";
 import { sleep } from "../teams/page";
 import { readChatList, scrollList, type ListRow } from "../teams/scripts/chat-list";
 import { SEL, TEXTS } from "../teams/selectors";
-import { saveChatViaApi } from "./conversation";
+import { isRecentlyRead, markReadViaApi, saveChatViaApi } from "./conversation";
 import { inApp } from "./page-setup";
 
 // The rows as Teams shows them, the presence of each person as one of the words the app knows
 export const readList = async (a: Agent): Promise<ListRow[]> =>
-  (await a.tp.page.evaluate(readChatList, { s: SEL, t: TEXTS })).map((r) => ({ ...r, presence: presenceOf(r.presence) }));
+  (await a.tp.page.evaluate(readChatList, { s: SEL, t: TEXTS })).map((r) => {
+    const readNow = isRecentlyRead(r.name, r.preview);
+    return {
+      ...r,
+      unread: readNow ? false : r.unread,
+      mention: readNow ? false : r.mention,
+      presence: presenceOf(r.presence),
+    };
+  });
 
 // A list read saved without copying pictures: the known ones stay
 export const withoutPictures = (rows: readonly ListRow[]): ChatEntry[] =>
@@ -23,7 +31,8 @@ export async function notifyNew(a: Agent, rows: readonly ListRow[]) {
     const shown = inApp(a, chat);
     log.info("NEWMSG", chat, { preview: body.slice(0, 50), inApp: shown || undefined });
     void saveChatViaApi(a, chat).catch(() => undefined);
-    if (!shown) await a.notifier.message(chat, body, chat);
+    if (shown) void markReadViaApi(a, chat);
+    else await a.notifier.message(chat, body, chat);
   }
   const muted = a.detector.takeMuted();
   if (muted.length) {

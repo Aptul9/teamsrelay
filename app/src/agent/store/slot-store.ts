@@ -107,6 +107,10 @@ export class SlotStore {
     return !!this.db.prepare("SELECT 1 FROM chats WHERE name=? AND muted=1").get(name);
   }
 
+  markChatRead(name: string) {
+    this.db.prepare("UPDATE chats SET unread=0, mention=0 WHERE name=?").run(name);
+  }
+
   isKnownChat(name: string): boolean {
     return !!this.db.prepare("SELECT 1 FROM chats WHERE name=?").get(name);
   }
