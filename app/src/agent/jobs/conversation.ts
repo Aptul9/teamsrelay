@@ -58,28 +58,65 @@ export async function readOpenMessages(a: Agent, chat: string): Promise<SavedMes
   return out;
 }
 
+export async function hasTeamsAuth(a: Agent): Promise<boolean> {
+  try {
+    const page = a.tp?.page;
+    if (!page || typeof page.context !== "function") return false;
+    return (await getTeamsAuth(page.context(), page)) !== null;
+  } catch {
+    return false;
+  }
+}
+
 // Fast path: fetch messages directly via chatsvc API without requiring DOM navigation
 export async function saveChatViaApi(a: Agent, chat: string): Promise<boolean> {
   try {
     const page = a.tp?.page;
     if (!page || typeof page.context !== "function") return false;
-    const auth = await getTeamsAuth(page.context());
+    const auth = await getTeamsAuth(page.context(), page);
     if (!auth) return false;
     const convId = await resolveConversationId(auth, page, chat);
     if (!convId) return false;
     const messages = await fetchChatMessages(auth, convId, (mids) => a.store.readByCache(mids));
     if (!messages) return false;
+
+    const existing = a.store.messages(chat);
+    const prevByMid = new Map(existing.map((m) => [m.mid, m]));
+    const authorAv = new Map<string, string>();
+    for (const m of existing) {
+      if (m.author && m.av) authorAv.set(m.author, m.av);
+    }
+    const chatEntry = a.store.chats().find((c) => c.name === chat);
+    const defaultAv = chatEntry?.kind === "one" && chatEntry.av ? chatEntry.av : "";
+
     for (const m of messages) {
-      if (!m.extra?.images) continue;
-      const resolved: { f?: string; url?: string; w: number; h: number }[] = [];
-      for (const [i, im] of m.extra.images.entries()) {
-        const src = im.url || "";
-        const f = src ? await a.media.image(page, imageKey(chat, m.mid, i), src) : null;
-        if (f) resolved.push({ f, w: im.w ?? 0, h: im.h ?? 0 });
-        else if (src.startsWith("https://")) resolved.push({ url: src, w: im.w ?? 0, h: im.h ?? 0 });
+      const prev = prevByMid.get(m.mid);
+      const av = prev?.av || (m.author ? authorAv.get(m.author) : "") || (!m.mine ? defaultAv : "") || "";
+      const status = prev?.status && /seen/i.test(prev.status) ? prev.status : m.extra?.status;
+
+      let resolvedImages = m.extra?.images;
+      if (resolvedImages?.length) {
+        const resolved: { f?: string; url?: string; w: number; h: number }[] = [];
+        for (const [i, im] of resolvedImages.entries()) {
+          const prevIm = prev?.images?.[i];
+          if (prevIm?.f) {
+            resolved.push({ f: prevIm.f, w: prevIm.w ?? im.w ?? 0, h: prevIm.h ?? im.h ?? 0 });
+            continue;
+          }
+          const src = im.url || "";
+          const f = src ? await a.media.image(page, imageKey(chat, m.mid, i), src) : null;
+          if (f) resolved.push({ f, w: im.w ?? 0, h: im.h ?? 0 });
+          else if (src.startsWith("https://")) resolved.push({ url: src, w: im.w ?? 0, h: im.h ?? 0 });
+        }
+        resolvedImages = resolved.length ? resolved : undefined;
       }
-      if (resolved.length) m.extra.images = resolved;
-      else delete m.extra.images;
+
+      m.extra = extraOf({
+        ...m.extra,
+        images: resolvedImages,
+        status,
+        av,
+      });
     }
     a.store.saveChatMessages(chat, messages);
     return true;

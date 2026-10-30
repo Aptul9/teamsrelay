@@ -52,6 +52,31 @@ describe("chatsvc", () => {
     expect(auth?.region).toBe("emea");
   });
 
+  it("extracts token from page localStorage when authtoken_asm cookie is absent", async () => {
+    const fakeContext = {
+      cookies: vi.fn(async () => [
+        {
+          name: "authtoken",
+          value: "Bearer=token2",
+          domain: "teams.cloud.microsoft",
+          path: "/api/mt/part/emea-03/beta/users/uid",
+          expires: -1,
+          httpOnly: true,
+          secure: true,
+          sameSite: "None" as const,
+        },
+      ]),
+    } as unknown as BrowserContext;
+    const fakePage = {
+      evaluate: vi.fn(async () => "msal_localstorage_token_xyz"),
+    } as unknown as Page;
+
+    const auth = await getTeamsAuth(fakeContext, fakePage);
+    expect(auth).not.toBeNull();
+    expect(auth?.token).toBe("msal_localstorage_token_xyz");
+    expect(auth?.region).toBe("emea");
+  });
+
   it("extracts conversation id from page URL", async () => {
     const pageWithHash = {
       url: () => "https://teams.cloud.microsoft/v2/#/conversations/19:sample_chat_id@thread.v2?ctx=chat",

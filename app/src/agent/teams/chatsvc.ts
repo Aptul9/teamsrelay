@@ -32,26 +32,24 @@ function parseJwtClaims(token: string): { oid?: string; upn?: string; unique_nam
   }
 }
 
-// Extract authtoken_asm and region from BrowserContext cookies
-export async function getTeamsAuth(context: BrowserContext): Promise<TeamsAuth | null> {
+const authCache = new WeakMap<object, { auth: TeamsAuth; expiresAt: number }>();
+
+// Extract IC3 token and region from BrowserContext cookies OR page localStorage (MSAL v2 on teams.cloud.microsoft)
+export async function getTeamsAuth(context: BrowserContext | null | undefined, page?: Page): Promise<TeamsAuth | null> {
   try {
     if (!context || typeof context.cookies !== "function") return null;
+
+    const cacheKey = (page ?? context) as object;
+    const cached = authCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) return cached.auth;
+
     const cookies = await context.cookies();
-    const asm =
-      cookies.find((c) => c.name === "authtoken_asm" && (c.domain.includes("asyncgw.teams.microsoft.com") || c.domain.includes("teams.microsoft.com") || c.domain.includes("teams.cloud.microsoft"))) ??
-      cookies.find((c) => c.name === "authtoken_asm");
 
-    if (!asm?.value) return null;
-
-    let token = asm.value;
-    if (token.toLowerCase().startsWith("bearer%20")) token = token.slice(9);
-    else if (token.toLowerCase().startsWith("bearer ")) token = token.slice(7);
-    else if (token.toLowerCase().startsWith("bearer=")) token = token.slice(7);
-    token = decodeURIComponent(token);
-
-    // Region: from authtoken path (e.g. /api/mt/part/emea-03/...) or default "emea"
+    // Region: from authtoken or McasPartialCookie*authtoken path (e.g. /api/mt/part/emea-03/...) or default "emea"
     let region = "emea";
-    const authCookie = cookies.find((c) => c.name === "authtoken" && (c.domain.includes("teams.microsoft.com") || c.domain.includes("teams.cloud.microsoft")));
+    const authCookie = cookies.find(
+      (c) => (c.name === "authtoken" || c.name.endsWith("authtoken")) && (c.domain.includes("teams.microsoft.com") || c.domain.includes("teams.cloud.microsoft")),
+    );
     if (authCookie?.path) {
       const parts = authCookie.path.split("/").filter(Boolean);
       const mtIdx = parts.indexOf("mt");
@@ -62,14 +60,63 @@ export async function getTeamsAuth(context: BrowserContext): Promise<TeamsAuth |
       }
     }
 
+    // 1. Check cookies for authtoken_asm (WebView2 / MCAS proxy)
+    const asm =
+      cookies.find(
+        (c) =>
+          c.name === "authtoken_asm" &&
+          (c.domain.includes("asyncgw.teams.microsoft.com") || c.domain.includes("teams.microsoft.com") || c.domain.includes("teams.cloud.microsoft")),
+      ) ?? cookies.find((c) => c.name === "authtoken_asm");
+
+    let token = "";
+    if (asm?.value) {
+      token = asm.value;
+      if (token.toLowerCase().startsWith("bearer%20")) token = token.slice(9);
+      else if (token.toLowerCase().startsWith("bearer ")) token = token.slice(7);
+      else if (token.toLowerCase().startsWith("bearer=")) token = token.slice(7);
+      token = decodeURIComponent(token);
+    }
+
+    // 2. Check page localStorage for MSAL v2 ic3.teams.office.com access token (standard Teams Web on teams.cloud.microsoft)
+    if (!token) {
+      const targetPage = page ?? (typeof context.pages === "function" ? context.pages()[0] : undefined);
+      if (targetPage && typeof targetPage.evaluate === "function") {
+        try {
+          const lsToken = await targetPage.evaluate(() => {
+            if (typeof localStorage === "undefined") return null;
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i) || "";
+              const low = k.toLowerCase();
+              if (low.includes("accesstoken") && low.includes("ic3.teams.office.com")) {
+                try {
+                  const v = JSON.parse(localStorage.getItem(k) || "{}") as { secret?: string };
+                  if (typeof v?.secret === "string" && v.secret.length > 50) return v.secret;
+                } catch {
+                  // ignore
+                }
+              }
+            }
+            return null;
+          });
+          if (lsToken) token = lsToken;
+        } catch {
+          // page.evaluate might fail in mocks or during navigation
+        }
+      }
+    }
+
+    if (!token) return null;
+
     const claims = parseJwtClaims(token);
-    return {
+    const auth: TeamsAuth = {
       token,
       region,
       oid: claims.oid,
       upn: claims.upn || claims.unique_name,
       name: claims.name,
     };
+    authCache.set(cacheKey, { auth, expiresAt: Date.now() + 60_000 });
+    return auth;
   } catch (e) {
     log.warn("chatsvc", `getTeamsAuth failed: ${errorText(e)}`);
     return null;
@@ -220,14 +267,19 @@ export async function resolveConversationId(auth: TeamsAuth, page: Page, chat: s
   const hitAfterIdb = convCache.get(chat) ?? convCache.get(chat.trim().toLowerCase());
   if (hitAfterIdb && Date.now() < hitAfterIdb.expiresAt) return hitAfterIdb.id;
 
-  // 5. Active open conversation in page URL
+  // 5. Force re-sync IndexedDB once if not found (in case a new chat just appeared)
+  await syncIndexedDbMappings(page, true);
+  const hitForceIdb = convCache.get(chat) ?? convCache.get(chat.trim().toLowerCase());
+  if (hitForceIdb && Date.now() < hitForceIdb.expiresAt) return hitForceIdb.id;
+
+  // 6. Active open conversation in page URL
   const openId = await getOpenConversationId(page);
   if (openId) {
     cacheTitle(chat, openId);
     return openId;
   }
 
-  // 6. API directory lookup (matches group/meeting topics + 1:1 lastMessage sender names)
+  // 7. API directory lookup (matches group/meeting topics + 1:1 lastMessage sender names)
   try {
     const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations?view=msnp24Equivalent&pageSize=200&startTime=0`;
     const resp = await fetch(url, {
@@ -297,6 +349,23 @@ function toParagraphs(text: string): string {
 
 function clientMessageId(): string {
   return `${Date.now()}${crypto.randomInt(100, 999)}`;
+}
+
+// Optimistic cache of recently sent/edited/deleted messages so immediate reads see them with zero eventual-consistency lag
+type OptimisticPatch = {
+  added: Map<string, { msg: SavedMessage; expiresAt: number }>;
+  edited: Map<string, { text: string; html: string; expiresAt: number }>;
+  deleted: Map<string, number>;
+};
+const optimisticByConv = new Map<string, OptimisticPatch>();
+
+function getOptimistic(convId: string): OptimisticPatch {
+  let p = optimisticByConv.get(convId);
+  if (!p) {
+    p = { added: new Map(), edited: new Map(), deleted: new Map() };
+    optimisticByConv.set(convId, p);
+  }
+  return p;
 }
 
 // Convert raw Teams message HTML into { quote, text, html, images } matching readMessages DOM output
@@ -438,6 +507,8 @@ export async function fetchChatMessages(
       if (mine && mid) myMids.push(mid);
     }
     const readBy = readByCache ? readByCache(myMids) : new Map<string, ReadBy>();
+    const opt = getOptimistic(convId);
+    const now = Date.now();
 
     const out: SavedMessage[] = [];
     for (const m of recent) {
@@ -445,12 +516,16 @@ export async function fetchChatMessages(
       const mine = convId === "48:notes" || Boolean(auth.oid && String(m.from || "").toLowerCase().includes(auth.oid.toLowerCase()));
       const author = mine ? "" : String(m.imdisplayname || m.fromDisplayNameInToken || "").trim().slice(0, 60);
       const props = m.properties ?? {};
-      const deleted = Boolean(props.deletetime);
-      const edited = Boolean(props.edittime);
+      const optDel = opt.deleted.get(mid);
+      const deleted = Boolean(props.deletetime) || Boolean(optDel && now < optDel);
+      const optEdit = opt.edited.get(mid);
+      const edited = Boolean(props.edittime) || Boolean(optEdit && now < optEdit.expiresAt);
 
       const parsed = deleted
         ? { quote: undefined, text: "", html: "", images: [], mentionsMe: false }
-        : parseTeamsMessageHtml(m.content || "", auth.name);
+        : optEdit && now < optEdit.expiresAt
+          ? { quote: undefined, text: optEdit.text, html: optEdit.html, images: [], mentionsMe: false }
+          : parseTeamsMessageHtml(m.content || "", auth.name);
 
       // Parse files
       const files: { name: string; url: string }[] = [];
@@ -506,6 +581,18 @@ export async function fetchChatMessages(
         extra,
       });
     }
+
+    // Append any newly sent optimistic messages not yet returned by the server
+    for (const [mid, item] of opt.added) {
+      if (now >= item.expiresAt) {
+        opt.added.delete(mid);
+        continue;
+      }
+      if (!out.some((x) => x.mid === mid)) {
+        out.push(item.msg);
+      }
+    }
+
     return out;
   } catch (e) {
     log.warn("chatsvc", `fetchChatMessages failed: ${errorText(e)}`, { convId });
@@ -515,8 +602,9 @@ export async function fetchChatMessages(
 
 export async function sendTextMessage(auth: TeamsAuth, convId: string, text: string): Promise<{ ok: boolean; id?: string }> {
   const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages`;
+  const htmlBody = toParagraphs(text);
   const body = JSON.stringify({
-    content: toParagraphs(text),
+    content: htmlBody,
     messagetype: "RichText/Html",
     contenttype: "Text",
     clientmessageid: clientMessageId(),
@@ -543,8 +631,19 @@ export async function sendTextMessage(auth: TeamsAuth, convId: string, text: str
   }
 
   const json = (await resp.json().catch(() => ({}))) as { OriginalArrivalTime?: number };
-  const id = json.OriginalArrivalTime ? String(json.OriginalArrivalTime) : undefined;
-  if (id) midConvCache.set(id, convId);
+  const id = json.OriginalArrivalTime ? String(json.OriginalArrivalTime) : String(Date.now());
+  midConvCache.set(id, convId);
+  getOptimistic(convId).added.set(id, {
+    msg: {
+      mid: id,
+      author: "",
+      text,
+      mine: true,
+      reacts: "",
+      extra: extraOf({ status: "Sent", html: htmlBody }),
+    },
+    expiresAt: Date.now() + 8_000,
+  });
   return { ok: true, id };
 }
 
@@ -576,7 +675,8 @@ export async function getMessage(auth: TeamsAuth, convId: string, mid: string): 
 export async function replyTextMessage(auth: TeamsAuth, convId: string, mid: string, text: string): Promise<{ ok: boolean; id?: string }> {
   const parent = (await getMessage(auth, convId, mid)) ?? { author: "?", preview: "", mri: "" };
   const quoteHtml = `<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="${mid}"><strong itemprop="mri" itemid="${escapeHtml(parent.mri)}">${escapeHtml(parent.author)}</strong><span itemprop="time" itemid="${mid}"></span><p itemprop="preview">${escapeHtml(parent.preview)}</p></blockquote>`;
-  const bodyHtml = `${quoteHtml}${toParagraphs(text)}`;
+  const textHtml = toParagraphs(text);
+  const bodyHtml = `${quoteHtml}${textHtml}`;
 
   const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages`;
   const body = JSON.stringify({
@@ -620,15 +720,31 @@ export async function replyTextMessage(auth: TeamsAuth, convId: string, mid: str
   }
 
   const json = (await resp.json().catch(() => ({}))) as { OriginalArrivalTime?: number };
-  const id = json.OriginalArrivalTime ? String(json.OriginalArrivalTime) : undefined;
-  if (id) midConvCache.set(id, convId);
+  const id = json.OriginalArrivalTime ? String(json.OriginalArrivalTime) : String(Date.now());
+  midConvCache.set(id, convId);
+  getOptimistic(convId).added.set(id, {
+    msg: {
+      mid: id,
+      author: "",
+      text,
+      mine: true,
+      reacts: "",
+      extra: extraOf({
+        quote: { author: parent.author, text: parent.preview },
+        status: "Sent",
+        html: textHtml,
+      }),
+    },
+    expiresAt: Date.now() + 8_000,
+  });
   return { ok: true, id };
 }
 
 export async function editTextMessage(auth: TeamsAuth, convId: string, mid: string, text: string): Promise<boolean> {
   const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages/${mid}`;
+  const htmlBody = toParagraphs(text);
   const body = JSON.stringify({
-    content: toParagraphs(text),
+    content: htmlBody,
     messagetype: "RichText/Html",
     contenttype: "Text",
   });
@@ -652,6 +768,7 @@ export async function editTextMessage(auth: TeamsAuth, convId: string, mid: stri
     log.warn("chatsvc", `editTextMessage HTTP ${resp.status}`, { error: errText.slice(0, 200), convId, mid });
     return false;
   }
+  getOptimistic(convId).edited.set(mid, { text, html: htmlBody, expiresAt: Date.now() + 8_000 });
   return true;
 }
 
@@ -674,6 +791,7 @@ export async function deleteRemoteMessage(auth: TeamsAuth, convId: string, mid: 
     log.warn("chatsvc", `deleteRemoteMessage HTTP ${resp.status}`, { error: errText.slice(0, 200), convId, mid });
     return false;
   }
+  getOptimistic(convId).deleted.set(mid, Date.now() + 8_000);
   return true;
 }
 

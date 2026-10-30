@@ -45,18 +45,23 @@ export async function readChats(a: Agent, pictures: boolean): Promise<boolean> {
 
 export async function scanChats(a: Agent) {
   try {
-    if (await readChats(a, true)) {
-      // Pre-sync messages in the background for recent chats that have no cached messages yet
-      let prefetched = 0;
-      for (const c of a.store.chats().slice(0, 20)) {
-        if (prefetched >= 2) break;
-        if (a.store.messages(c.name).length === 0) {
-          if (await saveChatViaApi(a, c.name)) prefetched++;
-        }
-      }
-    }
+    await readChats(a, true);
   } catch (e) {
     log.warn("chats", errorText(e));
+  }
+}
+
+export async function prefetchChats(a: Agent) {
+  try {
+    let prefetched = 0;
+    for (const c of a.store.chats().slice(0, 20)) {
+      if (prefetched >= 2 || a.store.hasPendingCommands()) break;
+      if (a.store.messages(c.name).length === 0) {
+        if (await saveChatViaApi(a, c.name)) prefetched++;
+      }
+    }
+  } catch {
+    // ignore background prefetch errors
   }
 }
 

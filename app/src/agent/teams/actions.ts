@@ -62,13 +62,12 @@ export async function sendText(tp: TeamsPage, chat: string, raw: string, sent?: 
 
   // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
-    const auth = await getTeamsAuth(tp.page.context());
+    const auth = await getTeamsAuth(tp.page.context(), tp.page);
     if (auth) {
       const convId = await resolveConversationId(auth, tp.page, chat);
       if (convId) {
         const res = await sendTextMessage(auth, convId, text);
         if (res.ok) {
-          await sent?.();
           log.info("send", "sent via chatsvc API", { chat, convId });
           return "sent";
         }
@@ -117,13 +116,12 @@ type ImageFile = { name: string; type: string; data: Buffer };
 export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, caption: string, sent?: AfterPress): Promise<SendResult> {
   // Fast path: direct AMS + chatsvc API without waiting for DOM navigation
   try {
-    const auth = await getTeamsAuth(tp.page.context());
+    const auth = await getTeamsAuth(tp.page.context(), tp.page);
     if (auth) {
       const convId = await resolveConversationId(auth, tp.page, chat);
       if (convId) {
         const res = await sendImageMessage(auth, convId, image.data, image.type, caption);
         if (res.ok) {
-          await sent?.();
           log.info("image", "sent via AMS/chatsvc API", { chat, convId });
           return "sent";
         }
@@ -170,13 +168,12 @@ export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, r
 
   // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
-    const auth = await getTeamsAuth(tp.page.context());
+    const auth = await getTeamsAuth(tp.page.context(), tp.page);
     if (auth) {
       const convId = await resolveConversationId(auth, tp.page, chat, mid);
       if (convId) {
         const res = await replyTextMessage(auth, convId, mid, text);
         if (res.ok) {
-          await sent?.();
           log.info("reply", "replied via chatsvc API", { chat, convId, mid });
           return "sent";
         }
@@ -227,7 +224,7 @@ export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, r
 export async function deleteMessage(tp: TeamsPage, chat: string, mid: string): Promise<boolean> {
   // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
-    const auth = await getTeamsAuth(tp.page.context());
+    const auth = await getTeamsAuth(tp.page.context(), tp.page);
     if (auth) {
       const convId = await resolveConversationId(auth, tp.page, chat, mid);
       if (convId) {
@@ -277,7 +274,7 @@ export async function react(tp: TeamsPage, chat: string, mid: string, emoji: str
 
   // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
-    const auth = await getTeamsAuth(tp.page.context());
+    const auth = await getTeamsAuth(tp.page.context(), tp.page);
     if (auth) {
       const convId = await resolveConversationId(auth, tp.page, chat, mid);
       if (convId && (await toggleMessageReaction(auth, convId, mid, emoji))) {
@@ -316,7 +313,7 @@ export async function togglePill(tp: TeamsPage, chat: string, mid: string, emoji
 
   // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
-    const auth = await getTeamsAuth(tp.page.context());
+    const auth = await getTeamsAuth(tp.page.context(), tp.page);
     if (auth) {
       const convId = await resolveConversationId(auth, tp.page, chat, mid);
       if (convId && (await toggleMessageReaction(auth, convId, mid, emoji))) {
@@ -361,7 +358,7 @@ export async function editMessage(tp: TeamsPage, chat: string, mid: string, raw:
 
   // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
-    const auth = await getTeamsAuth(tp.page.context());
+    const auth = await getTeamsAuth(tp.page.context(), tp.page);
     if (auth) {
       const convId = await resolveConversationId(auth, tp.page, chat, mid);
       if (convId) {

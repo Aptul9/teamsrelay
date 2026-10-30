@@ -4,7 +4,7 @@ import { runPendingCommands } from "./commands";
 import { nowSeconds, type Agent } from "./context";
 import { readActivity } from "./jobs/activity";
 import { CallWatch } from "./jobs/calls";
-import { scanChats, scanChatsFull } from "./jobs/chat-list";
+import { prefetchChats, scanChats, scanChatsFull } from "./jobs/chat-list";
 import { saveOpenChat } from "./jobs/conversation";
 import { watchDesktop } from "./jobs/desktop";
 import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
@@ -106,7 +106,14 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     { name: "commands", every: { rounds: 1 }, run: () => runPendingCommands(a) },
     // until Teams is connected (sign-in to do, session expired) there is nothing to scroll or read
     { name: "chats-full", every: { rounds: 300, offset: 1 }, when: free, run: () => scanChatsFull(a) },
-    { name: "chats", every: { rounds: 3 }, run: () => scanChats(a) },
+    {
+      name: "chats",
+      every: { rounds: 3 },
+      run: async () => {
+        await scanChats(a);
+        await prefetchChats(a);
+      },
+    },
     // Teams is still loading at round 5 after a start: read once its side bar can be clicked, not 150 rounds later
     a.config.activity && {
       name: "activity",
