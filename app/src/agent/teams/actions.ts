@@ -1,6 +1,15 @@
 import type { ReactionName } from "@/shared/slot-db/commands";
 import type { ReadBy } from "@/shared/slot-db/rows";
 import { errorText, log } from "../log";
+import {
+  deleteRemoteMessage,
+  editTextMessage,
+  getTeamsAuth,
+  replyTextMessage,
+  resolveConversationId,
+  sendImageMessage,
+  sendTextMessage,
+} from "./chatsvc";
 import { confirmSent, messageSelector, sleep, until, type AfterPress, type SendResult, type TeamsPage } from "./page";
 import { composerImages, composerLeft, messageIds, ownMessageSent, pasteImage } from "./scripts/compose";
 import {
@@ -49,6 +58,25 @@ async function afterFailedPress(tp: TeamsPage, text: string, before: string[]): 
 export async function sendText(tp: TeamsPage, chat: string, raw: string, sent?: AfterPress): Promise<SendResult> {
   const text = raw.trim();
   if (!text || !(await tp.toChat(chat, true))) return "failed";
+
+  // Fast path: direct chatsvc API
+  try {
+    const auth = await getTeamsAuth(tp.page.context());
+    if (auth) {
+      const convId = await resolveConversationId(auth, tp.page, chat);
+      if (convId) {
+        const res = await sendTextMessage(auth, convId, text);
+        if (res.ok) {
+          await sent?.();
+          log.info("send", "sent via chatsvc API", { chat, convId });
+          return "sent";
+        }
+      }
+    }
+  } catch (e) {
+    log.warn("send", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat });
+  }
+
   const page = tp.page;
   // a draft already there is someone's: left as it is, nothing sent
   if (await page.evaluate(composerLeft, SEL)) {
@@ -86,6 +114,25 @@ type ImageFile = { name: string; type: string; data: Buffer };
 // soon as the message went.
 export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, caption: string, sent?: AfterPress): Promise<SendResult> {
   if (!(await tp.toChat(chat, true))) return "failed";
+
+  // Fast path: direct AMS + chatsvc API
+  try {
+    const auth = await getTeamsAuth(tp.page.context());
+    if (auth) {
+      const convId = await resolveConversationId(auth, tp.page, chat);
+      if (convId) {
+        const res = await sendImageMessage(auth, convId, image.data, image.type, caption);
+        if (res.ok) {
+          await sent?.();
+          log.info("image", "sent via AMS/chatsvc API", { chat, convId });
+          return "sent";
+        }
+      }
+    }
+  } catch (e) {
+    log.warn("image", `AMS fast path failed: ${errorText(e)}, falling back to DOM`, { chat });
+  }
+
   const page = tp.page;
   if (await page.evaluate(composerLeft, SEL)) {
     log.warn("image", "compose box not empty", { chat });
@@ -119,6 +166,25 @@ export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, c
 export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, raw: string, sent?: AfterPress): Promise<SendResult> {
   const text = raw.trim();
   if (!text || !(await tp.toChat(chat, true))) return "failed";
+
+  // Fast path: direct chatsvc API
+  try {
+    const auth = await getTeamsAuth(tp.page.context());
+    if (auth) {
+      const convId = await resolveConversationId(auth, tp.page, chat);
+      if (convId) {
+        const res = await replyTextMessage(auth, convId, mid, text);
+        if (res.ok) {
+          await sent?.();
+          log.info("reply", "replied via chatsvc API", { chat, convId, mid });
+          return "sent";
+        }
+      }
+    }
+  } catch (e) {
+    log.warn("reply", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat, mid });
+  }
+
   const page = tp.page;
   if (await page.evaluate(composerLeft, SEL)) {
     log.warn("reply", "compose box not empty", { chat });
@@ -158,6 +224,24 @@ export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, r
 
 export async function deleteMessage(tp: TeamsPage, chat: string, mid: string): Promise<boolean> {
   if (!(await tp.toChat(chat))) return false;
+
+  // Fast path: direct chatsvc API
+  try {
+    const auth = await getTeamsAuth(tp.page.context());
+    if (auth) {
+      const convId = await resolveConversationId(auth, tp.page, chat);
+      if (convId) {
+        const ok = await deleteRemoteMessage(auth, convId, mid);
+        if (ok) {
+          log.info("delete", "deleted via chatsvc API", { chat, convId, mid });
+          return true;
+        }
+      }
+    }
+  } catch (e) {
+    log.warn("delete", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat, mid });
+  }
+
   try {
     if (!(await tp.clickBarButton(mid, ACTIONS.more))) return false;
     await tp.page.locator(`${SEL.menu} [data-tid="${ACTIONS.delete}"]:visible`).first().click({ timeout: 4000 });
@@ -242,6 +326,24 @@ export async function togglePill(tp: TeamsPage, chat: string, mid: string, emoji
 export async function editMessage(tp: TeamsPage, chat: string, mid: string, raw: string): Promise<boolean> {
   const text = raw.trim();
   if (!text || !(await tp.toChat(chat))) return false;
+
+  // Fast path: direct chatsvc API
+  try {
+    const auth = await getTeamsAuth(tp.page.context());
+    if (auth) {
+      const convId = await resolveConversationId(auth, tp.page, chat);
+      if (convId) {
+        const ok = await editTextMessage(auth, convId, mid, text);
+        if (ok) {
+          log.info("edit", "edited via chatsvc API", { chat, convId, mid });
+          return true;
+        }
+      }
+    }
+  } catch (e) {
+    log.warn("edit", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat, mid });
+  }
+
   const item = tp.page.locator(`${SEL.item}:has(${messageSelector(mid)})`);
   try {
     if (!(await tp.clickBarButton(mid, ACTIONS.edit))) {
