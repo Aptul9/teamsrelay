@@ -9,7 +9,7 @@ import { ownerInput, withInput } from "../teams/input";
 import { installMicHook } from "../teams/scripts/calls";
 import { drainNotifications, installNotificationHook, makeVisible, watchInput } from "../teams/scripts/page-state";
 import { SEL, TEXTS } from "../teams/selectors";
-import { hasTeamsAuth } from "./conversation";
+import { servedByApi } from "./conversation";
 
 const initScripts = new WeakSet<Page>();
 const contextScripts = new WeakSet<BrowserContext>();
@@ -144,9 +144,9 @@ export function inApp(a: Agent, chat: string): boolean {
 }
 
 // The visible page reads what is open: after a reload Teams reopens a chat of its own choosing, put right here.
-// When chatsvc API is active, no DOM chat navigation is needed.
+// A chat chatsvc keeps fresh needs no DOM chat navigation.
 export async function park(a: Agent, want: string) {
-  if ((await hasTeamsAuth(a)) || !want || a.store.hasPendingCommands() || (await a.tp.isOpen(want))) return;
+  if (!want || servedByApi(want) || a.store.hasPendingCommands() || (await a.tp.isOpen(want))) return;
   log.info("show", want);
   await a.tp.openChat(want);
 }

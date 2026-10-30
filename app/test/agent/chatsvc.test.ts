@@ -4,7 +4,6 @@ import {
   deleteRemoteMessage,
   editTextMessage,
   fetchChatMessages,
-  getOpenConversationId,
   getTeamsAuth,
   replyTextMessage,
   resolveConversationId,
@@ -75,16 +74,6 @@ describe("chatsvc", () => {
     expect(auth).not.toBeNull();
     expect(auth?.token).toBe("msal_localstorage_token_xyz");
     expect(auth?.region).toBe("emea");
-  });
-
-  it("extracts conversation id from page URL", async () => {
-    const pageWithHash = {
-      url: () => "https://teams.cloud.microsoft/v2/#/conversations/19:sample_chat_id@thread.v2?ctx=chat",
-      evaluate: vi.fn(async () => null),
-    } as unknown as Page;
-
-    const id = await getOpenConversationId(pageWithHash);
-    expect(id).toBe("19:sample_chat_id@thread.v2");
   });
 
   it("resolves conversation id directly if it starts with 19: or 48:", async () => {

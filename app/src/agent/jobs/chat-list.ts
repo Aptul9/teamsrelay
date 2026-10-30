@@ -62,11 +62,12 @@ export async function scanChats(a: Agent) {
 
 export async function prefetchChats(a: Agent) {
   try {
-    let prefetched = 0;
+    let tried = 0;
     for (const c of a.store.chats().slice(0, 20)) {
-      if (prefetched >= 2 || a.store.hasPendingCommands()) break;
+      if (tried >= 2 || a.store.hasPendingCommands()) break;
       if (a.store.messages(c.name).length === 0) {
-        if (await saveChatViaApi(a, c.name)) prefetched++;
+        tried++;
+        await saveChatViaApi(a, c.name);
       }
     }
   } catch {

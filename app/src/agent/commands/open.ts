@@ -1,7 +1,7 @@
 import type { OpenReason, OpenResult } from "@/shared/slot-db/commands";
 import { cmdResultKey, STATE } from "@/shared/slot-db/state";
 import type { Agent } from "../context";
-import { hasTeamsAuth, markReadViaApi, markViewing, saveChatViaApi, saveOpenChat } from "../jobs/conversation";
+import { markReadViaApi, markViewing, saveChatViaApi, saveOpenChat, servedByApi } from "../jobs/conversation";
 import type { Handler, Outcome } from "./index";
 
 // arg1: chat. The app shows the chat: Teams opens it and the agent saves its messages. Done once they are saved, so
@@ -11,8 +11,8 @@ import type { Handler, Outcome } from "./index";
 export const open: Handler = async (a, { id, ts, arg1: chat }) => {
   markViewing(a, chat, ts);
   if (a.health?.teams === "login") return failed(a, id, "signed-out");
-  // Instant fast-path when chatsvc is active and messages are already cached: mark done at 0 ms and refresh in background
-  if ((await hasTeamsAuth(a)) && a.store.messages(chat).length > 0) {
+  // Instant fast-path when chatsvc keeps this chat fresh and its messages are cached: done at 0 ms, refresh in background
+  if (servedByApi(chat) && a.store.messages(chat).length > 0) {
     a.store.setState(STATE.activeChat, chat);
     void markReadViaApi(a, chat);
     void saveChatViaApi(a, chat).catch(() => undefined);
