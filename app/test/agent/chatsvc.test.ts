@@ -67,11 +67,15 @@ describe("chatsvc", () => {
   });
 
   it("sends text message via chatsvc API", async () => {
-    const mockFetch = vi.fn(async () => ({
-      ok: true,
-      status: 201,
-      json: async () => ({ OriginalArrivalTime: 1793300000000 }),
-    }));
+    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      void url;
+      void init;
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({ OriginalArrivalTime: 1793300000000 }),
+      };
+    });
     vi.stubGlobal("fetch", mockFetch);
 
     const res = await sendTextMessage(fakeAuth, "19:test_chat", "Hello from test");
@@ -79,14 +83,19 @@ describe("chatsvc", () => {
     expect(res.id).toBe("1793300000000");
 
     expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, opts] = mockFetch.mock.calls[0];
+    const call0 = mockFetch.mock.calls[0];
+    expect(call0).toBeDefined();
+    const url = String(call0![0]);
+    const opts = call0![1] as RequestInit;
+    const headers = opts.headers as Record<string, string>;
     expect(url).toContain("/users/ME/conversations/19%3Atest_chat/messages");
-    expect(opts.headers.Authorization).toBe("Bearer fake_token_123");
-    expect(opts.body).toContain("<p>Hello from test</p>");
+    expect(headers.Authorization).toBe("Bearer fake_token_123");
+    expect(String(opts.body)).toContain("<p>Hello from test</p>");
   });
 
   it("replies to text message via chatsvc API", async () => {
-    const mockFetch = vi.fn(async (url: string) => {
+    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      void init;
       if (url.endsWith("/messages/12345")) {
         return {
           ok: true,
@@ -107,43 +116,58 @@ describe("chatsvc", () => {
     expect(res.id).toBe("1793300001000");
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
-    const [, postOpts] = mockFetch.mock.calls[1];
-    expect(postOpts.body).toContain("schema.skype.com/Reply");
-    expect(postOpts.body).toContain("Original");
-    expect(postOpts.body).toContain("Risposta di test");
+    const postCall = mockFetch.mock.calls[1];
+    expect(postCall).toBeDefined();
+    const postOpts = postCall![1] as RequestInit;
+    expect(String(postOpts.body)).toContain("schema.skype.com/Reply");
+    expect(String(postOpts.body)).toContain("Original");
+    expect(String(postOpts.body)).toContain("Risposta di test");
   });
 
   it("edits text message via chatsvc API", async () => {
-    const mockFetch = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-    }));
+    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      void url;
+      void init;
+      return {
+        ok: true,
+        status: 200,
+      };
+    });
     vi.stubGlobal("fetch", mockFetch);
 
     const ok = await editTextMessage(fakeAuth, "19:test_chat", "12345", "Modificato");
     expect(ok).toBe(true);
     expect(mockFetch).toHaveBeenCalledOnce();
-    const [, opts] = mockFetch.mock.calls[0];
+    const editCall = mockFetch.mock.calls[0];
+    expect(editCall).toBeDefined();
+    const opts = editCall![1] as RequestInit;
     expect(opts.method).toBe("PUT");
-    expect(opts.body).toContain("<p>Modificato</p>");
+    expect(String(opts.body)).toContain("<p>Modificato</p>");
   });
 
   it("deletes text message via chatsvc API", async () => {
-    const mockFetch = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-    }));
+    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      void url;
+      void init;
+      return {
+        ok: true,
+        status: 200,
+      };
+    });
     vi.stubGlobal("fetch", mockFetch);
 
     const ok = await deleteRemoteMessage(fakeAuth, "19:test_chat", "12345");
     expect(ok).toBe(true);
     expect(mockFetch).toHaveBeenCalledOnce();
-    const [, opts] = mockFetch.mock.calls[0];
+    const delCall = mockFetch.mock.calls[0];
+    expect(delCall).toBeDefined();
+    const opts = delCall![1] as RequestInit;
     expect(opts.method).toBe("DELETE");
   });
 
   it("uploads image to AMS and sends it via chatsvc API", async () => {
-    const mockFetch = vi.fn(async (url: string) => {
+    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      void init;
       if (url.endsWith("/objects")) {
         return { ok: true, json: async () => ({ id: "ams-obj-999" }) };
       }
@@ -159,8 +183,10 @@ describe("chatsvc", () => {
     expect(res.id).toBe("1793300002000");
 
     expect(mockFetch).toHaveBeenCalledTimes(3);
-    const [, , sendCall] = mockFetch.mock.calls;
-    expect(sendCall[1].body).toContain("ams-obj-999");
-    expect(sendCall[1].body).toContain("Didascalia");
+    const sendCall = mockFetch.mock.calls[2];
+    expect(sendCall).toBeDefined();
+    const sendOpts = sendCall![1] as RequestInit;
+    expect(String(sendOpts.body)).toContain("ams-obj-999");
+    expect(String(sendOpts.body)).toContain("Didascalia");
   });
 });
