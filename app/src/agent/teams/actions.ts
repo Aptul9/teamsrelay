@@ -9,6 +9,7 @@ import {
   resolveConversationId,
   sendImageMessage,
   sendTextMessage,
+  toggleMessageReaction,
 } from "./chatsvc";
 import { confirmSent, messageSelector, sleep, until, type AfterPress, type SendResult, type TeamsPage } from "./page";
 import { composerImages, composerLeft, messageIds, ownMessageSent, pasteImage } from "./scripts/compose";
@@ -57,9 +58,9 @@ async function afterFailedPress(tp: TeamsPage, text: string, before: string[]): 
 // `sent` runs as soon as the message went.
 export async function sendText(tp: TeamsPage, chat: string, raw: string, sent?: AfterPress): Promise<SendResult> {
   const text = raw.trim();
-  if (!text || !(await tp.toChat(chat, true))) return "failed";
+  if (!text) return "failed";
 
-  // Fast path: direct chatsvc API
+  // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
     const auth = await getTeamsAuth(tp.page.context());
     if (auth) {
@@ -77,6 +78,7 @@ export async function sendText(tp: TeamsPage, chat: string, raw: string, sent?: 
     log.warn("send", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat });
   }
 
+  if (!(await tp.toChat(chat, true))) return "failed";
   const page = tp.page;
   // a draft already there is someone's: left as it is, nothing sent
   if (await page.evaluate(composerLeft, SEL)) {
@@ -113,9 +115,7 @@ type ImageFile = { name: string; type: string; data: Buffer };
 // the new message with the image as sent (upload included, 30 s at most), unconfirmed when it does not. `sent` runs as
 // soon as the message went.
 export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, caption: string, sent?: AfterPress): Promise<SendResult> {
-  if (!(await tp.toChat(chat, true))) return "failed";
-
-  // Fast path: direct AMS + chatsvc API
+  // Fast path: direct AMS + chatsvc API without waiting for DOM navigation
   try {
     const auth = await getTeamsAuth(tp.page.context());
     if (auth) {
@@ -133,6 +133,7 @@ export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, c
     log.warn("image", `AMS fast path failed: ${errorText(e)}, falling back to DOM`, { chat });
   }
 
+  if (!(await tp.toChat(chat, true))) return "failed";
   const page = tp.page;
   if (await page.evaluate(composerLeft, SEL)) {
     log.warn("image", "compose box not empty", { chat });
@@ -165,13 +166,13 @@ export async function sendImage(tp: TeamsPage, chat: string, image: ImageFile, c
 // the reply went.
 export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, raw: string, sent?: AfterPress): Promise<SendResult> {
   const text = raw.trim();
-  if (!text || !(await tp.toChat(chat, true))) return "failed";
+  if (!text) return "failed";
 
-  // Fast path: direct chatsvc API
+  // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
     const auth = await getTeamsAuth(tp.page.context());
     if (auth) {
-      const convId = await resolveConversationId(auth, tp.page, chat);
+      const convId = await resolveConversationId(auth, tp.page, chat, mid);
       if (convId) {
         const res = await replyTextMessage(auth, convId, mid, text);
         if (res.ok) {
@@ -185,6 +186,7 @@ export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, r
     log.warn("reply", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat, mid });
   }
 
+  if (!(await tp.toChat(chat, true))) return "failed";
   const page = tp.page;
   if (await page.evaluate(composerLeft, SEL)) {
     log.warn("reply", "compose box not empty", { chat });
@@ -223,13 +225,11 @@ export async function replyWithQuote(tp: TeamsPage, chat: string, mid: string, r
 }
 
 export async function deleteMessage(tp: TeamsPage, chat: string, mid: string): Promise<boolean> {
-  if (!(await tp.toChat(chat))) return false;
-
-  // Fast path: direct chatsvc API
+  // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
     const auth = await getTeamsAuth(tp.page.context());
     if (auth) {
-      const convId = await resolveConversationId(auth, tp.page, chat);
+      const convId = await resolveConversationId(auth, tp.page, chat, mid);
       if (convId) {
         const ok = await deleteRemoteMessage(auth, convId, mid);
         if (ok) {
@@ -242,6 +242,7 @@ export async function deleteMessage(tp: TeamsPage, chat: string, mid: string): P
     log.warn("delete", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat, mid });
   }
 
+  if (!(await tp.toChat(chat))) return false;
   try {
     if (!(await tp.clickBarButton(mid, ACTIONS.more))) return false;
     await tp.page.locator(`${SEL.menu} [data-tid="${ACTIONS.delete}"]:visible`).first().click({ timeout: 4000 });
@@ -273,6 +274,21 @@ export async function react(tp: TeamsPage, chat: string, mid: string, emoji: str
   const barButton = BAR_REACTIONS[name];
   const pickerButton = PICKER_REACTIONS[name];
   if (!barButton && !pickerButton) return false;
+
+  // Fast path: direct chatsvc API without waiting for DOM navigation
+  try {
+    const auth = await getTeamsAuth(tp.page.context());
+    if (auth) {
+      const convId = await resolveConversationId(auth, tp.page, chat, mid);
+      if (convId && (await toggleMessageReaction(auth, convId, mid, emoji))) {
+        log.info("react", "toggled reaction via chatsvc API", { chat, convId, mid, emoji });
+        return true;
+      }
+    }
+  } catch (e) {
+    log.warn("react", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat, mid, emoji });
+  }
+
   if (!(await tp.toChat(chat))) return false;
   const mine = () => tp.page.evaluate(ownReactions, { s: SEL, mid });
   const before = JSON.stringify(await mine());
@@ -296,7 +312,23 @@ export async function react(tp: TeamsPage, chat: string, mid: string, emoji: str
 
 // Click on the pill of reaction `emoji` under the message, like in Teams: removed if yours, added otherwise
 export async function togglePill(tp: TeamsPage, chat: string, mid: string, emoji: string): Promise<boolean> {
-  if (!emoji || !(await tp.toChat(chat))) return false;
+  if (!emoji) return false;
+
+  // Fast path: direct chatsvc API without waiting for DOM navigation
+  try {
+    const auth = await getTeamsAuth(tp.page.context());
+    if (auth) {
+      const convId = await resolveConversationId(auth, tp.page, chat, mid);
+      if (convId && (await toggleMessageReaction(auth, convId, mid, emoji))) {
+        log.info("pill", "toggled reaction pill via chatsvc API", { chat, convId, mid, emoji });
+        return true;
+      }
+    }
+  } catch (e) {
+    log.warn("pill", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat, mid, emoji });
+  }
+
+  if (!(await tp.toChat(chat))) return false;
   const m = tp.page.locator(messageSelector(mid));
   if ((await m.count()) === 0) return false;
   await m.evaluate(centerElement);
@@ -325,13 +357,13 @@ export async function togglePill(tp: TeamsPage, chat: string, mid: string, emoji
 // Edits one of your messages. True when the text on Teams is the new one.
 export async function editMessage(tp: TeamsPage, chat: string, mid: string, raw: string): Promise<boolean> {
   const text = raw.trim();
-  if (!text || !(await tp.toChat(chat))) return false;
+  if (!text) return false;
 
-  // Fast path: direct chatsvc API
+  // Fast path: direct chatsvc API without waiting for DOM navigation
   try {
     const auth = await getTeamsAuth(tp.page.context());
     if (auth) {
-      const convId = await resolveConversationId(auth, tp.page, chat);
+      const convId = await resolveConversationId(auth, tp.page, chat, mid);
       if (convId) {
         const ok = await editTextMessage(auth, convId, mid, text);
         if (ok) {
@@ -344,6 +376,7 @@ export async function editMessage(tp: TeamsPage, chat: string, mid: string, raw:
     log.warn("edit", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat, mid });
   }
 
+  if (!(await tp.toChat(chat))) return false;
   const item = tp.page.locator(`${SEL.item}:has(${messageSelector(mid)})`);
   try {
     if (!(await tp.clickBarButton(mid, ACTIONS.edit))) {

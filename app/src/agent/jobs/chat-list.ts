@@ -6,6 +6,7 @@ import { errorText, log } from "../log";
 import { sleep } from "../teams/page";
 import { readChatList, scrollList, type ListRow } from "../teams/scripts/chat-list";
 import { SEL, TEXTS } from "../teams/selectors";
+import { saveChatViaApi } from "./conversation";
 import { inApp } from "./page-setup";
 
 // The rows as Teams shows them, the presence of each person as one of the words the app knows
@@ -21,6 +22,7 @@ export async function notifyNew(a: Agent, rows: readonly ListRow[]) {
   for (const { chat, body } of a.detector.scan(rows)) {
     const shown = inApp(a, chat);
     log.info("NEWMSG", chat, { preview: body.slice(0, 50), inApp: shown || undefined });
+    void saveChatViaApi(a, chat).catch(() => undefined);
     if (!shown) await a.notifier.message(chat, body, chat);
   }
   const muted = a.detector.takeMuted();
@@ -43,7 +45,16 @@ export async function readChats(a: Agent, pictures: boolean): Promise<boolean> {
 
 export async function scanChats(a: Agent) {
   try {
-    await readChats(a, true);
+    if (await readChats(a, true)) {
+      // Pre-sync messages in the background for recent chats that have no cached messages yet
+      let prefetched = 0;
+      for (const c of a.store.chats().slice(0, 20)) {
+        if (prefetched >= 2) break;
+        if (a.store.messages(c.name).length === 0) {
+          if (await saveChatViaApi(a, c.name)) prefetched++;
+        }
+      }
+    }
   } catch (e) {
     log.warn("chats", errorText(e));
   }

@@ -1,7 +1,7 @@
 import type { OpenReason, OpenResult } from "@/shared/slot-db/commands";
 import { cmdResultKey, STATE } from "@/shared/slot-db/state";
 import type { Agent } from "../context";
-import { markViewing, saveOpenChat } from "../jobs/conversation";
+import { markViewing, saveChatViaApi, saveOpenChat } from "../jobs/conversation";
 import type { Handler, Outcome } from "./index";
 
 // arg1: chat. The app shows the chat: Teams opens it and the agent saves its messages. Done once they are saved, so
@@ -11,6 +11,12 @@ import type { Handler, Outcome } from "./index";
 export const open: Handler = async (a, { id, ts, arg1: chat }) => {
   markViewing(a, chat, ts);
   if (a.health?.teams === "login") return failed(a, id, "signed-out");
+  // Fast path: fetch messages directly via chatsvc API (~80 ms) and align DOM in the background
+  if (await saveChatViaApi(a, chat)) {
+    a.store.setState(STATE.activeChat, chat);
+    void a.tp.showChat(chat).catch(() => undefined);
+    return "done";
+  }
   const problem = await a.tp.showChat(chat);
   if (problem) return failed(a, id, problem);
   a.store.setState(STATE.activeChat, chat);

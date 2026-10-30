@@ -3,6 +3,7 @@ import { nowSeconds, type Agent } from "../context";
 import { imageKey } from "../logic/files";
 import { extraOf } from "../logic/messages";
 import { errorText, log } from "../log";
+import { fetchChatMessages, getTeamsAuth, resolveConversationId } from "../teams/chatsvc";
 import { readMessages } from "../teams/scripts/conversation";
 import { SEL, TEXTS } from "../teams/selectors";
 import type { SavedMessage } from "../store/slot-store";
@@ -57,8 +58,40 @@ export async function readOpenMessages(a: Agent, chat: string): Promise<SavedMes
   return out;
 }
 
+// Fast path: fetch messages directly via chatsvc API without requiring DOM navigation
+export async function saveChatViaApi(a: Agent, chat: string): Promise<boolean> {
+  try {
+    const page = a.tp?.page;
+    if (!page || typeof page.context !== "function") return false;
+    const auth = await getTeamsAuth(page.context());
+    if (!auth) return false;
+    const convId = await resolveConversationId(auth, page, chat);
+    if (!convId) return false;
+    const messages = await fetchChatMessages(auth, convId, (mids) => a.store.readByCache(mids));
+    if (!messages) return false;
+    for (const m of messages) {
+      if (!m.extra?.images) continue;
+      const resolved: { f?: string; url?: string; w: number; h: number }[] = [];
+      for (const [i, im] of m.extra.images.entries()) {
+        const src = im.url || "";
+        const f = src ? await a.media.image(page, imageKey(chat, m.mid, i), src) : null;
+        if (f) resolved.push({ f, w: im.w ?? 0, h: im.h ?? 0 });
+        else if (src.startsWith("https://")) resolved.push({ url: src, w: im.w ?? 0, h: im.h ?? 0 });
+      }
+      if (resolved.length) m.extra.images = resolved;
+      else delete m.extra.images;
+    }
+    a.store.saveChatMessages(chat, messages);
+    return true;
+  } catch (e) {
+    log.warn("messages", `chatsvc save failed: ${errorText(e)}`, { chat });
+    return false;
+  }
+}
+
 // True once the messages Teams shows for the chat are saved
 export async function saveOpenChat(a: Agent, chat: string): Promise<boolean> {
+  if (await saveChatViaApi(a, chat)) return true;
   const messages = await readOpenMessages(a, chat);
   if (messages) a.store.saveChatMessages(chat, messages);
   return !!messages;

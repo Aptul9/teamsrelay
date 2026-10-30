@@ -207,6 +207,11 @@ export async function runAgent(a: Omit<Agent, "tp" | "health">, browser: Browser
       log.warn("loop", errorText(e));
       await sleep(2000);
     }
-    await sleep(1000);
+    for (let i = 0; i < 10 && !signal?.aborted; i++) {
+      if (agent.tp && agent.store.hasPendingCommands()) {
+        await runPendingCommands(agent).catch((e) => log.warn("commands", errorText(e)));
+      }
+      await sleep(100);
+    }
   }
 }

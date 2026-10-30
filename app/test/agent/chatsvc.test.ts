@@ -3,12 +3,14 @@ import type { BrowserContext, Page } from "playwright-core";
 import {
   deleteRemoteMessage,
   editTextMessage,
+  fetchChatMessages,
   getOpenConversationId,
   getTeamsAuth,
   replyTextMessage,
   resolveConversationId,
   sendImageMessage,
   sendTextMessage,
+  syncIndexedDbMappings,
 } from "@/agent/teams/chatsvc";
 
 describe("chatsvc", () => {
@@ -188,5 +190,81 @@ describe("chatsvc", () => {
     const sendOpts = sendCall![1] as RequestInit;
     expect(String(sendOpts.body)).toContain("ams-obj-999");
     expect(String(sendOpts.body)).toContain("Didascalia");
+  });
+
+  it("resolves 1:1 and self-chat conversation IDs via IndexedDB and (You) suffix", async () => {
+    const page = {
+      url: () => "https://teams.cloud.microsoft/v2/",
+      evaluate: vi.fn(async () => ({
+        convs: [{ id: "19:daniele_1on1@unq.gbl.spaces", titles: ["Daniele Fortunio"] }],
+        mids: [{ mid: "1793000111222", cid: "19:group_by_mid@thread.v2" }],
+      })),
+    } as unknown as Page;
+
+    await syncIndexedDbMappings(page, true);
+    expect(await resolveConversationId(fakeAuth, page, "Samuele Maritato (You)")).toBe("48:notes");
+    expect(await resolveConversationId(fakeAuth, page, "Daniele Fortunio")).toBe("19:daniele_1on1@unq.gbl.spaces");
+    expect(await resolveConversationId(fakeAuth, page, "Unknown Name", "1793000111222")).toBe("19:group_by_mid@thread.v2");
+  });
+
+  it("fetches and parses chat messages with quotes, emojis, reactions, edits and deletes", async () => {
+    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      void url;
+      void init;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          messages: [
+            {
+              id: "1002",
+              messagetype: "RichText/Html",
+              imdisplayname: "Daniele Fortunio",
+              from: "https://teams.microsoft.com/api/chatsvc/emea/v1/users/ME/contacts/8:orgid:other-uid",
+              content:
+                '<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="1001"><strong itemprop="mri" itemid="8:orgid:my-oid">Samuele</strong><p itemprop="preview">Ciao!</p></blockquote><p>Tutto bene <img itemtype="http://schema.skype.com/Emoji" alt="😂"></p>',
+              properties: {
+                edittime: 1793000005000,
+                emotions: [{ key: "like", users: [{ mri: "8:orgid:my-oid" }, { mri: "8:orgid:other-uid" }] }],
+              },
+            },
+            {
+              id: "1001",
+              messagetype: "RichText/Html",
+              imdisplayname: "Samuele Maritato",
+              from: "https://teams.microsoft.com/api/chatsvc/emea/v1/users/ME/contacts/8:orgid:my-oid",
+              content: "<p>Ciao!</p>",
+              properties: {},
+            },
+            {
+              id: "1003",
+              messagetype: "RichText/Html",
+              imdisplayname: "Samuele Maritato",
+              from: "https://teams.microsoft.com/api/chatsvc/emea/v1/users/ME/contacts/8:orgid:my-oid",
+              content: "",
+              properties: { deletetime: 1793000009000 },
+            },
+          ],
+        }),
+      };
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const msgs = await fetchChatMessages({ ...fakeAuth, oid: "my-oid" }, "19:daniele_1on1@unq.gbl.spaces");
+    expect(msgs).not.toBeNull();
+    expect(msgs).toHaveLength(3);
+    expect(msgs![0]).toMatchObject({ mid: "1001", mine: true, author: "", text: "Ciao!" });
+    expect(msgs![1]).toMatchObject({
+      mid: "1002",
+      mine: false,
+      author: "Daniele Fortunio",
+      text: "Tutto bene 😂",
+      reacts: "👍2",
+    });
+    expect(msgs![1]?.extra?.quote).toEqual({ author: "Samuele", text: "Ciao!" });
+    expect(msgs![1]?.extra?.edited).toBe(true);
+    expect(msgs![1]?.extra?.reactions).toEqual([{ e: "👍", n: 2, mine: true }]);
+    expect(msgs![2]).toMatchObject({ mid: "1003", mine: true, text: "" });
+    expect(msgs![2]?.extra?.deleted).toBe(true);
   });
 });
