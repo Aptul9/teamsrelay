@@ -33,6 +33,18 @@ function parseJwtClaims(token: string): { oid?: string; upn?: string; unique_nam
 }
 
 const authCache = new WeakMap<object, { auth: TeamsAuth; expiresAt: number }>();
+// Tokens chatsvc refused: the session of a tenant behind Defender for Cloud Apps (mcas.ms) holds a valid token that
+// chatsvc does not take from here. The account stays on the Teams page until Teams renews the token.
+const refusedTokens = new Set<string>();
+
+async function chatsvc(auth: TeamsAuth, url: string, init: RequestInit): Promise<Response> {
+  const resp = await fetch(url, init);
+  if (resp.status === 401 && !refusedTokens.has(auth.token)) {
+    refusedTokens.add(auth.token);
+    log.warn("chatsvc", "token refused: back to the Teams page");
+  }
+  return resp;
+}
 
 // Extract IC3 token and region from BrowserContext cookies OR page localStorage (MSAL v2 on teams.cloud.microsoft)
 export async function getTeamsAuth(context: BrowserContext | null | undefined, page?: Page): Promise<TeamsAuth | null> {
@@ -41,7 +53,7 @@ export async function getTeamsAuth(context: BrowserContext | null | undefined, p
 
     const cacheKey = (page ?? context) as object;
     const cached = authCache.get(cacheKey);
-    if (cached && Date.now() < cached.expiresAt) return cached.auth;
+    if (cached && Date.now() < cached.expiresAt) return refusedTokens.has(cached.auth.token) ? null : cached.auth;
 
     const cookies = await context.cookies();
 
@@ -105,7 +117,7 @@ export async function getTeamsAuth(context: BrowserContext | null | undefined, p
       }
     }
 
-    if (!token) return null;
+    if (!token || refusedTokens.has(token)) return null;
 
     const claims = parseJwtClaims(token);
     const auth: TeamsAuth = {
@@ -123,29 +135,16 @@ export async function getTeamsAuth(context: BrowserContext | null | undefined, p
   }
 }
 
-// Extract conversation ID from the open page URL
-export async function getOpenConversationId(page: Page): Promise<string | null> {
-  try {
-    const fromUrl = (url: string) => {
-      const m = url.match(/conversations\/([^?&#]+)/);
-      return m ? decodeURIComponent(m[1]) : null;
-    };
-    const direct = fromUrl(page.url());
-    if (direct) return direct;
-    return await page.evaluate(() => {
-      const m = window.location.href.match(/conversations\/([^?&#]+)/);
-      return m ? decodeURIComponent(m[1]) : null;
-    });
-  } catch {
-    return null;
-  }
-}
-
 // Cache of chat name (lowercase) -> conversation ID, and message ID -> conversation ID
 const convCache = new Map<string, { id: string; expiresAt: number }>();
 const midConvCache = new Map<string, string>();
 const lastMsgByConv = new Map<string, { id: string; cmid: string }>();
 let lastIdbSyncAt = 0;
+// Names not to look up until the time given: not found (each look-up reads the whole IndexedDB of Teams), or shared by
+// two conversations (a message must not reach the wrong one). The Teams page serves those chats.
+const unresolved = new Map<string, number>();
+const UNRESOLVED_MS = 60_000;
+const FORCED_SYNC_GAP_MS = 5_000;
 
 function cacheTitle(title: string | undefined | null, id: string, ttlMs = 15 * 60_000) {
   const clean = (title || "").trim();
@@ -157,7 +156,7 @@ function cacheTitle(title: string | undefined | null, id: string, ttlMs = 15 * 6
 
 // Read conversation title->id and mid->convId mappings directly from Teams Web IndexedDB in the browser
 export async function syncIndexedDbMappings(page: Page, force = false): Promise<void> {
-  if (!force && Date.now() - lastIdbSyncAt < 20_000) return;
+  if (Date.now() - lastIdbSyncAt < (force ? FORCED_SYNC_GAP_MS : 20_000)) return;
   lastIdbSyncAt = Date.now();
   try {
     const res = await page.evaluate(async () => {
@@ -230,8 +229,24 @@ export async function syncIndexedDbMappings(page: Page, force = false): Promise<
     });
 
     if (res && typeof res === "object") {
+      const idsOf = new Map<string, Set<string>>();
       for (const c of res.convs ?? []) {
-        for (const t of c.titles) cacheTitle(t, c.id);
+        for (const t of c.titles) {
+          const low = t.trim().toLowerCase();
+          idsOf.set(low, (idsOf.get(low) ?? new Set()).add(c.id));
+        }
+      }
+      for (const c of res.convs ?? []) {
+        for (const t of c.titles) {
+          const low = t.trim().toLowerCase();
+          if ((idsOf.get(low)?.size ?? 0) === 1) {
+            cacheTitle(t, c.id);
+          } else {
+            convCache.delete(t.trim());
+            convCache.delete(low);
+            unresolved.set(low, Date.now() + 15 * 60_000);
+          }
+        }
       }
       for (const m of res.mids ?? []) {
         midConvCache.set(m.mid, m.cid);
@@ -258,6 +273,9 @@ export async function resolveConversationId(auth: TeamsAuth, page: Page, chat: s
   const hit = convCache.get(chat) ?? convCache.get(chat.trim().toLowerCase());
   if (hit && Date.now() < hit.expiresAt) return hit.id;
 
+  const low = chat.trim().toLowerCase();
+  if ((unresolved.get(low) ?? 0) > Date.now()) return null;
+
   // 4. Sync IndexedDB mappings from the browser
   await syncIndexedDbMappings(page);
   if (mid && midConvCache.has(mid)) {
@@ -270,20 +288,14 @@ export async function resolveConversationId(auth: TeamsAuth, page: Page, chat: s
 
   // 5. Force re-sync IndexedDB once if not found (in case a new chat just appeared)
   await syncIndexedDbMappings(page, true);
-  const hitForceIdb = convCache.get(chat) ?? convCache.get(chat.trim().toLowerCase());
+  if ((unresolved.get(low) ?? 0) > Date.now()) return null;
+  const hitForceIdb = convCache.get(chat) ?? convCache.get(low);
   if (hitForceIdb && Date.now() < hitForceIdb.expiresAt) return hitForceIdb.id;
 
-  // 6. Active open conversation in page URL
-  const openId = await getOpenConversationId(page);
-  if (openId) {
-    cacheTitle(chat, openId);
-    return openId;
-  }
-
-  // 7. API directory lookup (matches group/meeting topics + 1:1 lastMessage sender names)
+  // 6. API directory lookup (matches group/meeting topics + 1:1 lastMessage sender names)
   try {
     const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations?view=msnp24Equivalent&pageSize=200&startTime=0`;
-    const resp = await fetch(url, {
+    const resp = await chatsvc(auth, url, {
       headers: {
         Accept: "application/json",
         "User-Agent": USER_AGENT,
@@ -301,7 +313,6 @@ export async function resolveConversationId(auth: TeamsAuth, page: Page, chat: s
           lastMessage?: { imdisplayname?: string; fromDisplayNameInToken?: string; from?: string };
         }>;
       };
-      const wantLow = chat.trim().toLowerCase();
       let matched: string | null = null;
       for (const c of data.conversations ?? []) {
         if (!c.id) continue;
@@ -309,14 +320,14 @@ export async function resolveConversationId(auth: TeamsAuth, page: Page, chat: s
         const title = tp.topic || tp.spaceThreadTopic || tp.threadTopic;
         if (title) {
           cacheTitle(title, c.id);
-          if (title.trim().toLowerCase() === wantLow) matched ??= c.id;
+          if (title.trim().toLowerCase() === low) matched ??= c.id;
         } else if (c.id.includes("@unq.gbl.spaces") && c.lastMessage) {
           const sender = (c.lastMessage.imdisplayname || c.lastMessage.fromDisplayNameInToken || "").trim();
           const from = c.lastMessage.from || "";
           const isMe = Boolean(auth.oid && from.toLowerCase().includes(auth.oid.toLowerCase()));
           if (sender && !isMe) {
             cacheTitle(sender, c.id);
-            if (sender.toLowerCase() === wantLow) matched ??= c.id;
+            if (sender.toLowerCase() === low) matched ??= c.id;
           }
         }
       }
@@ -326,6 +337,7 @@ export async function resolveConversationId(auth: TeamsAuth, page: Page, chat: s
     log.warn("chatsvc", `resolveConversationId failed: ${errorText(e)}`, { chat });
   }
 
+  unresolved.set(low, Date.now() + UNRESOLVED_MS);
   return null;
 }
 
@@ -475,7 +487,7 @@ export async function fetchChatMessages(
 ): Promise<SavedMessage[] | null> {
   try {
     const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages?view=msnp24Equivalent&pageSize=50`;
-    const resp = await fetch(url, {
+    const resp = await chatsvc(auth, url, {
       headers: {
         Accept: "application/json",
         "User-Agent": USER_AGENT,
@@ -615,7 +627,7 @@ export async function sendTextMessage(auth: TeamsAuth, convId: string, text: str
     clientmessageid: clientMessageId(),
   });
 
-  const resp = await fetch(url, {
+  const resp = await chatsvc(auth, url, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -655,7 +667,7 @@ export async function sendTextMessage(auth: TeamsAuth, convId: string, text: str
 export async function getMessage(auth: TeamsAuth, convId: string, mid: string): Promise<{ author: string; preview: string; mri: string } | null> {
   try {
     const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages/${mid}`;
-    const resp = await fetch(url, {
+    const resp = await chatsvc(auth, url, {
       headers: {
         Accept: "application/json",
         "User-Agent": USER_AGENT,
@@ -704,7 +716,7 @@ export async function replyTextMessage(auth: TeamsAuth, convId: string, mid: str
     },
   });
 
-  const resp = await fetch(url, {
+  const resp = await chatsvc(auth, url, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -754,7 +766,7 @@ export async function editTextMessage(auth: TeamsAuth, convId: string, mid: stri
     contenttype: "Text",
   });
 
-  const resp = await fetch(url, {
+  const resp = await chatsvc(auth, url, {
     method: "PUT",
     headers: {
       Accept: "application/json",
@@ -779,7 +791,7 @@ export async function editTextMessage(auth: TeamsAuth, convId: string, mid: stri
 
 export async function deleteRemoteMessage(auth: TeamsAuth, convId: string, mid: string): Promise<boolean> {
   const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages/${mid}`;
-  const resp = await fetch(url, {
+  const resp = await chatsvc(auth, url, {
     method: "DELETE",
     headers: {
       Accept: "application/json",
@@ -823,7 +835,7 @@ export async function toggleMessageReaction(auth: TeamsAuth, convId: string, mid
 
   try {
     const msgUrl = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages/${mid}`;
-    const getResp = await fetch(msgUrl, {
+    const getResp = await chatsvc(auth, msgUrl, {
       headers: {
         Accept: "application/json",
         "User-Agent": USER_AGENT,
@@ -849,7 +861,7 @@ export async function toggleMessageReaction(auth: TeamsAuth, convId: string, mid
       ? JSON.stringify({ emotions: { key } })
       : JSON.stringify({ emotions: { key, value: Date.now() } });
 
-    const resp = await fetch(propUrl, {
+    const resp = await chatsvc(auth, propUrl, {
       method,
       headers: {
         Accept: "application/json",
@@ -920,7 +932,7 @@ export async function sendImageMessage(auth: TeamsAuth, convId: string, imageBuf
     amsreferences: [objId],
   });
 
-  const resp = await fetch(url, {
+  const resp = await chatsvc(auth, url, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -946,7 +958,7 @@ export async function markConversationRead(auth: TeamsAuth, convId: string, fall
     let last = lastMsgByConv.get(convId);
     if (!last) {
       const getUrl = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages?view=msnp24Equivalent&pageSize=1`;
-      const getResp = await fetch(getUrl, {
+      const getResp = await chatsvc(auth, getUrl, {
         headers: {
           Accept: "application/json",
           "User-Agent": USER_AGENT,
@@ -967,7 +979,7 @@ export async function markConversationRead(auth: TeamsAuth, convId: string, fall
     const horizon = `${mid};${Date.now()};${cmid}`;
 
     const putUrl = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/properties?name=consumptionhorizon`;
-    const resp = await fetch(putUrl, {
+    const resp = await chatsvc(auth, putUrl, {
       method: "PUT",
       headers: {
         Accept: "application/json",

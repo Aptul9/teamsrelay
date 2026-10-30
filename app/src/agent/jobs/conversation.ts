@@ -89,18 +89,21 @@ export async function markReadViaApi(a: Agent, chat: string): Promise<void> {
   }
 }
 
-export async function hasTeamsAuth(a: Agent): Promise<boolean> {
-  try {
-    const page = a.tp?.page;
-    if (!page || typeof page.context !== "function") return false;
-    return (await getTeamsAuth(page.context(), page)) !== null;
-  } catch {
-    return false;
-  }
-}
+// Chats chatsvc saved at the last try: only these can skip Teams. Any other chat is read from the page, or it stays as
+// it was saved.
+const savedByApi = new Set<string>();
+
+export const servedByApi = (chat: string) => savedByApi.has(chat);
 
 // Fast path: fetch messages directly via chatsvc API without requiring DOM navigation
 export async function saveChatViaApi(a: Agent, chat: string): Promise<boolean> {
+  const saved = await saveThroughApi(a, chat);
+  if (saved) savedByApi.add(chat);
+  else savedByApi.delete(chat);
+  return saved;
+}
+
+async function saveThroughApi(a: Agent, chat: string): Promise<boolean> {
   try {
     const page = a.tp?.page;
     if (!page || typeof page.context !== "function") return false;
