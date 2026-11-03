@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import Database from "better-sqlite3";
 import type { Identity } from "@/shared/slot-db/state";
+import type { StatusPageRow } from "@/shared/status-db";
 import { accountLabel } from "../logic/notify";
 import { errorText, log } from "../log";
 import { isPhone, type PushDevices, type PushTarget } from "../push/notifier";
@@ -81,6 +82,15 @@ export class AppStore implements PushDevices {
       this.light = { at: Date.now(), value: Number(row?.light) > 0 };
     }
     return this.light.value;
+  }
+
+  // Every status page of the server (status_pages, src/lib/status-pages.ts), none while the web app has not created the
+  // table; null when app.db cannot be read
+  statusPages(): StatusPageRow[] | null {
+    return this.use((db) => {
+      if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='status_pages'").get()) return [];
+      return db.prepare("SELECT slug, slot, name, ends FROM status_pages").all() as StatusPageRow[];
+    }, null);
   }
 
   remove(endpoint: string) {

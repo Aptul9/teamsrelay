@@ -208,6 +208,7 @@ export async function runLight(l: Light, signal?: AbortSignal): Promise<void> {
       if (now >= l.due.list) {
         l.due.list = now + l.config.lightPoll * 1000;
         await readList(l);
+        await l.status?.poll(l);
       }
       if (now >= l.due.activity) {
         l.due.activity = now + l.config.lightPoll * 1000;

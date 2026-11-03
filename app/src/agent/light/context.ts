@@ -4,6 +4,7 @@ import type { NewMessageDetector } from "../logic/new-messages";
 import type { Notify } from "../push/notifier";
 import type { SlotStore } from "../store/slot-store";
 import type { LightApi, Person } from "./api";
+import type { StatusCollector } from "./status";
 import type { LightToken } from "./token";
 
 // What the light agent (an account with no browser of its own) works with
@@ -35,4 +36,6 @@ export type Light = {
   // when the process started (ms), and whether it read the feed once (src/agent/light/loop.ts)
   startedAt: number;
   feedRead: boolean;
+  // the status of the people of the status pages of this account, polled after each read of the chat list
+  status?: StatusCollector;
 };

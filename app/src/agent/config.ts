@@ -35,6 +35,8 @@ export type Config = AgentSettings & PushSettings & {
   filesDir: string;
   lightTokenFile: string;
   lightPoll: number;
+  // the status history of the status pages, next to app.db (src/shared/status-db.ts)
+  statusDb: string;
 };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -50,6 +52,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     uploadsDir: path.join(dataDir, "uploads"),
     lightTokenFile: path.join(dataDir, "light-token.json"),
     lightPoll: e.LIGHT_POLL,
+    statusDb: path.join(path.dirname(e.APP_DB), "status.db"),
     ...pushSettings(e),
     desktop:
       e.DESKTOP_PORT && e.DESKTOP_UID !== undefined && e.DESKTOP_GID !== undefined && e.DESKTOP_APP_ID && e.XDG_RUNTIME_DIR && e.WAYLAND_DISPLAY

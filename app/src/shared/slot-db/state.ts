@@ -45,6 +45,9 @@ export const STATE = {
   callAudio: "call_audio",
   // JSON LightSignIn: the sign-in a light account (no browser of its own) runs on, never the token itself
   lightToken: "light_token",
+  // JSON StatusNames: the people the status pages of a light account track, each with the mri the agent found for the
+  // name, "" for none (src/agent/light/status.ts)
+  statusNames: "status_names",
 } as const;
 
 // JSON result of command <id>, e.g. DownloadResult
@@ -56,6 +59,9 @@ export const oneToOneKey = (chat: string) => `chat_1to1:${chat}`;
 export const membersKey = (chat: string) => `members:${chat}`;
 // "1" once the automatic check of that half day (YYYYMMDD, am or pm) ran
 export const selfCheckKey = (day: string, half: "am" | "pm") => `hc_${day}_${half}`;
+
+export const StatusNames = z.record(z.string(), z.string()).catch({});
+export type StatusNames = z.infer<typeof StatusNames>;
 
 export const Viewing = z.object({ chat: z.string().catch(""), ts: z.number().catch(0) });
 export type Viewing = z.infer<typeof Viewing>;

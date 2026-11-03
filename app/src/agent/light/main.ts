@@ -16,6 +16,7 @@ import { SlotStore } from "../store/slot-store";
 import { LightApi } from "./api";
 import type { Light } from "./context";
 import { runLight } from "./loop";
+import { StatusCollector } from "./status";
 import { LightToken } from "./token";
 
 function check() {
@@ -56,6 +57,7 @@ async function main() {
     health: null,
     startedAt: Date.now(),
     feedRead: false,
+    status: new StatusCollector({ pages: () => devices.statusPages(), file: config.statusDb, slot: config.slot, gap: 3 * config.lightPoll }),
   };
   log.info("light", "start", { slot: config.slot, poll: config.lightPoll, push: !!vapid, fcm: !!sa, signIn: !!token.stored() });
   await runLight(l);

@@ -9,6 +9,9 @@ import Database from "better-sqlite3";
 export const STATUSES = ["available", "busy", "dnd", "brb", "away", "offline"] as const;
 export type Status = (typeof STATUSES)[number] | "unknown";
 
+// A status page as the agents read it from app.db (status_pages): ends Unix s, 0 none
+export type StatusPageRow = { slug: string; slot: number; name: string; ends: number };
+
 // Seconds after the last poll that saw a status within which the same status extends its stretch: 3 polls of the
 // default LIGHT_POLL. The light agent uses 3 × its own poll.
 export const STATUS_GAP = 180;
