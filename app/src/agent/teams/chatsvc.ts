@@ -33,9 +33,13 @@ function parseJwtClaims(token: string): { oid?: string; upn?: string; unique_nam
 }
 
 const authCache = new WeakMap<object, { auth: TeamsAuth; expiresAt: number }>();
-// Tokens chatsvc refused: the session of a tenant behind Defender for Cloud Apps (mcas.ms) holds a valid token that
-// chatsvc does not take from here. The account stays on the Teams page until Teams renews the token.
+// Tokens chatsvc refused (401): the agent takes the page's MSAL token next, else the Teams page serves the account until
+// Teams renews the token.
 const refusedTokens = new Set<string>();
+
+// Behind Defender for Cloud Apps the proxy keeps the cookies of the session it serves (*.mcas.ms) in its own encoding,
+// which chatsvc refuses (errorCode 911); the page's MSAL token is a plain JWT chatsvc takes (prod, 2026-11-03)
+const proxied = (domain: string) => domain.endsWith(".mcas.ms");
 
 async function chatsvc(auth: TeamsAuth, url: string, init: RequestInit): Promise<Response> {
   const resp = await fetch(url, init);
@@ -53,7 +57,7 @@ export async function getTeamsAuth(context: BrowserContext | null | undefined, p
 
     const cacheKey = (page ?? context) as object;
     const cached = authCache.get(cacheKey);
-    if (cached && Date.now() < cached.expiresAt) return refusedTokens.has(cached.auth.token) ? null : cached.auth;
+    if (cached && Date.now() < cached.expiresAt && !refusedTokens.has(cached.auth.token)) return cached.auth;
 
     const cookies = await context.cookies();
 
@@ -72,13 +76,14 @@ export async function getTeamsAuth(context: BrowserContext | null | undefined, p
       }
     }
 
-    // 1. Check cookies for authtoken_asm (WebView2 / MCAS proxy)
+    // 1. Check cookies for authtoken_asm (WebView2)
     const asm =
       cookies.find(
         (c) =>
           c.name === "authtoken_asm" &&
+          !proxied(c.domain) &&
           (c.domain.includes("asyncgw.teams.microsoft.com") || c.domain.includes("teams.microsoft.com") || c.domain.includes("teams.cloud.microsoft")),
-      ) ?? cookies.find((c) => c.name === "authtoken_asm");
+      ) ?? cookies.find((c) => c.name === "authtoken_asm" && !proxied(c.domain));
 
     let token = "";
     if (asm?.value) {
@@ -90,7 +95,7 @@ export async function getTeamsAuth(context: BrowserContext | null | undefined, p
     }
 
     // 2. Check page localStorage for MSAL v2 ic3.teams.office.com access token (standard Teams Web on teams.cloud.microsoft)
-    if (!token) {
+    if (!token || refusedTokens.has(token)) {
       const targetPage = page ?? (typeof context.pages === "function" ? context.pages()[0] : undefined);
       if (targetPage && typeof targetPage.evaluate === "function") {
         try {
@@ -110,7 +115,7 @@ export async function getTeamsAuth(context: BrowserContext | null | undefined, p
             }
             return null;
           });
-          if (lsToken) token = lsToken;
+          if (typeof lsToken === "string" && lsToken) token = lsToken;
         } catch {
           // page.evaluate might fail in mocks or during navigation
         }

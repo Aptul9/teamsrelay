@@ -45,6 +45,24 @@ describe("chatsvc refused by the account", () => {
     expect(await getTeamsAuth(contextWith("renewed-token-1"))).not.toBeNull();
   });
 
+  it("sends the page's MSAL token behind Defender for Cloud Apps, not the proxy's cookie", async () => {
+    const context = {
+      cookies: vi.fn(async () => [{ name: "authtoken_asm", value: "mcas-encoded-1", domain: ".asyncgw.teams.microsoft.com.mcas.ms", path: "/v1/uid/" }]),
+    } as unknown as BrowserContext;
+    const page = { evaluate: vi.fn(async () => "msal-token-1") } as unknown as Page;
+    expect((await getTeamsAuth(context, page))?.token).toBe("msal-token-1");
+  });
+
+  it("takes the page's MSAL token once chatsvc refused the cookie's", async () => {
+    vi.stubGlobal("fetch", refusing());
+    const context = contextWith("cookie-refused-1");
+    const page = { evaluate: vi.fn(async () => "msal-token-2") } as unknown as Page;
+    const first = await getTeamsAuth(context, page);
+    expect(first?.token).toBe("cookie-refused-1");
+    await fetchChatMessages(first!, "19:a@thread.v2");
+    expect((await getTeamsAuth(context, page))?.token).toBe("msal-token-2");
+  });
+
   it("opens a cached chat through Teams when chatsvc refuses, so the messages are fresh", async () => {
     vi.stubGlobal("fetch", refusing());
     const { a, tp, store } = agent("refused-token-2", [{ mid: "1" }]);
