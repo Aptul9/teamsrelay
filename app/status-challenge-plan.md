@@ -1,6 +1,6 @@
 # Status challenge: implementation plan
 
-> For agentic workers: build task by task, test first (vitest, red before green). Steps use checkbox (`- [ ]`) syntax.
+> For agentic workers: build task by task, test first (vitest, red before green). Steps use checkbox (`- [x]`) syntax.
 
 **Goal:** public pages `/kamila` and `/damian` with the Teams status history of two AGAP2 colleagues, collected by the light agent of slot 4, per `app/status-challenge-spec.md`.
 
@@ -65,7 +65,7 @@
 - `deleteStatusesExcept(db, keep: readonly string[]): number`, `deleteStatusesOf(db, name: string): number`
 - `STATUS_GAP = 180`
 
-- [ ] **Step 1: failing tests**
+- [x] **Step 1: failing tests**
 
 ```ts
 it("maps the availability as Teams draws it", () => {
@@ -84,10 +84,10 @@ it("extends the newest stretch on the same status within the gap, opens one on a
 it("deletes the rows of names no page tracks, and of one name", () => { /* two names, keep one, then delete it */ });
 ```
 
-- [ ] **Step 2:** `npx vitest run test/status-db.test.ts`: FAIL, module not found.
-- [ ] **Step 3:** implement `src/shared/status-db.ts` with the schema of the spec section Data.
-- [ ] **Step 4:** tests PASS.
-- [ ] **Step 5:** commit `feat: status history database of the status challenge`.
+- [x] **Step 2:** `npx vitest run test/status-db.test.ts`: FAIL, module not found.
+- [x] **Step 3:** implement `src/shared/status-db.ts` with the schema of the spec section Data.
+- [x] **Step 4:** tests PASS.
+- [x] **Step 5:** commit `feat: status history database of the status challenge`.
 
 ### Task 2: the collector of the light agent
 
@@ -102,7 +102,7 @@ it("deletes the rows of names no page tracks, and of one name", () => { /* two n
 - `Light.status?: StatusCollector`, `Config.statusDb: string` (`status.db` next to `APP_DB`)
 - loop: `await l.status?.poll(l)` right after `readList(l)` in the list branch
 
-- [ ] **Step 1: failing tests** (fake `LightApi.presence`, temp `status.db`, temp slot database, `l.people` and `l.list` filled):
+- [x] **Step 1: failing tests** (fake `LightApi.presence`, temp `status.db`, temp slot database, `l.people` and `l.list` filled):
   - same status extends, a change opens, a poll after more than `GAP` opens;
   - a failed presence call writes nothing and logs once per hour per kind;
   - a person missing from the answer gets nothing;
@@ -110,10 +110,10 @@ it("deletes the rows of names no page tracks, and of one name", () => { /* two n
   - name to mri: from `l.people` without case, else the other member of the 1:1 chat of that name; unresolved names in `status_names` as `""`;
   - pages read at most every 60 s;
   - retention once an hour: rows of names no page tracks, and of pages ended more than 7 days ago, deleted; an ended page of less than 7 days keeps its rows.
-- [ ] **Step 2:** FAIL.
-- [ ] **Step 3:** implement; wire into `main.ts` and the loop.
-- [ ] **Step 4:** PASS, and `test/agent/light-loop.test.ts` still PASS.
-- [ ] **Step 5:** commit `feat: light agent collects the status of the people of the status pages`.
+- [x] **Step 2:** FAIL.
+- [x] **Step 3:** implement; wire into `main.ts` and the loop.
+- [x] **Step 4:** PASS, and `test/agent/light-loop.test.ts` still PASS.
+- [x] **Step 5:** commit `feat: light agent collects the status of the people of the status pages`.
 
 ### Task 3: stats of a day
 
@@ -129,7 +129,7 @@ it("deletes the rows of names no page tracks, and of one name", () => { /* two n
 - `joinStretches(stretches: Stretch[], gap: number, now: number): Stretch[]` (the decision on gaps above)
 - `dayStats(stretches: Stretch[], day: string, o: { zone: string; now: number; gap: number }): DayStats`
 
-- [ ] **Step 1: failing tests:**
+- [x] **Step 1: failing tests:**
   - a past day sums to 24 h, today to the time elapsed;
   - clipping at midnight: a stretch 23:00-01:00 counts one hour on each day;
   - a change within `GAP` holds the old status; a longer gap is no data; `unknown` is no data;
@@ -138,8 +138,8 @@ it("deletes the rows of names no page tracks, and of one name", () => { /* two n
   - green share = available over online, `null` without online time;
   - by hour: the status that held most of each hour, no data where the gap holds most;
   - DST 2026-03-29 (23 h, 23 entries) and 2026-10-25 (25 h, 25 entries) in Europe/Rome.
-- [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS.
-- [ ] **Step 5:** commit `feat: stats of a day of the status challenge`.
+- [x] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS.
+- [x] **Step 5:** commit `feat: stats of a day of the status challenge`.
 
 ### Task 4: status_pages and the public API
 
@@ -155,9 +155,9 @@ it("deletes the rows of names no page tracks, and of one name", () => { /* two n
 - `type StatusAnswer` (shape of the spec plus `zone`), `statusAnswer(slug: string, now?: number): StatusAnswer | null`
 - `GET /api/status/<slug>`: 200 with `Cache-Control: public, max-age=30`, 404 unknown.
 
-- [ ] **Step 1: failing tests:** unknown slug 404 without any session mock; a page with stretches answers the shape (name, now with fresh true/false, days from the added day to today, stretches only on today and yesterday, byHour length, ends, updated, zone); a page ended more than 7 days ago is gone (404, row and data deleted); `reservedSlugs()` holds `admin`, `api`, `login`, `sw.js`, `desktop` and every top-level entry of `src/app` and `public`.
-- [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS.
-- [ ] **Step 5:** commit `feat: public API of the status pages`.
+- [x] **Step 1: failing tests:** unknown slug 404 without any session mock; a page with stretches answers the shape (name, now with fresh true/false, days from the added day to today, stretches only on today and yesterday, byHour length, ends, updated, zone); a page ended more than 7 days ago is gone (404, row and data deleted); `reservedSlugs()` holds `admin`, `api`, `login`, `sw.js`, `desktop` and every top-level entry of `src/app` and `public`.
+- [x] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS.
+- [x] **Step 5:** commit `feat: public API of the status pages`.
 
 ### Task 5: admin API
 
@@ -167,9 +167,9 @@ it("deletes the rows of names no page tracks, and of one name", () => { /* two n
 
 **Produces:** `GET` `{ pages: AdminStatusPage[], accounts: { slot: number; label: string; light: boolean }[] }` with `AdminStatusPage = StatusPage & { tenant: string; collecting: boolean; reason: string; last: { status: Status; since: number; until: number } | null }`; `POST {slug, slot, name}` 200, 400 (bad slug, name, account not light or not the admin's), 409 (reserved, taken); `PATCH {slug, ends: "YYYY-MM-DD" | ""}`; `DELETE {slug}`.
 
-- [ ] **Step 1: failing tests:** non-admin 403 on every method (`requireAdmin` mocked to throw `HttpError(403)`); reserved slug 409 with the reason; taken slug 409; account not light 400; add, then GET lists it with `reason` "not found in AGAP2" once the agent wrote `""` for the name, and `collecting` true once it wrote an mri; PATCH sets `ends` to the next midnight, `""` clears; DELETE removes the row and the rows in `status.db`.
-- [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS.
-- [ ] **Step 5:** commit `feat: admin API of the status pages`.
+- [x] **Step 1: failing tests:** non-admin 403 on every method (`requireAdmin` mocked to throw `HttpError(403)`); reserved slug 409 with the reason; taken slug 409; account not light 400; add, then GET lists it with `reason` "not found in AGAP2" once the agent wrote `""` for the name, and `collecting` true once it wrote an mri; PATCH sets `ends` to the next midnight, `""` clears; DELETE removes the row and the rows in `status.db`.
+- [x] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS.
+- [x] **Step 5:** commit `feat: admin API of the status pages`.
 
 ### Task 6: the dashboard page
 
@@ -179,18 +179,18 @@ it("deletes the rows of names no page tracks, and of one name", () => { /* two n
 
 **Produces:** `StatusDashboard({ slug, initial }: { slug: string; initial: StatusAnswer })`, fetching `/api/status/<slug>` every 60 s.
 
-- [ ] **Step 1: failing test** (esbuild bundle of `test/status-page.tsx` with a fixed answer, CSS compiled from `globals.css` by `@tailwindcss/postcss`, headless Chrome): at 375, 768, 1024, 1440 px, light and dark: every section heading shows (Now, Today, Challenge at a glance, Hours per day, Scoreboard, Data), `scrollWidth <= innerWidth`, keyboard Tab onto a segment of Today shows its status, from, to and duration in the readout, a heat map cell likewise, screenshots written to `TR_SHOTS` when set.
-- [ ] **Step 2:** FAIL. **Step 3:** implement per the design files. **Step 4:** PASS.
-- [ ] **Step 5:** screenshots read by eye, pre-delivery checklist of `references/pro-rules.md` item by item.
-- [ ] **Step 6:** commit `feat: public dashboard of a status page`.
+- [x] **Step 1: failing test** (esbuild bundle of `test/status-page.tsx` with a fixed answer, CSS compiled from `globals.css` by `@tailwindcss/postcss`, headless Chrome): at 375, 768, 1024, 1440 px, light and dark: every section heading shows (Now, Today, Challenge at a glance, Hours per day, Scoreboard, Data), `scrollWidth <= innerWidth`, keyboard Tab onto a segment of Today shows its status, from, to and duration in the readout, a heat map cell likewise, screenshots written to `TR_SHOTS` when set.
+- [x] **Step 2:** FAIL. **Step 3:** implement per the design files. **Step 4:** PASS.
+- [x] **Step 5:** screenshots read by eye, pre-delivery checklist of `references/pro-rules.md` item by item.
+- [x] **Step 6:** commit `feat: public dashboard of a status page`.
 
 ### Task 7: admin card
 
 **Files:** create `src/components/StatusPagesCard.tsx`; modify `src/components/AdminPanel.tsx`.
 
-- [ ] list (link, person, account, collecting or reason, last status), add dialog (slug, light account, name), end date (date field, clear), delete with confirm dialog.
-- [ ] checked by hand against `next dev` with a seeded `app.db`, then on prod.
-- [ ] commit `feat: admin card of the status pages`.
+- [x] list (link, person, account, collecting or reason, last status), add dialog (slug, light account, name), end date (date field, clear), delete with confirm dialog.
+- [x] checked by hand against `next dev` with a seeded `app.db`, then on prod.
+- [x] commit `feat: admin card of the status pages`.
 
 ### Task 8: deploy and live check
 
