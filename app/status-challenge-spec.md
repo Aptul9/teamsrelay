@@ -23,7 +23,8 @@ A public page per tracked person with their Teams status today and over the days
 | Access | Public, no login, no key (owner's choice). Pages carry `noindex`. |
 | Poll | Every poll of the light agent (`LIGHT_POLL`, 60 s by default): one presence call for all tracked people of the account. |
 | What is measured | The status alone, as Teams shows it next to the name: Available, Busy, Do not disturb, Be right back, Away, Offline. Why someone is busy (a call, a meeting) is not stored. |
-| Storage | Status changes only, as stretches; a poll with the same status extends the current one. |
+| Storage | Status changes only, as stretches; a poll with the same status extends the current one. In a database of its own, `data/status.db`, not in the account's `data/N/messages.db`: removing or re-adding an account (done with Tesco on 2026-11-03) deletes `data/N/`, and the history of the challenge must outlive that. |
+| Dashboard | A real dashboard, designed with the ui-ux-pro-max skill (section Dashboard and visualization). |
 | Time | Days and clock times in the time zone of the containers (`TZ`, Europe/Rome). |
 | Retention | Until the challenge ends. The end date is optional and set later in the admin card; with none, data is kept. Collecting stops at the end; data and pages are deleted 7 days after it. Deleting a page deletes its data at once. |
 | Charts | Plain SVG drawn by the page, no chart library. |
@@ -44,7 +45,9 @@ CREATE TABLE IF NOT EXISTS status_pages(
 
 Reserved slugs, refused: every top-level entry of `src/app` and `public` (`admin`, `api`, `consent`, `files`, `healthz`, `login`, `mcp`, `media`, `remote`, `settings`, `static`, `sw.js`, `manifest.webmanifest`) and the paths Caddy takes (`desktop`). The check reads both folders at build time, so a route added later is reserved too.
 
-### data/N/messages.db: `presence_log`
+### data/status.db: `presence_log`
+
+Where it lives on prod: `/opt/teamsrelay/data/status.db` on the host (the data volume already holding `app.db` and `N/messages.db`), `/data/status.db` in the web app container, `/root/data/status.db` in the browsers container. WAL mode, `busy_timeout` 8 s, like the other databases. Schema in `src/shared/status-db.ts`, created by whichever side opens it first. The light agents write; the web app reads and deletes.
 
 ```sql
 CREATE TABLE IF NOT EXISTS presence_log(
@@ -58,7 +61,7 @@ CREATE TABLE IF NOT EXISTS presence_log(
 CREATE INDEX IF NOT EXISTS presence_log_name ON presence_log(name, since);
 ```
 
-Added through `ADDED_TABLES` of `src/shared/slot-db/schema.ts`; not in `SLOT_TABLES` (a relay account has no light agent and syncs no such table).
+Size: one row per status change, a few dozen a day per person: under 1 MB a year for two people.
 
 `status` from `presence.availability`, as Teams draws it: Available and AvailableIdle `available`; Busy and BusyIdle `busy`; DoNotDisturb `dnd`; BeRightBack `brb`; Away `away`; Offline `offline`; PresenceUnknown and any other value `unknown`.
 
@@ -75,7 +78,7 @@ Rules of one poll, per person:
 1. The rows of `status_pages` for its slot, read from app.db through `AppStore` (at most every 60 s), with `ends` 0 or in the future.
 2. Name to mri: the people the agent already knows (`l.people`, filled by the chat list), matched on `displayName` without case; else the other member of a 1:1 chat whose name is that one. Unresolved names are logged once per hour and retried at each poll.
 3. One `LightApi.presence(mris)` call for all of them, then the rules above in one transaction.
-4. Retention: rows of names no page tracks any more, and of pages ended more than 7 days ago, are deleted once an hour.
+4. Retention: rows in `status.db` of names no page tracks any more, and of pages ended more than 7 days ago, are deleted once an hour.
 
 A presence call that fails leaves everything as it is and is logged once per failure kind per hour.
 
@@ -89,6 +92,7 @@ From the stretches of a day, clipped to the day:
 - **First online / last online:** first `since` and last `until` of a stretch not offline and not unknown.
 - **Longest Available streak:** longest run of adjacent available stretches with no gap, in minutes.
 - **Green share:** available hours over online hours (every status but offline and no data).
+- **By hour:** for each of the hours of the day, the status that held most of it (no data when most of it is a gap), for the heat map.
 
 Over the challenge (from the first day with data, or the `added` date): the same per day, plus totals and averages.
 
@@ -100,22 +104,49 @@ No login. 404 for an unknown or deleted slug. Answer:
 { "name": "Camilla Marini", "now": { "status": "busy", "since": 1793700000, "fresh": true },
   "days": [ { "day": "2026-11-03", "hours": { "available": 3.2, "busy": 3.1, "dnd": 0.5, "brb": 0.2, "away": 0.4, "offline": 13.8, "nodata": 2.8 },
               "firstOnline": "08:47", "lastOnline": "18:12", "longestAvailable": 95, "green": 0.43,
+              "byHour": ["offline", "offline", "...", "available", "busy", "...", "nodata"],
               "stretches": [[1793690000, 1793691200, "available"]] } ],
   "ends": 0, "updated": 1793700060 }
 ```
 
-`fresh` false when the newest `until` is older than `GAP`: the card says "no data since HH:MM". Stretches only for today and yesterday (the timeline); older days carry the totals only. `Cache-Control: public, max-age=30`.
+`fresh` false when the newest `until` is older than `GAP`: the card says "no data since HH:MM". `byHour` has one entry per hour of that day (23 or 25 on a DST change). Stretches only for today and yesterday (the timeline); older days carry the totals and `byHour` only. `Cache-Control: public, max-age=30`.
 
 ### Page, `src/app/[slug]/page.tsx`
 
-No login. `notFound()` for an unknown slug. `robots: noindex, nofollow`. A client component fetches the API every 60 s.
+No login. `notFound()` for an unknown slug. `robots: noindex, nofollow`. A client component fetches the API every 60 s. Content and look per section Dashboard and visualization.
 
-- **Now:** name, a colored dot and the status in words ("Busy"), since when.
-- **Today:** a band of the whole day, 00:00 to 24:00, one color per status, no data hatched.
-- **Days:** stacked bars of hours per status, one bar per day of the challenge.
-- **Scoreboard:** earliest first online, latest last online, longest Available streak, green share: today, and the best day of the challenge for each.
+## Dashboard and visualization
 
-Colors as Teams draws the statuses: available green, busy and dnd red, brb and away yellow, offline grey, no data hatched; from the theme of the app (`--success`, `--destructive`, `--warning`, `--muted-foreground`), so light and dark both work.
+The page is the product: a dashboard that is good to look at and quick to read, on a phone first. It is designed and checked with the ui-ux-pro-max skill (`~/.agents/skills/ui-ux-pro-max`), not improvised.
+
+### How the skill is used
+
+1. Design system first: `search.py "<product> <keywords>" --design-system --density 7 --motion 4 --persist -p "Status Challenge" --output-dir app`, which writes `app/design-system/status-challenge/MASTER.md`, then a page override with `--page "status"`. Committed with the code; the page follows them.
+2. Chart choices from `--domain chart`, UX details from `--domain ux`, implementation from `--stack nextjs` and `--stack shadcn`.
+3. Before delivery: the skill's pre-delivery checklist (`references/pro-rules.md`), each item checked on the real page.
+
+First pass of the skill (2026-11-03), to start from:
+
+- Style: Minimalism and Swiss style, the one it gives for dashboards: grid, clear hierarchy, high contrast, little decoration, light and dark.
+- Not taken: its page pattern (hero, features, call to action: a landing page) and its fonts (Fira, loaded from Google): the page keeps the app's Geist and theme tokens, and loads nothing from third parties.
+- Charts: time of day by hour across days as a heat map; hours compared as bars; never meaning by color alone (labels or patterns too); values on hover and on keyboard focus; a data table as fallback.
+- Motion: short stagger on load (300-450 ms), off under `prefers-reduced-motion`.
+
+### Content, top to bottom
+
+- **Now:** name, a large status dot with the status in words ("Busy"), since when, and how long that is. "No data since HH:MM" when the collector is silent.
+- **Today:** a band of the whole day, 00:00 to 24:00, one segment per stretch, a marker at the current time; hover or focus on a segment gives status, from, to, duration.
+- **Challenge at a glance:** a heat map, one row per day of the challenge, 24 columns (hours), each cell the status that held most of that hour, no data hatched.
+- **Hours per day:** stacked bars, one per day, segments per status, direct labels on the larger segments.
+- **Scoreboard:** earliest first online, latest last online, longest Available streak, green share: today against the best day of the challenge, as stat cards.
+- **Data table:** the same numbers per day, collapsed under the charts, for screen readers and exact values.
+
+### Rules
+
+- Colors as Teams draws the statuses: available green, busy and dnd red, brb and away yellow, offline grey, no data hatched; from the app's theme tokens (`--success`, `--destructive`, `--warning`, `--muted-foreground`), so light and dark both work. Busy and dnd, brb and away, told apart by a pattern or an icon as well.
+- Every chart has a title, a legend and a text summary of what it shows ("Mostly available between 09:00 and 13:00").
+- Layout: one column at 375 px, two at 1024 px and up; no horizontal scroll at any width; touch targets 44 px.
+- Charts in plain SVG, no chart library; nothing shifts while the data loads (space reserved).
 
 ### Admin card, `src/components/AdminPanel.tsx`
 
@@ -138,5 +169,5 @@ Admins only, through `/api/admin/status-pages` (GET, POST, PATCH, DELETE):
 - Stats: status mapping, a past day sums to its length and today to the time elapsed, clipping at midnight, longest streak across a gap, first and last online, DST day (23 h and 25 h).
 - API: unknown slug 404, public without session, shape above.
 - Admin API: reserved slug refused, non-admin 403, delete removes data.
-- Page: rendered in Chrome with a fixed API answer: the band, the bars and the cards show, no overflow at 360 px.
+- Page: rendered in Chrome with a fixed API answer at 375, 768, 1024 and 1440 px, light and dark: every section shows, no horizontal scroll, the values of a segment come up on keyboard focus, screenshots read by eye; then the ui-ux-pro-max pre-delivery checklist.
 - Live on prod: `/kamila` and `/damian` for an hour, statuses checked against what Teams shows.
