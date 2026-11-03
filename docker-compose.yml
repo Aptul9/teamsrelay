@@ -81,6 +81,8 @@ services:
       ACCOUNTS_PER_USER: ${ACCOUNTS_PER_USER:-}
       DESKTOP_URL: ${DESKTOP_URL:-}
       APP_DB: /data/app.db
+      # days and clock times of the status pages (src/lib/status-pages.ts), as in the browsers container
+      TZ: ${TZ:-UTC}
       CONTROL_SOCKET: /run/teamsrelay/control.sock
       VAPID_APPKEY: /vapid/appkey.txt
       # the web app sends the notifications of the accounts on another computer (their relay joined this server)
