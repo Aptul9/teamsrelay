@@ -15,6 +15,8 @@ export type AccountsConfig = {
   gid: number;
   chromium: string;
   agentScript: string;
+  // the agent of a light account, which runs without a browser (src/agent/light)
+  lightScript: string;
   node: string;
   // DevTools of account N listen on 127.0.0.1:(cdpBasePort + N)
   cdpBasePort: number;
@@ -49,7 +51,7 @@ export interface ProcessLike {
 }
 
 type ProcessState = { running: boolean; pid: number | null; restarts: number; lastExit: string | null };
-export type AccountStatus = { account: number; browser: ProcessState; agent: ProcessState };
+export type AccountStatus = { account: number; browser: ProcessState; agent: ProcessState; light: ProcessState };
 
 const PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
@@ -116,6 +118,13 @@ export function agentCommand(n: number, cfg: AccountsConfig): Command {
   };
 }
 
+// The light agent of a light account: the environment of the agent, without its browser and its desktop
+export function lightCommand(n: number, cfg: AccountsConfig): Command {
+  const agent = agentCommand(n, cfg);
+  const env = Object.fromEntries(Object.entries(agent.env ?? {}).filter(([k]) => !["CDP", "DESKTOP_PORT", "DESKTOP_UID", "DESKTOP_GID", "DESKTOP_APP_ID", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY"].includes(k)));
+  return { file: cfg.node, args: [cfg.lightScript], env };
+}
+
 type Deps = {
   log: (line: string) => void;
   process?: (name: string, command: () => Command, output?: (line: string) => void) => ProcessLike;
@@ -123,9 +132,10 @@ type Deps = {
   focus?: (n: number) => Promise<boolean>;
 };
 
-type Account = { browser: ProcessLike; agent: ProcessLike };
+type Account = { browser: ProcessLike; agent: ProcessLike; light: ProcessLike };
 
-// Browser and agent of every Teams account, started, stopped and wiped on request of the web app.
+// Browser and agent of every Teams account, started, stopped and wiped on request of the web app; the light agent alone
+// for a light account, between the runs of its browser. The two never run together: both would push the same messages.
 export class Accounts {
   private readonly accounts = new Map<number, Account>();
   private readonly queues = new Map<number, Promise<unknown>>();
@@ -143,6 +153,7 @@ export class Accounts {
   start(n: number) {
     return this.queued(n, async () => {
       const a = this.account(n);
+      if (a.light.active) await a.light.stop();
       const running = a.browser.active && a.agent.active;
       if (!a.browser.active) this.prepareProfile(n);
       a.browser.start();
@@ -151,11 +162,24 @@ export class Accounts {
     });
   }
 
+  // The light agent alone: browser and agent stop first
+  light(n: number) {
+    return this.queued(n, async () => {
+      const a = this.account(n);
+      if (a.light.active) return;
+      if (a.agent.active) await a.agent.stop();
+      if (a.browser.active) await a.browser.stop();
+      a.light.start();
+      this.say(`account ${n} started without its browser`);
+    });
+  }
+
   // agent first: it would log the browser as gone
   stop(n: number) {
     return this.queued(n, async () => {
       const a = this.accounts.get(n);
       if (!a) return;
+      if (a.light.active) await a.light.stop();
       await a.agent.stop();
       await a.browser.stop();
       this.say(`account ${n} stopped`);
@@ -167,7 +191,7 @@ export class Accounts {
   wipe(n: number) {
     return this.queued(n, async () => {
       const a = this.accounts.get(n);
-      if (a && (a.browser.active || a.agent.active)) throw new AccountError(409, `Account ${n} is running: stop it first`);
+      if (a && (a.browser.active || a.agent.active || a.light.active)) throw new AccountError(409, `Account ${n} is running: stop it first`);
       const dir = profileDir(n, this.cfg);
       if (!fs.existsSync(dir)) return;
       for (const entry of fs.readdirSync(dir)) {
@@ -197,7 +221,7 @@ export class Accounts {
 
   status(): AccountStatus[] {
     const state = (p: ProcessLike): ProcessState => ({ running: p.running, pid: p.pid, restarts: p.restarts, lastExit: p.lastExit });
-    return [...this.accounts.entries()].sort(([x], [y]) => x - y).map(([account, a]) => ({ account, browser: state(a.browser), agent: state(a.agent) }));
+    return [...this.accounts.entries()].sort(([x], [y]) => x - y).map(([account, a]) => ({ account, browser: state(a.browser), agent: state(a.agent), light: state(a.light) }));
   }
 
   async stopAll() {
@@ -232,7 +256,8 @@ export class Accounts {
     if (!a) {
       const browser = this.makeProcess(`browser-${n}`, () => browserCommand(n, this.cfg));
       const agent = this.makeProcess(`agent-${n}`, () => agentCommand(n, this.cfg), (line) => this.deps.log(`[${n}] ${line}`));
-      a = { browser, agent };
+      const light = this.makeProcess(`light-${n}`, () => lightCommand(n, this.cfg), (line) => this.deps.log(`[${n}] ${line}`));
+      a = { browser, agent, light };
       this.accounts.set(n, a);
     }
     return a;

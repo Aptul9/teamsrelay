@@ -16,6 +16,7 @@ describe("loadConfig", () => {
       gid: 1000,
       chromium: "/usr/bin/chromium",
       agentScript: "/app/agent.cjs",
+      lightScript: "/app/light.cjs",
       node: process.execPath,
       cdpBasePort: 9221,
       desktopPort: 8082,

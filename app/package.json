@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build:agent": "node scripts/bundles.mjs agent",
+    "build:light": "node scripts/bundles.mjs light",
     "build:supervisor": "node scripts/bundles.mjs supervisor",
     "build:relay": "node scripts/bundles.mjs relay",
     "build:hub": "node scripts/bundles.mjs hub",

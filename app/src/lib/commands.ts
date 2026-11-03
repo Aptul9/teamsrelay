@@ -1,5 +1,5 @@
 import { commandOf, type AppCommand } from "@/shared/command-input";
-import type { CommandType } from "@/shared/slot-db/commands";
+import { LIGHT_UNSUPPORTED, type CommandType } from "@/shared/slot-db/commands";
 import { appDb, slotRow } from "./appdb";
 import { body, HttpError, route } from "./http";
 import { requireSlot } from "./session";
@@ -22,19 +22,24 @@ export function idleReason(slot: number): string | null {
 // Commands are rows in data/N/messages.db; the agent of slot N runs them on the Teams page. An account without a
 // running agent refuses them.
 export function queue(slot: number, type: CommandType, arg1 = "", arg2 = ""): number {
-  takesCommands(slot);
+  takesCommands(slot, type);
   return withSlot(slot, (r) => r.enqueue(type, arg1, arg2));
 }
 
 // The same, but a request sent again while its command still waits (a double tap) gets that command
 export function queueOnce(slot: number, type: CommandType, arg1 = "", arg2 = ""): number {
-  takesCommands(slot);
+  takesCommands(slot, type);
   return withSlot(slot, (r) => r.enqueueOnce(type, arg1, arg2));
 }
 
-function takesCommands(slot: number) {
+function takesCommands(slot: number, type: CommandType) {
   const why = idleReason(slot);
   if (why) throw new HttpError(409, why);
+  const s = slotRow(appDb(), slot);
+  // the light agent runs it, unless the browser of the account runs now to sign it in again
+  if (s?.light && !s.refreshing && LIGHT_UNSUPPORTED.includes(type)) {
+    throw new HttpError(409, "This Teams account runs without a browser: calls, downloads and undo of a delete need Always on in Settings");
+  }
 }
 
 // The route of a command made of what the app sends alone, the chat named `name` as the web app always called it

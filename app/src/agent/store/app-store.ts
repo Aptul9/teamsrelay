@@ -73,6 +73,16 @@ export class AppStore implements PushDevices {
     return this.checked.value;
   }
 
+  // A light account (teams_accounts.light): its browser runs only to sign it in again. Read at most every 15 s.
+  private light = { at: 0, value: false };
+  lightMode(): boolean {
+    if (Date.now() - this.light.at > 15_000) {
+      const row = this.use((db) => db.prepare("SELECT * FROM teams_accounts WHERE slot=?").get(this.slot) as { light?: number } | undefined, undefined);
+      this.light = { at: Date.now(), value: Number(row?.light) > 0 };
+    }
+    return this.light.value;
+  }
+
   remove(endpoint: string) {
     this.use((db) => db.prepare("DELETE FROM push_subscriptions WHERE endpoint=?").run(endpoint), null);
   }

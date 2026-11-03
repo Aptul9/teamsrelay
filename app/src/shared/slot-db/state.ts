@@ -43,6 +43,8 @@ export const STATE = {
   // 1: the relay of an account on another computer carries the sound of a call answered or placed from the app to the
   // app (src/local/call-bridge.ts); a relay of before never writes it
   callAudio: "call_audio",
+  // JSON LightSignIn: the sign-in a light account (no browser of its own) runs on, never the token itself
+  lightToken: "light_token",
 } as const;
 
 // JSON result of command <id>, e.g. DownloadResult
@@ -102,6 +104,11 @@ export const CallState = z.object({
 export type CallState = z.infer<typeof CallState>;
 export const CALL_SEEN_EVERY = 2;
 export const CALL_FRESH_FOR = 10;
+
+// The sign-in of a light account: when its browser run captured it (Unix s, 0 never), when it ends (Unix s), and whether
+// Microsoft refused it since. The web app starts the browser run again once it ended or was refused (src/lib/light.ts).
+export const LightSignIn = z.object({ at: z.number().catch(0), expiresOn: z.number().catch(0), refused: z.boolean().catch(false) });
+export type LightSignIn = z.infer<typeof LightSignIn>;
 
 // The relay of an account on another computer: the name of that computer (HOST_LABEL), Unix seconds of its last sync
 export const RelayLink = z.object({ host: z.string().catch(""), seen: z.number().catch(0) });

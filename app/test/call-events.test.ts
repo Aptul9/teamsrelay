@@ -24,6 +24,10 @@ const slot = (n: number, o: Partial<Slot> = {}): Slot => ({
   checking: 0,
   relay: 0,
   browser_off: 0,
+  light: 0,
+  refreshing: 0,
+  refreshed: 0,
+  refresh_result: "",
   ...o,
 });
 

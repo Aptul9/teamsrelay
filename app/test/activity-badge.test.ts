@@ -64,6 +64,8 @@ const account = (extra: Partial<Account> = {}): Account => ({
   host: "",
   relaySeen: 0,
   callAudio: false,
+  light: false,
+  refreshing: false,
   ...extra,
 });
 

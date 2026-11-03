@@ -26,6 +26,7 @@ let dataDir: string;
 const calls: string[] = [];
 const ctl: ControlClient = {
   start: async (n) => void calls.push(`start ${n}`),
+  light: async (n) => void calls.push(`light ${n}`),
   stop: async (n) => void calls.push(`stop ${n}`),
   wipe: async (n) => void calls.push(`wipe ${n}`),
   show: async (n) => (calls.push(`show ${n}`), true),

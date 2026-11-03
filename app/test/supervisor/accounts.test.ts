@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { AccountError, Accounts, agentCommand, browserCommand, type AccountsConfig } from "@/supervisor/accounts";
+import { AccountError, Accounts, agentCommand, browserCommand, lightCommand, type AccountsConfig } from "@/supervisor/accounts";
 import { tempDir } from "../helpers";
 import { fakeProcess } from "./fakes";
 
@@ -19,6 +19,7 @@ beforeEach(() => {
     gid: 1000,
     chromium: "/usr/bin/chromium",
     agentScript: "/app/agent.cjs",
+    lightScript: "/app/light.cjs",
     node: "/usr/local/bin/node",
     cdpBasePort: 9221,
     desktopPort: 8082,
@@ -112,6 +113,40 @@ describe("agentCommand", () => {
       XDG_RUNTIME_DIR: "/config/.XDG",
       WAYLAND_DISPLAY: "wayland-0",
     });
+  });
+});
+
+describe("lightCommand", () => {
+  it("runs the light agent with the data of the account, no browser and no desktop", () => {
+    const c = lightCommand(2, cfg);
+    expect(c.args).toEqual(["/app/light.cjs"]);
+    expect(c.uid).toBeUndefined();
+    expect(c.env).toMatchObject({ ACCOUNT: "2", DB_PATH: "/root/data/2/messages.db", APP_DB: "/root/data/app.db", TZ: "Europe/Rome" });
+    for (const k of ["CDP", "DESKTOP_PORT", "DESKTOP_APP_ID", "WAYLAND_DISPLAY"]) expect(c.env).not.toHaveProperty(k);
+  });
+});
+
+describe("light accounts", () => {
+  it("runs the light agent alone: agent and browser stop first, and a start stops it", async () => {
+    const a = accounts();
+    await a.start(1);
+    await a.light(1);
+    await a.light(1);
+    expect(calls).toEqual(["start browser-1", "start agent-1", "stop agent-1", "stop browser-1", "start light-1"]);
+    calls.length = 0;
+    await a.start(1);
+    expect(calls).toEqual(["stop light-1", "start browser-1", "start agent-1"]);
+    await a.light(1);
+    calls.length = 0;
+    await a.stop(1);
+    expect(calls).toEqual(["stop light-1", "stop agent-1", "stop browser-1"]);
+  });
+
+  it("refuses to wipe an account whose light agent runs", async () => {
+    const a = accounts();
+    await a.light(3);
+    await expect(a.wipe(3)).rejects.toMatchObject({ status: 409 });
+    expect(a.status()[0]).toMatchObject({ account: 3, light: { running: true }, agent: { running: false } });
   });
 });
 
@@ -270,6 +305,7 @@ describe("Accounts", () => {
         account: 2,
         browser: { running: true, pid: 4242, restarts: 0, lastExit: null },
         agent: { running: true, pid: 4242, restarts: 0, lastExit: null },
+        light: { running: false, pid: null, restarts: 0, lastExit: null },
       },
     ]);
   });

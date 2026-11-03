@@ -34,6 +34,10 @@ export type CommandType = (typeof COMMAND_TYPES)[number];
 
 export const CALL_COMMANDS: readonly CommandType[] = ["answer", "hangup", "mute"];
 
+// The commands a light account (no browser of its own, src/agent/light) cannot run: they need the Teams page (a deleted
+// message brought back, a file downloaded with the session of the page) or its calls
+export const LIGHT_UNSUPPORTED: readonly CommandType[] = ["undodelete", "download", "call", ...CALL_COMMANDS];
+
 // pending: queued; done: Teams shows the change; failed: not applied on Teams. Later additions, written by the agent
 // only: running, on Teams now; unconfirmed, the agent stopped while it ran and does not run it again, as it may
 // have reached Teams already. The web app reports them as pending and failed (src/lib/slotdb.ts).

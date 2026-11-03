@@ -17,7 +17,7 @@ import { held, tempDir } from "./helpers";
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
 let dataDir: string;
-const ctl: ControlClient = { start: async () => undefined, stop: async () => undefined, wipe: async () => undefined, show: async () => true };
+const ctl: ControlClient = { start: async () => undefined, light: async () => undefined, stop: async () => undefined, wipe: async () => undefined, show: async () => true };
 const opts = () => ({ db: appDb(), dataDir, perUser: 4 });
 
 beforeAll(() => {

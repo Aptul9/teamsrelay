@@ -78,16 +78,20 @@ function TeamsAccounts() {
     return () => clearInterval(timer);
   }, []);
 
-  // one status: stopped (session kept), always on, or checked every N
+  // one status: stopped (session kept), always on, checked every N, or light (no browser of its own)
   async function setStatus(a: Account, value: string) {
     const checkEvery = Number(value);
     setSaving(a.slot);
     try {
-      const change = value === "stopped" ? { running: false } : { checkEvery };
+      const change = value === "stopped" ? { running: false } : value === "light" ? { light: true } : { checkEvery };
       await patch(`/api/accounts/${a.slot}`, change, 0);
       const list = await fetchAccounts();
       if (list) setAccounts(list);
       if (value === "stopped") toast.success(`${accName(a)}: stopped`, { description: "Still signed in: no messages or notifications until you choose another status." });
+      else if (value === "light")
+        toast.success(`${accName(a)}: no browser`, {
+          description: "Messages, notifications and replies keep working. Calls ring only on accounts that are always on. Its browser starts once a day to sign in again.",
+        });
       else if (checkEvery)
         toast.success(`${accName(a)}: checked every ${hours(checkEvery)}`, {
           description: a.stopped ? "A first check is asked now: it starts as soon as no other check runs." : "Its browser runs only during its checks, one account at a time.",
@@ -118,9 +122,11 @@ function TeamsAccounts() {
       <CardHeader>
         <SectionTitle icon={MessagesSquareIcon}>Teams accounts</SectionTitle>
         <CardDescription>
-          Always on: every message is relayed as it arrives. Checked every few hours: the account starts, reads its chats and notifications, and stops
-          again, one account at a time; it saves memory, and what it finds arrives as one notification per check. Stopped: still signed in, nothing is
-          read. An account on another computer runs there, as long as its relay does.
+          Always on: every message is relayed as it arrives. Always on, no browser: the same for messages, missed calls and mentions, a minute
+          late at most, on a fraction of the memory; calls do not ring, and its browser starts once a day to sign in again. Checked every few hours:
+          the account starts, reads its chats and notifications, and stops again, one account at a time; it saves memory, and what it finds arrives
+          as one notification per check. Stopped: still signed in, nothing is read. An account on another computer runs there, as long as its relay
+          does.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -164,6 +170,7 @@ function TeamsAccounts() {
                     <SelectContent>
                       <SelectItem value="stopped">Stopped</SelectItem>
                       <SelectItem value="0">Always on</SelectItem>
+                      <SelectItem value="light">Always on, no browser</SelectItem>
                       {CHECK_INTERVALS.map((s) => (
                         <SelectItem key={s} value={String(s)}>
                           Checked every {hours(s)}

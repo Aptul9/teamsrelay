@@ -50,6 +50,21 @@ async function chatsvc(auth: TeamsAuth, url: string, init: RequestInit): Promise
   return resp;
 }
 
+// Region of the chat service: from the path of the authtoken or McasPartialCookie*authtoken cookie
+// (/api/mt/part/emea-03/...), "emea" when there is none
+export function regionOf(cookies: readonly { name: string; domain: string; path: string }[]): string {
+  const authCookie = cookies.find(
+    (c) => (c.name === "authtoken" || c.name.endsWith("authtoken")) && (c.domain.includes("teams.microsoft.com") || c.domain.includes("teams.cloud.microsoft")),
+  );
+  if (!authCookie?.path) return "emea";
+  const parts = authCookie.path.split("/").filter(Boolean);
+  const mtIdx = parts.indexOf("mt");
+  if (mtIdx === -1 || mtIdx + 1 >= parts.length) return "emea";
+  let r = parts[mtIdx + 1];
+  if (r === "part" && mtIdx + 2 < parts.length) r = parts[mtIdx + 2];
+  return r.split("-")[0] || "emea";
+}
+
 // Extract IC3 token and region from BrowserContext cookies OR page localStorage (MSAL v2 on teams.cloud.microsoft)
 export async function getTeamsAuth(context: BrowserContext | null | undefined, page?: Page): Promise<TeamsAuth | null> {
   try {
@@ -60,21 +75,7 @@ export async function getTeamsAuth(context: BrowserContext | null | undefined, p
     if (cached && Date.now() < cached.expiresAt && !refusedTokens.has(cached.auth.token)) return cached.auth;
 
     const cookies = await context.cookies();
-
-    // Region: from authtoken or McasPartialCookie*authtoken path (e.g. /api/mt/part/emea-03/...) or default "emea"
-    let region = "emea";
-    const authCookie = cookies.find(
-      (c) => (c.name === "authtoken" || c.name.endsWith("authtoken")) && (c.domain.includes("teams.microsoft.com") || c.domain.includes("teams.cloud.microsoft")),
-    );
-    if (authCookie?.path) {
-      const parts = authCookie.path.split("/").filter(Boolean);
-      const mtIdx = parts.indexOf("mt");
-      if (mtIdx !== -1 && mtIdx + 1 < parts.length) {
-        let r = parts[mtIdx + 1];
-        if (r === "part" && mtIdx + 2 < parts.length) r = parts[mtIdx + 2];
-        region = r.split("-")[0] || "emea";
-      }
-    }
+    const region = regionOf(cookies);
 
     // 1. Check cookies for authtoken_asm (WebView2)
     const asm =
@@ -666,6 +667,68 @@ export async function sendTextMessage(auth: TeamsAuth, convId: string, text: str
     },
     expiresAt: Date.now() + 8_000,
   });
+  return { ok: true, id };
+}
+
+// A message with people tagged: text parts as paragraphs of text, each mention as the Mention span Teams writes, its
+// person named in properties.mentions by mri, as Teams stores a mention it received (prod, 2026-11-03). A mention whose
+// person is unknown goes as plain "@Name".
+export async function sendMentionsMessage(
+  auth: TeamsAuth,
+  convId: string,
+  parts: readonly ({ text: string } | { mention: string })[],
+  mriOf: (name: string) => string | undefined,
+): Promise<{ ok: boolean; id?: string }> {
+  const mentions: { itemid: number; mri: string; mentionType: string; displayName: string }[] = [];
+  let html = "";
+  let plain = "";
+  for (const p of parts) {
+    if ("text" in p) {
+      html += escapeHtml(p.text).replace(/\n/g, "<br>");
+      plain += p.text;
+      continue;
+    }
+    const mri = mriOf(p.mention);
+    if (!mri) {
+      html += escapeHtml(`@${p.mention}`);
+      plain += `@${p.mention}`;
+      continue;
+    }
+    const itemid = mentions.length;
+    mentions.push({ itemid, mri, mentionType: "person", displayName: p.mention });
+    html += `<span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="${itemid}">${escapeHtml(p.mention)}</span>`;
+    plain += p.mention;
+  }
+  if (!plain.trim()) return { ok: false };
+  const htmlBody = `<p>${html}</p>`;
+  const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages`;
+  const resp = await chatsvc(auth, url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": USER_AGENT,
+      Origin: SERVER,
+      Referer: `${SERVER}/v2/`,
+      Authorization: `Bearer ${auth.token}`,
+    },
+    body: JSON.stringify({
+      content: htmlBody,
+      messagetype: "RichText/Html",
+      contenttype: "Text",
+      clientmessageid: clientMessageId(),
+      ...(mentions.length && { properties: { mentions: JSON.stringify(mentions) } }),
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    log.warn("chatsvc", `sendMentionsMessage HTTP ${resp.status}`, { error: errText.slice(0, 200), convId });
+    return { ok: false };
+  }
+  const json = (await resp.json().catch(() => ({}))) as { OriginalArrivalTime?: number };
+  const id = json.OriginalArrivalTime ? String(json.OriginalArrivalTime) : String(Date.now());
+  midConvCache.set(id, convId);
   return { ok: true, id };
 }
 

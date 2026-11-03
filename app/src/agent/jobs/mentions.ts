@@ -15,7 +15,7 @@ const quiet = (a: Pick<Agent, "store">, m: { chat: string; channel: boolean }) =
 // Each such mention still unread in the feed notifies once, as Teams does: who, where, and the text. The first feed
 // an account reads only records what it has: an agent that starts pushes none of the past. Recorded before the
 // pushes: one that fails is not pushed again. None for the chat the app shows now. Number of mentions pushed.
-export async function pushMentions(a: Agent): Promise<number> {
+export async function pushMentions(a: Pick<Agent, "store" | "notifier">): Promise<number> {
   const mentions = a.store.mentions();
   const raw = a.store.getState(STATE.mentionsTold);
   const told = raw ? parseState(Ids, raw, []) : null;

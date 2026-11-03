@@ -6,6 +6,8 @@ import { HttpError } from "./http";
 // reaches it only through its unix socket, in the volume shared by the two containers: no Docker access.
 export interface ControlClient {
   start(n: number): Promise<void>;
+  // the light agent alone, browser and agent stopped (a light account between the runs of its browser)
+  light(n: number): Promise<void>;
   stop(n: number): Promise<void>;
   // deletes the browser profile (the Microsoft session) of a stopped account
   wipe(n: number): Promise<void>;
@@ -13,9 +15,9 @@ export interface ControlClient {
   show(n: number): Promise<boolean>;
 }
 
-type Action = "start" | "stop" | "wipe" | "show";
+type Action = "start" | "light" | "stop" | "wipe" | "show";
 
-const VERB: Record<Action, string> = { start: "Start", stop: "Stop", wipe: "Wipe", show: "Show" };
+const VERB: Record<Action, string> = { start: "Start", light: "Start without browser", stop: "Stop", wipe: "Wipe", show: "Show" };
 
 export function controlClient(socket = config.controlSocket): ControlClient {
   function post(action: Action, n: number): Promise<string> {
@@ -37,6 +39,7 @@ export function controlClient(socket = config.controlSocket): ControlClient {
 
   return {
     start: async (n) => void (await post("start", n)),
+    light: async (n) => void (await post("light", n)),
     stop: async (n) => void (await post("stop", n)),
     wipe: async (n) => void (await post("wipe", n)),
     show: async (n) => (JSON.parse((await post("show", n)) || "{}") as { shown?: boolean }).shown === true,

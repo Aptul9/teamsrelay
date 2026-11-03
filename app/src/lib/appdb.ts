@@ -32,13 +32,21 @@ export type Slot = {
   relay: number;
   // 1 while the owner keeps the browser of its relay away from the MCP clients (Settings)
   browser_off: number;
+  // a light account: its light agent reads Teams without a browser, the browser runs only to sign it in again
+  // (src/lib/light.ts); refreshing: start of that browser run now, 0 none; refreshed, refresh_result: end and outcome
+  // (ok, login, failed) of the last one
+  light: number;
+  refreshing: number;
+  refreshed: number;
+  refresh_result: string;
 };
 
 export { CHECK_INTERVALS } from "@/shared/checks";
 export type CheckResult = "ok" | "login" | "failed";
 
 // relay_token, the digest of the token of the relay, never leaves the database: rows say only whether there is one
-const SLOT_COLUMNS = "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking, (relay_token <> '') AS relay, browser_off";
+const SLOT_COLUMNS =
+  "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking, (relay_token <> '') AS relay, browser_off, light, refreshing, refreshed, refresh_result";
 
 let shared: Database.Database | null = null;
 
@@ -74,6 +82,10 @@ export function migrateAppSchema(db: Database.Database) {
     // SHA-256 (hex) of the token of the relay of an account on another computer, "" for an account of the browsers container
     ["relay_token", "TEXT NOT NULL DEFAULT ''"],
     ["browser_off", "INTEGER NOT NULL DEFAULT 0"],
+    ["light", "INTEGER NOT NULL DEFAULT 0"],
+    ["refreshing", "INTEGER NOT NULL DEFAULT 0"],
+    ["refreshed", "INTEGER NOT NULL DEFAULT 0"],
+    ["refresh_result", "TEXT NOT NULL DEFAULT ''"],
   ]) {
     if (!columns.includes(column)) db.exec(`ALTER TABLE teams_accounts ADD COLUMN ${column} ${decl}`);
   }
@@ -155,6 +167,22 @@ export function nextCheck(db: Database.Database, now: number): Slot | null {
       .prepare(`SELECT ${SLOT_COLUMNS} FROM teams_accounts WHERE check_every > 0 AND stopped = 0 AND check_due <= ? ORDER BY check_due, slot LIMIT 1`)
       .get(now) as Slot | undefined) ?? null
   );
+}
+
+// Light or not; a light account is never checked every N hours
+export function setLight(db: Database.Database, slot: number, light: boolean) {
+  if (light) db.prepare("UPDATE teams_accounts SET light=1, check_every=0, check_due=0 WHERE slot=?").run(slot);
+  else db.prepare("UPDATE teams_accounts SET light=0, refreshing=0 WHERE slot=?").run(slot);
+}
+
+export function beginRefresh(db: Database.Database, slot: number, now: number) {
+  db.prepare("UPDATE teams_accounts SET refreshing=? WHERE slot=?").run(now, slot);
+}
+
+// result null: cut short, nothing recorded
+export function endRefresh(db: Database.Database, slot: number, { now, result }: { now: number; result: CheckResult | null }) {
+  if (!result) db.prepare("UPDATE teams_accounts SET refreshing=0 WHERE slot=?").run(slot);
+  else db.prepare("UPDATE teams_accounts SET refreshing=0, refreshed=?, refresh_result=? WHERE slot=?").run(now, result, slot);
 }
 
 export function isSlotStopped(db: Database.Database, slot: number): boolean {

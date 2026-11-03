@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { nowSeconds } from "@/agent/context";
-import { askCheck, CHECK_INTERVALS, claimSlot, listSlots, releaseSlot, setCheckEvery, setRelayToken, setSlotStopped, slotRow } from "./appdb";
+import { askCheck, CHECK_INTERVALS, claimSlot, listSlots, releaseSlot, setCheckEvery, setLight, setRelayToken, setSlotStopped, slotRow } from "./appdb";
 import type { ControlClient } from "./control";
 import { HttpError } from "./http";
 import { createRelaySlot, forgetRelay, newRelayToken, ON_ANOTHER_COMPUTER, relayDigest } from "./relay";
@@ -120,6 +120,8 @@ export function setAccountRunning(n: number, running: boolean, ctl: ControlClien
     if (!s) throw new HttpError(404, "Account not found");
     if (s.relay) throw new HttpError(409, ON_ANOTHER_COMPUTER);
     if (!running) await slotDown(ctl, n);
+    // a light account: its light agent; its browser runs when its sign-in needs it (src/lib/light.ts)
+    else if (s.light) await ctl.light(n);
     else if (!s.check_every) await startOrUndo(ctl, n);
     setSlotStopped(db, n, !running);
     if (running) forgetLastCheck(n);
@@ -141,6 +143,7 @@ export function setCheckMode(n: number, every: number, ctl: ControlClient, db: D
     // the browser first: a start or stop that fails leaves the mode as it was
     if (!every) await startOrUndo(ctl, n);
     else if (!s.stopped && !s.checking) await slotDown(ctl, n);
+    if (s.light) setLight(db, n, false);
     setCheckEvery(db, n, every, now);
     forgetLastCheck(n);
     // in service; a start from now on (the grace of a browser starting counts from it)
@@ -150,14 +153,32 @@ export function setCheckMode(n: number, every: number, ctl: ControlClient, db: D
   });
 }
 
+// Light, no browser of its own (src/lib/light.ts): its light agent runs at once, its browser right after, once to
+// capture the sign-in. A stopped account given this mode is back in service.
+export function setLightMode(n: number, ctl: ControlClient, db: Database.Database): Promise<void> {
+  return exclusive(async () => {
+    const s = slotRow(db, n);
+    if (!s) throw new HttpError(404, "Account not found");
+    if (s.relay) throw new HttpError(409, ON_ANOTHER_COMPUTER);
+    if (s.light && !s.stopped) return;
+    setLight(db, n, true);
+    if (s.stopped) setSlotStopped(db, n, false);
+    forgetLastCheck(n);
+    // an account always on keeps its browser until the sign-in run captured the sign-in, then the light agent takes over;
+    // a stopped or checked one has no browser now: the light agent starts, the sign-in run follows if it needs one
+    if (s.stopped || s.check_every) await ctl.light(n);
+  });
+}
+
 // Owned slots must be running, unless their owner stopped them or they run only while checked: after a deploy
-// recreated a container, a reboot, or a stop outside the app. An account on another computer runs there.
+// recreated a container, a reboot, or a stop outside the app. An account on another computer runs there. A light
+// account runs its light agent, unless its browser runs now to sign it in again.
 export function keepSlotsUp(ctl: ControlClient, db: Database.Database, everyMs = 60_000) {
   const tick = () =>
     exclusive(async () => {
-      for (const { slot, stopped, check_every, relay } of listSlots(db)) {
-        if (stopped || check_every || relay) continue;
-        await slotUp(ctl, slot).catch((e: Error) => console.error(`slot ${slot}: ${e.message}`));
+      for (const { slot, stopped, check_every, relay, light, refreshing } of listSlots(db)) {
+        if (stopped || check_every || relay || refreshing) continue;
+        await (light ? ctl.light(slot) : slotUp(ctl, slot)).catch((e: Error) => console.error(`slot ${slot}: ${e.message}`));
       }
     });
   void tick();

@@ -29,6 +29,8 @@ const base: Account = {
   host: "",
   relaySeen: 0,
   callAudio: false,
+  light: false,
+  refreshing: false,
 };
 
 const accounts: Account[] = [

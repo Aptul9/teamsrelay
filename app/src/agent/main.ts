@@ -27,6 +27,7 @@ import * as mentionScripts from "./teams/scripts/mentions";
 import * as actionScripts from "./teams/scripts/message-actions";
 import * as pageScripts from "./teams/scripts/page-state";
 import * as signInScripts from "./teams/scripts/sign-in";
+import * as tokenScripts from "./teams/scripts/tokens";
 
 // The image runs this at build time: a runtime package missing from the image, a native binary of another
 // architecture, or a page script the bundler changed (they reach the page as source text) fail the build.
@@ -35,7 +36,7 @@ function check() {
   const sqlite = (db.prepare("SELECT sqlite_version() AS v").get() as { v: string }).v;
   db.close();
   let scripts = 0;
-  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts, callScripts, signInScripts]) {
+  for (const scriptModule of [activityScripts, chatListScripts, composeScripts, conversationScripts, mediaScripts, memberScripts, mentionScripts, actionScripts, pageScripts, callScripts, signInScripts, tokenScripts]) {
     for (const [name, fn] of Object.entries(scriptModule)) {
       if (typeof fn !== "function") continue;
       const source = fn.toString();
@@ -65,7 +66,10 @@ async function main() {
   const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy, fcm, answerable: config.answerCalls });
   log.info("agent", "start", { slot: config.slot, cdp: config.cdp, push: !!vapid, fcm: !!fcm, ntfy: !!config.ntfy });
   const media = new Media(config.mediaDir, config.filesDir);
-  await runAgent({ config, store, notifier, media, detector: new NewMessageDetector(), checkedOnly: () => devices.checkedOnly() }, new CdpBrowser(config.cdp));
+  await runAgent(
+    { config, store, notifier, media, detector: new NewMessageDetector(), checkedOnly: () => devices.checkedOnly(), lightMode: () => devices.lightMode() },
+    new CdpBrowser(config.cdp),
+  );
 }
 
 main().catch((e: unknown) => {

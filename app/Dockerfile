@@ -6,10 +6,10 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-# web app (.next/standalone), agent (dist/agent.cjs), supervisor (dist/supervisor.cjs) and the socket of the sound of the
-# calls of accounts on another computer (dist/call-audio.cjs), loaded before the server of the web app; the local relay
-# and the fleet bundles are no image's
-RUN npx next build && node scripts/bundles.mjs agent supervisor hub
+# web app (.next/standalone), agent (dist/agent.cjs), light agent (dist/light.cjs), supervisor (dist/supervisor.cjs) and
+# the socket of the sound of the calls of accounts on another computer (dist/call-audio.cjs), loaded before the server of
+# the web app; the local relay and the fleet bundles are no image's
+RUN npx next build && node scripts/bundles.mjs agent light supervisor hub
 # What the agent loads at runtime besides its bundle. The standalone output traces only the web app, so these
 # are copied explicitly: playwright-core whole (no dependencies), better-sqlite3 without its sources and with
 # the binary of this architecture only (the image is built on the machine that runs it).
@@ -17,7 +17,7 @@ RUN mkdir -p /agent/node_modules/better-sqlite3/prebuilds \
  && cp -r node_modules/playwright-core /agent/node_modules/ \
  && cp -r node_modules/better-sqlite3/package.json node_modules/better-sqlite3/lib /agent/node_modules/better-sqlite3/ \
  && cp "node_modules/better-sqlite3/prebuilds/linux-$(node -p process.arch).node" /agent/node_modules/better-sqlite3/prebuilds/ \
- && cp dist/agent.cjs dist/agent.cjs.map dist/supervisor.cjs /agent/
+ && cp dist/agent.cjs dist/agent.cjs.map dist/light.cjs dist/light.cjs.map dist/supervisor.cjs /agent/
 
 # Every Teams account: Chromium and the remote desktop of linuxserver, the agents, and the supervisor that runs
 # them (s6 service svc-teamsrelay). The desktop no longer opens a browser by itself.
@@ -34,6 +34,7 @@ COPY docker/browsers/ /
 # fails the build if the agent cannot load its packages or its page scripts in this image
 RUN chmod +x /etc/s6-overlay/s6-rc.d/svc-teamsrelay/run \
  && node /app/agent.cjs --check \
+ && node /app/light.cjs --check \
  && node /app/supervisor.cjs --check
 
 # Web app: PWA, API, users and sessions
