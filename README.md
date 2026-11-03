@@ -17,6 +17,31 @@ docker compose up -d --build
 
 Then open `https://<DOMAIN>` and sign in as `ADMIN_EMAIL`.
 
+## MCP for AI clients
+
+`https://<DOMAIN>/mcp` (Streamable HTTP) gives an AI client the Teams accounts of a user. Two ways in:
+
+- `Authorization: Bearer <MCP_TOKEN>` from `.env`: acts as `ADMIN_EMAIL`.
+- OAuth: the client signs in to the app and asks the consent; revoke it in Settings, AI clients. It also gets the browser of the user's relays.
+
+```bash
+claude mcp add --scope user --transport http teamsrelay https://<DOMAIN>/mcp --header "Authorization: Bearer <MCP_TOKEN>"
+```
+
+| Tool | What it does |
+|---|---|
+| `list_accounts` | Accounts of the user: slot, name, Teams state, unread chats |
+| `list_chats` | Chat list as Teams shows it |
+| `read_chat` | Saved messages of a chat: id, author, text, quote, reactions, images, files |
+| `refresh_chat` | Opens the chat in Teams, then reads it (marks it read) |
+| `list_activity` | Activity feed |
+| `send_message` | Text, reply with quote (`reply_to`), people tagged (`mentions`), image in base64 with caption |
+| `react_message` | `like`, `heart`, `laugh`, `surprised`, `cry`, `angry`, or an emoji already under the message; your own is taken away |
+| `edit_message`, `delete_message`, `undo_delete` | On your own messages |
+| `get_attachment` | Images of a message inline, text files as text, other files up to 8 MB as resources; SharePoint files downloaded with the Teams session |
+
+`chat` is the name as `list_chats` gives it, `message_id` the id of `read_chat`, `account` the slot (default: the first). The write tools queue the same command as the app and wait up to 45 s for Teams to show it. Accounts without a browser cannot `undo_delete` nor download SharePoint files.
+
 ## Local relay (one account, no server)
 
 ```bash

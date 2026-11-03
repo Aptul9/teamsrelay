@@ -10,7 +10,19 @@ import { mcpServer } from "@/lib/mcp/server";
 import { addRelayAccount } from "@/lib/slots";
 import { tempDir } from "./helpers";
 
-const READ_TOOLS = ["list_accounts", "list_activity", "list_chats", "read_chat", "refresh_chat"];
+const TEAMS_TOOLS = [
+  "delete_message",
+  "edit_message",
+  "get_attachment",
+  "list_accounts",
+  "list_activity",
+  "list_chats",
+  "react_message",
+  "read_chat",
+  "refresh_chat",
+  "send_message",
+  "undo_delete",
+];
 const TOOLS: BrowserTool[] = [
   { name: "browser_navigate", description: "Navigate to a URL", inputSchema: { $schema: "https://json-schema.org/draft/2020-12/schema", type: "object", properties: { url: { type: "string" } }, required: ["url"], additionalProperties: false } },
   { name: "browser_take_screenshot", description: "Take a screenshot", inputSchema: { type: "object", properties: { fullPage: { type: "boolean" } }, additionalProperties: false } },
@@ -67,10 +79,10 @@ const rows = (slot: number) => browserActionsOf(appDb(), slot);
 const text = (r: { content: unknown }) => (r.content as { type: string; text?: string }[]).map((c) => c.text ?? "").join("\n");
 
 describe("the list of tools", () => {
-  it("adds the tools of the connected relays to the read tools, for an OAuth client, each with account", async () => {
+  it("adds the tools of the connected relays to the Teams tools, for an OAuth client, each with account", async () => {
     const client = await connect("u1", "client-a");
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([...READ_TOOLS, ...TOOLS.map((t) => t.name)].sort());
+    expect(tools.map((t) => t.name).sort()).toEqual([...TEAMS_TOOLS, ...TOOLS.map((t) => t.name)].sort());
     const nav = tools.find((t) => t.name === "browser_navigate")!;
     expect(nav.inputSchema.required).toEqual(["account", "url"]);
     expect(nav.inputSchema.properties).toHaveProperty("url");
@@ -81,9 +93,9 @@ describe("the list of tools", () => {
     expect(nav.description).toMatch(/relay/);
   });
 
-  it("gives the read tools only to MCP_TOKEN, and a browser tool called by name is unknown", async () => {
+  it("gives the Teams tools only to MCP_TOKEN, and a browser tool called by name is unknown", async () => {
     const client = await connect("u1");
-    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(READ_TOOLS);
+    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(TEAMS_TOOLS);
     const outcome = await client.callTool({ name: "browser_navigate", arguments: { account: slots.relay, url: "https://example.com/" } }).then(
       (r) => (r.isError ? text(r) : "ran"),
       (e: Error) => e.message,
@@ -92,11 +104,11 @@ describe("the list of tools", () => {
     expect(calls).toEqual([]);
   });
 
-  it("gives the read tools only when no relay of the user is connected with its browser on", async () => {
+  it("gives the Teams tools only when no relay of the user is connected with its browser on", async () => {
     connected.delete(slots.relay);
     try {
       const client = await connect("u1", "client-a");
-      expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(READ_TOOLS);
+      expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(TEAMS_TOOLS);
     } finally {
       connected.add(slots.relay);
     }

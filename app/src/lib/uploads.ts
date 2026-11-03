@@ -24,7 +24,13 @@ export function imageExt(head: Uint8Array): ImageExt | null {
 export async function saveUpload(slot: number, file: FormDataEntryValue | null): Promise<string> {
   if (!(file instanceof File) || !file.size) throw new HttpError(400, "Missing image");
   if (file.size > MAX_UPLOAD) throw new HttpError(413, "Image larger than 10 MB");
-  const data = Buffer.from(await file.arrayBuffer());
+  return saveImage(slot, Buffer.from(await file.arrayBuffer()));
+}
+
+// The same for the bytes of an image (an MCP client sends them in base64)
+export function saveImage(slot: number, data: Buffer): string {
+  if (!data.length) throw new HttpError(400, "Missing image");
+  if (data.length > MAX_UPLOAD) throw new HttpError(413, "Image larger than 10 MB");
   const ext = imageExt(data);
   if (!ext) throw new HttpError(415, "Only PNG, JPEG, GIF or WebP images can be sent from here: send other files from Teams");
   const dir = uploadsDir(slot);

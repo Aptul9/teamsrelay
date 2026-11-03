@@ -65,6 +65,7 @@ export function OAuthConsent({ client, user, scopes, signed }: OAuthConsentProps
           <CardContent className="grid gap-3 text-sm">
             <ul className="grid list-disc gap-1.5 pl-5">
               <li>Read your Teams chats, accounts and Activity, and open a chat in Teams to read it.</li>
+              <li>Send messages, replies and images as you, react, edit and delete your messages, and download their attachments.</li>
               <li>Drive the browser of each of your relay computers that has it turned on: open pages, click, type, take screenshots.</li>
               {scopes.includes("offline_access") && <li>Stay signed in until you revoke it in Settings, AI clients.</li>}
             </ul>

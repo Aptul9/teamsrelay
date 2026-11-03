@@ -85,12 +85,25 @@ describe.each([
   ["legacy", "2025-11-25"],
   ["auto", "2026-07-28"],
 ] as const)("MCP client, version negotiation %s", (mode, version) => {
-  it(`lists the five tools over ${version}, only refresh_chat not read-only`, async () => {
+  it(`lists the Teams tools over ${version}, read-only only the readers`, async () => {
     const client = await connect(mode);
     expect(client.getNegotiatedProtocolVersion()).toBe(version);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["list_accounts", "list_activity", "list_chats", "read_chat", "refresh_chat"]);
-    for (const t of tools) expect(t.annotations?.readOnlyHint, t.name).toBe(t.name !== "refresh_chat");
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "delete_message",
+      "edit_message",
+      "get_attachment",
+      "list_accounts",
+      "list_activity",
+      "list_chats",
+      "react_message",
+      "read_chat",
+      "refresh_chat",
+      "send_message",
+      "undo_delete",
+    ]);
+    const readers = ["get_attachment", "list_accounts", "list_activity", "list_chats", "read_chat"];
+    for (const t of tools) expect(t.annotations?.readOnlyHint, t.name).toBe(readers.includes(t.name));
     await client.close();
   });
 
