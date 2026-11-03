@@ -196,11 +196,13 @@ describe("OwnerPush", () => {
   it("creates no table in app.db", () => {
     app.targets();
     app.ownerHasManyAccounts();
+    app.statusPages();
     const db = new Database(appDbFile, { readonly: true });
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").pluck().all();
     db.close();
     expect(tables).not.toContain("push_subs");
-    // the tables of the web app migration only (browser_actions: calls of the relay browser tools of /mcp)
-    expect([...tables].sort()).toEqual(["browser_actions", "push_subscriptions", "teams_accounts"]);
+    // the tables of the web app migration only (browser_actions: calls of the relay browser tools of /mcp,
+    // status_pages: the status challenge)
+    expect([...tables].sort()).toEqual(["browser_actions", "push_subscriptions", "status_pages", "teams_accounts"]);
   });
 });
