@@ -868,6 +868,30 @@ export async function deleteRemoteMessage(auth: TeamsAuth, convId: string, mid: 
   return true;
 }
 
+// Undo of a delete, as Teams does it: the deletetime property of the message goes, the message comes back as it was
+export async function undeleteRemoteMessage(auth: TeamsAuth, convId: string, mid: string): Promise<boolean> {
+  const url = `${SERVER}/api/chatsvc/${auth.region}/v1/users/ME/conversations/${encodeURIComponent(convId)}/messages/${mid}/properties?name=deletetime`;
+  const resp = await chatsvc(auth, url, {
+    method: "DELETE",
+    headers: {
+      Accept: "application/json",
+      "User-Agent": USER_AGENT,
+      Origin: SERVER,
+      Referer: `${SERVER}/v2/`,
+      Authorization: `Bearer ${auth.token}`,
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    log.warn("chatsvc", `undeleteRemoteMessage HTTP ${resp.status}`, { error: errText.slice(0, 200), convId, mid });
+    return false;
+  }
+  getOptimistic(convId).deleted.delete(mid);
+  return true;
+}
+
 const EMOJI_TO_KEY: Record<string, string> = {
   like: "like",
   "👍": "like",

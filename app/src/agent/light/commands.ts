@@ -19,6 +19,7 @@ import {
   sendMentionsMessage,
   sendTextMessage,
   toggleMessageReaction,
+  undeleteRemoteMessage,
 } from "../teams/chatsvc";
 import type { Light } from "./context";
 import { SignedOut } from "./token";
@@ -112,6 +113,13 @@ const remove: Handler = async (l, { ts, arg1: chat, arg2 }) => {
   return after(l, chat, ok, ts ?? 0);
 };
 
+const undoDelete: Handler = async (l, { ts, arg1: chat, arg2 }) => {
+  const { mid } = parseArgs(MessageArgs, arg2);
+  const t = await target(l, chat);
+  const ok = !!t && !!mid && (await undeleteRemoteMessage(t.auth, t.id, mid));
+  return after(l, chat, ok, ts ?? 0);
+};
+
 const react: Handler = async (l, { ts, arg1: chat, arg2 }) => {
   const { mid, emoji, pill } = parseArgs(ReactArgs, arg2);
   const t = await target(l, chat);
@@ -178,6 +186,7 @@ export function lightHandlers(reads: Reads): Partial<Record<CommandType, Handler
     reply,
     edit,
     delete: remove,
+    undodelete: undoDelete,
     react,
     sendimage: sendImage,
     members,

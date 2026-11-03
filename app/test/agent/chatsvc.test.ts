@@ -10,6 +10,7 @@ import {
   sendImageMessage,
   sendTextMessage,
   syncIndexedDbMappings,
+  undeleteRemoteMessage,
 } from "@/agent/teams/chatsvc";
 
 describe("chatsvc", () => {
@@ -180,6 +181,20 @@ describe("chatsvc", () => {
     expect(delCall).toBeDefined();
     const opts = delCall![1] as RequestInit;
     expect(opts.method).toBe("DELETE");
+  });
+
+  it("brings a deleted message back by removing its deletetime property", async () => {
+    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      void url;
+      void init;
+      return { ok: true, status: 200 };
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    expect(await undeleteRemoteMessage(fakeAuth, "19:test_chat", "12345")).toBe(true);
+    const [url, init] = mockFetch.mock.calls[0]!;
+    expect(url).toBe("https://teams.microsoft.com/api/chatsvc/emea/v1/users/ME/conversations/19%3Atest_chat/messages/12345/properties?name=deletetime");
+    expect((init as RequestInit).method).toBe("DELETE");
   });
 
   it("uploads image to AMS and sends it via chatsvc API", async () => {

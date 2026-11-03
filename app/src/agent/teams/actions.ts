@@ -3,6 +3,7 @@ import type { ReadBy } from "@/shared/slot-db/rows";
 import { errorText, log } from "../log";
 import {
   deleteRemoteMessage,
+  undeleteRemoteMessage,
   editTextMessage,
   getTeamsAuth,
   replyTextMessage,
@@ -257,6 +258,20 @@ export async function deleteMessage(tp: TeamsPage, chat: string, mid: string): P
 }
 
 export async function undoDelete(tp: TeamsPage, chat: string, mid: string): Promise<boolean> {
+  // Fast path: chatsvc. A delete made through chatsvc leaves no Undo on the page.
+  try {
+    const auth = await getTeamsAuth(tp.page.context(), tp.page);
+    if (auth) {
+      const convId = await resolveConversationId(auth, tp.page, chat, mid);
+      if (convId && (await undeleteRemoteMessage(auth, convId, mid))) {
+        log.info("undodelete", "restored via chatsvc API", { chat, convId, mid });
+        return true;
+      }
+    }
+  } catch (e) {
+    log.warn("undodelete", `chatsvc fast path failed: ${errorText(e)}, falling back to DOM`, { chat, mid });
+  }
+
   if (!(await tp.toChat(chat))) return false;
   const point = await tp.page.evaluate(undoButtonPoint, { s: SEL, mid });
   if (!point) return false;
