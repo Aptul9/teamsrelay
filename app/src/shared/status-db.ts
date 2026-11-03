@@ -1,42 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import type { Status } from "./status";
 
 // data/status.db: the status history of the status challenge (app/status-challenge-spec.md), apart from data/N/ so it
 // outlives an account removed and added again. The light agents write it (src/agent/light/status.ts), the web app
 // reads and deletes (src/lib/status-pages.ts); whichever opens it first creates it.
 
-export const STATUSES = ["available", "busy", "dnd", "brb", "away", "offline"] as const;
-export type Status = (typeof STATUSES)[number] | "unknown";
+export { STATUS_GAP, STATUSES, statusOf, type Status } from "./status";
 
 // A status page as the agents read it from app.db (status_pages): ends Unix s, 0 none
 export type StatusPageRow = { slug: string; slot: number; name: string; ends: number };
-
-// Seconds after the last poll that saw a status within which the same status extends its stretch: 3 polls of the
-// default LIGHT_POLL. The light agent uses 3 × its own poll.
-export const STATUS_GAP = 180;
-
-// presence.availability as Teams draws it next to the name
-export function statusOf(availability: string): Status {
-  switch (availability) {
-    case "Available":
-    case "AvailableIdle":
-      return "available";
-    case "Busy":
-    case "BusyIdle":
-      return "busy";
-    case "DoNotDisturb":
-      return "dnd";
-    case "BeRightBack":
-      return "brb";
-    case "Away":
-      return "away";
-    case "Offline":
-      return "offline";
-    default:
-      return "unknown";
-  }
-}
 
 export function openStatusDb(file: string): Database.Database {
   fs.mkdirSync(path.dirname(file), { recursive: true });
