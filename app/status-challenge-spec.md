@@ -8,7 +8,7 @@ A public page per tracked person with their Teams status today and over the days
 
 ## Facts it rests on (prod, 2026-11-03)
 
-- `POST https://presence.teams.microsoft.com/v1/presence/getpresence/` with body `[{"mri": "8:orgid:<oid>"}]` and a token of audience `https://presence.teams.microsoft.com/.default` answers 200 per person with `presence.availability`, `presence.activity`, `presence.deviceType`, `presence.lastActiveTime`, `presence.calendarData.isOutOfOffice`. Both people answered: `Busy` / `InAMeeting`, one `Desktop`, one `Mobile`.
+- `POST https://presence.teams.microsoft.com/v1/presence/getpresence/` with body `[{"mri": "8:orgid:<oid>"}]` and a token of audience `https://presence.teams.microsoft.com/.default` answers 200 per person with `presence.availability` (the status Teams shows), plus activity, device and calendar fields this feature does not use. Both people answered `Busy`.
 - The light agent of a light account renews that token from its stored sign-in (`src/agent/light/token.ts`, scope `PRESENCE`) and already calls the service for its chat list (`LightApi.presence`).
 - Both people have a 1:1 chat with the AGAP2 account; `fetchShortProfile` names them (tenant `AGAP2`).
 - `everbright.it` DNS is at Seeweb with no wildcard: a path needs nothing, a subdomain needs a record there.
@@ -22,6 +22,7 @@ A public page per tracked person with their Teams status today and over the days
 | Address | A path on the TeamsRelay domain, one per person: `/kamila`, `/damian`. Names changeable in the admin card. |
 | Access | Public, no login, no key (owner's choice). Pages carry `noindex`. |
 | Poll | Every poll of the light agent (`LIGHT_POLL`, 60 s by default): one presence call for all tracked people of the account. |
+| What is measured | The status alone, as Teams shows it next to the name: Available, Busy, Do not disturb, Be right back, Away, Offline. Why someone is busy (a call, a meeting) is not stored. |
 | Storage | Status changes only, as stretches; a poll with the same status extends the current one. |
 | Time | Days and clock times in the time zone of the containers (`TZ`, Europe/Rome). |
 | Retention | Until the challenge ends. The end date is optional and set later in the admin card; with none, data is kept. Collecting stops at the end; data and pages are deleted 7 days after it. Deleting a page deletes its data at once. |
@@ -52,18 +53,18 @@ CREATE TABLE IF NOT EXISTS presence_log(
   mri TEXT NOT NULL,
   since INTEGER NOT NULL,    -- Unix s of the first poll that saw this status
   until INTEGER NOT NULL,    -- Unix s of the last poll that saw it
-  availability TEXT NOT NULL,-- Available, AvailableIdle, Busy, BusyIdle, DoNotDisturb, BeRightBack, Away, Offline, PresenceUnknown
-  activity TEXT NOT NULL,    -- InACall, InAConferenceCall, InAMeeting, Presenting, OutOfOffice, Away, Offline, ...
-  device TEXT NOT NULL DEFAULT ''  -- Desktop, Mobile, Web, ""
+  status TEXT NOT NULL       -- available, busy, dnd, brb, away, offline, unknown (mapping below)
 );
 CREATE INDEX IF NOT EXISTS presence_log_name ON presence_log(name, since);
 ```
 
 Added through `ADDED_TABLES` of `src/shared/slot-db/schema.ts`; not in `SLOT_TABLES` (a relay account has no light agent and syncs no such table).
 
+`status` from `presence.availability`, as Teams draws it: Available and AvailableIdle `available`; Busy and BusyIdle `busy`; DoNotDisturb `dnd`; BeRightBack `brb`; Away `away`; Offline `offline`; PresenceUnknown and any other value `unknown`.
+
 Rules of one poll, per person:
 
-- Same `availability`, `activity` and `device` as the newest stretch, and its `until` at most `GAP` (3 × poll) ago: `until` = now.
+- Same `status` as the newest stretch, and its `until` at most `GAP` (3 × poll) ago: `until` = now.
 - Otherwise: a new stretch with `since` = `until` = now. The time between the old `until` and the new `since` is no data.
 - No answer for the person (call failed, signed out): nothing written.
 
@@ -82,13 +83,12 @@ A presence call that fails leaves everything as it is and is logged once per fai
 
 ### Stats, `src/lib/status-stats.ts` (pure, tested)
 
-From the stretches of a day, clipped to the day, gaps left out:
+From the stretches of a day, clipped to the day:
 
-- **Hours per status group:** Available (Available, AvailableIdle), Busy (Busy, BusyIdle, DoNotDisturb), Meeting or call (activity InACall, InAConferenceCall, InAMeeting, Presenting, takes precedence over the availability), Away (Away, BeRightBack), Offline, No data (gaps, PresenceUnknown, any value not listed). A past day adds up to its length (24 h; 23 or 25 on a DST change); today adds up to the time elapsed so far.
-- **First online / last online:** first `since` and last `until` of a stretch not Offline.
-- **Longest Available streak:** longest run of adjacent Available stretches with no gap, in minutes.
-- **Green share:** Available hours over online hours.
-- **On mobile share:** online hours with device Mobile over online hours.
+- **Hours per status:** available, busy, dnd, brb, away, offline, and no data (gaps and `unknown`). A past day adds up to its length (24 h; 23 or 25 on a DST change); today adds up to the time elapsed so far.
+- **First online / last online:** first `since` and last `until` of a stretch not offline and not unknown.
+- **Longest Available streak:** longest run of adjacent available stretches with no gap, in minutes.
+- **Green share:** available hours over online hours (every status but offline and no data).
 
 Over the challenge (from the first day with data, or the `added` date): the same per day, plus totals and averages.
 
@@ -97,10 +97,10 @@ Over the challenge (from the first day with data, or the `added` date): the same
 No login. 404 for an unknown or deleted slug. Answer:
 
 ```json
-{ "name": "Camilla Marini", "now": { "availability": "Busy", "activity": "InAMeeting", "device": "Desktop", "since": 1793700000, "fresh": true },
-  "days": [ { "day": "2026-11-03", "hours": { "available": 3.2, "busy": 1.1, "meeting": 2.5, "away": 0.4, "offline": 14.0, "nodata": 2.8 },
-              "firstOnline": "08:47", "lastOnline": "18:12", "longestAvailable": 95, "green": 0.47, "mobile": 0.12,
-              "stretches": [[1793690000, 1793691200, "Available", "Available"]] } ],
+{ "name": "Camilla Marini", "now": { "status": "busy", "since": 1793700000, "fresh": true },
+  "days": [ { "day": "2026-11-03", "hours": { "available": 3.2, "busy": 3.1, "dnd": 0.5, "brb": 0.2, "away": 0.4, "offline": 13.8, "nodata": 2.8 },
+              "firstOnline": "08:47", "lastOnline": "18:12", "longestAvailable": 95, "green": 0.43,
+              "stretches": [[1793690000, 1793691200, "available"]] } ],
   "ends": 0, "updated": 1793700060 }
 ```
 
@@ -110,12 +110,12 @@ No login. 404 for an unknown or deleted slug. Answer:
 
 No login. `notFound()` for an unknown slug. `robots: noindex, nofollow`. A client component fetches the API every 60 s.
 
-- **Now:** name, a colored dot and the status in words ("Busy, in a meeting"), since when, desktop or phone.
-- **Today:** a band from 07:00 to 21:00 (wider when the day has status outside it), one color per status group, no data hatched.
-- **Days:** stacked bars of hours per status group, one bar per day of the challenge.
-- **Scoreboard:** earliest first online, latest last online, longest Available streak, meeting hours, green share, phone share: today, and the best day of the challenge for each.
+- **Now:** name, a colored dot and the status in words ("Busy"), since when.
+- **Today:** a band of the whole day, 00:00 to 24:00, one color per status, no data hatched.
+- **Days:** stacked bars of hours per status, one bar per day of the challenge.
+- **Scoreboard:** earliest first online, latest last online, longest Available streak, green share: today, and the best day of the challenge for each.
 
-Colors from the theme of the app (`--success` Available, `--destructive` Busy, `--chart-*` the others); works in light and dark.
+Colors as Teams draws the statuses: available green, busy and dnd red, brb and away yellow, offline grey, no data hatched; from the theme of the app (`--success`, `--destructive`, `--warning`, `--muted-foreground`), so light and dark both work.
 
 ### Admin card, `src/components/AdminPanel.tsx`
 
@@ -135,7 +135,7 @@ Admins only, through `/api/admin/status-pages` (GET, POST, PATCH, DELETE):
 ## Tests
 
 - Collector: same status extends, change opens, gap opens, failed call writes nothing, ended page stops, retention deletes; with a fake `LightApi` and a temp slot database.
-- Stats: a past day sums to its length and today to the time elapsed, clipping at midnight, meeting precedence, longest streak across a gap, first and last online, DST day (23 h and 25 h).
+- Stats: status mapping, a past day sums to its length and today to the time elapsed, clipping at midnight, longest streak across a gap, first and last online, DST day (23 h and 25 h).
 - API: unknown slug 404, public without session, shape above.
 - Admin API: reserved slug refused, non-admin 403, delete removes data.
 - Page: rendered in Chrome with a fixed API answer: the band, the bars and the cards show, no overflow at 360 px.
