@@ -11,6 +11,11 @@ const contextWith = (token: string) =>
     cookies: vi.fn(async () => [{ name: "authtoken_asm", value: `Bearer%20${token}`, domain: ".asyncgw.teams.microsoft.com", path: "/" }]),
   }) as unknown as BrowserContext;
 
+// what readMsalEntries gives for the ic3 access token of the page (an access token is a JWT of over 50 characters)
+const MSAL_1 = `msal-token-1-${"x".repeat(60)}`;
+const MSAL_2 = `msal-token-2-${"x".repeat(60)}`;
+const msal = (secret: string) => [{ secret, clientId: "", homeAccountId: "", expiresOn: 0 }];
+
 const refusing = () => vi.fn(async () => ({ ok: false, status: 401, text: async () => "", json: async () => ({}) }));
 const empty = () => vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ conversations: [], messages: [] }) }));
 
@@ -49,18 +54,18 @@ describe("chatsvc refused by the account", () => {
     const context = {
       cookies: vi.fn(async () => [{ name: "authtoken_asm", value: "mcas-encoded-1", domain: ".asyncgw.teams.microsoft.com.mcas.ms", path: "/v1/uid/" }]),
     } as unknown as BrowserContext;
-    const page = { evaluate: vi.fn(async () => "msal-token-1") } as unknown as Page;
-    expect((await getTeamsAuth(context, page))?.token).toBe("msal-token-1");
+    const page = { evaluate: vi.fn(async () => msal(MSAL_1)) } as unknown as Page;
+    expect((await getTeamsAuth(context, page))?.token).toBe(MSAL_1);
   });
 
   it("takes the page's MSAL token once chatsvc refused the cookie's", async () => {
     vi.stubGlobal("fetch", refusing());
     const context = contextWith("cookie-refused-1");
-    const page = { evaluate: vi.fn(async () => "msal-token-2") } as unknown as Page;
+    const page = { evaluate: vi.fn(async () => msal(MSAL_2)) } as unknown as Page;
     const first = await getTeamsAuth(context, page);
     expect(first?.token).toBe("cookie-refused-1");
     await fetchChatMessages(first!, "19:a@thread.v2");
-    expect((await getTeamsAuth(context, page))?.token).toBe("msal-token-2");
+    expect((await getTeamsAuth(context, page))?.token).toBe(MSAL_2);
   });
 
   it("opens a cached chat through Teams when chatsvc refuses, so the messages are fresh", async () => {
