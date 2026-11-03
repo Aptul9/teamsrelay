@@ -96,6 +96,12 @@ export function migrateAppSchema(db: Database.Database) {
       slot INTEGER NOT NULL, tool TEXT NOT NULL, host TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS browser_actions_slot ON browser_actions(slot, id);
   `);
+  // the public status pages (src/lib/status-pages.ts): path, the light account that collects, the person as Teams names
+  // them, when added and when the challenge ends (Unix s, 0 none); their history is in data/status.db
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS status_pages(slug TEXT PRIMARY KEY, slot INTEGER NOT NULL, name TEXT NOT NULL, added INTEGER NOT NULL,
+      ends INTEGER NOT NULL DEFAULT 0);
+  `);
 }
 
 const hasTable = (db: Database.Database, name: string) =>
