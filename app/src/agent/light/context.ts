@@ -19,8 +19,10 @@ export type Light = {
   // the last chat list read: chat name to conversation id, conversation id to chat name, the other people (mri) of each
   // conversation
   list: { ids: Map<string, string>; names: Map<string, string>; members: Map<string, string[]> };
-  // names of people, kept for the life of the process
+  // names of people, kept for the life of the process; the conversations whose messages were read for a name, with the
+  // last message they had then
   people: Map<string, Person>;
+  authorsRead: Map<string, string>;
   // conversations with a mention of you the feed shows unread
   mentioned: Set<string>;
   // when the next chat list and Activity reads are due (ms), 0: at once

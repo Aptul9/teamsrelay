@@ -47,6 +47,7 @@ async function main() {
     me: { oid: "", name: "" },
     list: { ids: new Map(), names: new Map(), members: new Map() },
     people: new Map(),
+    authorsRead: new Map(),
     mentioned: new Set(),
     due: { list: 0, activity: 0 },
     scanAt: 0,
