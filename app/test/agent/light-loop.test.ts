@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CsaChat, LightApi, Notification } from "@/agent/light/api";
+import { LightApi, type CsaChat, type Notification } from "@/agent/light/api";
 import { lightHandlers, runLightCommands } from "@/agent/light/commands";
 import type { Light } from "@/agent/light/context";
 import { readFeed, readList } from "@/agent/light/loop";
@@ -39,6 +39,7 @@ function setup(chats: () => CsaChat[], notifications: () => Notification[] = () 
     presence: vi.fn(async (mris: string[]) => new Map(mris.map((m) => [m, { availability: "Away", activity: "Away" }]))),
     notifications: vi.fn(async () => notifications()),
     notesLast: vi.fn(async () => null),
+    authors: vi.fn(async (conversation: string) => (void conversation, new Map<string, { displayName: string; givenName: string }>())),
     auth: vi.fn(async () => ({ token: "t", region: "emea", oid: ME, name: "Me Myself" })),
   };
   const l: Light = {
@@ -51,6 +52,7 @@ function setup(chats: () => CsaChat[], notifications: () => Notification[] = () 
     me: { oid: ME, name: "Me Myself" },
     list: { ids: new Map(), names: new Map(), members: new Map() },
     people: new Map(),
+    authorsRead: new Map(),
     mentioned: new Set(),
     due: { list: 0, activity: 0 },
     scanAt: 0,
@@ -91,6 +93,22 @@ describe("light agent", () => {
     await readList(l);
     expect(notifier.message).toHaveBeenCalledWith("Person anna", "are you there?", "Person anna");
     expect(api.people).toHaveBeenCalledTimes(1);
+  });
+
+  it("names a chat neither look-up knows from its messages, read once per last message", async () => {
+    let chats: CsaChat[] = [{ ...oneToOne("19:ext@unq.gbl.spaces", "ext", "mine", 5), isLastMessageFromMe: true }];
+    const { l, store, api } = setup(() => chats);
+    api.people.mockResolvedValue(new Map());
+    await readList(l);
+    await readList(l);
+    expect(api.authors).toHaveBeenCalledTimes(1);
+    expect(store.chats().map((c) => c.name)).toEqual([]);
+    api.authors.mockResolvedValue(new Map([[mri("ext"), { displayName: "Esterno Persona", givenName: "Esterno" }]]));
+    chats = [{ ...oneToOne("19:ext@unq.gbl.spaces", "ext", "mine again", 1), isLastMessageFromMe: true }];
+    await readList(l);
+    expect(api.authors).toHaveBeenCalledTimes(2);
+    expect(api.authors).toHaveBeenLastCalledWith("19:ext@unq.gbl.spaces");
+    expect(store.chats().map((c) => c.name)).toEqual(["Esterno Persona"]);
   });
 
   it("opens a chat through chatsvc and marks it read", async () => {
@@ -188,6 +206,49 @@ async function encrypted(baseKey: Uint8Array<ArrayBuffer>, id: string, context: 
   const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: new Uint8Array(12) }, key, new TextEncoder().encode(JSON.stringify(value))));
   return JSON.stringify({ id, nonce: b64url(nonce), data: b64url(data), lastUpdatedAt: "1" });
 }
+
+describe("names of people for a light account", () => {
+  it("asks the federated look-up only for the people the organization's one did not name", async () => {
+    const bodies: Record<string, unknown> = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = new URL(url).pathname.split("/").pop() ?? "";
+        bodies[path] = JSON.parse(String(init?.body));
+        const value = path === "fetchShortProfile" ? [{ mri: mri("in"), displayName: "Interno Anna", givenName: "Anna" }] : [{ objectId: "out", displayName: "Esterno Luca", givenName: "Luca" }];
+        return { ok: true, status: 200, json: async () => ({ value }) };
+      }),
+    );
+    const api = new LightApi({ accessToken: async () => "t" } as unknown as LightToken, () => "emea");
+    const people = await api.people([mri("in"), mri("out"), "4:+390000"]);
+    expect(bodies).toEqual({ fetchShortProfile: [mri("in"), mri("out")], fetchFederated: [mri("out")] });
+    expect([...people]).toEqual([
+      [mri("in"), { displayName: "Interno Anna", givenName: "Anna" }],
+      [mri("out"), { displayName: "Esterno Luca", givenName: "Luca" }],
+    ]);
+  });
+
+  it("reads the names the messages of a chat carry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          messages: [
+            { from: `https://emea.ng.msg.teams.microsoft.com/v1/users/ME/contacts/${mri("me")}`, imdisplayname: "Me Myself" },
+            { from: `https://emea.ng.msg.teams.microsoft.com/v1/users/ME/contacts/${mri("ext")}`, imdisplayname: "Rossi, Mario" },
+            { from: "", imdisplayname: "System" },
+          ],
+        }),
+      })),
+    );
+    const api = new LightApi({ accessToken: async () => "t" } as unknown as LightToken, () => "emea");
+    const authors = await api.authors("19:x@unq.gbl.spaces");
+    expect(authors.get(mri("ext"))).toEqual({ displayName: "Rossi, Mario", givenName: "Rossi" });
+    expect(authors.size).toBe(2);
+  });
+});
 
 describe("sign-in capture of a light account", () => {
   const entries = new Map<string, string>();

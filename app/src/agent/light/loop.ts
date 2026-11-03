@@ -9,10 +9,10 @@ import { errorText, log } from "../log";
 import { z } from "zod";
 import { union } from "../logic/check-seen";
 import { lightFeed } from "./activity";
-import type { Notification } from "./api";
+import type { CsaChat, Notification } from "./api";
 import { lightHandlers, markRead, runLightCommands, saveChat } from "./commands";
 import type { Light } from "./context";
-import { lightList, listedChats, othersOf, presenceWord, unnamedPeople } from "./list";
+import { lightList, listedChats, othersOf, presenceWord, unnamedChats, unnamedPeople } from "./list";
 import { CHATSVCAGG, IC3, PRESENCE, SignedOut, SPACES } from "./token";
 
 // A light account signed out pushes after this long: the web app starts its browser to sign it in again within minutes
@@ -53,6 +53,26 @@ async function identify(l: Light) {
   if (!l.store.getState(STATE.me)) l.store.setState(STATE.me, JSON.stringify({ ...saved, name: auth.name ?? "", email: auth.upn ?? "" }));
 }
 
+// Chats whose messages are read for a name, in one read of the list: each once per last message
+const AUTHOR_READS = 3;
+
+// A chat with a person neither look-up names: the names the messages of the chat carry. A 1:1 chat whose other person
+// never wrote in its last messages stays out of the list until they write, and a message then names them.
+async function nameFromMessages(l: Light, listed: readonly CsaChat[]) {
+  let reads = 0;
+  for (const c of unnamedChats(listed, l.me.oid, l.people)) {
+    const last = c.lastMessage?.id ?? "";
+    if (reads >= AUTHOR_READS || l.authorsRead.get(c.id) === last) continue;
+    reads++;
+    l.authorsRead.set(c.id, last);
+    try {
+      for (const [mri, p] of await l.api.authors(c.id)) if (!l.people.has(mri)) l.people.set(mri, p);
+    } catch (e) {
+      log.warn("chats", `names of ${c.isOneOnOne ? "a 1:1 chat" : "a group chat"}: ${errorText(e)}`);
+    }
+  }
+}
+
 // The chat list: saved complete, new messages notified as the browser agent does (src/agent/jobs/chat-list.ts)
 export async function readList(l: Light): Promise<boolean> {
   try {
@@ -61,6 +81,7 @@ export async function readList(l: Light): Promise<boolean> {
     const listed = listedChats(chats);
     const missing = unnamedPeople(listed, l.me.oid, l.people);
     if (missing.length) for (const [mri, p] of await l.api.people(missing).catch(() => new Map())) l.people.set(mri, p);
+    await nameFromMessages(l, listed);
     const mine = `8:orgid:${l.me.oid}`;
     const watched = [...new Set([mine, ...listed.filter((c) => c.isOneOnOne).map((c) => othersOf(c, l.me.oid)[0]).filter(Boolean)])];
     const presence = await l.api.presence(watched).catch(() => new Map());

@@ -83,18 +83,37 @@ export class LightApi {
     return (j.chats ?? []).filter((c) => typeof c?.id === "string");
   }
 
-  // Names of people of the organization and of the federated ones Teams knows (mri 8:orgid:...)
+  // Names of people (mri 8:orgid:...): of the organization, then of other organizations, which the first look-up leaves
+  // out (prod AGAP2, 2026-11-03: 28 of 35, the federated look-up named 5 more). The federated one refuses the people of
+  // the organization, so it gets only the ones left.
   async people(mris: readonly string[]): Promise<Map<string, Person>> {
     const out = new Map<string, Person>();
-    const wanted = mris.filter((m) => m.startsWith("8:orgid:"));
-    for (let i = 0; i < wanted.length; i += 50) {
-      const batch = wanted.slice(i, i + 50);
-      const url = `${SERVER}/api/mt/${this.region()}/beta/users/fetchShortProfile?isMailAddress=false&enableGuest=true&includeIBBarredUsers=true&skypeTeamsInfo=true`;
-      const j = await this.post<{ value?: { mri?: string; objectId?: string; displayName?: string; givenName?: string }[] }>(SPACES, url, batch, "people");
-      for (const p of j.value ?? []) {
-        const mri = p.mri || (p.objectId ? `8:orgid:${p.objectId}` : "");
-        if (mri && p.displayName) out.set(mri, { displayName: p.displayName, givenName: p.givenName || p.displayName });
+    const lookUp = async (path: string, wanted: string[]) => {
+      for (let i = 0; i < wanted.length; i += 50) {
+        const j = await this.post<{ value?: { mri?: string; objectId?: string; displayName?: string; givenName?: string }[] }>(SPACES, `${SERVER}/api/mt/${this.region()}/beta/users/${path}`, wanted.slice(i, i + 50), "people");
+        for (const p of j.value ?? []) {
+          const mri = p.mri || (p.objectId ? `8:orgid:${p.objectId}` : "");
+          if (mri && p.displayName) out.set(mri, { displayName: p.displayName, givenName: p.givenName || p.displayName });
+        }
       }
+    };
+    const wanted = mris.filter((m) => m.startsWith("8:orgid:"));
+    await lookUp("fetchShortProfile?isMailAddress=false&enableGuest=true&includeIBBarredUsers=true&skypeTeamsInfo=true", wanted);
+    const rest = wanted.filter((m) => !out.has(m));
+    if (rest.length) await lookUp("fetchFederated", rest).catch(() => undefined);
+    return out;
+  }
+
+  // The people who wrote in a conversation, by the name their messages carry: the one source for a person neither
+  // look-up knows (6 of the 7 left on prod AGAP2). The given name is the first word of it.
+  async authors(conversation: string): Promise<Map<string, Person>> {
+    const url = `${SERVER}/api/chatsvc/${this.region()}/v1/users/ME/conversations/${encodeURIComponent(conversation)}/messages?view=msnp24Equivalent&pageSize=50`;
+    const j = await this.get<{ messages?: { from?: string; imdisplayname?: string }[] }>(IC3, url, "messages");
+    const out = new Map<string, Person>();
+    for (const m of j.messages ?? []) {
+      const mri = String(m.from ?? "").split("/contacts/").pop() ?? "";
+      const name = (m.imdisplayname ?? "").trim();
+      if (mri.startsWith("8:") && name && !out.has(mri)) out.set(mri, { displayName: name, givenName: name.split(/[\s,]+/)[0] || name });
     }
     return out;
   }

@@ -61,6 +61,9 @@ export function unnamedPeople(chats: readonly CsaChat[], me: string, names: Read
   return [...out];
 }
 
+// The chats a name of a person is still missing for, once the look-ups answered
+export const unnamedChats = (chats: readonly CsaChat[], me: string, names: ReadonlyMap<string, Person>) => chats.filter((c) => !chatName(c, me, names));
+
 // How the list names a chat; "" while a name it needs is unknown
 export function chatName(c: CsaChat, me: string, names: ReadonlyMap<string, Person>): string {
   const title = c.title?.trim();
