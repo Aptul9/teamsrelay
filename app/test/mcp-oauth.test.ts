@@ -181,7 +181,19 @@ describe("authorization", () => {
     expect(back.searchParams.get("state")).toBe("s1");
     expect(decodeJwt(token)).toMatchObject({ sub: userId, client_id: clientId, aud: expect.arrayContaining([`${base}/mcp`]) });
     expect(consentGiven(userId, clientId)).toBe(true);
-    expect(await tools(token)).toEqual(["list_accounts", "list_activity", "list_chats", "read_chat", "refresh_chat"]);
+    expect(await tools(token)).toEqual([
+      "delete_message",
+      "edit_message",
+      "get_attachment",
+      "list_accounts",
+      "list_activity",
+      "list_chats",
+      "react_message",
+      "read_chat",
+      "refresh_chat",
+      "send_message",
+      "undo_delete",
+    ]);
     expect(clientsOf(userId).map((c) => c.clientId)).toContain(clientId);
   });
 

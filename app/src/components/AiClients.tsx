@@ -143,8 +143,8 @@ export function AiClients() {
           AI clients
         </CardTitle>
         <CardDescription>
-          AI clients (MCP) you allowed to sign in read your Teams chats, and drive the browser of your relays that have it on. Revoke one to cut it
-          off at once.
+          AI clients (MCP) you allowed to sign in read your Teams chats, send and change messages as you, and drive the browser of your relays that
+          have it on. Revoke one to cut it off at once.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">

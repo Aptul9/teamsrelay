@@ -1,21 +1,36 @@
+import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { appDb, claimSlot, migrateAppSchema, setSlotStopped } from "@/lib/appdb";
-import { listAccounts, listActivity, listChats, messageTime, readChat, refreshChat } from "@/lib/mcp/tools";
+import {
+  deleteMessage,
+  editMessage,
+  getAttachment,
+  listAccounts,
+  listActivity,
+  listChats,
+  messageTime,
+  reactMessage,
+  readChat,
+  refreshChat,
+  sendMessage,
+  undoDelete,
+} from "@/lib/mcp/tools";
 import { createSlotDb, tempDir } from "./helpers";
 
 let mine: number;
 let other: number;
 let empty: number;
 let db: Database.Database;
+let dataDir: string;
 
 const now = () => Math.floor(Date.now() / 1000);
 const setState = (k: string, v: string) => db.prepare("INSERT OR REPLACE INTO state(k, v) VALUES(?, ?)").run(k, v);
 const health = (teams = "ok") => setState("health", JSON.stringify({ cdp: "ok", ts: now(), teams, overall: "green" }));
 
 beforeAll(() => {
-  const dataDir = tempDir();
+  dataDir = tempDir();
   process.env.APP_DB = path.join(dataDir, "app.db");
   migrateAppSchema(appDb());
   const limits = { perUser: 4 };
@@ -194,5 +209,145 @@ describe("refresh_chat", () => {
     setSlotStopped(appDb(), mine, true);
     await expect(refreshChat("u1", { chat: "Cloud team" }, fast)).rejects.toThrow(/stopped/);
     expect(commands()).toEqual([]);
+  });
+});
+
+// The agent of the account: runs every pending command of these types with this outcome; a message sent becomes a
+// message of the account in the chat, a download writes its file
+function fakeAgent(outcome: "done" | "failed" = "done") {
+  const timer = setInterval(() => {
+    const cmds = db.prepare("SELECT id, type, arg1, arg2 FROM commands WHERE status='pending'").all() as { id: number; type: string; arg1: string; arg2: string }[];
+    for (const c of cmds) {
+      if (outcome === "done" && ["send", "sendmentions", "reply", "sendimage"].includes(c.type)) {
+        const idx = (db.prepare("SELECT COUNT(*) AS n FROM chat_messages WHERE chat=?").get(c.arg1) as { n: number }).n;
+        db.prepare("INSERT INTO chat_messages(chat, idx, mid, author, text, mine, reacts, extra) VALUES(?,?,?,?,?,?,?,?)").run(c.arg1, idx, "1790433000000", "ROSSI Anna", "sent", 1, "", "");
+      }
+      if (outcome === "done" && c.type === "download") {
+        fs.mkdirSync(path.join(dataDir, String(mine), "files"), { recursive: true });
+        fs.writeFileSync(path.join(dataDir, String(mine), "files", "0123456789abcdef.csv"), "a,b\n1,2\n");
+        setState(`cmd_result:${c.id}`, JSON.stringify({ f: "0123456789abcdef.csv" }));
+      }
+      db.prepare("UPDATE commands SET status=? WHERE id=?").run(outcome, c.id);
+    }
+  }, 20);
+  return () => clearInterval(timer);
+}
+
+const fast = { timeoutMs: 1000, pollMs: 20 };
+const queued = () => db.prepare("SELECT type, arg1, arg2 FROM commands ORDER BY id").all() as { type: string; arg1: string; arg2: string }[];
+// smallest PNG: the signature is what the server checks
+const PNG = Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.alloc(16)]);
+
+describe("send_message", () => {
+  let stop: (() => void) | undefined;
+  afterEach(() => stop?.());
+
+  it("sends text and answers with the message saved after", async () => {
+    stop = fakeAgent();
+    const r = await sendMessage("u1", { chat: "BIANCHI Luca", text: "Ciao 👋" }, fast);
+    expect(r).toMatchObject({ account: mine, chat: "BIANCHI Luca", status: "done", message: { id: "1790433000000", mine: true, text: "sent" } });
+    expect(queued()).toEqual([{ type: "send", arg1: "BIANCHI Luca", arg2: "Ciao 👋" }]);
+  });
+
+  it("tags the people of mentions, replies with quote, sends an image with its caption", async () => {
+    stop = fakeAgent();
+    await sendMessage("u1", { chat: "Cloud team", text: "@VERDI Carla look", mentions: ["VERDI Carla"] }, fast);
+    await sendMessage("u1", { chat: "BIANCHI Luca", text: "On it", reply_to: "1790431027228" }, fast);
+    await sendMessage("u1", { chat: "BIANCHI Luca", text: "screen", image: `data:image/png;base64,${PNG.toString("base64")}` }, fast);
+    const [mention, reply, image] = queued();
+    expect(mention).toEqual({ type: "sendmentions", arg1: "Cloud team", arg2: JSON.stringify({ parts: [{ mention: "VERDI Carla" }, { text: " look" }] }) });
+    expect(reply).toEqual({ type: "reply", arg1: "BIANCHI Luca", arg2: JSON.stringify({ mid: "1790431027228", text: "On it" }) });
+    expect(image.type).toBe("sendimage");
+    const { file, text } = JSON.parse(image.arg2) as { file: string; text: string };
+    expect(text).toBe("screen");
+    expect(file).toMatch(/^[0-9a-f]{16}\.png$/);
+    expect(fs.readFileSync(path.join(dataDir, String(mine), "uploads", file))).toEqual(PNG);
+  });
+
+  it("queues nothing for what cannot go", async () => {
+    await expect(sendMessage("u1", { chat: "BIANCHI Luca", text: " " }, fast)).rejects.toThrow(/text is required/);
+    await expect(sendMessage("u1", { chat: "BIANCHI Luca", image: PNG.toString("base64"), reply_to: "1" }, fast)).rejects.toThrow(/alone/);
+    await expect(sendMessage("u1", { chat: "BIANCHI Luca", image: Buffer.from("not an image").toString("base64") }, fast)).rejects.toThrow(/PNG, JPEG/);
+    await expect(sendMessage("u1", { chat: "Nobody", text: "hi" }, fast)).rejects.toThrow(/list_chats/);
+    health("login");
+    await expect(sendMessage("u1", { chat: "BIANCHI Luca", text: "hi" }, fast)).rejects.toThrow(/not working/);
+    expect(queued()).toEqual([]);
+  });
+
+  it("says when Teams did not confirm, and when the command still waits", async () => {
+    stop = fakeAgent("failed");
+    await expect(sendMessage("u1", { chat: "BIANCHI Luca", text: "hi" }, fast)).rejects.toThrow(/did not confirm/);
+    stop();
+    const r = await sendMessage("u1", { chat: "BIANCHI Luca", text: "hi" }, { timeoutMs: 60, pollMs: 20 });
+    expect(r).toMatchObject({ status: "pending", note: expect.stringMatching(/Queued/) });
+  });
+});
+
+describe("react, edit, delete, undo delete", () => {
+  let stop: (() => void) | undefined;
+  beforeEach(() => (stop = fakeAgent()));
+  afterEach(() => stop?.());
+
+  it("queues the command of the app on the message and answers with the message", async () => {
+    const r = await reactMessage("u1", { chat: "BIANCHI Luca", message_id: "1790431027228", reaction: "Heart" }, fast);
+    expect(r).toMatchObject({ status: "done", message: { id: "1790431027228", author: "BIANCHI Luca" } });
+    await reactMessage("u1", { chat: "BIANCHI Luca", message_id: "1790431027228", reaction: "👍" }, fast);
+    await editMessage("u1", { chat: "BIANCHI Luca", message_id: "1790431664072", text: "Done ✅" }, fast);
+    await deleteMessage("u1", { chat: "BIANCHI Luca", message_id: "1790431664072" }, fast);
+    await undoDelete("u1", { chat: "BIANCHI Luca", message_id: "1790431664072" }, fast);
+    expect(queued()).toEqual([
+      { type: "react", arg1: "BIANCHI Luca", arg2: JSON.stringify({ mid: "1790431027228", emoji: "heart" }) },
+      { type: "react", arg1: "BIANCHI Luca", arg2: JSON.stringify({ mid: "1790431027228", pill: "👍" }) },
+      { type: "edit", arg1: "BIANCHI Luca", arg2: JSON.stringify({ mid: "1790431664072", text: "Done ✅" }) },
+      { type: "delete", arg1: "BIANCHI Luca", arg2: JSON.stringify({ mid: "1790431664072" }) },
+      { type: "undodelete", arg1: "BIANCHI Luca", arg2: JSON.stringify({ mid: "1790431664072" }) },
+    ]);
+  });
+
+  it("refuses an empty edit", async () => {
+    await expect(editMessage("u1", { chat: "BIANCHI Luca", message_id: "1790431664072", text: " " }, fast)).rejects.toThrow(/Empty text/);
+  });
+});
+
+describe("get_attachment", () => {
+  let stop: (() => void) | undefined;
+  afterEach(() => stop?.());
+
+  it("shows a saved image and a SharePoint file downloaded with the Teams session", async () => {
+    const media = path.join(dataDir, String(mine), "media");
+    fs.mkdirSync(media, { recursive: true });
+    fs.writeFileSync(path.join(media, "00112233445566aa.png"), PNG);
+    db.prepare("UPDATE chat_messages SET extra=? WHERE mid='1790431027228'").run(
+      JSON.stringify({ images: [{ f: "00112233445566aa.png" }], files: [{ name: "data.csv", url: "https://contoso.sharepoint.com/sites/x/data.csv" }] }),
+    );
+    stop = fakeAgent();
+    const [summary, image, file] = await getAttachment("u1", { chat: "BIANCHI Luca", message_id: "1790431027228" }, fast);
+    expect(JSON.parse((summary as { text: string }).text)).toMatchObject({
+      account: mine,
+      attachments: [
+        { index: 1, kind: "image", shown: true },
+        { index: 2, kind: "file", name: "data.csv", shown: true },
+      ],
+    });
+    expect(image).toEqual({ type: "image", data: PNG.toString("base64"), mimeType: "image/png" });
+    expect(file).toEqual({ type: "text", text: "--- data.csv ---\na,b\n1,2\n" });
+    expect(queued()).toEqual([{ type: "download", arg1: "https://contoso.sharepoint.com/sites/x/data.csv", arg2: JSON.stringify({ name: "data.csv" }) }]);
+  });
+
+  it("gives one attachment by index, and says what it cannot fetch", async () => {
+    db.prepare("UPDATE chat_messages SET extra=? WHERE mid='1790431027228'").run(
+      JSON.stringify({ images: [{ url: "https://eu-api.asm.skype.com/v1/objects/x/views/imgo" }], files: [{ name: "a.pdf", url: "https://example.com/a.pdf" }] }),
+    );
+    const [summary, ...rest] = await getAttachment("u1", { chat: "BIANCHI Luca", message_id: "1790431027228", index: 1 }, fast);
+    expect(rest).toEqual([]);
+    expect(JSON.parse((summary as { text: string }).text).attachments).toEqual([
+      { index: 1, kind: "image", shown: false, note: expect.stringMatching(/refresh_chat/), link: "https://eu-api.asm.skype.com/v1/objects/x/views/imgo" },
+    ]);
+    const [other] = await getAttachment("u1", { chat: "BIANCHI Luca", message_id: "1790431027228", index: 2 }, fast);
+    expect(JSON.parse((other as { text: string }).text).attachments[0]).toMatchObject({ kind: "file", shown: false, note: expect.stringMatching(/SharePoint/) });
+    await expect(getAttachment("u1", { chat: "BIANCHI Luca", message_id: "1790431027228", index: 3 }, fast)).rejects.toThrow(/out of range/);
+    await expect(getAttachment("u1", { chat: "BIANCHI Luca", message_id: "nope" }, fast)).rejects.toThrow(/read_chat/);
+    await expect(getAttachment("u1", { chat: "BIANCHI Luca", message_id: "temp-1" }, fast)).rejects.toThrow(/no image or file/);
+    expect(queued()).toEqual([]);
   });
 });

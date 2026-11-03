@@ -44,15 +44,15 @@ function oauthGuard(): ((req: Request) => Promise<Response>) | null {
 }
 
 // MCP for AI clients (Streamable HTTP). Two kinds of bearer: MCP_TOKEN, which acts as the administrator of .env and gets
-// the read tools only, and an OAuth access token of a user (@better-auth/mcp: sign-in of this app, consent, one token per
-// client), which also gets the browsers of the relays of that user. No session cookie counts here, and a request from a
-// web page (Origin) is refused.
+// the Teams tools (read, send, react, edit, delete, attachments), and an OAuth access token of a user (@better-auth/mcp:
+// sign-in of this app, consent, one token per client), which also gets the browsers of the relays of that user. No
+// session cookie counts here, and a request from a web page (Origin) is refused.
 export const POST = route(async (req) => {
   if (req.headers.has("origin")) throw new HttpError(403, "Requests from web pages are not accepted");
   if (config.mcpToken && tokenMatches(req.headers.get("authorization"))) {
     const userId = mcpUserId();
     if (!userId) throw new HttpError(503, "The administrator of .env does not exist");
-    return mcp().fetch(req, { authInfo: { token: "MCP_TOKEN", clientId: "mcp-token", scopes: ["read"], extra: { userId } } });
+    return mcp().fetch(req, { authInfo: { token: "MCP_TOKEN", clientId: "mcp-token", scopes: ["read", "write"], extra: { userId } } });
   }
   const guard = oauthGuard();
   if (guard) return guard(req);
