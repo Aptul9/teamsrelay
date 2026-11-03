@@ -23,7 +23,8 @@ const FEED_ITEM = `
   <span class="feeditem_content_text" id="activity-feed-item-location-101">In chat with you</span>
 </div>`;
 
-const RAIL = `<!doctype html>
+// hideMs: how long the tooltip stays once the mouse left it (Teams on prod, 2026-11-03: up to 3 s on a busy page)
+const rail = (hideMs = 250) => `<!doctype html>
 <style>
   body { margin: 0 }
   #waffle { position: absolute; left: 0; top: 0; width: 48px; height: 48px }
@@ -37,10 +38,11 @@ const RAIL = `<!doctype html>
 <button class="rail" style="top:92px" aria-label="Chat (Ctrl+Shift+2)"></button>
 <div id="main"></div>
 <script>
+{
   const tip = document.getElementById("tip");
   let hide = 0;
   const show = () => { clearTimeout(hide); tip.style.display = "block"; };
-  const later = () => { hide = setTimeout(() => (tip.style.display = "none"), 250); };
+  const later = () => { hide = setTimeout(() => (tip.style.display = "none"), ${hideMs}); };
   document.getElementById("waffle").addEventListener("mouseenter", show);
   document.getElementById("waffle").addEventListener("mouseleave", later);
   tip.addEventListener("mouseenter", show);
@@ -50,6 +52,7 @@ const RAIL = `<!doctype html>
   activity.addEventListener("click", () => (main.innerHTML = ${JSON.stringify(FEED_ITEM)}));
   chat.addEventListener("click", () => (main.innerHTML = '<div role="tree"><div role="treeitem" aria-level="2">Anna Rossi</div></div>'));
   chat.click();
+}
 </script>`;
 
 // Teams right after a start (slot 2, 2026-09-27): the chat list is there, the rail shows a few seconds later, then
@@ -93,7 +96,7 @@ let agent: Agent;
 beforeEach(async () => {
   context = await chrome.browser.newContext({ viewport: { width: 1024, height: 618 } });
   page = await context.newPage();
-  await page.setContent(RAIL);
+  await page.setContent(rail());
   store = SlotStore.open(path.join(tempDir(), "1", "messages.db"));
   const media = { avatars: async (_: Page, items: { avsrc: string }[]) => items.map((i) => ({ ...i, av: "" })) };
   agent = { tp: new TeamsPage(page, store), store, media } as unknown as Agent;
@@ -111,6 +114,14 @@ describe("Activity feed read", () => {
   });
 
   it("reads the feed while the tooltip of the app launcher covers the Activity button", async () => {
+    await keepActive(agent);
+    expect(await page.locator("#tip").isVisible()).toBe(true);
+    expect(await readActivity(agent)).toBe(1);
+    expect(await page.locator('[role="treeitem"][aria-level="2"]').count()).toBe(1);
+  }, 30_000);
+
+  it("reads the feed while the tooltip of the app launcher stays over the Activity button longer than a click waits", async () => {
+    await page.setContent(rail(6000));
     await keepActive(agent);
     expect(await page.locator("#tip").isVisible()).toBe(true);
     expect(await readActivity(agent)).toBe(1);
