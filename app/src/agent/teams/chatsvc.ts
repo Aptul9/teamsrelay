@@ -4,6 +4,7 @@ import { REACTION_EMOJI, type Reaction, type ReadBy } from "@/shared/slot-db/row
 import { extraOf } from "../logic/messages";
 import { errorText, log } from "../log";
 import type { SavedMessage } from "../store/slot-store";
+import { readMsalEntries } from "./scripts/tokens";
 
 export type TeamsAuth = {
   token: string;
@@ -95,28 +96,15 @@ export async function getTeamsAuth(context: BrowserContext | null | undefined, p
       token = decodeURIComponent(token);
     }
 
-    // 2. Check page localStorage for MSAL v2 ic3.teams.office.com access token (standard Teams Web on teams.cloud.microsoft)
+    // 2. Check page localStorage for MSAL v2 ic3.teams.office.com access token (standard Teams Web on teams.cloud.microsoft),
+    // encrypted or not (scripts/tokens.ts)
     if (!token || refusedTokens.has(token)) {
       const targetPage = page ?? (typeof context.pages === "function" ? context.pages()[0] : undefined);
       if (targetPage && typeof targetPage.evaluate === "function") {
         try {
-          const lsToken = await targetPage.evaluate(() => {
-            if (typeof localStorage === "undefined") return null;
-            for (let i = 0; i < localStorage.length; i++) {
-              const k = localStorage.key(i) || "";
-              const low = k.toLowerCase();
-              if (low.includes("accesstoken") && low.includes("ic3.teams.office.com")) {
-                try {
-                  const v = JSON.parse(localStorage.getItem(k) || "{}") as { secret?: string };
-                  if (typeof v?.secret === "string" && v.secret.length > 50) return v.secret;
-                } catch {
-                  // ignore
-                }
-              }
-            }
-            return null;
-          });
-          if (typeof lsToken === "string" && lsToken) token = lsToken;
+          const entries = await targetPage.evaluate(readMsalEntries, ["accesstoken", "ic3.teams.office.com"]);
+          const lsToken = Array.isArray(entries) ? entries.find((e) => e.secret.length > 50)?.secret : undefined;
+          if (lsToken) token = lsToken;
         } catch {
           // page.evaluate might fail in mocks or during navigation
         }

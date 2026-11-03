@@ -66,13 +66,14 @@ describe("chatsvc", () => {
         },
       ]),
     } as unknown as BrowserContext;
+    const token = `msal_localstorage_token_${"x".repeat(60)}`;
     const fakePage = {
-      evaluate: vi.fn(async () => "msal_localstorage_token_xyz"),
+      evaluate: vi.fn(async () => [{ secret: token, clientId: "", homeAccountId: "", expiresOn: 0 }]),
     } as unknown as Page;
 
     const auth = await getTeamsAuth(fakeContext, fakePage);
     expect(auth).not.toBeNull();
-    expect(auth?.token).toBe("msal_localstorage_token_xyz");
+    expect(auth?.token).toBe(token);
     expect(auth?.region).toBe("emea");
   });
 

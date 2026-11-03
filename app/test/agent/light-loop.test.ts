@@ -8,9 +8,9 @@ import { readFeed, readList } from "@/agent/light/loop";
 import { LightToken, SignedOut } from "@/agent/light/token";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { SlotStore } from "@/agent/store/slot-store";
-import { captureLightToken, TEAMS_WEB_CLIENT } from "@/agent/jobs/light-token";
+import { captureLightToken, TEAMS_WEB_CLIENT, teamsRefreshToken } from "@/agent/jobs/light-token";
 import type { Agent } from "@/agent/context";
-import { readRefreshToken } from "@/agent/teams/scripts/tokens";
+import { readMsalEntries } from "@/agent/teams/scripts/tokens";
 import { cmdResultKey, LightSignIn, parseState, STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
@@ -179,10 +179,23 @@ describe("light agent", () => {
   });
 });
 
+// An entry as MSAL browser encrypts its cache (key of the cookie msal.cache.encryption, prod AGAP2 2026-11-03)
+const b64url = (b: Uint8Array) => Buffer.from(b).toString("base64url");
+async function encrypted(baseKey: Uint8Array<ArrayBuffer>, id: string, context: string, value: object): Promise<string> {
+  const nonce = crypto.getRandomValues(new Uint8Array(16));
+  const base = await crypto.subtle.importKey("raw", baseKey, "HKDF", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "HKDF", salt: nonce, hash: "SHA-256", info: new TextEncoder().encode(context) }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt"]);
+  const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: new Uint8Array(12) }, key, new TextEncoder().encode(JSON.stringify(value))));
+  return JSON.stringify({ id, nonce: b64url(nonce), data: b64url(data), lastUpdatedAt: "1" });
+}
+
 describe("sign-in capture of a light account", () => {
   const entries = new Map<string, string>();
+  const OTHER = "11111111-2222-3333-4444-555555555555";
+  const rtKey = (client: string) => `msal.2|oid.tenant|login.windows.net|refreshtoken|${client}||`;
   beforeEach(() => {
     entries.clear();
+    vi.stubGlobal("document", { cookie: "" });
     vi.stubGlobal("localStorage", {
       get length() {
         return entries.size;
@@ -192,20 +205,37 @@ describe("sign-in capture of a light account", () => {
     });
   });
 
-  it("reads the refresh token of Teams web from the page", () => {
-    entries.set("msal.2|x|login.windows.net|refreshtoken|other|", JSON.stringify({ secret: "rt-other", clientId: "other", homeAccountId: "u.t" }));
-    entries.set("msal.2|y|login.windows.net|refreshtoken|teams|", JSON.stringify({ secret: "rt-teams", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant", expiresOn: "1793750000" }));
+  it("reads the refresh token of Teams web from the page", async () => {
+    entries.set(rtKey(OTHER), JSON.stringify({ secret: "rt-other", clientId: OTHER, homeAccountId: "u.t" }));
+    entries.set(rtKey(TEAMS_WEB_CLIENT), JSON.stringify({ secret: "rt-teams", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant", expiresOn: "1793750000" }));
     entries.set("msal.2|z|accesstoken", JSON.stringify({ secret: "at" }));
-    expect(readRefreshToken(TEAMS_WEB_CLIENT)).toEqual({ secret: "rt-teams", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant", expiresOn: 1793750000 });
+    const read = await readMsalEntries(["refreshtoken"]);
+    expect(read).toHaveLength(2);
+    expect(teamsRefreshToken(read)).toEqual({ secret: "rt-teams", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant", expiresOn: 1793750000 });
+  });
+
+  it("decrypts the cache of a Teams web that encrypts it, skipping entries of another key", async () => {
+    const baseKey = crypto.getRandomValues(new Uint8Array(32));
+    vi.stubGlobal("document", { cookie: `other=1; msal.cache.encryption=${encodeURIComponent(JSON.stringify({ id: "k1", key: b64url(baseKey) }))}` });
+    const rt = { secret: "rt-encrypted", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant", expiresOn: "1793800000" };
+    entries.set(rtKey(TEAMS_WEB_CLIENT), await encrypted(baseKey, "k1", TEAMS_WEB_CLIENT, rt));
+    entries.set(rtKey(OTHER), await encrypted(baseKey, "k0", OTHER, { ...rt, secret: "rt-old-key", clientId: OTHER }));
+    const at = `msal.2|oid.tenant|login.windows.net|accesstoken|${TEAMS_WEB_CLIENT}|tenant|https://ic3.teams.office.com/teams.accessasuser.all https://ic3.teams.office.com/.default|`;
+    entries.set(at, await encrypted(baseKey, "k1", TEAMS_WEB_CLIENT, { secret: "at-encrypted", clientId: TEAMS_WEB_CLIENT }));
+    expect(await readMsalEntries(["refreshtoken"])).toEqual([{ secret: "rt-encrypted", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant", expiresOn: 1793800000 }]);
+    expect((await readMsalEntries(["accesstoken", "ic3.teams.office.com"])).map((e) => e.secret)).toEqual(["at-encrypted"]);
+    // a key not the one of the entries: nothing, and no error
+    vi.stubGlobal("document", { cookie: `msal.cache.encryption=${encodeURIComponent(JSON.stringify({ id: "k1", key: b64url(new Uint8Array(32)) }))}` });
+    expect(await readMsalEntries(["refreshtoken"])).toEqual([]);
   });
 
   it("stores it for the light agent with its tenant and region, its expiry for the web app, once", async () => {
-    entries.set("msal.2|y|login.windows.net|refreshtoken|teams|", JSON.stringify({ secret: "rt-teams", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant", expiresOn: "1793750000" }));
+    entries.set(rtKey(TEAMS_WEB_CLIENT), JSON.stringify({ secret: "rt-teams", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant", expiresOn: "1793750000" }));
     const dir = tempDir();
     const store = SlotStore.open(path.join(dir, "messages.db"));
     const file = path.join(dir, "light-token.json");
     const page = {
-      evaluate: async (fn: (arg: string) => unknown, arg: string) => fn(arg),
+      evaluate: async (fn: (arg: string[]) => unknown, arg: string[]) => fn(arg),
       context: () => ({ cookies: async () => [{ name: "authtoken", domain: "teams.microsoft.com", path: "/api/mt/part/amer-02/beta/users/x" }] }),
     };
     const a = { config: { lightTokenFile: file }, store, tp: { page } } as unknown as Agent;

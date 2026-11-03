@@ -3,13 +3,16 @@ import { nowSeconds, type Agent } from "../context";
 import { LightToken } from "../light/token";
 import { errorText, log } from "../log";
 import { regionOf } from "../teams/chatsvc";
-import { readRefreshToken } from "../teams/scripts/tokens";
+import { readMsalEntries, type MsalEntry } from "../teams/scripts/tokens";
 
 // Client id of Teams web, whose refresh token a light account runs on
 export const TEAMS_WEB_CLIENT = "5e3ce6c0-2b1f-4285-8d4b-75ee78787346";
 
 // Without an expiry in the page, the refresh token of a single-page app is taken to hold this long (Microsoft: 24 h)
 const ASSUMED_LIFE = 20 * 3600;
+
+// The refresh token of Teams web among those the page keeps, else the first one
+export const teamsRefreshToken = (entries: readonly MsalEntry[]): MsalEntry | null => entries.find((e) => e.clientId === TEAMS_WEB_CLIENT) ?? entries[0] ?? null;
 
 // The browser of a light account runs to sign it in again (src/lib/light.ts): the refresh token Teams web keeps goes to
 // data/N/light-token.json for the light agent, and its expiry to the state row the web app watches. Only a token other
@@ -18,7 +21,7 @@ export async function captureLightToken(a: Agent): Promise<boolean> {
   const file = a.config.lightTokenFile;
   if (!file) return false;
   try {
-    const rt = await a.tp.page.evaluate(readRefreshToken, TEAMS_WEB_CLIENT);
+    const rt = teamsRefreshToken(await a.tp.page.evaluate(readMsalEntries, ["refreshtoken"]));
     const tenantId = rt?.homeAccountId.split(".")[1] ?? "";
     if (!rt || !tenantId) return false;
     if (LightToken.load(file)?.refreshToken === rt.secret) return false;
