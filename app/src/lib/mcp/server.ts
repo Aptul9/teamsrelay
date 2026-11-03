@@ -167,7 +167,7 @@ export function mcpServer(userId: string, o: { clientId?: string } = {}): McpSer
     "delete_message",
     {
       title: "Delete a message",
-      description: `Deletes one of your messages (mine true in read_chat). undo_delete brings it back while Teams still offers it. ${ACTS}`,
+      description: `Deletes one of your messages (mine true in read_chat). undo_delete brings it back. ${ACTS}`,
       inputSchema: z.object({ account, chat, message_id: messageId }),
       annotations: { ...WRITE, destructiveHint: true, idempotentHint: true },
     },
@@ -177,7 +177,7 @@ export function mcpServer(userId: string, o: { clientId?: string } = {}): McpSer
     "undo_delete",
     {
       title: "Undo a delete",
-      description: `Brings back one of your messages just deleted, while Teams shows Undo under it. Not on accounts without a browser. ${ACTS}`,
+      description: `Brings back one of your deleted messages as it was. ${ACTS}`,
       inputSchema: z.object({ account, chat, message_id: messageId }),
       annotations: { ...WRITE, idempotentHint: true },
     },

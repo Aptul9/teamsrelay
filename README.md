@@ -40,7 +40,7 @@ claude mcp add --scope user --transport http teamsrelay https://<DOMAIN>/mcp --h
 | `edit_message`, `delete_message`, `undo_delete` | On your own messages |
 | `get_attachment` | Images of a message inline, text files as text, other files up to 8 MB as resources; SharePoint files downloaded with the Teams session |
 
-`chat` is the name as `list_chats` gives it, `message_id` the id of `read_chat`, `account` the slot (default: the first). The write tools queue the same command as the app and wait up to 45 s for Teams to show it. Accounts without a browser cannot `undo_delete` nor download SharePoint files.
+`chat` is the name as `list_chats` gives it, `message_id` the id of `read_chat`, `account` the slot (default: the first). The write tools queue the same command as the app and wait up to 45 s for Teams to show it. Accounts without a browser cannot download SharePoint files.
 
 ## Local relay (one account, no server)
 

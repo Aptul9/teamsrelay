@@ -38,7 +38,7 @@ function takesCommands(slot: number, type: CommandType) {
   const s = slotRow(appDb(), slot);
   // the light agent runs it, unless the browser of the account runs now to sign it in again
   if (s?.light && !s.refreshing && LIGHT_UNSUPPORTED.includes(type)) {
-    throw new HttpError(409, "This Teams account runs without a browser: calls, downloads and undo of a delete need Always on in Settings");
+    throw new HttpError(409, "This Teams account runs without a browser: calls and downloads need Always on in Settings");
   }
 }
 
