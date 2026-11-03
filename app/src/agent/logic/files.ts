@@ -36,6 +36,22 @@ export function isSharePointUrl(url: string): boolean {
 
 export const downloadUrl = (url: string) => `${url}${url.includes("?") ? "&" : "?"}download=1`;
 
+// The same link through Defender for Cloud Apps (host.mcas.ms), for a Teams page the tenant proxies there: the plain
+// SharePoint host answers with the sign-in page of the proxy
+export function mcasUrl(url: string): string {
+  const u = new URL(url);
+  u.hostname += ".mcas.ms";
+  return u.toString();
+}
+
+export const behindMcas = (pageUrl: string) => {
+  try {
+    return new URL(pageUrl).hostname.endsWith(".mcas.ms");
+  } catch {
+    return false;
+  }
+};
+
 export const MAX_DOWNLOAD = 100e6;
 
 // Removes the files of a media folder no row names any more (`named`); `removed` hears the size of each. Number of

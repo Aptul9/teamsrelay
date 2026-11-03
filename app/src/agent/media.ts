@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Page } from "playwright-core";
-import { avatarFile, downloadFile, downloadUrl, isPlaceholderImage, isSharePointUrl, MAX_DOWNLOAD, MEDIA_EXT, pruneMedia } from "./logic/files";
+import { avatarFile, behindMcas, downloadFile, downloadUrl, isPlaceholderImage, isSharePointUrl, MAX_DOWNLOAD, MEDIA_EXT, mcasUrl, pruneMedia } from "./logic/files";
 import { errorText, log } from "./log";
 import { copyImage, fetchImage, squareLogo } from "./teams/scripts/media";
 
@@ -151,16 +151,21 @@ export class Media {
     if (fs.existsSync(target)) return file;
     fs.mkdirSync(this.filesDir, { recursive: true });
     try {
-      const r = await page.context().request.get(downloadUrl(url), { maxRedirects: 10, timeout: 60_000 });
-      const type = r.headers()["content-type"] ?? "";
-      if (r.status() !== 200 || type.startsWith("text/html")) {
-        log.warn("download", "refused", { status: r.status(), type });
-        return null;
+      const ctx = page.context();
+      const sources = behindMcas(page.url()) ? [mcasUrl(url), url] : [url];
+      for (const source of sources) {
+        const r = await ctx.request.get(downloadUrl(source), { maxRedirects: 10, timeout: 60_000 });
+        const type = r.headers()["content-type"] ?? "";
+        if (r.status() !== 200 || type.startsWith("text/html")) {
+          log.warn("download", "refused", { status: r.status(), type, mcas: source !== url });
+          continue;
+        }
+        const body = await r.body();
+        if (body.length > MAX_DOWNLOAD) return null;
+        fs.writeFileSync(target, body);
+        return file;
       }
-      const body = await r.body();
-      if (body.length > MAX_DOWNLOAD) return null;
-      fs.writeFileSync(target, body);
-      return file;
+      return null;
     } catch (e) {
       log.warn("download", errorText(e));
       return null;
