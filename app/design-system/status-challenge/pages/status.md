@@ -23,7 +23,7 @@
 
 ## Layout
 
-- One column at 375 px; two columns from 1024 px (`lg:grid-cols-2`): Now and Scoreboard side by side, the charts full width.
+- One column at 375 px, in the order of the spec; two columns from 1024 px (`lg:grid-cols-2`): Now beside Today, Challenge at a glance full width, Hours per day beside Scoreboard, Data per day full width. Grid items carry `min-w-0` so long text never widens the page (checked with text at 200%).
 - Max width 72rem (`max-w-6xl`), page padding 12 px on phones, 24 px from 768 px.
 - No horizontal scroll at any width: every chart is an SVG with a `viewBox` and `width: 100%`.
 - Space reserved for every chart (fixed aspect or height), so nothing shifts when data arrives; the first answer comes with the HTML.
@@ -32,12 +32,12 @@
 
 | Status | Token | Told apart also by |
 |---|---|---|
-| available | `--success` | solid fill, check icon in the legend |
+| available | `--success` | solid fill |
 | busy | `--destructive` | solid fill |
-| dnd | `--destructive` | diagonal stripes, minus icon |
+| dnd | `--destructive` | diagonal stripes |
 | brb | `--warning` | dots |
-| away | `--warning` | solid fill, clock icon |
-| offline | `--muted-foreground` at 35% | solid fill |
+| away | `--warning` | solid fill |
+| offline | `--muted-foreground` at 38% over `--card` (opaque) | solid fill |
 | no data | none | grey hatching on `--muted` |
 
 Never meaning by color alone: the legend names each status with its pattern swatch, every segment and cell has its status in words on hover and focus, the data table carries every value.
