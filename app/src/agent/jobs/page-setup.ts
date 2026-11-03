@@ -138,7 +138,7 @@ export function wanted(a: Agent): string {
 
 // The app shows this chat now and Teams holds it open for it: a message there is read as it comes, in Teams and in the
 // app, and needs no notification
-export function inApp(a: Agent, chat: string): boolean {
+export function inApp(a: Pick<Agent, "store">, chat: string): boolean {
   const viewing = parseState(Viewing, a.store.getState(STATE.viewing));
   return !!chat && a.store.getState(STATE.activeChat) === chat && shownInApp(viewing, nowSeconds()) === chat;
 }

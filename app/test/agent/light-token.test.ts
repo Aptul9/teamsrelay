@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { IC3, LightToken, SignedOut } from "@/agent/light/token";
 import { tempDir } from "../helpers";
 
-const stored = { refreshToken: "rt-1", clientId: "client-1", tenantId: "tenant-1" };
+const stored = { refreshToken: "rt-1", clientId: "client-1", tenantId: "tenant-1", region: "emea", expiresOn: 2_000 };
 
 function setup(now = () => 1_000_000) {
   const file = path.join(tempDir(), "light-token.json");
@@ -50,11 +50,35 @@ describe("light account token", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the rolled refresh token for the next renewal", async () => {
+  it("keeps the rolled refresh token for the next renewal, with the expiry of the first", async () => {
     vi.stubGlobal("fetch", granted("at-1", "rt-rolled"));
     const { file, token } = setup();
     await token.accessToken(IC3);
-    expect(JSON.parse(fs.readFileSync(file, "utf8")).refreshToken).toBe("rt-rolled");
+    const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(saved.refreshToken).toBe("rt-rolled");
+    expect(saved.expiresOn).toBe(2_000);
+  });
+
+  it("redeems again after renewAll, though the cached token still holds", async () => {
+    const fetch = granted("at-1");
+    vi.stubGlobal("fetch", fetch);
+    const { token } = setup();
+    await token.accessToken(IC3);
+    token.renewAll();
+    await token.accessToken(IC3);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("serves a token still valid when Microsoft refuses the renewal", async () => {
+    let now = 1_000_000;
+    vi.stubGlobal("fetch", granted("at-1"));
+    const { token } = setup(() => now);
+    await token.accessToken(IC3);
+    now += 4771_000 - 60_000;
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "invalid_grant" }) })));
+    expect(await token.accessToken(IC3)).toBe("at-1");
+    now += 2 * 60_000;
+    await expect(token.accessToken(IC3)).rejects.toBeInstanceOf(SignedOut);
   });
 
   it.skipIf(process.platform === "win32")("writes the token file readable by its owner only", async () => {

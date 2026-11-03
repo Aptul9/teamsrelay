@@ -11,7 +11,7 @@ import type { SavedMessage } from "../store/slot-store";
 // The chat is on screen in the app: without a mark the agent parks Teams on the self chat after PARK_AFTER seconds. A
 // command marks the chat it acts on, unless the app stopped showing a chat after queueing it (since: when it was
 // queued, Unix s): Teams then leaves the chat as the app did.
-export function markViewing(a: Agent, chat: string, since = 0) {
+export function markViewing(a: Pick<Agent, "store">, chat: string, since = 0) {
   const shown = parseState(Viewing, a.store.getState(STATE.viewing));
   if (since && !shown.chat && shown.ts >= since) return;
   a.store.setState(STATE.viewing, JSON.stringify({ chat, ts: nowSeconds() }));

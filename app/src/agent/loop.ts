@@ -9,6 +9,7 @@ import { saveOpenChat } from "./jobs/conversation";
 import { watchDesktop } from "./jobs/desktop";
 import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
+import { captureLightToken } from "./jobs/light-token";
 import { pruneMedia } from "./jobs/media";
 import { pushMentions } from "./jobs/mentions";
 import { FeedAfterCalls, pushMissedCalls } from "./jobs/missed-calls";
@@ -124,6 +125,8 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
       run: activity,
     },
     { name: "identity", every: { rounds: 300, offset: 7 }, force: () => !a.store.getState(STATE.me), when: teamsOk, run: () => saveIdentity(a) },
+    // a light account's browser runs to sign it in again: its refresh token goes to the light agent
+    { name: "light-token", every: { rounds: 5, offset: 3 }, when: () => teamsOk() && !!a.lightMode?.(), run: () => captureLightToken(a) },
     { name: "health", every: { rounds: 5 }, anyPage: true, run: () => updateHealth(a) },
     // a sign-out: Teams' own Sign in pressed once, and once more on Microsoft's page (a Teams tab sent there included);
     // not while the owner uses Teams, who may be signing in by hand, nor while a call rings or runs

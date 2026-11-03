@@ -20,6 +20,8 @@ const Env = z.object({
   DESKTOP_APP_ID: z.string().optional(),
   XDG_RUNTIME_DIR: z.string().optional(),
   WAYLAND_DISPLAY: z.string().optional(),
+  // seconds between two reads of the chat list of a light account (src/agent/light)
+  LIGHT_POLL: z.coerce.number().int().min(15).max(3600).default(60),
 });
 
 export type Config = AgentSettings & PushSettings & {
@@ -31,6 +33,8 @@ export type Config = AgentSettings & PushSettings & {
   // database
   mediaDir: string;
   filesDir: string;
+  lightTokenFile: string;
+  lightPoll: number;
 };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -44,6 +48,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     mediaDir: path.join(dataDir, "media"),
     filesDir: path.join(dataDir, "files"),
     uploadsDir: path.join(dataDir, "uploads"),
+    lightTokenFile: path.join(dataDir, "light-token.json"),
+    lightPoll: e.LIGHT_POLL,
     ...pushSettings(e),
     desktop:
       e.DESKTOP_PORT && e.DESKTOP_UID !== undefined && e.DESKTOP_GID !== undefined && e.DESKTOP_APP_ID && e.XDG_RUNTIME_DIR && e.WAYLAND_DISPLAY

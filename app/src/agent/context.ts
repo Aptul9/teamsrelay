@@ -30,6 +30,8 @@ export type AgentSettings = {
   };
   // the remote desktop of the browsers container, watched for the owner (jobs/desktop.ts); none for the local relay
   desktop?: DesktopWatch | null;
+  // where the sign-in of a light account goes (jobs/light-token.ts): server only
+  lightTokenFile?: string;
 };
 
 // The websocket of the remote desktop (its viewers are connections to that port) and how to ask its compositor which
@@ -53,6 +55,8 @@ export type Agent = {
   railReady?: boolean;
   // the web app starts this account only to check it, every few hours (server only)
   checkedOnly?: () => boolean;
+  // a light account: its browser runs only to sign it in again, its light agent does the rest (server only)
+  lightMode?: () => boolean;
   // a call is in progress: the Teams page records from the microphone (src/agent/jobs/calls.ts)
   inCall?: boolean;
   // a call rings: its toast shows (src/agent/jobs/calls.ts)

@@ -9,6 +9,7 @@ const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // entry, output, the packages that stay outside (native, or loaded only when used), source map
 export const BUNDLES = {
   agent: { entry: "src/agent/main.ts", out: "dist/agent.cjs", external: ["playwright-core", "better-sqlite3"], sourcemap: true },
+  light: { entry: "src/agent/light/main.ts", out: "dist/light.cjs", external: ["playwright-core", "better-sqlite3"], sourcemap: true },
   supervisor: { entry: "src/supervisor/main.ts", out: "dist/supervisor.cjs" },
   relay: { entry: "src/local/main.ts", out: "dist/relay.cjs", external: ["playwright-core", "better-sqlite3", "@playwright/mcp"] },
   hub: { entry: "src/server/call-audio-preload.ts", out: "dist/call-audio.cjs", external: ["bufferutil", "utf-8-validate"] },
