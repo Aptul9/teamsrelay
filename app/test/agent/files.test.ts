@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { avatarFile, downloadFile, downloadUrl, imageKey, isSharePointUrl } from "@/agent/logic/files";
+import { avatarFile, behindMcas, downloadFile, downloadUrl, imageKey, isSharePointUrl, mcasUrl } from "@/agent/logic/files";
+
+describe("Defender for Cloud Apps", () => {
+  it("sends SharePoint through the proxy when the Teams page is behind it", () => {
+    expect(behindMcas("https://teams.cloud.microsoft.mcas.ms/v2/")).toBe(true);
+    expect(behindMcas("https://teams.cloud.microsoft/v2/")).toBe(false);
+    expect(mcasUrl("https://contoso-my.sharepoint.com/personal/a/Documents/x%20y.xlsx")).toBe("https://contoso-my.sharepoint.com.mcas.ms/personal/a/Documents/x%20y.xlsx");
+  });
+});
 
 // Expected names computed with the Python agent's formula (hashlib.sha1(...).hexdigest()[:16]): a slot that
 // switches agent keeps its files.
