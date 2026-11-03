@@ -15,12 +15,13 @@ const Env = z.object({
   XDG_RUNTIME_DIR: z.string().default("/config/.XDG"),
   CHROMIUM: z.string().default("/usr/bin/chromium"),
   AGENT_SCRIPT: z.string().default("/app/agent.cjs"),
+  LIGHT_SCRIPT: z.string().default("/app/light.cjs"),
 });
 
 // passed on as they are, when set. PULSE_RUNTIME_PATH: where the image runs PulseAudio (/defaults/native), the sound of
 // the desktop and the microphone Selkies forwards; without it Chromium looks in XDG_RUNTIME_DIR/pulse and finds none
 const BROWSER_ENV = ["TZ", "LANG", "LANGUAGE", "LC_ALL", "PULSE_RUNTIME_PATH"];
-const AGENT_ENV = ["TZ", "VAPID_SUBJECT", "NTFY_ENABLED", "NTFY_URL", "NTFY_TOPIC"];
+const AGENT_ENV = ["TZ", "VAPID_SUBJECT", "NTFY_ENABLED", "NTFY_URL", "NTFY_TOPIC", "LIGHT_POLL"];
 
 type SupervisorConfig = { socket: string; accounts: AccountsConfig };
 
@@ -38,6 +39,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       gid: e.PGID,
       chromium: e.CHROMIUM,
       agentScript: e.AGENT_SCRIPT,
+      lightScript: e.LIGHT_SCRIPT,
       node: process.execPath,
       cdpBasePort: 9221,
       // Selkies of the image listens there, behind its nginx (/etc/nginx/sites-available/default)

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import http from "node:http";
 import { AccountError, type Accounts } from "./accounts";
 
-export type AccountControl = Pick<Accounts, "start" | "stop" | "wipe" | "show" | "status">;
+export type AccountControl = Pick<Accounts, "start" | "light" | "stop" | "wipe" | "show" | "status">;
 
 type Options = {
   // the desktop session is up: a browser started before it would find no display
@@ -12,10 +12,10 @@ type Options = {
 
 type Reply = { status: number; body?: unknown };
 
-const ACTION = /^\/accounts\/([^/]+)\/(start|stop|wipe|show)$/;
+const ACTION = /^\/accounts\/([^/]+)\/(start|light|stop|wipe|show)$/;
 
 // Control API for the web app, HTTP on a unix socket that only root opens:
-//   POST /accounts/N/start | stop | wipe | show        GET /accounts
+//   POST /accounts/N/start | light | stop | wipe | show        GET /accounts
 export function controlServer(accounts: AccountControl, { desktop, log }: Options): http.Server {
   async function handle(method: string, url: string): Promise<Reply> {
     const path = url.split("?")[0];
@@ -28,6 +28,9 @@ export function controlServer(accounts: AccountControl, { desktop, log }: Option
       case "start":
         await desktop;
         await accounts.start(n);
+        return { status: 204 };
+      case "light":
+        await accounts.light(n);
         return { status: 204 };
       case "stop":
         await accounts.stop(n);

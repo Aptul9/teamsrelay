@@ -30,4 +30,7 @@ export type Light = {
   error: string;
   signedOut: boolean;
   health: AgentHealth | null;
+  // when the process started (ms), and whether it read the feed once (src/agent/light/loop.ts)
+  startedAt: number;
+  feedRead: boolean;
 };

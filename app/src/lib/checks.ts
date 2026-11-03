@@ -1,9 +1,10 @@
 import { setTimeout as wait } from "node:timers/promises";
 import type Database from "better-sqlite3";
 import { SIGN_IN_TRY_AFTER, SIGN_IN_TRY_WAIT } from "@/shared/sign-in";
-import { STATE, Watch } from "@/shared/slot-db/state";
-import { beginCheck, endCheck, listSlots, nextCheck, slotRow, type CheckResult } from "./appdb";
+import { LightSignIn, parseState, STATE, Watch } from "@/shared/slot-db/state";
+import { beginCheck, endCheck, endRefresh, listSlots, nextCheck, slotRow, type CheckResult } from "./appdb";
 import type { ControlClient } from "./control";
+import { runDueRefreshes } from "./light";
 import { exclusive, slotDown, slotUp } from "./slots";
 import { withSlot, withSlotOr } from "./slotdb";
 
@@ -22,9 +23,11 @@ export type SlotPort = {
   enqueue(n: number): number;
   // pending, done or failed; null for an unknown command
   commandStatus(n: number, id: number): string | null;
+  // the sign-in of a light account, null before its first (src/lib/light.ts)
+  lightSignIn(n: number): LightSignIn | null;
 };
 
-type CheckDeps = {
+export type CheckDeps = {
   ctl: ControlClient;
   db: Database.Database;
   slot: SlotPort;
@@ -164,7 +167,8 @@ export async function runDueChecks(d: CheckDeps) {
   }
 }
 
-// The loop of the web app: the checks due, every `everyMs`
+// The loop of the web app: the checks due, then the browser runs of the light accounts due (src/lib/light.ts), every
+// `everyMs`: one browser at a time for both
 export function runChecks(d: CheckDeps, everyMs = 10_000) {
   let busy = false;
   const tick = async () => {
@@ -172,6 +176,7 @@ export function runChecks(d: CheckDeps, everyMs = 10_000) {
     busy = true;
     try {
       await runDueChecks(d);
+      await runDueRefreshes(d);
     } catch (e) {
       console.error(`checks: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -183,10 +188,11 @@ export function runChecks(d: CheckDeps, everyMs = 10_000) {
 }
 
 // At boot: the browser of a checked account runs only during a check, and no check runs yet. One cut by a restart of
-// the web app left it running.
+// the web app left it running. So does a sign-in run of a light account: its light agent takes over (keepSlotsUp).
 export function settleChecks(ctl: ControlClient, db: Database.Database): Promise<void> {
   return exclusive(async () => {
     for (const s of listSlots(db)) {
+      if (s.light && s.refreshing) endRefresh(db, s.slot, { now: 0, result: null });
       if (!s.check_every || s.stopped) continue;
       await slotDown(ctl, s.slot).catch(report(s.slot));
       if (s.checking) endCheck(db, s.slot, { now: 0, result: null });
@@ -214,5 +220,14 @@ export function slotPort(): SlotPort {
       }),
     enqueue: (n) => withSlot(n, (r) => r.enqueue("check")),
     commandStatus: (n, id) => withSlotOr(n, (r) => r.commandStatus(id)?.status ?? null, null),
+    lightSignIn: (n) =>
+      withSlotOr(
+        n,
+        (r) => {
+          const raw = r.state<unknown>(STATE.lightToken, null);
+          return raw === null ? null : parseState(LightSignIn, JSON.stringify(raw));
+        },
+        null,
+      ),
   };
 }

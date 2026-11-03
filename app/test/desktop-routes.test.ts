@@ -29,6 +29,7 @@ beforeEach(() => {
   showFails = false;
   vi.mocked(controlClient).mockReturnValue({
     start: async () => undefined,
+    light: async () => undefined,
     stop: async () => undefined,
     wipe: async () => undefined,
     show: async (n) => {

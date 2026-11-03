@@ -53,6 +53,8 @@ async function main() {
     error: "",
     signedOut: false,
     health: null,
+    startedAt: Date.now(),
+    feedRead: false,
   };
   log.info("light", "start", { slot: config.slot, poll: config.lightPoll, push: !!vapid, fcm: !!sa, signIn: !!token.stored() });
   await runLight(l);

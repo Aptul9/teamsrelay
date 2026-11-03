@@ -1,6 +1,23 @@
 # Light accounts: plan
 
-Planned 2026-11-03. Decision and spike evidence: vault `02_Areas/Decisions/2026-11-03-teamsrelay-light-accounts.md`.
+Planned and built 2026-11-03. Decision and spike evidence: vault `02_Areas/Decisions/2026-11-03-teamsrelay-light-accounts.md`.
+
+## Built
+
+| Piece | Where |
+|---|---|
+| Token renewal, rolled refresh token kept with its expiry | `src/agent/light/token.ts` |
+| Sign-in capture by the browser agent of a light account | `src/agent/jobs/light-token.ts`, page script `src/agent/teams/scripts/tokens.ts` |
+| Teams services: aggregator chat list, people (`fetchShortProfile`, `8:orgid:` mris only), presence, Activity feed (`48:notifications`), self chat (`48:notes`) | `src/agent/light/api.ts` |
+| Chat list as the page list gives it (names, previews, times, presence) | `src/agent/light/list.ts` |
+| Activity feed with the Teams activity ids (the page feed's ids too) | `src/agent/light/activity.ts` |
+| Commands: open, send, reply, edit, delete, react, image, members, @mentions | `src/agent/light/commands.ts` |
+| Loop, health row, entry `dist/light.cjs` | `src/agent/light/loop.ts`, `src/agent/light/main.ts` |
+| Supervisor process `light-N`, `POST /accounts/N/light` | `src/supervisor/accounts.ts`, `src/supervisor/server.ts` |
+| Mode, sign-in run once the sign-in ended or was refused | `src/lib/light.ts`, `src/lib/slots.ts`, `src/lib/checks.ts` |
+| Settings: "Always on, no browser" | `src/components/Settings.tsx` |
+
+Not on a light account: calls (no ring, no answer), undo of a delete, downloads of files. The web app refuses those commands with the reason.
 
 ## Goal
 

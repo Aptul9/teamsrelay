@@ -6,7 +6,10 @@ import { pushMentions } from "../jobs/mentions";
 import { pushMissedCalls } from "../jobs/missed-calls";
 import { watchProblem } from "../logic/health";
 import { errorText, log } from "../log";
+import { z } from "zod";
+import { union } from "../logic/check-seen";
 import { lightFeed } from "./activity";
+import type { Notification } from "./api";
 import { lightHandlers, markRead, runLightCommands, saveChat } from "./commands";
 import type { Light } from "./context";
 import { lightList, listedChats, othersOf, presenceWord, unnamedPeople } from "./list";
@@ -102,11 +105,27 @@ async function notifyNew(l: Light, rows: Parameters<Light["detector"]["scan"]>[0
   if (l.detector.takeMuted().length) l.due.activity = 0;
 }
 
+// The service gives more of the feed than the page shows (prod, 2026-11-03: 40 items back three weeks, 29 in the page):
+// at its first read the light agent takes the items older than this as told, so a change of mode pushes no call or
+// mention of weeks ago; newer ones may have come while the account changed mode, and push
+const TOLD_BEFORE_START_MS = 10 * 60_000;
+
+function tellOld(l: Light, items: readonly Notification[], since: number) {
+  const old = items.filter((n) => (Date.parse(n.activity.activityTimestamp ?? "") || 0) < since).map((n) => String(n.activity.activityId));
+  for (const key of [STATE.callsTold, STATE.mentionsTold]) {
+    const raw = l.store.getState(key);
+    const told = raw ? parseState(z.array(z.string()).catch([]), raw, []) : [];
+    l.store.setState(key, JSON.stringify(union(told, old)));
+  }
+}
+
 // The Activity feed: saved, its missed calls and the mentions the list does not tell pushed (src/agent/jobs/activity.ts)
 export async function readFeed(l: Light): Promise<boolean> {
   if (!l.me.oid) return false;
   try {
     const items = await l.api.notifications();
+    if (!l.feedRead) tellOld(l, items, l.startedAt - TOLD_BEFORE_START_MS);
+    l.feedRead = true;
     const feed = lightFeed(items, (id) => l.list.names.get(id) ?? "", new Date());
     l.mentioned = new Set(items.filter((n) => !n.read && /mention/i.test(n.activity.activityType ?? "") && n.activity.sourceThreadId).map((n) => n.activity.sourceThreadId!));
     if (feed.length) l.store.saveActivity(feed);

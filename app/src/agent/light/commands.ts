@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { CALL_COMMANDS, ImageArgs, MentionArgs, MessageArgs, parseArgs, ReactArgs, TextArgs, type CommandType, type OpenReason, type OpenResult } from "@/shared/slot-db/commands";
+import { ImageArgs, LIGHT_UNSUPPORTED, MentionArgs, MessageArgs, parseArgs, ReactArgs, TextArgs, type CommandType, type OpenReason, type OpenResult } from "@/shared/slot-db/commands";
 import { IMAGE_TYPES, MEDIA_NAME, type ImageExt } from "@/shared/slot-db/rows";
 import { cmdResultKey, membersKey, STATE, type Members } from "@/shared/slot-db/state";
 import type { Outcome } from "../commands";
@@ -24,10 +24,6 @@ import type { Light } from "./context";
 import { SignedOut } from "./token";
 
 type Handler = (l: Light, cmd: PendingCommand) => Promise<Outcome>;
-
-// The commands a light account cannot run: they need the Teams page (a deleted message brought back, a file downloaded
-// with the session of the page) or its call (the web app refuses them first: src/lib/commands.ts)
-export const LIGHT_UNSUPPORTED: readonly CommandType[] = ["undodelete", "download", "call", ...CALL_COMMANDS];
 
 // The messages of a chat through chatsvc, the pictures and images saved before kept for the same messages
 export async function saveChat(l: Light, chat: string): Promise<boolean> {

@@ -671,14 +671,15 @@ export async function sendTextMessage(auth: TeamsAuth, convId: string, text: str
 }
 
 // A message with people tagged: text parts as paragraphs of text, each mention as the Mention span Teams writes, its
-// person named in properties.mentions by mri. A mention whose person is unknown goes as plain "@Name".
+// person named in properties.mentions by mri, as Teams stores a mention it received (prod, 2026-11-03). A mention whose
+// person is unknown goes as plain "@Name".
 export async function sendMentionsMessage(
   auth: TeamsAuth,
   convId: string,
   parts: readonly ({ text: string } | { mention: string })[],
   mriOf: (name: string) => string | undefined,
 ): Promise<{ ok: boolean; id?: string }> {
-  const mentions: { "@type": string; itemid: string; mri: string; mentionType: string; displayName: string }[] = [];
+  const mentions: { itemid: number; mri: string; mentionType: string; displayName: string }[] = [];
   let html = "";
   let plain = "";
   for (const p of parts) {
@@ -693,9 +694,9 @@ export async function sendMentionsMessage(
       plain += `@${p.mention}`;
       continue;
     }
-    const itemid = String(mentions.length);
-    mentions.push({ "@type": "http://schema.skype.com/Mention", itemid, mri, mentionType: "person", displayName: p.mention });
-    html += `<span itemscope="" itemtype="http://schema.skype.com/Mention" itemid="${itemid}">${escapeHtml(p.mention)}</span>`;
+    const itemid = mentions.length;
+    mentions.push({ itemid, mri, mentionType: "person", displayName: p.mention });
+    html += `<span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="${itemid}">${escapeHtml(p.mention)}</span>`;
     plain += p.mention;
   }
   if (!plain.trim()) return { ok: false };

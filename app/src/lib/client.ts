@@ -283,15 +283,19 @@ export const clock = (ts: number) => timeLabel(ts * 1000);
 // The interval of the checks of an account: "1 h", "2 h", "4 h"
 export const hours = (seconds: number) => `${Math.round(seconds / 3600)} h`;
 
-// The one status of an account, as Settings chooses it: stopped, always on (0) or checked every N seconds. A stopped
-// account keeps its interval, the mode it resumes when started again.
-export const accountStatus = (a: Pick<Account, "stopped" | "checkEvery">): "stopped" | number => (a.stopped ? "stopped" : a.checkEvery);
+// The one status of an account, as Settings chooses it: stopped, always on (0), checked every N seconds or light (no
+// browser of its own). A stopped account keeps its mode, the one it resumes when started again.
+export const accountStatus = (a: Pick<Account, "stopped" | "checkEvery"> & Partial<Pick<Account, "light">>): "stopped" | "light" | number =>
+  a.stopped ? "stopped" : a.light ? "light" : a.checkEvery;
 
 // An account checked every N hours, between two checks: no browser, no agent, the chats and numbers of its last check
 export const idleChecked = (a: Pick<Account, "checkEvery" | "checking" | "stopped">) => a.checkEvery > 0 && !a.checking && !a.stopped;
 
+// A light account whose browser does not run now
+export const noBrowser = (a: Partial<Pick<Account, "light" | "refreshing">>) => !!a.light && !a.refreshing;
+
 // The accounts with a window on the remote desktop: not on another computer, and with a browser running
-export const onDesktop = (accounts: Account[]) => accounts.filter((a) => !a.relay && !a.stopped && !idleChecked(a));
+export const onDesktop = (accounts: Account[]) => accounts.filter((a) => !a.relay && !a.stopped && !idleChecked(a) && !noBrowser(a));
 
 // The one desktop of the browsers container, where every account has its window
 export const DEFAULT_DESKTOP_URL = "/api/desktop/{n}";
@@ -332,10 +336,11 @@ export const signedOut = (a: Partial<Pick<Account, "stopped" | "teams">>) => !a.
 
 // The status of an account on its row of the account menu: stopped, signed out, active (always on), or when the next
 // check updates it. A check asked from the app has no time yet; a due one waits for the check of another account.
-export function statusText(a: Pick<Account, "stopped" | "checkEvery" | "checking" | "nextCheck"> & Partial<Pick<Account, "relay" | "teams">>, now = Date.now() / 1000): string {
+export function statusText(a: Pick<Account, "stopped" | "checkEvery" | "checking" | "nextCheck"> & Partial<Pick<Account, "relay" | "teams" | "light" | "refreshing">>, now = Date.now() / 1000): string {
   if (signedOut(a)) return "Signed out";
   if (a.relay) return relayOffline(a) ? "Not connected" : "Active";
   if (a.stopped) return "Stopped";
+  if (a.light) return a.refreshing ? "Signing in again" : "Active, no browser";
   if (!a.checkEvery) return "Active";
   if (a.checking) return "Updating now";
   return a.nextCheck > now ? `Updating in ${untilText(a.nextCheck - now)}` : "Updating soon";

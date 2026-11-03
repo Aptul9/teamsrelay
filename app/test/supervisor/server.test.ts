@@ -38,6 +38,7 @@ function accounts() {
       gid: 1000,
       chromium: "/usr/bin/chromium",
       agentScript: "/app/agent.cjs",
+      lightScript: "/app/light.cjs",
       node: "node",
       cdpBasePort: 9221,
       desktopPort: 8082,
@@ -129,6 +130,7 @@ describe("control server", () => {
       start: async () => {
         throw new Error("spawn failed");
       },
+      light: async () => undefined,
       stop: async () => undefined,
       wipe: async () => undefined,
       show: async () => false,

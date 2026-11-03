@@ -48,6 +48,10 @@ function control(): ControlClient {
       const f = fakes.get(n)!;
       if (!f.up) Object.assign(f, { up: true, since: secs() });
     },
+    light: async (n) => {
+      calls.push(`light ${n}@${secs() - T0}`);
+      fakes.get(n)!.up = false;
+    },
     stop: async (n) => {
       calls.push(`stop ${n}@${secs() - T0}`);
       fakes.get(n)!.up = false;
@@ -79,6 +83,7 @@ const port: SlotPort = {
     const f = fakes.get(n)!;
     return secs() - (f.commands.get(id) ?? secs()) >= f.checkTakes ? "done" : "pending";
   },
+  lightSignIn: () => null,
 };
 
 const deps = () => ({ ctl: control(), db, slot: port, now: () => clock, sleep });

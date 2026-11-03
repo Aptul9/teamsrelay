@@ -40,11 +40,14 @@ export type AccountSummary = {
   relaySeen: number;
   // its relay sends the sound of a call answered or placed from the app to the app (a relay of before does not)
   callAudio: boolean;
+  // a light account, no browser of its own (src/lib/light.ts); refreshing: its browser runs now to sign it in again
+  light: boolean;
+  refreshing: boolean;
 };
 
 // The grace for a browser still starting runs from the last start, not from the day the account was added: a start
-// from the app or the start of a check
-export const upSince = (s: Slot) => Math.max(s.added, s.started, s.checking);
+// from the app, the start of a check or of the sign-in run of a light account
+export const upSince = (s: Slot) => Math.max(s.added, s.started, s.checking, s.refreshing);
 
 // A stopped account is grey, whatever its agent wrote before it stopped; so is an account checked every N hours
 // between two checks, whose browser does not run
@@ -88,8 +91,9 @@ export function accountSummary(s: Slot): AccountSummary {
     missedCalls: d?.missedCalls ?? null,
     activityIds: d?.activityIds ?? null,
     added: s.added,
-    // the Teams window of an account on another computer is there, not in the remote desktop
-    desktop: s.relay ? "" : desktopUrlOf(s.slot),
+    // the Teams window of an account on another computer is there, not in the remote desktop; a light account has one
+    // only while its browser runs
+    desktop: s.relay || (s.light && !s.refreshing) ? "" : desktopUrlOf(s.slot),
     checkEvery: s.check_every,
     checked: s.checked,
     checkResult: s.check_result,
@@ -99,6 +103,8 @@ export function accountSummary(s: Slot): AccountSummary {
     host: d?.link.host ?? "",
     relaySeen: d?.link.seen ?? 0,
     callAudio: !!s.relay && !!d?.callAudio,
+    light: !!s.light,
+    refreshing: !!s.refreshing,
   };
 }
 

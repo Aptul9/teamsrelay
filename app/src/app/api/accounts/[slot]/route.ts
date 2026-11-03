@@ -3,16 +3,22 @@ import { config } from "@/lib/config";
 import { controlClient } from "@/lib/control";
 import { body, HttpError, route } from "@/lib/http";
 import { requireAccount } from "@/lib/session";
-import { removeAccount, setAccountRunning, setCheckMode } from "@/lib/slots";
+import { removeAccount, setAccountRunning, setCheckMode, setLightMode } from "@/lib/slots";
 
 type Ctx = { params: Promise<{ slot: string }> };
 
 // Switches the account off ({running: false}) or on again. Stopped, it keeps its Microsoft session and
 // data: no sync, no notifications, no commands until it runs again. {checkEvery}: seconds between two checks of an
-// account whose browser runs only while it is checked (3600, 7200, 14400), or 0 for always on.
+// account whose browser runs only while it is checked (3600, 7200, 14400), or 0 for always on. {light: true}: no
+// browser of its own, its browser runs only to sign it in again (src/lib/light.ts); another mode ends it.
 export const PATCH = route<Ctx>(async (req, { params }) => {
   const n = await requireAccount(req, (await params).slot);
-  const { running, checkEvery } = await body(req);
+  const { running, checkEvery, light } = await body(req);
+  if (light !== undefined) {
+    if (light !== true) throw new HttpError(400, "light must be true: choose another mode to end it");
+    await setLightMode(n, controlClient(), appDb());
+    return Response.json({ ok: true, light });
+  }
   if (checkEvery !== undefined) {
     if (typeof checkEvery !== "number") throw new HttpError(400, "checkEvery must be a number of seconds");
     await setCheckMode(n, checkEvery, controlClient(), appDb());

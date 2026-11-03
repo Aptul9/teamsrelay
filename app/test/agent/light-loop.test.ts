@@ -26,7 +26,13 @@ function setup(chats: () => CsaChat[], notifications: () => Notification[] = () 
   const dir = tempDir();
   const store = SlotStore.open(path.join(dir, "messages.db"));
   store.setState(STATE.me, JSON.stringify({ name: "Me Myself", email: "", tenant: "", av: "", logo: "" }));
-  const notifier = { message: vi.fn(async () => undefined), alert: vi.fn(async () => 1), call: vi.fn(), missedCall: vi.fn(), deviceCount: () => 1 };
+  const notifier = {
+    message: vi.fn(async (title: string, body: string, chat?: string) => void [title, body, chat]),
+    alert: vi.fn(async (title: string, body: string) => (void [title, body], 1)),
+    call: vi.fn(),
+    missedCall: vi.fn(),
+    deviceCount: () => 1,
+  };
   const api = {
     chats: vi.fn(async () => chats()),
     people: vi.fn(async (mris: string[]) => new Map(mris.map((m) => [m, { displayName: `Person ${m.split(":").pop()}`, givenName: m.split(":").pop() ?? "" }]))),
@@ -51,6 +57,8 @@ function setup(chats: () => CsaChat[], notifications: () => Notification[] = () 
     error: "",
     signedOut: false,
     health: null,
+    startedAt: Date.now(),
+    feedRead: false,
   };
   return { l, store, notifier, api };
 }
@@ -129,8 +137,8 @@ describe("light agent", () => {
     await runLightCommands(l, lightHandlers({ list: async () => true, activity: async () => true }));
     expect(store.commandStatus(id)).toBe("done");
     const body = JSON.parse(String(fetch.mock.calls.find(([, init]) => init?.method === "POST")?.[1]?.body));
-    expect(body.content).toBe('<p>hi <span itemscope="" itemtype="http://schema.skype.com/Mention" itemid="0">Person anna</span> ok?</p>');
-    expect(JSON.parse(body.properties.mentions)).toEqual([{ "@type": "http://schema.skype.com/Mention", itemid: "0", mri: mri("anna"), mentionType: "person", displayName: "Person anna" }]);
+    expect(body.content).toBe('<p>hi <span itemtype="http://schema.skype.com/Mention" itemscope="" itemid="0">Person anna</span> ok?</p>');
+    expect(JSON.parse(body.properties.mentions)).toEqual([{ itemid: 0, mri: mri("anna"), mentionType: "person", displayName: "Person anna" }]);
   });
 
   it("refuses what needs the Teams page", async () => {
@@ -151,6 +159,14 @@ describe("light agent", () => {
     expect(notifier.alert).toHaveBeenCalledTimes(1);
     expect(notifier.alert.mock.calls[0]?.[0]).toBe("Missed call from New Caller");
     expect(store.missedCalls().map((c) => c.id)).toEqual(["2", "1"]);
+  });
+
+  it("at its start pushes the calls that came while the account changed mode, not those of weeks ago the page never showed", async () => {
+    const call = (id: number, minutesAgo: number) => ({ activity: { activityId: id, activityType: "call", activitySubtype: "missedCall", activityTimestamp: iso(minutesAgo), sourceUserImDisplayName: `Caller ${id}` }, read: true });
+    const { l, store, notifier } = setup(() => [], () => [call(3, 2), call(2, 30 * 24 * 60), call(1, 60)]);
+    store.setState(STATE.callsTold, JSON.stringify(["1"]));
+    await readFeed(l);
+    expect(notifier.alert.mock.calls.map((c) => c[0])).toEqual(["Missed call from Caller 3"]);
   });
 
   it("tells the web app when Microsoft refused the sign-in", async () => {
