@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Avatar } from "./Avatar";
 import { PageHeader } from "./PageHeader";
+import { StatusPagesCard } from "./StatusPagesCard";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -417,6 +418,10 @@ export function AdminPanel({ selfId }: { selfId: string }) {
             </>
           )}
         </Card>
+
+        <div className="pt-4">
+          <StatusPagesCard />
+        </div>
       </main>
 
       <NewUserDialog open={creating} onOpenChange={setCreating} onCreated={() => void load()} />

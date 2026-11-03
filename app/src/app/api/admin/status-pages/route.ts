@@ -42,7 +42,7 @@ export const GET = route(async (req) => {
     const me = identityOf(s.slot)?.me;
     return { slot: s.slot, label: me?.name ? `${me.name}${me.tenant ? ` (${me.tenant})` : ""}` : `Account ${s.slot}`, light: !!s.light };
   });
-  return Response.json({ pages, accounts });
+  return Response.json({ pages, accounts, zone: serverZone() });
 });
 
 export const POST = route(async (req) => {
