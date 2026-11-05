@@ -65,6 +65,49 @@ describe("images of messages", () => {
     expect(await media.image(p.page, "d4", "blob:https://teams.cloud.microsoft/4")).toBe("d4.png");
     expect(p.srcs).toEqual([original, "blob:https://teams.cloud.microsoft/4"]);
   });
+
+  it("fetches an AMS image with the chatsvc token itself, not through the page", async () => {
+    const dir = tempDir();
+    const asked: { url: string; auth: string | null }[] = [];
+    const get = (async (url: string, init?: RequestInit) => {
+      asked.push({ url, auth: new Headers(init?.headers).get("Authorization") });
+      return new Response(PNG, { headers: { "Content-Type": "image/png" } });
+    }) as typeof fetch;
+    const p = page([]);
+    const ams = "https://eu-api.asm.skype.com/v1/objects/0-weu-d2-o1/views/imgo";
+    expect(await new Media(dir, tempDir(), get).image(p.page, "f6", ams, "tok")).toBe("f6.png");
+    expect(await new Media(tempDir(), tempDir(), get).image(null, "g7", ams, "tok")).toBe("g7.png");
+    expect(asked).toEqual([
+      { url: ams, auth: "Bearer tok" },
+      { url: ams, auth: "Bearer tok" },
+    ]);
+    expect(p.srcs).toEqual([]);
+    expect(fs.readFileSync(path.join(dir, "f6.png"))).toEqual(PNG);
+  });
+
+  it("keeps the page for an image of another host, and without a token", async () => {
+    const get = (async () => {
+      throw new Error("no fetch expected");
+    }) as typeof fetch;
+    const p = page([
+      { type: "image/png", data: PNG },
+      { type: "image/png", data: PNG },
+    ]);
+    const media = new Media(tempDir(), tempDir(), get);
+    expect(await media.image(p.page, "h8", "blob:https://teams.cloud.microsoft/8", "tok")).toBe("h8.png");
+    expect(await media.image(p.page, "i9", "https://eu-api.asm.skype.com/v1/objects/o9/views/imgo")).toBe("i9.png");
+    expect(p.srcs).toHaveLength(2);
+  });
+
+  it("refused by AMS: no file, the address not asked again", async () => {
+    let calls = 0;
+    const get = (async () => (calls++, new Response(null, { status: 401 }))) as typeof fetch;
+    const media = new Media(tempDir(), tempDir(), get);
+    const ams = "https://eu-api.asm.skype.com/v1/objects/o10/views/imgo";
+    expect(await media.image(null, "j10", ams, "tok")).toBeNull();
+    expect(await media.image(null, "j10", ams, "tok")).toBeNull();
+    expect(calls).toBe(1);
+  });
 });
 
 describe("images saved with the conversation", () => {

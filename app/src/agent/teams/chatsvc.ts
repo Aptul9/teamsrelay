@@ -251,6 +251,12 @@ export async function syncIndexedDbMappings(page: Page, force = false): Promise<
   }
 }
 
+// The conversation of a chat name already known, without asking Teams; null otherwise
+export function cachedConversationId(chat: string): string | null {
+  const hit = convCache.get(chat) ?? convCache.get(chat.trim().toLowerCase());
+  return hit && Date.now() < hit.expiresAt ? hit.id : null;
+}
+
 export async function resolveConversationId(auth: TeamsAuth, page: Page, chat: string, mid?: string): Promise<string | null> {
   // 1. Direct ID or self-chat
   if (chat.startsWith("19:") || chat.startsWith("48:")) return chat;

@@ -138,7 +138,7 @@ async function saveThroughApi(a: Agent, chat: string): Promise<boolean> {
             continue;
           }
           const src = im.url || "";
-          const f = src ? await a.media.image(page, imageKey(chat, m.mid, i), src) : null;
+          const f = src ? await a.media.image(page, imageKey(chat, m.mid, i), src, auth.token) : null;
           if (f) resolved.push({ f, w: im.w ?? 0, h: im.h ?? 0 });
           else if (src.startsWith("https://")) resolved.push({ url: src, w: im.w ?? 0, h: im.h ?? 0 });
         }

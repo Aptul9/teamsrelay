@@ -7,6 +7,7 @@ import type { Light } from "@/agent/light/context";
 import { readFeed, readList } from "@/agent/light/loop";
 import { LightToken, SignedOut } from "@/agent/light/token";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
+import { Media } from "@/agent/media";
 import { SlotStore } from "@/agent/store/slot-store";
 import { captureLightToken, TEAMS_WEB_CLIENT, teamsRefreshToken } from "@/agent/jobs/light-token";
 import type { Agent } from "@/agent/context";
@@ -46,6 +47,7 @@ function setup(chats: () => CsaChat[], notifications: () => Notification[] = () 
     config: { lightPoll: 60, uploadsDir: path.join(dir, "uploads") } as Light["config"],
     store,
     notifier: notifier as unknown as Light["notifier"],
+    media: new Media(path.join(dir, "media"), path.join(dir, "files"), (url, init) => fetch(url, init)),
     detector: new NewMessageDetector(),
     api: api as unknown as LightApi,
     token: new LightToken(path.join(dir, "light-token.json")),
@@ -62,7 +64,7 @@ function setup(chats: () => CsaChat[], notifications: () => Notification[] = () 
     startedAt: Date.now(),
     feedRead: false,
   };
-  return { l, store, notifier, api };
+  return { l, store, notifier, api, dir };
 }
 
 const chatsvc = (messages: unknown[]) =>
@@ -122,6 +124,33 @@ describe("light agent", () => {
     expect(store.messages("Person anna").map((m) => m.text)).toEqual(["hello"]);
     expect(store.getState(STATE.activeChat)).toBe("Person anna");
     await vi.waitFor(() => expect(fetch.mock.calls.some(([u]) => String(u).includes("consumptionhorizon"))).toBe(true));
+  });
+
+  it("saves the image of a message with the chatsvc token, once", async () => {
+    const { l, store, dir } = setup(() => [oneToOne("19:anna@unq.gbl.spaces", "anna", "hello", 1)]);
+    await readList(l);
+    const ams = "https://eu-api.asm.skype.com/v1/objects/0-weu-d2-abc/views/imgo";
+    const jpeg = Buffer.concat([Buffer.from("ffd8ffe0", "hex"), Buffer.alloc(2000, 1)]);
+    const messages = [{ id: "1793690000000", messagetype: "RichText/Html", content: `<p><img src="${ams}" width="833" height="250" itemtype="http://schema.skype.com/AMSImage"></p>`, imdisplayname: "Person anna", from: `https://x/contacts/${mri("anna")}` }];
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === ams) {
+        const auth = new Headers(init?.headers).get("Authorization");
+        return auth === "Bearer t" ? new Response(jpeg, { headers: { "Content-Type": "image/jpeg" } }) : new Response(null, { status: 401 });
+      }
+      return chatsvc(messages)(url, init);
+    });
+    vi.stubGlobal("fetch", fetch);
+    for (let i = 0; i < 2; i++) {
+      const id = store.enqueue("open", "Person anna");
+      await runLightCommands(l, lightHandlers({ list: async () => true, activity: async () => true }));
+      expect(store.commandStatus(id)).toBe("done");
+    }
+    const [im] = store.messages("Person anna")[0].images ?? [];
+    expect(im).toMatchObject({ w: 833, h: 250 });
+    expect(im.f).toMatch(/^[0-9a-f]{16}\.jpg$/);
+    expect(im.url).toBeUndefined();
+    expect(fs.readFileSync(path.join(dir, "media", im.f!))).toEqual(jpeg);
+    expect(fetch.mock.calls.filter(([u]) => u === ams)).toHaveLength(1);
   });
 
   it("fails an open of a chat the list does not have, with its reason", async () => {

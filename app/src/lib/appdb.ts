@@ -185,9 +185,17 @@ export function beginRefresh(db: Database.Database, slot: number, now: number) {
   db.prepare("UPDATE teams_accounts SET refreshing=? WHERE slot=?").run(now, slot);
 }
 
-// result null: cut short, nothing recorded
+// A sign-in run of a light account asked by its owner, to sign in in the remote desktop: due at once, and it waits for
+// the sign-in (src/lib/light.ts); the outcome of the run replaces the ask
+export const REFRESH_ASKED = "asked";
+export function askRefresh(db: Database.Database, slot: number) {
+  db.prepare("UPDATE teams_accounts SET refresh_result=? WHERE slot=?").run(REFRESH_ASKED, slot);
+}
+
+// result null: cut short, nothing recorded but the ask forgotten
 export function endRefresh(db: Database.Database, slot: number, { now, result }: { now: number; result: CheckResult | null }) {
-  if (!result) db.prepare("UPDATE teams_accounts SET refreshing=0 WHERE slot=?").run(slot);
+  if (!result)
+    db.prepare("UPDATE teams_accounts SET refreshing=0, refresh_result=CASE WHEN refresh_result=? THEN '' ELSE refresh_result END WHERE slot=?").run(REFRESH_ASKED, slot);
   else db.prepare("UPDATE teams_accounts SET refreshing=0, refreshed=?, refresh_result=? WHERE slot=?").run(now, result, slot);
 }
 

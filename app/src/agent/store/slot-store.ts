@@ -228,6 +228,12 @@ export class SlotStore {
     })();
   }
 
+  // Picture of each item of the Activity feed that has one, by id
+  activityAvatars(): Map<string, string> {
+    const rows = this.db.prepare("SELECT id, av FROM activity WHERE av <> ''").all() as { id: string; av: string }[];
+    return new Map(rows.map((r) => [r.id, r.av]));
+  }
+
   // Ids of every item of the Activity feed, in feed order (newest first)
   activityIds(): string[] {
     return this.db.prepare("SELECT id FROM activity ORDER BY pos").pluck().all() as string[];

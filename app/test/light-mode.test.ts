@@ -1,8 +1,8 @@
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
-import { claimSlot, listSlots, migrateAppSchema, openAppDb, setCheckEvery, setLight, setSlotStopped, slotRow, type Slot } from "@/lib/appdb";
-import { SIGNED_OUT, type SlotPort } from "@/lib/checks";
+import { askRefresh, claimSlot, endRefresh, listSlots, migrateAppSchema, openAppDb, setCheckEvery, setLight, setSlotStopped, slotRow, type Slot } from "@/lib/appdb";
+import { SIGN_IN_WAIT, SIGNED_OUT, type SlotPort } from "@/lib/checks";
 import type { ControlClient } from "@/lib/control";
 import { MIN_LIFE, REFRESH_WAIT, refreshDue, runRefresh } from "@/lib/light";
 import { accountStatus, statusText } from "@/lib/client";
@@ -77,6 +77,15 @@ describe("when a light account needs its browser", () => {
     expect(refreshDue(row({ refreshed: T0 - 3600, refresh_result: "failed" }), null, T0)).toBe(true);
     expect(refreshDue(row({ refreshed: T0 - 60, refresh_result: "ok" }), { at: 1, expiresOn: 2, refused: true }, T0)).toBe(false);
   });
+
+  it("at once when its owner asked to sign in, whatever its sign-in and the last run", () => {
+    const n = slot();
+    db.prepare("UPDATE teams_accounts SET refreshed=?, refresh_result='login' WHERE slot=?").run(T0 - 60, n);
+    askRefresh(db, n);
+    expect(refreshDue(slotRow(db, n)!, { at: T0 - 100, expiresOn: T0 + 3600, refused: false }, T0)).toBe(true);
+    expect(refreshDue({ ...slotRow(db, n)!, refreshing: T0 - 10 }, null, T0)).toBe(false);
+    expect(refreshDue({ ...slotRow(db, n)!, stopped: 1 }, null, T0)).toBe(false);
+  });
 });
 
 describe("sign-in run of a light account", () => {
@@ -115,6 +124,42 @@ describe("sign-in run of a light account", () => {
     expect(calls).toEqual([`start ${m}`, `light ${m}`]);
     expect(slotRow(db, m)).toMatchObject({ refreshing: 0, refresh_result: "failed" });
     expect(secs() - T0).toBeGreaterThanOrEqual(REFRESH_WAIT);
+  });
+
+  it("asked by its owner, waits SIGN_IN_WAIT for the sign-in in the remote desktop while Teams is signed out", async () => {
+    const n = slot();
+    askRefresh(db, n);
+    onSleep = (s) => {
+      health = { ts: s, teams: "login" };
+      if (s >= T0 + SIGNED_OUT + 120) sign = { at: s, expiresOn: s + 86_000, refused: false };
+    };
+    expect(await runRefresh(n, deps())).toBe("ok");
+    expect(slotRow(db, n)).toMatchObject({ refreshing: 0, refresh_result: "ok" });
+
+    const m = slot();
+    askRefresh(db, m);
+    sign = null;
+    onSleep = (s) => void (health = { ts: s, teams: "login" });
+    expect(await runRefresh(m, deps())).toBe("login");
+    expect(slotRow(db, m)!.refresh_result).toBe("login");
+  });
+
+  it("asked while a run goes on, that run waits for the sign-in", async () => {
+    const n = slot();
+    onSleep = (s) => {
+      health = { ts: s, teams: "login" };
+      if (s === T0 + 10) askRefresh(db, n);
+    };
+    const begun = secs();
+    expect(await runRefresh(n, deps())).toBe("login");
+    expect(secs() - begun).toBeGreaterThanOrEqual(SIGN_IN_WAIT);
+  });
+
+  it("cut short, forgets the ask", () => {
+    const n = slot();
+    askRefresh(db, n);
+    endRefresh(db, n, { now: 0, result: null });
+    expect(slotRow(db, n)!.refresh_result).toBe("");
   });
 
   it("leaves an account set to another mode meanwhile as its owner wants it", async () => {

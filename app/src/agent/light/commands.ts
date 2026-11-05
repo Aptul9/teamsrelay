@@ -7,6 +7,7 @@ import type { Outcome } from "../commands";
 import { COMMAND_MAX_AGE } from "../commands";
 import { nowSeconds } from "../context";
 import { markViewing } from "../jobs/conversation";
+import { imageKey } from "../logic/files";
 import { errorText, log } from "../log";
 import type { PendingCommand, SavedMessage } from "../store/slot-store";
 import {
@@ -26,7 +27,8 @@ import { SignedOut } from "./token";
 
 type Handler = (l: Light, cmd: PendingCommand) => Promise<Outcome>;
 
-// The messages of a chat through chatsvc, the pictures and images saved before kept for the same messages
+// The messages of a chat through chatsvc, the pictures and images saved before kept for the same messages; an image not
+// saved yet is fetched with the chatsvc token (the app cannot load its AMS address)
 export async function saveChat(l: Light, chat: string): Promise<boolean> {
   const id = l.list.ids.get(chat);
   if (!id) return false;
@@ -34,13 +36,25 @@ export async function saveChat(l: Light, chat: string): Promise<boolean> {
   const messages = await fetchChatMessages(auth, id, (mids) => l.store.readByCache(mids));
   if (!messages) return false;
   const prev = new Map(l.store.messages(chat).map((m) => [m.mid, m]));
-  const kept: SavedMessage[] = messages.map((m) => {
+  const kept: SavedMessage[] = [];
+  for (const m of messages) {
     const before = prev.get(m.mid);
-    if (!before || !m.extra) return m;
-    const images = m.extra.images?.map((im, i) => (before.images?.[i]?.f ? { ...im, f: before.images[i].f } : im));
-    const status = before.status && /seen/i.test(before.status) ? before.status : m.extra.status;
-    return { ...m, extra: { ...m.extra, ...(images && { images }), ...(before.av && { av: before.av }), status } };
-  });
+    if (!m.extra) {
+      kept.push(m);
+      continue;
+    }
+    let images = m.extra.images;
+    if (images?.length) {
+      const resolved: typeof images = [];
+      for (const [i, im] of images.entries()) {
+        const f = before?.images?.[i]?.f || (im.url ? await l.media.image(null, imageKey(chat, m.mid, i), im.url, auth.token) : null);
+        resolved.push(f ? { f, w: im.w ?? 0, h: im.h ?? 0 } : im);
+      }
+      images = resolved;
+    }
+    const status = before?.status && /seen/i.test(before.status) ? before.status : m.extra.status;
+    kept.push({ ...m, extra: { ...m.extra, ...(images && { images }), ...(before?.av && { av: before.av }), status } });
+  }
   l.store.saveChatMessages(chat, kept);
   return true;
 }

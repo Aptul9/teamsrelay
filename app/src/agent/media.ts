@@ -15,6 +15,8 @@ const LOGO_EVERY = 86_400_000;
 // Where Microsoft keeps the images of the sign-in branding of organizations (aadcdn.msauthimages.net,
 // aadcdn.msftauthimages.net)
 const BRANDING_HOST = /^https:\/\/[a-z0-9-]+\.(msauthimages|msftauthimages)\.net\//;
+// Where chatsvc messages point their images (AMS): eu-api.asm.skype.com...
+const AMS_HOST = /^https:\/\/[a-z0-9-]+\.asm\.skype\.com\//;
 const PNG_MAGIC = Buffer.from("89504e470d0a1a0a", "hex");
 // PNG or JPEG by the first bytes: the formats of a sign-in logo
 const logoExt = (d: Buffer) => (d.subarray(0, 8).equals(PNG_MAGIC) ? "png" : d[0] === 0xff && d[1] === 0xd8 && d[2] === 0xff ? "jpg" : null);
@@ -83,8 +85,9 @@ export class Media {
     return logo ?? saved;
   }
 
-  // File of the image `key` of a message, fetched by the page; null when it cannot be read
-  async image(page: Page, key: string, src: string): Promise<string | null> {
+  // File of the image `key` of a message, fetched by the page, or, for an AMS image and a chatsvc token, by the agent
+  // itself (AMS takes the token, no longer the cookie of the session: prod, 2026-11-05); null when it cannot be read
+  async image(page: Page | null, key: string, src: string, token = ""): Promise<string | null> {
     for (const ext of Object.values(MEDIA_EXT)) {
       const file = path.join(this.mediaDir, `${key}.${ext}`);
       const st = fs.statSync(file, { throwIfNoEntry: false });
@@ -94,9 +97,13 @@ export class Media {
       log.info("media", "placeholder removed", { file: `${key}.${ext}` });
     }
     if (!src || this.failed.has(`${key} ${src}`)) return null;
-    let r: { type: string; data: string } | null = null;
+    let r: { type: string; data: Buffer } | null = null;
     try {
-      r = await page.evaluate(fetchImage, { src, max: MAX_IMAGE });
+      if (token && AMS_HOST.test(src)) r = await this.amsImage(src, token);
+      else if (page) {
+        const got = await page.evaluate(fetchImage, { src, max: MAX_IMAGE });
+        r = got && { type: got.type, data: Buffer.from(got.data, "base64") };
+      }
     } catch (e) {
       log.warn("media", errorText(e), { src: src.slice(0, 60) });
     }
@@ -105,12 +112,19 @@ export class Media {
       this.failed.add(`${key} ${src}`);
       return null;
     }
-    const data = Buffer.from(r.data, "base64");
+    const { data } = r;
     // still loading in Teams: the next read gets the image
     if (isPlaceholderImage(data)) return null;
     fs.mkdirSync(this.mediaDir, { recursive: true });
     fs.writeFileSync(path.join(this.mediaDir, `${key}.${ext}`), data);
     return `${key}.${ext}`;
+  }
+
+  private async amsImage(src: string, token: string): Promise<{ type: string; data: Buffer } | null> {
+    const r = await this.get(src, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
+    if (!r.ok) return null;
+    const data = Buffer.from(await r.arrayBuffer());
+    return data.length <= MAX_IMAGE ? { type: (r.headers.get("content-type") ?? "").split(";")[0].trim(), data } : null;
   }
 
   // File of a profile picture already drawn in the page, copied once. `budget` caps the copies of one round
