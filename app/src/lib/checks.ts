@@ -15,8 +15,9 @@ import { withSlot, withSlotOr } from "./slotdb";
 
 // What a check reads and queues in the database of the account (data/N/messages.db)
 export type SlotPort = {
-  // the agent's health row: Unix seconds it was written and the Teams state; null while there is none
-  health(n: number): { ts: number; teams: string } | null;
+  // the agent's health row: Unix seconds it was written, the Teams state, whether the owner uses Teams on the remote
+  // desktop; null while there is none
+  health(n: number): { ts: number; teams: string; inUse?: boolean } | null;
   // the agent pushes "Teams signed out" after a minute signed out, only for an account signed in once (armed)
   signInAlert(n: number): { armed: boolean; alerted: boolean };
   // queues the check command: the whole chat list and the Activity feed, then the summary push
@@ -207,8 +208,8 @@ export function slotPort(): SlotPort {
       withSlotOr(
         n,
         (r) => {
-          const h = r.state<{ ts?: unknown; teams?: unknown }>(STATE.health, {});
-          return typeof h.ts === "number" && typeof h.teams === "string" ? { ts: h.ts, teams: h.teams } : null;
+          const h = r.state<{ ts?: unknown; teams?: unknown; desktop?: unknown }>(STATE.health, {});
+          return typeof h.ts === "number" && typeof h.teams === "string" ? { ts: h.ts, teams: h.teams, inUse: h.desktop === "in-use" } : null;
         },
         null,
       ),

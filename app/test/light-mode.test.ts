@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { askRefresh, claimSlot, endRefresh, listSlots, migrateAppSchema, openAppDb, setCheckEvery, setLight, setSlotStopped, slotRow, type Slot } from "@/lib/appdb";
 import { SIGN_IN_WAIT, SIGNED_OUT, type SlotPort } from "@/lib/checks";
 import type { ControlClient } from "@/lib/control";
-import { MIN_LIFE, REFRESH_WAIT, refreshDue, runRefresh } from "@/lib/light";
+import { BROWSER_WAIT, browserOnDemand, MIN_LIFE, REFRESH_WAIT, refreshDue, runRefresh } from "@/lib/light";
 import { accountStatus, statusText } from "@/lib/client";
 import { keepSlotsUp, setCheckMode, setLightMode } from "@/lib/slots";
 import type { LightSignIn } from "@/shared/slot-db/state";
@@ -15,7 +15,7 @@ let db: Database.Database;
 let clock: number;
 let calls: string[];
 let sign: LightSignIn | null;
-let health: { ts: number; teams: string } | null;
+let health: { ts: number; teams: string; inUse?: boolean } | null;
 let onSleep: (secs: number) => void;
 
 const secs = () => Math.floor(clock / 1000);
@@ -155,6 +155,16 @@ describe("sign-in run of a light account", () => {
     expect(secs() - begun).toBeGreaterThanOrEqual(SIGN_IN_WAIT);
   });
 
+  it("asked, keeps the browser while the owner is on the remote desktop, until SIGN_IN_WAIT after they left", async () => {
+    const n = slot();
+    askRefresh(db, n);
+    const left = T0 + 2 * SIGN_IN_WAIT;
+    onSleep = (s) => void (health = { ts: s, teams: "login", inUse: s < left });
+    expect(await runRefresh(n, deps())).toBe("login");
+    expect(secs() - left).toBeGreaterThanOrEqual(SIGN_IN_WAIT - 2);
+    expect(secs() - left).toBeLessThanOrEqual(SIGN_IN_WAIT + 2);
+  });
+
   it("cut short, forgets the ask", () => {
     const n = slot();
     askRefresh(db, n);
@@ -172,12 +182,43 @@ describe("sign-in run of a light account", () => {
   });
 });
 
+describe("browser of a light account on demand", () => {
+  const o = () => ({ now: () => clock, sleep });
+
+  it("asks a sign-in run and waits until its browser runs", async () => {
+    const n = slot();
+    onSleep = (s) => {
+      if (s === T0 + 12) db.prepare("UPDATE teams_accounts SET refreshing=? WHERE slot=?").run(s, n);
+    };
+    expect(await browserOnDemand(db, n, o())).toBe(true);
+    expect(slotRow(db, n)!.refresh_result).toBe("asked");
+    expect(secs()).toBe(T0 + 12);
+  });
+
+  it("gives up after BROWSER_WAIT, and asks nothing of an account with a browser or not light", async () => {
+    const n = slot();
+    expect(await browserOnDemand(db, n, o())).toBe(false);
+    expect(secs() - T0).toBeGreaterThanOrEqual(BROWSER_WAIT);
+    const running = slot();
+    db.prepare("UPDATE teams_accounts SET refreshing=? WHERE slot=?").run(T0, running);
+    const plain = slot(false);
+    const before = secs();
+    expect(await browserOnDemand(db, running, o())).toBe(true);
+    expect(await browserOnDemand(db, plain, o())).toBe(true);
+    expect(secs()).toBe(before);
+    expect(slotRow(db, running)!.refresh_result).toBe("");
+    expect(slotRow(db, plain)!.refresh_result).toBe("");
+  });
+});
+
 describe("light mode of an account", () => {
   it("keeps the browser of an account always on until the sign-in run, starts the light agent of a stopped or checked one", async () => {
     const on = slot(false);
+    db.prepare("UPDATE teams_accounts SET refreshed=?, refresh_result='login' WHERE slot=?").run(T0 - 60, on);
     await setLightMode(on, ctl, db);
     expect(calls).toEqual([]);
-    expect(slotRow(db, on)).toMatchObject({ light: 1, check_every: 0 });
+    expect(slotRow(db, on)).toMatchObject({ light: 1, check_every: 0, refresh_result: "asked" });
+    expect(refreshDue(slotRow(db, on)!, null, T0)).toBe(true);
 
     const stopped = slot(false);
     setSlotStopped(db, stopped, true);
@@ -197,15 +238,17 @@ describe("light mode of an account", () => {
     expect(slotRow(db, n)!.light).toBe(0);
   });
 
-  it("is kept up as its light agent, not while its browser runs to sign in", async () => {
+  it("is kept up as its light agent, not while its browser runs to sign in or a run is asked", async () => {
     const a = slot();
     const b = slot();
     db.prepare("UPDATE teams_accounts SET refreshing=? WHERE slot=?").run(T0, b);
     const c = slot(false);
+    const d = slot();
+    askRefresh(db, d);
     clearInterval(keepSlotsUp(ctl, db, 1_000_000));
     await new Promise((r) => setTimeout(r, 20));
     expect(calls).toEqual([`light ${a}`, `start ${c}`]);
-    expect(listSlots(db).map((s) => s.light)).toEqual([1, 1, 0]);
+    expect(listSlots(db).map((s) => s.light)).toEqual([1, 1, 0, 1]);
   });
 
   it("shows as always on without browser in the app", () => {

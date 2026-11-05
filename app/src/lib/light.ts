@@ -1,5 +1,5 @@
 import type { LightSignIn } from "@/shared/slot-db/state";
-import { beginRefresh, endRefresh, listSlots, REFRESH_ASKED, slotRow, type CheckResult, type Slot } from "./appdb";
+import { askRefresh, beginRefresh, endRefresh, listSlots, REFRESH_ASKED, slotRow, type CheckResult, type Slot } from "./appdb";
 import { SIGN_IN_WAIT, SIGNED_OUT, type CheckDeps } from "./checks";
 import { exclusive, slotUp } from "./slots";
 
@@ -33,9 +33,10 @@ export function refreshDue(s: Slot, sign: LightSignIn | null, now: number): bool
 const usable = (sign: LightSignIn | null, now: number) => !!sign?.at && !sign.refused && sign.expiresOn - now >= MIN_LIFE;
 
 // The browser of the account until a sign-in it captured holds MIN_LIFE: ok; Teams signed out SIGNED_OUT seconds:
-// login; nothing in REFRESH_WAIT: failed. A run its owner asked for, before or while it runs, waits SIGN_IN_WAIT for
-// the sign-in in the remote desktop instead. The light agent runs again after it, whatever the outcome. null: the
-// account was stopped, removed or set to another mode meanwhile, nothing recorded.
+// login; nothing in REFRESH_WAIT: failed. A run its owner asked for, before or while it runs, waits for the sign-in in
+// the remote desktop instead, as long as the owner was on it SIGN_IN_WAIT seconds ago or less. The light agent runs
+// again after it, whatever the outcome. null: the account was stopped, removed or set to another mode meanwhile,
+// nothing recorded.
 export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult | null> {
   const now = () => Math.floor((d.now ?? Date.now)() / 1000);
   const sleep = d.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
@@ -64,6 +65,7 @@ export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult |
   let result: CheckResult | null = "failed";
   try {
     let signedOutSince = 0;
+    let ownerSeen = begun;
     for (;;) {
       if (!current()) {
         result = null;
@@ -76,12 +78,13 @@ export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult |
       const h = d.slot.health(n);
       if (h && h.ts >= begun && h.teams === "login") signedOutSince ||= now();
       else signedOutSince = 0;
+      if (h && h.ts >= begun && h.inUse) ownerSeen = now();
       const waitSignIn = asked();
       if (!waitSignIn && signedOutSince && now() - signedOutSince >= SIGNED_OUT) {
         result = "login";
         break;
       }
-      if (now() - begun >= (waitSignIn ? SIGN_IN_WAIT : REFRESH_WAIT)) {
+      if (waitSignIn ? now() - ownerSeen >= SIGN_IN_WAIT : now() - begun >= REFRESH_WAIT) {
         if (waitSignIn && signedOutSince) result = "login";
         break;
       }
@@ -95,6 +98,29 @@ export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult |
     });
   }
   return result;
+}
+
+// Seconds a desktop link waits for the browser it started for a light account
+export const BROWSER_WAIT = 90;
+
+// The browser of a light account, started on demand for its owner on the remote desktop: with none running, a sign-in
+// run is asked (it waits for the sign-in there) and this waits until it runs. False when it did not start in
+// BROWSER_WAIT seconds. Any other account: true at once.
+export async function browserOnDemand(
+  db: CheckDeps["db"],
+  n: number,
+  o: { now?: () => number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<boolean> {
+  const now = () => Math.floor((o.now ?? Date.now)() / 1000);
+  const sleep = o.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const s = slotRow(db, n);
+  if (!s?.light || s.stopped) return true;
+  if (!s.refreshing) askRefresh(db, n);
+  for (const until = now() + BROWSER_WAIT; now() < until; await sleep(1000)) {
+    const r = slotRow(db, n);
+    if (!r?.light || r.stopped || r.refreshing) return true;
+  }
+  return false;
 }
 
 // Every light account whose browser is due, one after the other

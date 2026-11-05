@@ -136,8 +136,8 @@ function CountBadge({ n, red }: { n: number; red?: boolean }) {
 // The number of what waits on the icon of the installed app (Badging API, Chrome and Edge)
 type BadgeNavigator = Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
 
-// Sign in to Microsoft: in the remote browser, or, for an account checked every N hours or a light account with no
-// browser now, with a browser run that waits for it
+// Sign in to Microsoft: in the remote browser (a light account gets its browser on demand), or, for an account checked
+// every N hours, with a check that waits for it
 function SignInButton({
   a,
   onDesktop,
@@ -145,11 +145,10 @@ function SignInButton({
   ...props
 }: { a: Account; onDesktop: (n: number) => void; onCheck: (a: Account) => void } & Omit<React.ComponentProps<typeof Button>, "onClick">) {
   const checked = idleChecked(a);
-  const starts = checked || noBrowser(a);
   return (
-    <Button {...props} disabled={checked && a.nextCheck === 0} onClick={() => (starts ? onCheck(a) : onDesktop(a.slot))}>
-      {starts ? <PowerIcon /> : <ExternalLinkIcon />}
-      {checked && a.nextCheck === 0 ? "Check asked" : starts ? "Start to sign in" : "Sign in to Microsoft"}
+    <Button {...props} disabled={checked && a.nextCheck === 0} onClick={() => (checked ? onCheck(a) : onDesktop(a.slot))}>
+      {checked ? <PowerIcon /> : <ExternalLinkIcon />}
+      {checked ? (a.nextCheck === 0 ? "Check asked" : "Start to sign in") : "Sign in to Microsoft"}
     </Button>
   );
 }
@@ -469,12 +468,12 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       toast.info("This account runs only during its checks", { description: "Check now starts its browser for a few minutes." });
       return;
     }
-    // no window on the desktop: the desktop would show another account
-    if (a && noBrowser(a)) {
-      if (needsLogin(a)) void checkNow(a);
-      else toast.info("This account has no browser now", { description: "It reads Teams without one: its browser runs only to sign it in again." });
+    // signed in, a light account needs no browser; signed out, the desktop link starts one for the sign-in
+    if (a && noBrowser(a) && !needsLogin(a)) {
+      toast.info("This account has no browser now", { description: "It reads Teams without one: its browser runs only to sign it in again." });
       return;
     }
+    if (a && noBrowser(a)) toast.info("Starting the browser of this account", { description: "The remote desktop opens on it within a minute or two." });
     if (isPc) {
       const { url, target } = desktopTarget(desktopUrl, n);
       if (target === "_blank") window.open(url, target, "noopener");
@@ -615,16 +614,11 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   }
 
   // The check of an account checked every N hours, now: within seconds, after the check running now if any. One that
-  // found a sign-in to do waits ten minutes for it, in the remote Teams. A light account: its browser, which waits ten
-  // minutes for the sign-in.
+  // found a sign-in to do waits ten minutes for it, in the remote Teams.
   async function checkNow(a: Account) {
     try {
       await post(`/api/accounts/${a.slot}/check`, undefined, 0);
       await loadAccounts();
-      if (a.light) {
-        toast.success(`Starting the browser of ${accName(a)}`, { description: "Within two minutes Sign in to Microsoft shows here: sign in within ten minutes." });
-        return;
-      }
       toast.success(`Checking ${accName(a)}`, {
         description: needsLogin(a) ? "The browser starts: sign in to Microsoft in the remote Teams within ten minutes." : "The browser starts, reads Teams and stops again within a few minutes.",
       });
