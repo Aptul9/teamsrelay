@@ -439,6 +439,7 @@ describe("agent loop", () => {
     const jobs = agentJobs(agent()).map((j) => [j.name, "seconds" in j.every ? `${j.every.seconds}s` : `${j.every.rounds}+${j.every.offset ?? 0}`, !!j.anyPage]);
     expect(jobs).toEqual([
       ["page", "1+0", false],
+      ["fresh-sign-in", "1+0", false],
       ["input", "60s", false],
       ["back-to-chats", "1+0", false],
       ["parking", "5+2", false],
@@ -744,7 +745,7 @@ describe("agent loop", () => {
   it("leaves out the Activity feed and Read by for an app that does not show them", () => {
     const a = agent();
     a.config = { ...a.config, activity: false, readBy: false };
-    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "input", "back-to-chats", "parking", "hook", "commands", "chats-full", "chats", "identity", "light-token", "health", "sign-in", "conversation", "media", "self-check"]);
+    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "fresh-sign-in", "input", "back-to-chats", "parking", "hook", "commands", "chats-full", "chats", "identity", "light-token", "health", "sign-in", "conversation", "media", "self-check"]);
   });
 
   // the browser of a light account runs to sign it in again: its sign-in goes to the light agent (jobs/light-token.ts)

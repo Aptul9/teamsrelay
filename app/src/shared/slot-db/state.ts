@@ -45,6 +45,8 @@ export const STATE = {
   callAudio: "call_audio",
   // JSON LightSignIn: the sign-in a light account (no browser of its own) runs on, never the token itself
   lightToken: "light_token",
+  // Unix seconds the browser of a light account last sent Teams to a new Microsoft sign-in (src/agent/jobs/fresh-sign-in.ts)
+  freshSignIn: "fresh_sign_in",
   // JSON StatusNames: the people the status pages of a light account track, each with the mri the agent found for the
   // name, "" for none (src/agent/light/status.ts)
   statusNames: "status_names",
