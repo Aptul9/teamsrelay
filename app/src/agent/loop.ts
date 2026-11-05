@@ -7,6 +7,7 @@ import { CallWatch } from "./jobs/calls";
 import { prefetchChats, scanChats, scanChatsFull } from "./jobs/chat-list";
 import { saveOpenChat } from "./jobs/conversation";
 import { watchDesktop } from "./jobs/desktop";
+import { freshSignIn } from "./jobs/fresh-sign-in";
 import { browserDownHealth, noTabHealth, updateHealth } from "./jobs/health";
 import { saveIdentity } from "./jobs/identity";
 import { captureLightToken } from "./jobs/light-token";
@@ -89,6 +90,8 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     // the owner on the remote desktop with this account in front, first: the jobs of the round know it (sign-in page too)
     a.config.desktop && { name: "desktop", every: { rounds: 1 }, anyPage: true, run: () => watchDesktop(a) },
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
+    // a light account's browser runs to sign it in again: Teams to a new Microsoft sign-in first, its old one is the ended one
+    { name: "fresh-sign-in", every: { rounds: 1 }, when: () => !!a.lightMode?.(), run: () => freshSignIn(a) },
     { name: "input", every: { seconds: ACTIVE_EVERY }, when: () => !ownerUses(a), run: () => keepActive(a) },
     // the side bar without the chat list (the page a call leaves in the main window): back to the chats
     { name: "back-to-chats", every: { rounds: 1 }, when: () => awayFromChats(a), run: () => backToChats(a) },

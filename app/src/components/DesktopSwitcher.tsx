@@ -3,7 +3,7 @@
 import { ChevronDownIcon, ChevronUpIcon, MonitorIcon } from "lucide-react";
 import { cn } from "cn";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { accName, errorText, onDesktop, post, type Account } from "@/lib/client";
+import { accName, errorText, idleChecked, onDesktop, post, type Account } from "@/lib/client";
 
 const label = (a: Account) => a.tenant || accName(a);
 
@@ -12,8 +12,12 @@ const label = (a: Account) => a.tenant || accName(a);
 // /api/desktop/N) and the desktop stays connected. The address names the account in front. A second tab of the
 // desktop would cut off the first: Selkies keeps one viewer in control.
 export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; initial: number }) {
-  const list = onDesktop(accounts);
-  const first = list.find((a) => a.slot === initial) ?? list[0];
+  // the account asked for, even a light one with no browser now: /api/desktop/N starts its browser, the desktop never
+  // opens on another account instead
+  const asked = accounts.find((a) => a.slot === initial && !a.relay && !a.stopped && !idleChecked(a));
+  const others = onDesktop(accounts);
+  const list = asked && !others.includes(asked) ? [asked, ...others] : others;
+  const first = asked ?? list[0];
   const [front, setFront] = useState(first?.slot ?? 0);
   // opened once, on the first account: another address would load the desktop again
   const [src] = useState(first ? `/api/desktop/${first.slot}` : "");

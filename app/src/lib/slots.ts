@@ -2,7 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { nowSeconds } from "@/agent/context";
-import { askCheck, CHECK_INTERVALS, claimSlot, listSlots, releaseSlot, setCheckEvery, setLight, setRelayToken, setSlotStopped, slotRow } from "./appdb";
+import {
+  askCheck,
+  askRefresh,
+  CHECK_INTERVALS,
+  claimSlot,
+  listSlots,
+  REFRESH_ASKED,
+  releaseSlot,
+  setCheckEvery,
+  setLight,
+  setRelayToken,
+  setSlotStopped,
+  slotRow,
+} from "./appdb";
 import type { ControlClient } from "./control";
 import { HttpError } from "./http";
 import { createRelaySlot, forgetRelay, newRelayToken, ON_ANOTHER_COMPUTER, relayDigest } from "./relay";
@@ -164,20 +177,23 @@ export function setLightMode(n: number, ctl: ControlClient, db: Database.Databas
     setLight(db, n, true);
     if (s.stopped) setSlotStopped(db, n, false);
     forgetLastCheck(n);
-    // an account always on keeps its browser until the sign-in run captured the sign-in, then the light agent takes over;
-    // a stopped or checked one has no browser now: the light agent starts, the sign-in run follows if it needs one
+    // an account always on keeps its browser until the sign-in run, asked now, captured the sign-in, then the light agent
+    // takes over; a stopped or checked one has no browser now: the light agent starts, the sign-in run follows if it
+    // needs one
     if (s.stopped || s.check_every) await ctl.light(n);
+    else askRefresh(db, n);
   });
 }
 
 // Owned slots must be running, unless their owner stopped them or they run only while checked: after a deploy
 // recreated a container, a reboot, or a stop outside the app. An account on another computer runs there. A light
-// account runs its light agent, unless its browser runs now to sign it in again.
+// account runs its light agent, unless its browser runs now to sign it in again or is about to (a run asked: the
+// browser it may still have stays for it).
 export function keepSlotsUp(ctl: ControlClient, db: Database.Database, everyMs = 60_000) {
   const tick = () =>
     exclusive(async () => {
-      for (const { slot, stopped, check_every, relay, light, refreshing } of listSlots(db)) {
-        if (stopped || check_every || relay || refreshing) continue;
+      for (const { slot, stopped, check_every, relay, light, refreshing, refresh_result } of listSlots(db)) {
+        if (stopped || check_every || relay || refreshing || (light && refresh_result === REFRESH_ASKED)) continue;
         await (light ? ctl.light(slot) : slotUp(ctl, slot)).catch((e: Error) => console.error(`slot ${slot}: ${e.message}`));
       }
     });
