@@ -1,6 +1,6 @@
 import type { LightSignIn } from "@/shared/slot-db/state";
-import { beginRefresh, endRefresh, listSlots, slotRow, type CheckResult, type Slot } from "./appdb";
-import { SIGNED_OUT, type CheckDeps } from "./checks";
+import { beginRefresh, endRefresh, listSlots, REFRESH_ASKED, slotRow, type CheckResult, type Slot } from "./appdb";
+import { SIGN_IN_WAIT, SIGNED_OUT, type CheckDeps } from "./checks";
 import { exclusive, slotUp } from "./slots";
 
 // A light account runs its light agent (src/agent/light), no browser, on the sign-in its browser captured. That sign-in
@@ -20,9 +20,11 @@ const AFTER_FAILED = 1800;
 
 const report = (n: number) => (e: Error) => console.error(`sign-in run of account ${n}: ${e.message}`);
 
-// Whether the light account needs its browser now: no sign-in yet, one ended or about to, or one Microsoft refused
+// Whether the light account needs its browser now: asked by its owner, no sign-in yet, one ended or about to, or one
+// Microsoft refused
 export function refreshDue(s: Slot, sign: LightSignIn | null, now: number): boolean {
   if (!s.light || s.stopped || s.relay || s.refreshing) return false;
+  if (s.refresh_result === REFRESH_ASKED) return true;
   if (s.refreshed && now - s.refreshed < (s.refresh_result === "ok" ? AFTER_OK : AFTER_FAILED)) return false;
   if (!sign?.at || sign.refused) return true;
   return sign.expiresOn - now < 60;
@@ -31,8 +33,9 @@ export function refreshDue(s: Slot, sign: LightSignIn | null, now: number): bool
 const usable = (sign: LightSignIn | null, now: number) => !!sign?.at && !sign.refused && sign.expiresOn - now >= MIN_LIFE;
 
 // The browser of the account until a sign-in it captured holds MIN_LIFE: ok; Teams signed out SIGNED_OUT seconds:
-// login; nothing in REFRESH_WAIT: failed. The light agent runs again after it, whatever the outcome. null: the account
-// was stopped, removed or set to another mode meanwhile, nothing recorded.
+// login; nothing in REFRESH_WAIT: failed. A run its owner asked for, before or while it runs, waits SIGN_IN_WAIT for
+// the sign-in in the remote desktop instead. The light agent runs again after it, whatever the outcome. null: the
+// account was stopped, removed or set to another mode meanwhile, nothing recorded.
 export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult | null> {
   const now = () => Math.floor((d.now ?? Date.now)() / 1000);
   const sleep = d.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
@@ -57,6 +60,7 @@ export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult |
     const s = slotRow(d.db, n);
     return !!s && !s.stopped && !!s.light;
   };
+  const asked = () => slotRow(d.db, n)?.refresh_result === REFRESH_ASKED;
   let result: CheckResult | null = "failed";
   try {
     let signedOutSince = 0;
@@ -72,11 +76,15 @@ export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult |
       const h = d.slot.health(n);
       if (h && h.ts >= begun && h.teams === "login") signedOutSince ||= now();
       else signedOutSince = 0;
-      if (signedOutSince && now() - signedOutSince >= SIGNED_OUT) {
+      const waitSignIn = asked();
+      if (!waitSignIn && signedOutSince && now() - signedOutSince >= SIGNED_OUT) {
         result = "login";
         break;
       }
-      if (now() - begun >= REFRESH_WAIT) break;
+      if (now() - begun >= (waitSignIn ? SIGN_IN_WAIT : REFRESH_WAIT)) {
+        if (waitSignIn && signedOutSince) result = "login";
+        break;
+      }
       await sleep(2000);
     }
   } finally {
