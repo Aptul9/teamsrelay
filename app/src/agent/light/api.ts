@@ -53,6 +53,27 @@ export class HttpStatusError extends Error {
 
 const SERVER = "https://teams.microsoft.com";
 
+// The Activity feed is the conversation 48:notifications of chatsvc; the browser agent reads it too, with the token of
+// its page (src/agent/jobs/activity.ts)
+export const notificationsUrl = (region: string) =>
+  `${SERVER}/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent("48:notifications")}/messages?view=msnp24Equivalent&pageSize=50`;
+export type NotificationsReply = { messages?: { properties?: { activity?: unknown; isread?: unknown } }[] };
+
+export function notificationsOf(j: NotificationsReply): Notification[] {
+  const out: Notification[] = [];
+  for (const m of j.messages ?? []) {
+    let activity: RawActivity | null = null;
+    try {
+      const raw = m.properties?.activity;
+      activity = (typeof raw === "string" ? JSON.parse(raw) : raw) as RawActivity | null;
+    } catch {
+      activity = null;
+    }
+    if (activity && typeof activity === "object") out.push({ activity, read: !(m.properties?.isread === false || m.properties?.isread === "false") });
+  }
+  return out;
+}
+
 export class LightApi {
   constructor(
     private readonly token: LightToken,
@@ -134,20 +155,7 @@ export class LightApi {
 
   // The Activity feed (missed calls, mentions, reactions...), newest first as Teams keeps it
   async notifications(): Promise<Notification[]> {
-    const url = `${SERVER}/api/chatsvc/${this.region()}/v1/users/ME/conversations/${encodeURIComponent("48:notifications")}/messages?view=msnp24Equivalent&pageSize=50`;
-    const j = await this.get<{ messages?: { properties?: { activity?: unknown; isread?: unknown } }[] }>(IC3, url, "activity");
-    const out: Notification[] = [];
-    for (const m of j.messages ?? []) {
-      let activity: RawActivity | null = null;
-      try {
-        const raw = m.properties?.activity;
-        activity = (typeof raw === "string" ? JSON.parse(raw) : raw) as RawActivity | null;
-      } catch {
-        activity = null;
-      }
-      if (activity && typeof activity === "object") out.push({ activity, read: !(m.properties?.isread === false || m.properties?.isread === "false") });
-    }
-    return out;
+    return notificationsOf(await this.get<NotificationsReply>(IC3, notificationsUrl(this.region()), "activity"));
   }
 
   // The last message of the chat with yourself, which the aggregator does not list
