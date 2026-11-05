@@ -8,6 +8,7 @@ import { ConfigError } from "@/shared/env";
 import { loadConfig } from "../config";
 import { errorText, log } from "../log";
 import { NewMessageDetector } from "../logic/new-messages";
+import { Media } from "../media";
 import { FcmSender, loadServiceAccount } from "../push/fcm";
 import { Notifier } from "../push/notifier";
 import { loadVapidKeys } from "../push/vapid";
@@ -42,6 +43,7 @@ async function main() {
     config,
     store,
     notifier,
+    media: new Media(config.mediaDir, config.filesDir),
     detector: new NewMessageDetector(),
     api,
     token,

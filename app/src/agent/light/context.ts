@@ -1,6 +1,7 @@
 import type { AgentHealth } from "@/shared/slot-db/state";
 import type { Config } from "../config";
 import type { NewMessageDetector } from "../logic/new-messages";
+import type { Media } from "../media";
 import type { Notify } from "../push/notifier";
 import type { SlotStore } from "../store/slot-store";
 import type { LightApi, Person } from "./api";
@@ -12,6 +13,8 @@ export type Light = {
   config: Config;
   store: SlotStore;
   notifier: Notify;
+  // the images of messages (data/N/media)
+  media: Media;
   detector: NewMessageDetector;
   api: LightApi;
   token: LightToken;
