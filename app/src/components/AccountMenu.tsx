@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { cn } from "cn";
 import { Avatar, LogoTile } from "./Avatar";
 import { relayHost } from "./RelayToken";
+import { MissedBadge, UnreadBadges } from "./UnreadBadges";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -19,25 +20,6 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { accName, capped, checkLine, idleChecked, lastCheck, relayOffline, signedOut, statusText, type Account, type Unread } from "@/lib/client";
 
-
-// chats and notifications share the purple count; missed calls have a red one of their own
-const total = (u: Unread) => u.chats + u.notifications;
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-const unreadText = (u: Unread) =>
-  [u.chats > 0 && plural(u.chats, "unread chat", "unread chats"), u.notifications > 0 && plural(u.notifications, "new notification", "new notifications")]
-    .filter(Boolean)
-    .join(", ");
-const callsText = (n: number) => plural(n, "missed call", "missed calls");
-
-function MissedBadge({ n, className }: { n: number; className?: string }) {
-  if (!n) return null;
-  return (
-    <Badge className={cn("h-5 min-w-5 rounded-full bg-destructive px-1.5 text-white tabular-nums", className)} title={callsText(n)}>
-      {capped(n)}
-      <span className="sr-only"> ({callsText(n)})</span>
-    </Badge>
-  );
-}
 // between two checks an account checked every N hours knows only what its last check found; an account on another
 // computer needs a sign-in only when its relay says so
 export const needsLogin = (a: Account) =>
@@ -193,24 +175,15 @@ export function AccountMenu({
       <DropdownMenuContent align="start" className="w-[22rem] max-w-[calc(100vw-1rem)]">
         <DropdownMenuLabel>Teams accounts</DropdownMenuLabel>
         <DropdownMenuGroup>
-          {(accounts ?? []).map((a) => {
-            const unread = unreadOf(a);
-            return (
-              <DropdownMenuItem key={a.slot} onSelect={() => onSelect(a.slot)} className="gap-3 py-2">
-                <Avatar name={accName(a)} av={a.av} acc={a.slot} className={cn("size-8", a.stopped && "opacity-50 grayscale")} />
-                <AccountLines a={a} state={menuState(a)} />
-                {total(unread) > 0 && (
-                  <Badge className="h-5 min-w-5 rounded-full px-1.5 tabular-nums" title={unreadText(unread)}>
-                    {capped(total(unread))}
-                    <span className="sr-only"> ({unreadText(unread)})</span>
-                  </Badge>
-                )}
-                <MissedBadge n={unread.calls} />
-                {a.slot === current?.slot && <CheckIcon className="text-primary" />}
-                <AccountStatus a={a} />
-              </DropdownMenuItem>
-            );
-          })}
+          {(accounts ?? []).map((a) => (
+            <DropdownMenuItem key={a.slot} onSelect={() => onSelect(a.slot)} className="gap-3 py-2">
+              <Avatar name={accName(a)} av={a.av} acc={a.slot} className={cn("size-8", a.stopped && "opacity-50 grayscale")} />
+              <AccountLines a={a} state={menuState(a)} />
+              <UnreadBadges u={unreadOf(a)} />
+              {a.slot === current?.slot && <CheckIcon className="text-primary" />}
+              <AccountStatus a={a} />
+            </DropdownMenuItem>
+          ))}
           <DropdownMenuItem disabled={!canAdd || adding} onSelect={onAdd}>
             {adding ? <Spinner /> : <PlusIcon />}
             {adding ? "Starting the browser…" : addLabel}
