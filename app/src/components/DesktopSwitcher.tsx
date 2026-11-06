@@ -2,15 +2,21 @@
 
 import { ChevronDownIcon, ChevronUpIcon, MonitorIcon } from "lucide-react";
 import { cn } from "cn";
-import { Fragment, useEffect, useRef, useState } from "react";
-import { accName, errorText, idleChecked, onDesktop, post, type Account } from "@/lib/client";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { addUnread, callsText, NO_UNREAD, total, UnreadBadges, unreadText } from "./UnreadBadges";
+import { accName, accountUnread, call, errorText, idleChecked, loadSeen, onDesktop, post, type Account, type Unread } from "@/lib/client";
 
 const label = (a: Account) => a.tenant || accName(a);
+// the page has no event stream: the counts come from the account list read again every so often
+export const COUNTS_EVERY_MS = 30_000;
+const waits = (u: Unread) => total(u) + u.calls > 0;
+const waitText = (u: Unread) => [unreadText(u), u.calls > 0 && callsText(u.calls)].filter(Boolean).join(", ");
 
 // The one remote desktop on the whole page, and a small tab with an arrow at its top: a click pulls down the accounts
 // whose window is on the desktop, a pick brings that account to the front of the desktop on screen (POST
 // /api/desktop/N) and the desktop stays connected. The address names the account in front. A second tab of the
-// desktop would cut off the first: Selkies keeps one viewer in control.
+// desktop would cut off the first: Selkies keeps one viewer in control. The arrow counts what waits in every account,
+// each account its own, like the account menu of the app.
 export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; initial: number }) {
   // the account asked for, even a light one with no browser now: /api/desktop/N starts its browser, the desktop never
   // opens on another account instead
@@ -25,6 +31,29 @@ export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; in
   const [problem, setProblem] = useState("");
   const frame = useRef<HTMLIFrameElement>(null);
   const tab = useRef<HTMLDivElement>(null);
+
+  // what waits in every account, as the account menu of the app counts it on this device: the seen lists are the app's,
+  // and a list the app marks in another tab counts here at once
+  const [live, setLive] = useState(accounts);
+  const [marked, setMarked] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => void call<{ accounts: Account[] }>("/api/accounts", undefined, 0).then((d) => setLive(d.accounts), () => undefined), COUNTS_EVERY_MS);
+    const mark = () => setMarked((n) => n + 1);
+    window.addEventListener("storage", mark);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("storage", mark);
+    };
+  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- marked: the seen lists changed in another tab
+  const seen = useMemo(() => loadSeen(live), [live, marked]);
+  const unreadOf = (slot: number) => {
+    const a = live.find((x) => x.slot === slot);
+    return a ? accountUnread(a, seen[slot] ?? null) : NO_UNREAD;
+  };
+  const all = live.reduce((u, a) => addUnread(u, unreadOf(a.slot)), NO_UNREAD);
+  // accounts with no window on the desktop, whose counts would have no button
+  const elsewhere = live.filter((a) => !list.some((x) => x.slot === a.slot) && waits(unreadOf(a.slot)));
 
   // a reload opens the account in front again
   useEffect(() => {
@@ -84,15 +113,27 @@ export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; in
                       aria-pressed={a.slot === front}
                       onClick={() => void bring(a)}
                       className={cn(
-                        "h-8 shrink-0 rounded-xl px-3.5 text-sm font-medium outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-[0.97]",
+                        "flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-sm font-medium outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-[0.97]",
                         a.slot === front ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-primary/10 hover:text-primary",
                       )}
                     >
                       {label(a)}
+                      <UnreadBadges u={unreadOf(a.slot)} className={cn(a.slot === front && "ring-1 ring-primary-foreground")} />
                     </button>
                   </Fragment>
                 ))}
               </div>
+              {elsewhere.length > 0 && (
+                <p data-elsewhere className="flex max-w-[40rem] flex-wrap items-center justify-center gap-x-3 gap-y-1 px-2 pt-1.5 text-xs text-muted-foreground">
+                  <span>Not on the desktop:</span>
+                  {elsewhere.map((a) => (
+                    <span key={a.slot} className="flex items-center gap-1">
+                      {label(a)}
+                      <UnreadBadges u={unreadOf(a.slot)} />
+                    </span>
+                  ))}
+                </p>
+              )}
               {problem && (
                 <p role="alert" className="max-w-80 px-2 pt-1 text-xs text-destructive">
                   {problem}
@@ -103,13 +144,14 @@ export function DesktopSwitcher({ accounts, initial }: { accounts: Account[]; in
         </div>
         <button
           type="button"
-          aria-label="Accounts"
+          aria-label={waits(all) ? `Accounts, ${waitText(all)}` : "Accounts"}
           aria-expanded={down}
           aria-controls="desktop-accounts"
           onClick={() => setDown((d) => !d)}
-          className="flex h-5 w-12 items-center justify-center rounded-b-xl border border-t-0 bg-background/80 text-muted-foreground shadow-md shadow-black/10 backdrop-blur-xl transition-colors duration-150 hover:text-primary"
+          className="flex h-6 min-w-12 items-center justify-center gap-1 rounded-b-xl border border-t-0 bg-background/80 px-2 text-muted-foreground shadow-md shadow-black/10 backdrop-blur-xl transition-colors duration-150 hover:text-primary"
         >
           {down ? <ChevronUpIcon className="size-4" /> : <ChevronDownIcon className="size-4" />}
+          {!down && <UnreadBadges u={all} className="h-4 min-w-4 px-1 text-[10px]" />}
         </button>
       </div>
     </div>
