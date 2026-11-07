@@ -4,7 +4,7 @@
 - [x] Add browser-renewal state and scheduler regression tests.
 - [x] Keep captures fresh across browser fallback and preserve Microsoft sessions.
 - [x] Handle the ordinary MCAS monitored-access notice without accepting other prompts.
-- [ ] Run the full suite and verify a packaged renewal with Npo before rollout.
+- [x] Run the full suite and verify a packaged renewal with Npo before rollout.
 - [x] Start REA analysis of the retained MCAS callback artifacts for browserless renewal.
 
 ## Goal

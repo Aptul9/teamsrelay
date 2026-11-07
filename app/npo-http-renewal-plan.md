@@ -5,7 +5,7 @@
 - [x] Implement the HTTP MCAS renewal client with cookie rotation and matching-account SSO continuation.
 - [x] Capture MCAS credentials from a normal browser run and wire HTTP renewal with A as fallback.
 - [x] Verify the packaged client against Npo, four API scopes and native calling; run the full suite.
-- [ ] Deploy through CI, verify Npo stays browserless across a forced renewal, and record the manual next-day check.
+- [x] Deploy through CI, verify Npo stays browserless across a forced renewal, and record the manual next-day check.
 
 ## Design
 
