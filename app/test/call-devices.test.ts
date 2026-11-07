@@ -73,6 +73,14 @@ describe("microphone and speaker of calls", () => {
     await expect.poll(() => page.evaluate(() => Number(document.querySelector<HTMLElement>("[data-mic-level]")?.dataset.micLevel)), { timeout: 3000 }).toBe(0);
   });
 
+  it("makes quiet speech visible and exposes the microphone level", async () => {
+    await page.evaluate(() => ((window as unknown as Win).level = 0.01));
+    await expect.poll(() => page.evaluate(() => document.querySelector('[role="meter"]')?.getAttribute("aria-valuenow") ?? null)).not.toBeNull();
+    await expect.poll(() => page.evaluate(() => Number.parseFloat(document.querySelector<HTMLElement>("[data-mic-level] > div")?.style.width ?? "0"))).toBeGreaterThan(20);
+    await page.evaluate(() => ((window as unknown as Win).level = 0));
+    await expect.poll(() => page.getByRole("meter", { name: "Microphone level" }).getAttribute("aria-valuenow")).toBe("0");
+  });
+
   it("says when the device picked is gone and the default one is in use", async () => {
     await page.evaluate(() => (window as unknown as Win).setProps({ micFallback: true, speakerFallback: true }));
     await until("The microphone picked is not connected: the default one is in use");

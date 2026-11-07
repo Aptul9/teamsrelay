@@ -52,7 +52,9 @@ if (MODE === "answer") {
 const t0 = Date.now();
 const since = () => Date.now() - t0;
 const emit = (value) => { process.send?.(value); process.stdout.write(JSON.stringify({ t: since(), ...value }) + "\n"); };
-const logFile = fs.openSync(path.join(STATE, "host-stack.log"), "w", 0o600);
+const stackPath = path.join(STATE, "host-stack.log");
+try { fs.renameSync(stackPath, path.join(STATE, "host-stack.previous.log")); } catch {}
+const logFile = fs.openSync(stackPath, "w", 0o600);
 const stackLog = (level, text) => fs.writeSync(logFile, `${since()} ${level} ${scrub(text).slice(0, 2000)}\n`);
 const receipt = { mode: MODE, startedAt: new Date(t0).toISOString(), stages: [], requests: [], denied: [], trouterEvents: [], tokenRequests: [], peerConnections: [], calls: [], audio: {}, timeline: [], unhandled: [], failure: null };
 const stage = (name, extra = {}) => { receipt.stages.push({ name, t: since(), ...extra }); emit({ stage: name, ...extra }); };
@@ -537,7 +539,7 @@ async function main() {
         if (c && c !== current) { current = c; sinceCall = Date.now(); caller = c.callerMri || "Incoming call"; previous = -1; wasConnected = false; }
         if (current) {
           wasConnected ||= current.state === 3;
-          emit({ call: { caller, since: sinceCall, seen: Date.now(), ringing: current.state === 1, active: current.state === 3, ended: current.state === 7, answered: wasConnected, muted: !!current.isMuted } });
+          emit({ call: { caller, since: sinceCall, seen: Date.now(), ringing: current.state === 1, active: [2, 3].includes(current.state), ended: current.state === 7, answered: wasConnected, muted: !!current.isMuted } });
           if (current.state === 7 || (!c && previous !== -1)) { stopTone(); hubBridge?.close(); hubSocket?.close(); hubBridge = null; current = null; gatedCallSeen = false; ownedIncomingId = null; }
           else previous = current.state;
         }
@@ -555,8 +557,29 @@ async function main() {
             current = await registry.createCallAsync({ type: "ThreadId", threadId: message.thread, callId: randomUUID(), localParticipantId: randomUUID(), causeId: randomUUID() });
             caller = message.name; sinceCall = Date.now(); previous = 0;
             await connectAudioHub(); startTone();
-            const joined = current.addParticipant(message.peer);
-            await current.start({ withVideo: false }); await joined;
+            // Participant completion can wait for the callee. Placing a call must return while it rings.
+            const outgoing = current;
+            void outgoing.addParticipant(message.peer).catch(e => {
+              stackLog("error", `outgoing participant: ${scrub(e?.message ?? String(e))}`);
+              if (outgoing === current && outgoing.state !== 7) void outgoing.stop(false).catch(() => undefined);
+            });
+            // start() resolves only once connected. Acknowledge placement when Teams reports connecting.
+            const started = outgoing.start({ withVideo: false });
+            started.catch(e => {
+              stackLog("error", `outgoing start: ${scrub(e?.message ?? String(e))}`);
+              if (outgoing === current && outgoing.state !== 7) void outgoing.stop(false).catch(() => undefined);
+            });
+            await new Promise((resolve, reject) => {
+              const until = Date.now() + 20000;
+              started.catch(reject);
+              const check = () => {
+                if ([2, 3].includes(outgoing.state)) resolve();
+                else if (outgoing.state === 7) reject(new Error("outgoing call ended"));
+                else if (Date.now() >= until) reject(new Error("outgoing call did not start"));
+                else setTimeout(check, 50);
+              };
+              check();
+            });
             emit({ command: message.id, ok: true }); return;
           }
           if (!current) throw new Error("no current call");

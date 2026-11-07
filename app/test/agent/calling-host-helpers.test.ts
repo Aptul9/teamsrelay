@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import { callingRequestAllowed, dominantNotes, goertzelFraction, MELODY, melodyFrame, melodyHeard, PEER_TONE, safePath, scrub } from "../../scripts/calling-host-helpers.mjs";
 
@@ -77,5 +78,18 @@ describe("browserless calling host test signal", () => {
     const peer = dominantNotes(tone(PEER_TONE, 16000, 48000), 16000);
     expect(peer.every((n) => n === PEER_TONE)).toBe(true);
     expect(melodyHeard(peer)).toBe(false);
+  });
+});
+
+
+describe("outgoing command completion", () => {
+  it("acknowledges placement while the callee is still ringing", () => {
+    const host = fs.readFileSync(new URL("../../scripts/calling-live-host.mjs", import.meta.url), "utf8");
+    const outgoing = host.slice(host.indexOf('if (message.op === "call")'), host.indexOf('if (!current) throw'));
+    expect(outgoing).not.toContain("await joined");
+    expect(outgoing).not.toContain("await current.start");
+    expect(outgoing).toContain("[2, 3].includes(outgoing.state)");
+    expect(outgoing).toContain(".addParticipant(message.peer).catch");
+    expect(host).toContain("active: [2, 3].includes(current.state)");
   });
 });
