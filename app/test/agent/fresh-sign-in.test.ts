@@ -89,10 +89,18 @@ describe("new Microsoft sign-in of a light account's browser", () => {
     expect(cdp.send.mock.calls.every(([, p]) => !String((p as { storageTypes?: string }).storageTypes).includes("all"))).toBe(true);
   });
 
-  it("forces a new sign-in for detected MCAS after refusal, even before the browser flag was captured", async () => {
+  it.each([false, true])("forces MCAS sign-in after refusal before the browser flag was captured (known backend %s)", async (mcas) => {
     const { a, page, store } = agent(refused(), { pageRt: "rt-rotated" });
-    store.setState(STATE.lightToken, JSON.stringify({ at: now() - 1000, expiresOn: now() + 3600, refused: true, session: true }));
-    page.url = () => "https://teams.cloud.microsoft.mcas.ms/";
+    store.setState(STATE.lightToken, JSON.stringify({ at: now() - 1000, expiresOn: now() + 3600, refused: true, session: true, mcas }));
+    page.url = () => mcas ? "https://teams.microsoft.com/" : "https://teams.cloud.microsoft.mcas.ms/";
     expect(await freshSignIn(a)).toBe(true);
+  });
+
+  it("clears both observed proxy caches when an MCAS renewal starts on the plain Teams host", async () => {
+    const { a, store, cleared } = agent(refused());
+    store.setState(STATE.lightToken, JSON.stringify({ ...refused(), session: true, browser: true }));
+    expect(await freshSignIn(a)).toBe(true);
+    expect(cleared).toContain("https://teams.microsoft.com.mcas.ms");
+    expect(cleared).toContain("https://teams.cloud.microsoft.mcas.ms");
   });
 });

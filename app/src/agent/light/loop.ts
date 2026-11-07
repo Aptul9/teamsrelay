@@ -17,6 +17,7 @@ import type { Light } from "./context";
 import { lightList, listedChats, othersOf, presenceWord, unnamedChats, unnamedPeople } from "./list";
 import { CHATSVCAGG, IC3, PRESENCE, LightToken, SignedOut, SPACES } from "./token";
 import { NeedsSignIn, SessionAuth, sessionFile } from "./session-auth";
+import { McasSession, mcasSessionFile } from "./mcas-session";
 
 // A sign-in that still needs owner interaction after this long pushes an alert.
 const SIGN_IN_AFTER = 30 * 60;
@@ -42,19 +43,19 @@ export async function renewSignIn(l: Light, renewed: { for: number; retryAt: num
   const previous = parseState(LightSignIn, l.store.getState(STATE.lightToken));
   const file = l.config.lightTokenFile;
   if (previous.browser) return;
-  if (file && (previous.session || fs.existsSync(sessionFile(file)))) {
+  if (file && (previous.session || previous.mcas || fs.existsSync(sessionFile(file)))) {
     if (!previous.session) l.store.setState(STATE.lightToken, JSON.stringify({ ...previous, session: true } satisfies LightSignIn));
     const stored = l.token.stored();
     if (Date.now() < renewed.retryAt) return;
     try {
       if (!stored) throw new NeedsSignIn("no refresh token stored");
       if (!previous.refused && stored.expiresOn * 1000 - Date.now() > 4 * 3600_000) return;
-      const fresh = await new SessionAuth(sessionFile(file)).renew(stored);
+      const fresh = previous.mcas ? await new McasSession(mcasSessionFile(file)).renew(stored) : await new SessionAuth(sessionFile(file)).renew(stored);
       LightToken.save(file, fresh);
       l.token.renewAll();
       l.signedOut = false;
       renewed.retryAt = 0;
-      const next = { at: previous.at || nowSeconds(), expiresOn: fresh.expiresOn, refused: false, session: true } satisfies LightSignIn;
+      const next = { at: previous.at || nowSeconds(), expiresOn: fresh.expiresOn, refused: false, session: true, ...(previous.mcas ? { mcas: true } : {}) } satisfies LightSignIn;
       l.store.setState(STATE.lightToken, JSON.stringify(next));
       if (previous.expiresOn !== fresh.expiresOn) log.info("light", "Microsoft session renewed without browser", { until: new Date(fresh.expiresOn * 1000).toISOString() });
     } catch (e) {

@@ -3,6 +3,7 @@ import { nowSeconds, type Agent } from "../context";
 import { behindMcas } from "../logic/files";
 import { LightToken } from "../light/token";
 import { SessionAuth, sessionFile, TEAMS_WEB_CLIENT } from "../light/session-auth";
+import { McasSession, mcasSessionFile } from "../light/mcas-session";
 import { errorText, log } from "../log";
 import { regionOf } from "../teams/chatsvc";
 import { readMsalEntries, type MsalEntry } from "../teams/scripts/tokens";
@@ -24,7 +25,7 @@ export async function captureLightToken(a: Agent): Promise<boolean> {
   try {
     const now = nowSeconds();
     const sign = lightSignIn(a);
-    const browser = !!sign.browser || behindMcas(a.tp.page.url?.() ?? "");
+    const browser = !!sign.browser || !!sign.mcas || behindMcas(a.tp.page.url?.() ?? "");
     const fresh = Number(a.store.getState(STATE.freshSignIn)) > sign.at;
     const ending = browser && !!sign.at && (sign.refused || sign.expiresOn - now < 600);
     if (ending && !fresh) return false;
@@ -40,12 +41,16 @@ export async function captureLightToken(a: Agent): Promise<boolean> {
     const cookies = await a.tp.page.context().cookies();
     const region = regionOf(cookies);
     const microsoft = cookies.filter((c) => /^\.?login\.microsoftonline\.com$/i.test(c.domain));
+    const userAgent = await a.tp.page.evaluate(() => navigator.userAgent);
+    const loginHint = parseState(Identity, a.store.getState(STATE.me)).email;
     if (microsoft.some((c) => /^ESTSAUTH(?:PERSISTENT|LIGHT)?$/i.test(c.name))) {
-      SessionAuth.save(sessionFile(file), { cookies: microsoft, userAgent: await a.tp.page.evaluate(() => navigator.userAgent), loginHint: parseState(Identity, a.store.getState(STATE.me)).email });
+      SessionAuth.save(sessionFile(file), { cookies: microsoft, userAgent, loginHint });
     } else if (unchanged) return false;
+    const mcas = !!rt && browser && await McasSession.capture(mcasSessionFile(file), a.tp.page, { tenantId, loginHint, userAgent });
     LightToken.save(file, { refreshToken: rt?.secret ?? previous!.refreshToken, clientId: rt?.clientId ?? previous!.clientId, tenantId, region: rt ? region : previous!.region, expiresOn });
     const session = !!SessionAuth.load(sessionFile(file));
-    a.store.setState(STATE.lightToken, JSON.stringify({ at: rt ? now : sign.at, expiresOn, refused: rt ? false : sign.refused, ...(session ? { session } : {}), ...(browser ? { browser } : {}) } satisfies LightSignIn));
+    const backend = mcas || (!rt && sign.mcas) ? { mcas: true } : browser ? { browser: true } : {};
+    a.store.setState(STATE.lightToken, JSON.stringify({ at: rt ? now : sign.at, expiresOn, refused: rt ? false : sign.refused, ...(session ? { session } : {}), ...backend } satisfies LightSignIn));
     if (rt) captured.add(a);
     log.info("light", "sign-in captured", { until: new Date(expiresOn * 1000).toISOString() });
     return true;

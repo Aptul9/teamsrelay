@@ -115,7 +115,7 @@ export const CALL_FRESH_FOR = 10;
 
 // Captured sign-in (Unix s), SPA expiry and refusal. session enables HTTP renewal; browser requests the persistent
 // browser fallback (MCAS, or an HTTP renewal that requires interaction). src/lib/light.ts schedules the run.
-export const LightSignIn = z.object({ at: z.number().catch(0), expiresOn: z.number().catch(0), refused: z.boolean().catch(false), session: z.boolean().optional(), browser: z.boolean().optional() });
+export const LightSignIn = z.object({ at: z.number().catch(0), expiresOn: z.number().catch(0), refused: z.boolean().catch(false), session: z.boolean().optional(), browser: z.boolean().optional(), mcas: z.boolean().optional() });
 export type LightSignIn = z.infer<typeof LightSignIn>;
 
 // The relay of an account on another computer: the name of that computer (HOST_LABEL), Unix seconds of its last sync

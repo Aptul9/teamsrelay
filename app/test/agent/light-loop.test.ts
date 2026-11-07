@@ -6,6 +6,7 @@ import { lightHandlers, runLightCommands } from "@/agent/light/commands";
 import type { Light } from "@/agent/light/context";
 import { readFeed, readList, runLight, syncNativeCalls } from "@/agent/light/loop";
 import { LightToken, SignedOut } from "@/agent/light/token";
+import { McasSession } from "@/agent/light/mcas-session";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { Media } from "@/agent/media";
 import { SlotStore } from "@/agent/store/slot-store";
@@ -400,16 +401,36 @@ describe("sign-in capture of a light account", () => {
     expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ browser: true, refused: false, expiresOn: now + 72000 });
   });
 
-  it("does not mistake a rotated page RT for fresh authorization on the first MCAS fallback", async () => {
+  it("enables MCAS HTTP renewal only after capturing its current proxy session", async () => {
+    const capture = vi.spyOn(McasSession, "capture").mockResolvedValue(true);
+    try {
+      const dir = tempDir(), file = path.join(dir, "light-token.json");
+      const store = SlotStore.open(path.join(dir, "messages.db"));
+      store.setState(STATE.me, JSON.stringify({ email: "me@example.com" }));
+      entries.set(rtKey(TEAMS_WEB_CLIENT), JSON.stringify({ secret: "rt-teams", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant" }));
+      const page = {
+        url: () => "https://teams.cloud.microsoft.mcas.ms/",
+        evaluate: async (fn: (arg: string[]) => unknown, arg: string[]) => fn(arg),
+        context: () => ({ cookies: async () => [{ name: "ESTSAUTHPERSISTENT", value: "session", domain: ".login.microsoftonline.com", path: "/", expires: 1900000000 }] }),
+      };
+      const a = { config: { lightTokenFile: file }, store, tp: { page } } as unknown as Agent;
+      expect(await captureLightToken(a)).toBe(true);
+      expect(capture).toHaveBeenCalledOnce();
+      expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ mcas: true, session: true });
+      expect(parseState(LightSignIn, store.getState(STATE.lightToken)).browser).not.toBe(true);
+    } finally { capture.mockRestore(); }
+  });
+
+  it.each([false, true])("does not mistake a rotated page RT for fresh authorization on an MCAS fallback (known backend %s)", async (mcas) => {
     const now = Math.floor(Date.now() / 1000);
     const dir = tempDir();
     const file = path.join(dir, "light-token.json");
     const store = SlotStore.open(path.join(dir, "messages.db"));
     LightToken.save(file, { refreshToken: "old-rt", clientId: TEAMS_WEB_CLIENT, tenantId: "tenant", region: "emea", expiresOn: now + 3600 });
-    store.setState(STATE.lightToken, JSON.stringify({ at: now - 10000, expiresOn: now + 3600, refused: true, session: true }));
+    store.setState(STATE.lightToken, JSON.stringify({ at: now - 10000, expiresOn: now + 3600, refused: true, session: true, mcas }));
     entries.set(rtKey(TEAMS_WEB_CLIENT), JSON.stringify({ secret: "rt-rotated", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant" }));
     const page = {
-      url: () => "https://teams.cloud.microsoft.mcas.ms/",
+      url: () => mcas ? "https://teams.microsoft.com/" : "https://teams.cloud.microsoft.mcas.ms/",
       evaluate: async (fn: (arg: string[]) => unknown, arg: string[]) => fn(arg),
       context: () => ({ cookies: async () => [{ name: "ESTSAUTHPERSISTENT", value: "session", domain: ".login.microsoftonline.com", path: "/", expires: now + 90000 }] }),
     };
@@ -419,13 +440,13 @@ describe("sign-in capture of a light account", () => {
     expect(LightToken.load(file)?.refreshToken).toBe("old-rt");
   });
 
-  it("captures cookies during a browser run without advancing success until a page RT is observed", async () => {
+  it.each(["browser", "mcas"])("preserves %s cookie-only capture until a page RT is observed", async (backend) => {
     const now = Math.floor(Date.now() / 1000);
     const dir = tempDir();
     const file = path.join(dir, "light-token.json");
     const store = SlotStore.open(path.join(dir, "messages.db"));
     LightToken.save(file, { refreshToken: "old-rt", clientId: TEAMS_WEB_CLIENT, tenantId: "tenant", region: "emea", expiresOn: now + 3600 });
-    store.setState(STATE.lightToken, JSON.stringify({ at: now - 100, expiresOn: now + 3600, refused: false, session: true, browser: true }));
+    store.setState(STATE.lightToken, JSON.stringify({ at: now - 100, expiresOn: now + 3600, refused: false, session: true, [backend]: true }));
     const page = {
       url: () => "https://login.microsoftonline.com/",
       evaluate: async (fn: (arg: string[]) => unknown, arg: string[]) => fn(arg),
@@ -434,6 +455,7 @@ describe("sign-in capture of a light account", () => {
     const a = { config: { lightTokenFile: file }, store, tp: { page } } as unknown as Agent;
     expect(await captureLightToken(a)).toBe(true);
     expect(parseState(LightSignIn, store.getState(STATE.lightToken)).at).toBe(now - 100);
+    expect(JSON.parse(store.getState(STATE.lightToken))[backend]).toBe(true);
     entries.set(rtKey(TEAMS_WEB_CLIENT), JSON.stringify({ secret: "old-rt", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant" }));
     expect(await captureLightToken(a)).toBe(true);
     expect(parseState(LightSignIn, store.getState(STATE.lightToken)).at).toBe(now);

@@ -5,6 +5,7 @@ import type { Light } from "@/agent/light/context";
 import { renewSignIn } from "@/agent/light/loop";
 import { LightToken } from "@/agent/light/token";
 import { SessionAuth } from "@/agent/light/session-auth";
+import { McasSession } from "@/agent/light/mcas-session";
 import { STATE } from "@/shared/slot-db/state";
 import { tempDir } from "../helpers";
 
@@ -80,4 +81,16 @@ it("hands an MCAS form to browser renewal once, keeping the current token", asyn
   expect(JSON.parse(state.get(STATE.lightToken)!)).toMatchObject({ browser: true, refused: false });
   expect(LightToken.load(file)?.refreshToken).toBe("old");
   expect(l.signedOut).toBe(false);
+});
+
+it("uses the captured MCAS client rather than the direct authorize path", async () => {
+  const { l, state, renewed, file } = setup();
+  state.set(STATE.lightToken, JSON.stringify({ at: 1, expiresOn: 2000, refused: false, session: true, mcas: true }));
+  const renew = vi.spyOn(McasSession.prototype, "renew").mockResolvedValue({ refreshToken: "mcas-new", clientId: "client", tenantId: "tenant", region: "emea", expiresOn: 87400 });
+  const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+  await renewSignIn(l, renewed);
+  expect(renew).toHaveBeenCalledOnce();
+  expect(fetch).not.toHaveBeenCalled();
+  expect(LightToken.load(file)?.refreshToken).toBe("mcas-new");
+  expect(JSON.parse(state.get(STATE.lightToken)!)).toMatchObject({ mcas: true, refused: false });
 });
