@@ -294,6 +294,7 @@ describe("sign-in capture of a light account", () => {
   const OTHER = "11111111-2222-3333-4444-555555555555";
   const rtKey = (client: string) => `msal.2|oid.tenant|login.windows.net|refreshtoken|${client}||`;
   beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(1_794_088_337_000);
     entries.clear();
     vi.stubGlobal("document", { cookie: "" });
     vi.stubGlobal("localStorage", {
@@ -304,6 +305,7 @@ describe("sign-in capture of a light account", () => {
       getItem: (k: string) => entries.get(k) ?? null,
     });
   });
+  afterEach(() => vi.restoreAllMocks());
 
   it("reads the refresh token of Teams web from the page", async () => {
     entries.set(rtKey(OTHER), JSON.stringify({ secret: "rt-other", clientId: OTHER, homeAccountId: "u.t" }));
@@ -401,8 +403,12 @@ describe("sign-in capture of a light account", () => {
     expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ browser: true, refused: false, expiresOn: now + 72000 });
   });
 
-  it("enables MCAS HTTP renewal only after capturing its current proxy session", async () => {
+  it.each([false, true])("validates the MCAS token before handoff or retains browser fallback (failure %s)", async (failure) => {
     const capture = vi.spyOn(McasSession, "capture").mockResolvedValue(true);
+    const expires = Math.floor(Date.now() / 1000) + 86400;
+    const renew = vi.spyOn(McasSession.prototype, "renew");
+    if (failure) renew.mockRejectedValue(new SignedOut("validation unavailable"));
+    else renew.mockResolvedValue({ refreshToken: "validated-rt", clientId: TEAMS_WEB_CLIENT, tenantId: "tenant", region: "emea", expiresOn: expires });
     try {
       const dir = tempDir(), file = path.join(dir, "light-token.json");
       const store = SlotStore.open(path.join(dir, "messages.db"));
@@ -416,9 +422,26 @@ describe("sign-in capture of a light account", () => {
       const a = { config: { lightTokenFile: file }, store, tp: { page } } as unknown as Agent;
       expect(await captureLightToken(a)).toBe(true);
       expect(capture).toHaveBeenCalledOnce();
-      expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ mcas: true, session: true });
-      expect(parseState(LightSignIn, store.getState(STATE.lightToken)).browser).not.toBe(true);
-    } finally { capture.mockRestore(); }
+      expect(renew).toHaveBeenCalledOnce();
+      if (failure) {
+        expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ browser: true, session: true, refused: false });
+        expect(LightToken.load(file)?.refreshToken).toBe("rt-teams");
+      } else {
+        expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ mcas: true, session: true, expiresOn: expires });
+        expect(parseState(LightSignIn, store.getState(STATE.lightToken)).browser).not.toBe(true);
+        expect(LightToken.load(file)?.refreshToken).toBe("validated-rt");
+        renew.mockRejectedValueOnce(new Error("temporary validation failure"));
+        expect(await captureLightToken(a)).toBe(false);
+        expect(renew).toHaveBeenCalledOnce();
+        expect(LightToken.load(file)?.refreshToken).toBe("validated-rt");
+        expect(parseState(LightSignIn, store.getState(STATE.lightToken)).mcas).toBe(true);
+        entries.set(rtKey(TEAMS_WEB_CLIENT), JSON.stringify({ secret: "page-rotated", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant" }));
+        expect(await captureLightToken(a)).toBe(true);
+        expect(renew).toHaveBeenCalledTimes(2);
+        expect(LightToken.load(file)?.refreshToken).toBe("validated-rt");
+        expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ browser: true, refused: false });
+      }
+    } finally { capture.mockRestore(); renew.mockRestore(); }
   });
 
   it.each([false, true])("does not mistake a rotated page RT for fresh authorization on an MCAS fallback (known backend %s)", async (mcas) => {

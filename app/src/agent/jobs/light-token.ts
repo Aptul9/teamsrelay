@@ -12,7 +12,7 @@ export { TEAMS_WEB_CLIENT } from "../light/session-auth";
 
 // Without an expiry in the page, the refresh token of a single-page app is taken to hold this long (Microsoft: 24 h)
 const ASSUMED_LIFE = 20 * 3600;
-const captured = new WeakSet<Agent>();
+const captured = new WeakMap<Agent, string>();
 
 // The refresh token of Teams web among those the page keeps, else the first one
 export const teamsRefreshToken = (entries: readonly MsalEntry[]): MsalEntry | null => entries.find((e) => e.clientId === TEAMS_WEB_CLIENT) ?? entries[0] ?? null;
@@ -35,7 +35,7 @@ export async function captureLightToken(a: Agent): Promise<boolean> {
     if ((!rt && !previous) || !tenantId) return false;
     const unchanged = !rt || previous?.refreshToken === rt.secret;
     if (ending && unchanged) return false;
-    if (unchanged && SessionAuth.load(sessionFile(file)) && captured.has(a)) return false;
+    if (previous && SessionAuth.load(sessionFile(file)) && (rt ? captured.get(a) === rt.secret : captured.has(a))) return false;
     // An expired SPA token still carries the tenant/client needed for HTTP renewal.
     const expiresOn = unchanged || (sign.browser && !fresh) ? previous!.expiresOn : rt ? rt.expiresOn || now + ASSUMED_LIFE : previous!.expiresOn;
     const cookies = await a.tp.page.context().cookies();
@@ -46,13 +46,23 @@ export async function captureLightToken(a: Agent): Promise<boolean> {
     if (microsoft.some((c) => /^ESTSAUTH(?:PERSISTENT|LIGHT)?$/i.test(c.name))) {
       SessionAuth.save(sessionFile(file), { cookies: microsoft, userAgent, loginHint });
     } else if (unchanged) return false;
-    const mcas = !!rt && browser && await McasSession.capture(mcasSessionFile(file), a.tp.page, { tenantId, loginHint, userAgent });
-    LightToken.save(file, { refreshToken: rt?.secret ?? previous!.refreshToken, clientId: rt?.clientId ?? previous!.clientId, tenantId, region: rt ? region : previous!.region, expiresOn });
+    let mcas = !!rt && browser && await McasSession.capture(mcasSessionFile(file), a.tp.page, { tenantId, loginHint, userAgent });
+    let token = { refreshToken: rt?.secret ?? previous!.refreshToken, clientId: rt?.clientId ?? previous!.clientId, tenantId, region: rt ? region : previous!.region, expiresOn };
+    if (mcas) {
+      // Cached page tokens may already be refused: hand off a newly validated family, not just the cache entry.
+      try { token = await new McasSession(mcasSessionFile(file)).renew(token); }
+      catch {
+        mcas = false;
+        if (previous && sign.mcas && !sign.refused && previous.expiresOn - now >= 600) token = previous;
+        log.warn("light", "MCAS token validation unavailable: browser renewal retained");
+      }
+    }
+    LightToken.save(file, token);
     const session = !!SessionAuth.load(sessionFile(file));
     const backend = mcas || (!rt && sign.mcas) ? { mcas: true } : browser ? { browser: true } : {};
-    a.store.setState(STATE.lightToken, JSON.stringify({ at: rt ? now : sign.at, expiresOn, refused: rt ? false : sign.refused, ...(session ? { session } : {}), ...backend } satisfies LightSignIn));
-    if (rt) captured.add(a);
-    log.info("light", "sign-in captured", { until: new Date(expiresOn * 1000).toISOString() });
+    a.store.setState(STATE.lightToken, JSON.stringify({ at: rt ? now : sign.at, expiresOn: token.expiresOn, refused: rt ? false : sign.refused, ...(session ? { session } : {}), ...backend } satisfies LightSignIn));
+    if (rt) captured.set(a, rt.secret);
+    log.info("light", "sign-in captured", { until: new Date(token.expiresOn * 1000).toISOString() });
     return true;
   } catch (e) {
     log.warn("light", `capture: ${errorText(e)}`);
