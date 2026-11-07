@@ -47,3 +47,21 @@ A successful result must report an authorization code, token HTTP 200 and a fres
 ## Production gate
 
 No `src/agent/light/session-auth.ts` change or deployment occurs before the normal MCAS handoff is proved. A proven flow is then ported under regression tests for state, callback validation, cookie isolation, error classification and existing direct redirects. The approved calls spec remains the source of constraints for the next calling phase.
+
+## Offline calling transport
+
+- [x] Load only the two pinned Trouter factories in Node with no real network access.
+- [x] Verify synthetic registration/unregister payloads with fake token and HTTP responses.
+- [x] Verify synthetic Socket.IO connection, Trouter authentication and automatic registration.
+- [x] Inject event 107 through the fake WebSocket and verify decoding plus transport response 200.
+- [ ] Resolve the exact calling token contract before a spare-account live registration.
+- [ ] Prove spare-account incoming signaling, then proceed to call control and media under the approved spec.
+
+Files: `scripts/trouter-offline-probe.mjs`, `test/agent/trouter-offline-probe.test.ts`. Vendor code is not committed. The executable probe checks the downloaded artifact's SHA-256 before loading either factory. The VM receives only fake networking and synthetic tokens. Full calling handlers and media are not instantiated.
+
+```powershell
+npm test -- test/agent/trouter-offline-probe.test.ts
+node scripts/trouter-offline-probe.mjs <path-to-cmd-trouter-14c2944133b694b2.js>
+```
+
+The tested bundle needed a `location` object but no browser process or DOM for this bounded transport test. This does not establish live authentication, incoming calls or WebRTC media compatibility.
