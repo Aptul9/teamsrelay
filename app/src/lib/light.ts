@@ -3,11 +3,8 @@ import { askRefresh, beginRefresh, endRefresh, listSlots, REFRESH_ASKED, slotRow
 import { SIGN_IN_WAIT, SIGNED_OUT, type CheckDeps } from "./checks";
 import { exclusive, slotUp } from "./slots";
 
-// A light account runs its light agent (src/agent/light), no browser, on the sign-in its browser captured. That sign-in
-// holds 24 h (a refresh token of a single-page app): once it ended, or Microsoft refused it, the browser runs again, one
-// account at a time like the checks (src/lib/checks.ts), until Teams renewed the sign-in and the agent captured it
-// (src/agent/jobs/light-token.ts), then the light agent takes over. The light agent renews its access tokens right
-// before the end, so it keeps working the hour the browser run takes.
+// Captured Microsoft sessions renew in the light agent without a browser. The browser runs only on the owner's
+// request or for a legacy account's first session capture, one account at a time like checks (src/lib/checks.ts).
 
 // Seconds a run waits for the new sign-in: Teams starting, then renewing its tokens
 export const REFRESH_WAIT = 360;
@@ -20,17 +17,17 @@ const AFTER_FAILED = 1800;
 
 const report = (n: number) => (e: Error) => console.error(`sign-in run of account ${n}: ${e.message}`);
 
-// Whether the light account needs its browser now: asked by its owner, no sign-in yet, one ended or about to, or one
-// Microsoft refused
+// Session-backed accounts start a browser only on demand. Legacy accounts bootstrap their session at the next run.
 export function refreshDue(s: Slot, sign: LightSignIn | null, now: number): boolean {
   if (!s.light || s.stopped || s.relay || s.refreshing) return false;
   if (s.refresh_result === REFRESH_ASKED) return true;
+  if (sign?.session) return false;
   if (s.refreshed && now - s.refreshed < (s.refresh_result === "ok" ? AFTER_OK : AFTER_FAILED)) return false;
   if (!sign?.at || sign.refused) return true;
   return sign.expiresOn - now < 60;
 }
 
-const usable = (sign: LightSignIn | null, now: number) => !!sign?.at && !sign.refused && sign.expiresOn - now >= MIN_LIFE;
+const usable = (sign: LightSignIn | null, now: number) => !!sign?.at && !sign.refused && (!!sign.session || sign.expiresOn - now >= MIN_LIFE);
 
 // The browser of the account until a sign-in it captured holds MIN_LIFE: ok; Teams signed out SIGNED_OUT seconds:
 // login; nothing in REFRESH_WAIT: failed. A run its owner asked for, before or while it runs, waits for the sign-in in

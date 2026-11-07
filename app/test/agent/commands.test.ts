@@ -439,6 +439,7 @@ describe("agent loop", () => {
     const jobs = agentJobs(agent()).map((j) => [j.name, "seconds" in j.every ? `${j.every.seconds}s` : `${j.every.rounds}+${j.every.offset ?? 0}`, !!j.anyPage]);
     expect(jobs).toEqual([
       ["page", "1+0", false],
+      ["light-token", "1+0", true],
       ["fresh-sign-in", "1+0", false],
       ["input", "60s", false],
       ["back-to-chats", "1+0", false],
@@ -449,7 +450,6 @@ describe("agent loop", () => {
       ["chats", "3+0", false],
       ["activity", "150+5", false],
       ["identity", "300+7", false],
-      ["light-token", "5+3", false],
       ["health", "5+0", true],
       ["sign-in", "1+0", true],
       ["conversation", "1+0", false],
@@ -745,11 +745,10 @@ describe("agent loop", () => {
   it("leaves out the Activity feed and Read by for an app that does not show them", () => {
     const a = agent();
     a.config = { ...a.config, activity: false, readBy: false };
-    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "fresh-sign-in", "input", "back-to-chats", "parking", "hook", "commands", "chats-full", "chats", "identity", "light-token", "health", "sign-in", "conversation", "media", "self-check"]);
+    expect(agentJobs(a).map((j) => j.name)).toEqual(["page", "light-token", "fresh-sign-in", "input", "back-to-chats", "parking", "hook", "commands", "chats-full", "chats", "identity", "health", "sign-in", "conversation", "media", "self-check"]);
   });
 
-  // the browser of a light account runs to sign it in again: its sign-in goes to the light agent (jobs/light-token.ts)
-  it("captures the sign-in only for a light account with Teams up", () => {
+  it("captures a light account's Microsoft session even before Teams loads or asks for sign-in", () => {
     const a = agent();
     const job = agentJobs(a).find((j) => j.name === "light-token");
     const round = { onTeams: true, want: "" };
@@ -758,6 +757,9 @@ describe("agent loop", () => {
     a.lightMode = () => true;
     expect(job?.when?.(round)).toBe(true);
     a.health = { ...a.health, teams: "login" };
+    expect(job?.when?.(round)).toBe(true);
+    expect(job?.anyPage).toBe(true);
+    a.lightMode = () => false;
     expect(job?.when?.(round)).toBe(false);
   });
 });

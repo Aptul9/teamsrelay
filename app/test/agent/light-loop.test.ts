@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LightApi, type CsaChat, type Notification } from "@/agent/light/api";
 import { lightHandlers, runLightCommands } from "@/agent/light/commands";
 import type { Light } from "@/agent/light/context";
-import { readFeed, readList } from "@/agent/light/loop";
+import { readFeed, readList, runLight } from "@/agent/light/loop";
 import { LightToken, SignedOut } from "@/agent/light/token";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { Media } from "@/agent/media";
@@ -42,6 +42,7 @@ function setup(chats: () => CsaChat[], notifications: () => Notification[] = () 
     notesLast: vi.fn(async () => null),
     authors: vi.fn(async (conversation: string) => (void conversation, new Map<string, { displayName: string; givenName: string }>())),
     auth: vi.fn(async () => ({ token: "t", region: "emea", oid: ME, name: "Me Myself" })),
+    keepActive: vi.fn(async () => undefined),
   };
   const l: Light = {
     config: { lightPoll: 60, uploadsDir: path.join(dir, "uploads") } as Light["config"],
@@ -79,6 +80,14 @@ afterEach(() => {
 });
 
 describe("light agent", () => {
+  it("keeps its own presence active from the browserless loop", async () => {
+    const { l, api } = setup(() => []);
+    const stop = new AbortController();
+    api.chats.mockImplementation(async () => { stop.abort(); return []; });
+    await runLight(l, stop.signal);
+    expect(api.keepActive).toHaveBeenCalledOnce();
+  });
+
   it("saves the list with names, presence and the chat with yourself, and pushes only messages after the first read", async () => {
     let chats = [oneToOne("19:anna@unq.gbl.spaces", "anna", "hello", 30)];
     const { l, store, notifier, api } = setup(() => chats);
@@ -333,5 +342,38 @@ describe("sign-in capture of a light account", () => {
     expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual({ refreshToken: "rt-teams", clientId: TEAMS_WEB_CLIENT, tenantId: "tenant", region: "amer", expiresOn: 1793750000 });
     expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ expiresOn: 1793750000, refused: false });
     expect(await captureLightToken(a)).toBe(false);
+  });
+
+  it("captures Microsoft session cookies even when the refresh token was already saved", async () => {
+    const rt = { secret: "same-rt", clientId: TEAMS_WEB_CLIENT, homeAccountId: "user.tenant", expiresOn: "1793750000" };
+    entries.set(rtKey(TEAMS_WEB_CLIENT), JSON.stringify(rt));
+    const dir = tempDir();
+    const file = path.join(dir, "light-token.json");
+    LightToken.save(file, { refreshToken: rt.secret, clientId: rt.clientId, tenantId: "tenant", region: "emea", expiresOn: 1793750000 });
+    const store = SlotStore.open(path.join(dir, "messages.db"));
+    store.setState(STATE.me, JSON.stringify({ email: "me@example.com" }));
+    const microsoft = { name: "ESTSAUTHPERSISTENT", value: "session", domain: ".login.microsoftonline.com", path: "/", expires: 1900000000 };
+    const page = { evaluate: async (fn: (arg: string[]) => unknown, arg: string[]) => fn(arg), context: () => ({ cookies: async () => [microsoft, { ...microsoft, domain: ".unrelated.test", value: "unrelated" }] }) };
+    const a = { config: { lightTokenFile: file }, store, tp: { page } } as unknown as Agent;
+    expect(await captureLightToken(a)).toBe(true);
+    const session = JSON.parse(fs.readFileSync(path.join(dir, "session.json"), "utf8"));
+    expect(session).toMatchObject({ loginHint: "me@example.com", cookies: [microsoft] });
+    expect(session.userAgent).toBeTruthy();
+    expect(parseState(LightSignIn, store.getState(STATE.lightToken)).session).toBe(true);
+    expect(await captureLightToken(a)).toBe(false);
+  });
+
+  it("bootstraps session capture from a saved token before Teams finishes loading", async () => {
+    const dir = tempDir();
+    const file = path.join(dir, "light-token.json");
+    LightToken.save(file, { refreshToken: "expired-rt", clientId: TEAMS_WEB_CLIENT, tenantId: "tenant", region: "emea", expiresOn: 1 });
+    const store = SlotStore.open(path.join(dir, "messages.db"));
+    const page = {
+      evaluate: async (fn: () => unknown) => fn === readMsalEntries ? [] : "browser-ua",
+      context: () => ({ cookies: async () => [{ name: "ESTSAUTHPERSISTENT", value: "session", domain: ".login.microsoftonline.com", path: "/", expires: 1900000000 }] }),
+    };
+    const a = { config: { lightTokenFile: file }, store, tp: { page } } as unknown as Agent;
+    expect(await captureLightToken(a)).toBe(true);
+    expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ expiresOn: 1, session: true, refused: false });
   });
 });

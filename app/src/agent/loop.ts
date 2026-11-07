@@ -90,6 +90,8 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
     // the owner on the remote desktop with this account in front, first: the jobs of the round know it (sign-in page too)
     a.config.desktop && { name: "desktop", every: { rounds: 1 }, anyPage: true, run: () => watchDesktop(a) },
     { name: "page", every: { rounds: 1 }, run: () => preparePage(a) },
+    // Capture the Microsoft session before clearing Teams data, including an existing account still loading.
+    { name: "light-token", every: { rounds: 1 }, anyPage: true, when: () => !!a.lightMode?.(), run: () => captureLightToken(a) },
     // a light account's browser runs to sign it in again: Teams to a new Microsoft sign-in first, its old one is the ended one
     { name: "fresh-sign-in", every: { rounds: 1 }, when: () => !!a.lightMode?.(), run: () => freshSignIn(a) },
     { name: "input", every: { seconds: ACTIVE_EVERY }, when: () => !ownerUses(a), run: () => keepActive(a) },
@@ -128,8 +130,6 @@ export function agentJobs(a: Agent, afterCalls = new FeedAfterCalls()): Job<Roun
       run: activity,
     },
     { name: "identity", every: { rounds: 300, offset: 7 }, force: () => !a.store.getState(STATE.me), when: teamsOk, run: () => saveIdentity(a) },
-    // a light account's browser runs to sign it in again: its refresh token goes to the light agent
-    { name: "light-token", every: { rounds: 5, offset: 3 }, when: () => teamsOk() && !!a.lightMode?.(), run: () => captureLightToken(a) },
     { name: "health", every: { rounds: 5 }, anyPage: true, run: () => updateHealth(a) },
     // a sign-out: Teams' own Sign in pressed once, and once more on Microsoft's page (a Teams tab sent there included);
     // not while the owner uses Teams, who may be signing in by hand, nor while a call rings or runs
