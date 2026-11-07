@@ -59,6 +59,7 @@ async function main() {
     health: null,
     startedAt: Date.now(),
     feedRead: false,
+    callsWanted: () => devices.callsOn(),
     status: new StatusCollector({ pages: () => devices.statusPages(), file: config.statusDb, slot: config.slot, gap: 3 * config.lightPoll }),
   };
   log.info("light", "start", { slot: config.slot, poll: config.lightPoll, push: !!vapid, fcm: !!sa, signIn: !!token.stored() });

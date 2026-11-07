@@ -651,6 +651,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     !!current &&
     !current.stopped &&
     !current.checkEvery &&
+    (!current.light || !!current.callAudio) &&
     !isSelf(name) &&
     (chats ?? []).find((c) => c.name === name)?.kind === "one" &&
     !calls.some((c) => c.acc === acc) &&

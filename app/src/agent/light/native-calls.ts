@@ -95,6 +95,7 @@ export class NativeCalls {
   }
   stop() {
     this.stopped = true;
+    this.l.store.setState(STATE.callAudio, '0');
     const child = this.child;
     child?.kill('SIGTERM');
     if (child) setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 25000).unref();

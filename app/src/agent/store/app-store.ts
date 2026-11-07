@@ -84,6 +84,16 @@ export class AppStore implements PushDevices {
     return this.light.value;
   }
 
+  // Calls of this account (teams_accounts.calls, on unless switched off in Settings). Read at most every 5 s.
+  private calls = { at: 0, value: true };
+  callsOn(): boolean {
+    if (Date.now() - this.calls.at > 5_000) {
+      const row = this.use((db) => db.prepare("SELECT * FROM teams_accounts WHERE slot=?").get(this.slot) as { calls?: number } | undefined, undefined);
+      this.calls = { at: Date.now(), value: row?.calls === undefined || Number(row.calls) > 0 };
+    }
+    return this.calls.value;
+  }
+
   // Every status page of the server (status_pages, src/lib/status-pages.ts), none while the web app has not created the
   // table; null when app.db cannot be read
   statusPages(): StatusPageRow[] | null {

@@ -90,7 +90,7 @@ function TeamsAccounts() {
       if (value === "stopped") toast.success(`${accName(a)}: stopped`, { description: "Still signed in: no messages or notifications until you choose another status." });
       else if (value === "light")
         toast.success(`${accName(a)}: no browser`, {
-          description: "Messages, notifications and replies keep working. Calls ring only on accounts that are always on. Its browser starts once a day to sign in again.",
+          description: "Messages, notifications, replies and calls keep working without its browser. Calls can be switched off for it here.",
         });
       else if (checkEvery)
         toast.success(`${accName(a)}: checked every ${hours(checkEvery)}`, {
@@ -99,6 +99,23 @@ function TeamsAccounts() {
       else toast.success(`${accName(a)}: always on`, { description: "Its browser starts now and stays up." });
     } catch (e) {
       toast.error(errorText(e, "Status not changed"));
+    } finally {
+      setSaving(0);
+    }
+  }
+
+  // calls of an account with no browser: on, it rings and answers in the app; off, messages only and less memory
+  async function setCalls(a: Account, on: boolean) {
+    setSaving(a.slot);
+    try {
+      await patch(`/api/accounts/${a.slot}`, { calls: on }, 0);
+      const list = await fetchAccounts();
+      if (list) setAccounts(list);
+      toast.success(`${accName(a)}: calls ${on ? "on" : "off"}`, {
+        description: on ? "Calls ring and are answered in the app within a few seconds." : "Messages only: calls no longer ring here.",
+      });
+    } catch (e) {
+      toast.error(errorText(e, "Calls not changed"));
     } finally {
       setSaving(0);
     }
@@ -123,7 +140,7 @@ function TeamsAccounts() {
         <SectionTitle icon={MessagesSquareIcon}>Teams accounts</SectionTitle>
         <CardDescription>
           Always on: every message is relayed as it arrives. Always on, no browser: the same for messages, missed calls and mentions, a minute
-          late at most, on a fraction of the memory; calls do not ring, and its browser starts once a day to sign in again. Checked every few hours:
+          late at most, on a fraction of the memory; calls ring and are answered in the app unless its Calls switch is off. Checked every few hours:
           the account starts, reads its chats and notifications, and stops again, one account at a time; it saves memory, and what it finds arrives
           as one notification per check. Stopped: still signed in, nothing is read. An account on another computer runs there, as long as its relay
           does.
@@ -163,21 +180,29 @@ function TeamsAccounts() {
                     </AlertDialog>
                   </div>
                 ) : (
-                  <Select value={String(accountStatus(a))} onValueChange={(v) => void setStatus(a, v)} disabled={saving === a.slot}>
-                    <SelectTrigger className="h-10 w-full sm:w-52 md:h-9" aria-label={`Status of ${accName(a)}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="stopped">Stopped</SelectItem>
-                      <SelectItem value="0">Always on</SelectItem>
-                      <SelectItem value="light">Always on, no browser</SelectItem>
-                      {CHECK_INTERVALS.map((s) => (
-                        <SelectItem key={s} value={String(s)}>
-                          Checked every {hours(s)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+                    <Select value={String(accountStatus(a))} onValueChange={(v) => void setStatus(a, v)} disabled={saving === a.slot}>
+                      <SelectTrigger className="h-10 w-full sm:w-52 md:h-9" aria-label={`Status of ${accName(a)}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="stopped">Stopped</SelectItem>
+                        <SelectItem value="0">Always on</SelectItem>
+                        <SelectItem value="light">Always on, no browser</SelectItem>
+                        {CHECK_INTERVALS.map((s) => (
+                          <SelectItem key={s} value={String(s)}>
+                            Checked every {hours(s)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {a.light && (
+                      <label className="flex items-center gap-2 text-sm">
+                        <Switch checked={a.calls !== false} onCheckedChange={(on) => void setCalls(a, on)} disabled={saving === a.slot} aria-label={`Calls of ${accName(a)}`} />
+                        Calls
+                      </label>
+                    )}
+                  </div>
                 )}
               </div>
             ))}

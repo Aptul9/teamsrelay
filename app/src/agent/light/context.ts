@@ -11,6 +11,8 @@ import type { LightToken } from "./token";
 // What the light agent (an account with no browser of its own) works with
 export type Light = {
   calls?: import("./native-calls").NativeCalls;
+  // calls switched on for this account in Settings (app.db); absent: on
+  callsWanted?: () => boolean;
   config: Config;
   store: SlotStore;
   notifier: Notify;

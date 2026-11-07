@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LightApi, type CsaChat, type Notification } from "@/agent/light/api";
 import { lightHandlers, runLightCommands } from "@/agent/light/commands";
 import type { Light } from "@/agent/light/context";
-import { readFeed, readList, runLight } from "@/agent/light/loop";
+import { readFeed, readList, runLight, syncNativeCalls } from "@/agent/light/loop";
 import { LightToken, SignedOut } from "@/agent/light/token";
 import { NewMessageDetector } from "@/agent/logic/new-messages";
 import { Media } from "@/agent/media";
@@ -406,4 +406,22 @@ describe("independent native call command lane", () => {
   expect(store.commandStatus(answer)).toBe('done');
   release();await running;expect(store.commandStatus(slow)).toBe('done');store.close();
  });
+});
+
+
+describe("per-account native calls", () => {
+  it("starts the calling worker when calls are on and stops it when switched off", async () => {
+    const { l, store } = setup(() => []);
+    const worker = { start: vi.fn(async () => undefined), stop: vi.fn(), schedule: vi.fn() };
+    const make = vi.fn(() => worker as unknown as NonNullable<Light["calls"]>);
+    await syncNativeCalls(l, true, make);
+    expect(make).toHaveBeenCalledTimes(1);
+    expect(worker.start).toHaveBeenCalledTimes(1);
+    await syncNativeCalls(l, true, make);
+    expect(make).toHaveBeenCalledTimes(1);
+    await syncNativeCalls(l, false, make);
+    expect(worker.stop).toHaveBeenCalledTimes(1);
+    expect(l.calls).toBeUndefined();
+    store.close();
+  });
 });

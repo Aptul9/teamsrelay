@@ -28,6 +28,7 @@ const slot = (n: number, o: Partial<Slot> = {}): Slot => ({
   refreshing: 0,
   refreshed: 0,
   refresh_result: "",
+  calls: 1,
   ...o,
 });
 
