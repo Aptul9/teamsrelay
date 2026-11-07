@@ -1,7 +1,7 @@
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
-import { askRefresh, claimSlot, endRefresh, listSlots, migrateAppSchema, openAppDb, setCalls, setCheckEvery, setLight, setSlotStopped, slotRow, type Slot } from "@/lib/appdb";
+import { askRefresh, beginRefresh, claimSlot, endRefresh, listSlots, migrateAppSchema, openAppDb, setCalls, setCheckEvery, setLight, setSlotStopped, slotRow, type Slot } from "@/lib/appdb";
 import { AppStore } from "@/agent/store/app-store";
 import { SIGN_IN_WAIT, SIGNED_OUT, type SlotPort } from "@/lib/checks";
 import type { ControlClient } from "@/lib/control";
@@ -62,6 +62,16 @@ const slot = (light = true) => {
 
 describe("when a light account needs its browser", () => {
   const row = (s: Partial<Slot>): Slot => ({ ...slotRow(db, slot())!, ...s });
+
+  it("starts browser capture only after the refresh coordinator starts its run", () => {
+    const n = slot();
+    askRefresh(db, n);
+    expect(new AppStore(db.name, n).lightMode()).toBe(false);
+    beginRefresh(db, n, T0);
+    expect(new AppStore(db.name, n).lightMode()).toBe(true);
+    endRefresh(db, n, { now: T0 + 10, result: "ok" });
+    expect(new AppStore(db.name, n).lightMode()).toBe(false);
+  });
 
   it("before its first sign-in, once it ended or was refused, not while it holds", () => {
     expect(refreshDue(row({}), null, T0)).toBe(true);
