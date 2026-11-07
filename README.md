@@ -17,6 +17,13 @@ docker compose up -d --build
 
 Then open `https://<DOMAIN>` and sign in as `ADMIN_EMAIL`.
 
+## Copying messages
+
+- In the server web app, use **Copy message** from the desktop menu or touch actions. Selecting message text and pressing `Ctrl+C` copies the complete selected messages in conversation order.
+- Copies use the Teams Supercopy layout: chat name, `[YYYY-MM-DD HH:mm] Author`, message text and `> in reply to Author: quote`. Times follow the device timezone. Quotes retain the author and text available in the saved message.
+- The clipboard contains plain text and HTML. Supported browsers embed available original images in the HTML; plain text uses numbered image markers and attachment names. Unavailable images are labelled. Browsers without rich clipboard support copy text only.
+- `Ctrl+Shift+C` or holding Shift during the browser's Copy action preserves the original selection. Composer text and selections extending outside the message feed are left unchanged.
+
 ## MCP for AI clients
 
 `https://<DOMAIN>/mcp` (Streamable HTTP) gives an AI client the Teams accounts of a user. Two ways in:

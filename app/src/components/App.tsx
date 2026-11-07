@@ -981,6 +981,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               key={`${acc}:${openChat}`}
               acc={acc}
               chat={openChat}
+              ownName={current?.name}
               entry={(chats ?? []).find((c) => c.name === openChat)}
               rows={messages?.chat === openChat ? messages.rows : null}
               open={messages?.chat === openChat ? (messages.open ?? null) : null}

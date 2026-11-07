@@ -20,7 +20,7 @@ import {
   Undo2Icon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import { Avatar } from "./Avatar";
@@ -53,6 +53,7 @@ import { REACTION_EMOJI } from "@/shared/slot-db/rows";
 import { useInUse } from "@/lib/in-use";
 import { insertMention, matchPeople, mentionQuery, shownText } from "@/lib/mentions";
 import { dayLabel, fullTime, placeMessages, sentAt, timeLabel } from "@/lib/message-times";
+import { cancelMessageCopy, copyMessages, formatMessages, selectedMessages } from "@/lib/message-copy";
 
 const EMO_LABEL: Record<string, string> = { like: "Like", heart: "Heart", laugh: "Laugh", surprised: "Surprised", cry: "Sad", angry: "Angry" };
 
@@ -101,6 +102,7 @@ const onHoverChange = (cb: () => void) => {
 export function Conversation({
   acc,
   chat,
+  ownName,
   entry,
   rows,
   open = null,
@@ -114,6 +116,7 @@ export function Conversation({
 }: {
   acc: number;
   chat: string;
+  ownName?: string;
   entry?: Chat;
   rows: Message[] | null;
   // the last open of this chat, from the event stream: which one Teams has done, or why it failed
@@ -167,6 +170,56 @@ export function Conversation({
   const messages = rows ?? [];
   const realMine = messages.filter((m) => m.mine).map((m) => (m.text || "").trim());
   const shownPending = pending.filter((p) => !realMine.includes(p.text.trim()));
+
+  const copy = useCallback((rows: Message[]) => {
+    void copyMessages(chat, rows, acc, ownName).then(() => toast.success("Copied"), (error: unknown) => {
+      if (!(error instanceof DOMException && error.name === "AbortError")) toast.error("Could not copy messages. Check clipboard permission.");
+    });
+  }, [chat, acc, ownName]);
+
+  useEffect(() => () => cancelMessageCopy(), [chat, acc]);
+
+  useEffect(() => {
+    let shift = false;
+    const key = (e: KeyboardEvent) => {
+      shift = e.shiftKey;
+      if (e.type === "keydown" && shift && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && boxRef.current && selectedMessages(boxRef.current, rows ?? [], window.getSelection()).length) {
+        e.preventDefault();
+        document.execCommand("copy");
+      }
+    };
+    const reset = () => { shift = false; cancelMessageCopy(); };
+    const hidden = () => { if (document.hidden) cancelMessageCopy(); };
+    const onCopy = (e: ClipboardEvent) => {
+      cancelMessageCopy();
+      const root = boxRef.current;
+      if (shift || !root || (e.target instanceof Element && e.target.closest("input,textarea,[contenteditable=true]"))) return;
+      const selected = selectedMessages(root, rows ?? [], window.getSelection());
+      if (!selected.length) return;
+      e.preventDefault();
+      if (typeof navigator.clipboard?.write === "function" && typeof ClipboardItem !== "undefined") {
+        copy(selected);
+      } else if (e.clipboardData) {
+        const formatted = formatMessages(chat, selected, acc, undefined, ownName);
+        e.clipboardData.setData("text/plain", formatted.text);
+        e.clipboardData.setData("text/html", formatted.html);
+      }
+    };
+    document.addEventListener("copy", onCopy);
+    document.addEventListener("cut", cancelMessageCopy);
+    document.addEventListener("visibilitychange", hidden);
+    window.addEventListener("keydown", key);
+    window.addEventListener("keyup", key);
+    window.addEventListener("blur", reset);
+    return () => {
+      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("cut", cancelMessageCopy);
+      document.removeEventListener("visibilitychange", hidden);
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("keyup", key);
+      window.removeEventListener("blur", reset);
+    };
+  }, [chat, acc, rows, ownName, copy]);
 
   // Opens the chat in the remote Teams: the agent saves what Teams shows, then keeps it up to date. Until that open is
   // done the messages are the ones saved at the last visit. asks counts the tries (Try again); asked is the command the
@@ -488,6 +541,7 @@ export function Conversation({
           )}
           <div className="relative">
             <div
+              data-copy-message={!m.deleted && !pe ? mid : undefined}
               title={at !== null ? fullTime(at) : undefined}
               onClick={(e) => {
                 if (!touch || !canAct || (e.target as HTMLElement).closest("a,button")) return;
@@ -616,11 +670,10 @@ export function Conversation({
                       Reply
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      disabled={!(m.text || "").trim()}
-                      onSelect={() => void navigator.clipboard?.writeText(m.text || "").then(() => toast.success("Copied"))}
+                      onSelect={() => copy([m])}
                     >
                       <CopyIcon />
-                      Copy text
+                      Copy message
                     </DropdownMenuItem>
                     {mine && (
                       <>
@@ -1022,14 +1075,13 @@ export function Conversation({
                 <Button
                   variant="ghost"
                   className="h-12 justify-start gap-3 px-3 text-base"
-                  disabled={!(sheetMsg.text || "").trim()}
                   onClick={() => {
                     setSheetFor(null);
-                    void navigator.clipboard?.writeText(sheetMsg.text || "").then(() => toast.success("Copied"));
+                    copy([sheetMsg]);
                   }}
                 >
                   <CopyIcon className="size-5" />
-                  Copy text
+                  Copy message
                 </Button>
                 {!!sheetMsg.mine && (
                   <>
