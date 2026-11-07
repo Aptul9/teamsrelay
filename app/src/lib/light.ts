@@ -3,8 +3,8 @@ import { askRefresh, beginRefresh, endRefresh, listSlots, REFRESH_ASKED, slotRow
 import { SIGN_IN_WAIT, SIGNED_OUT, type CheckDeps } from "./checks";
 import { exclusive, slotUp } from "./slots";
 
-// Captured Microsoft sessions renew in the light agent without a browser. The browser runs only on the owner's
-// request or for a legacy account's first session capture, one account at a time like checks (src/lib/checks.ts).
+// Direct Microsoft sessions renew over HTTP. MCAS and refused sessions use a bounded browser run with the existing
+// profile, one account at a time like checks (src/lib/checks.ts).
 
 // Seconds a run waits for the new sign-in: Teams starting, then renewing its tokens
 export const REFRESH_WAIT = 360;
@@ -17,17 +17,18 @@ const AFTER_FAILED = 1800;
 
 const report = (n: number) => (e: Error) => console.error(`sign-in run of account ${n}: ${e.message}`);
 
-// Session-backed accounts start a browser only on demand. Legacy accounts bootstrap their session at the next run.
+// Direct sessions renew over HTTP. Proxied or refused sessions fall back to their persistent browser profile.
 export function refreshDue(s: Slot, sign: LightSignIn | null, now: number): boolean {
   if (!s.light || s.stopped || s.relay || s.refreshing) return false;
   if (s.refresh_result === REFRESH_ASKED) return true;
-  if (sign?.session) return false;
+  if (sign?.session && !sign.browser && !sign.refused) return false;
+  if (s.refresh_result === "login" && (sign?.at ?? 0) <= s.refreshed) return false;
   if (s.refreshed && now - s.refreshed < (s.refresh_result === "ok" ? AFTER_OK : AFTER_FAILED)) return false;
   if (!sign?.at || sign.refused) return true;
   return sign.expiresOn - now < 60;
 }
 
-const usable = (sign: LightSignIn | null, now: number) => !!sign?.at && !sign.refused && (!!sign.session || sign.expiresOn - now >= MIN_LIFE);
+const usable = (sign: LightSignIn | null, now: number) => !!sign?.at && !sign.refused && ((!!sign.session && !sign.browser) || sign.expiresOn - now >= MIN_LIFE);
 
 // The browser of the account until a sign-in it captured holds MIN_LIFE: ok; Teams signed out SIGNED_OUT seconds:
 // login; nothing in REFRESH_WAIT: failed. A run its owner asked for, before or while it runs, waits for the sign-in in
@@ -40,7 +41,7 @@ export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult |
   const begun = now();
   const started = await exclusive(async () => {
     const s = slotRow(d.db, n);
-    if (!s || s.stopped || !s.light) return false;
+    if (!s || s.stopped || !s.light || d.slot.busy?.(n)) return false;
     beginRefresh(d.db, n, begun);
     try {
       await slotUp(d.ctl, n);
@@ -69,7 +70,7 @@ export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult |
         break;
       }
       const sign = d.slot.lightSignIn(n);
-      if (usable(sign, now()) && (sign?.session || (sign?.at ?? 0) >= begun)) {
+      if (usable(sign, now()) && (sign?.at ?? 0) >= begun) {
         result = "ok";
         break;
       }
@@ -89,11 +90,20 @@ export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult |
       await sleep(2000);
     }
   } finally {
-    await exclusive(async () => {
-      const s = slotRow(d.db, n);
-      if (s && !s.stopped && s.light) await d.ctl.light(n).catch(report(n));
-      if (s) endRefresh(d.db, n, { now: now(), result });
-    });
+    for (;;) {
+      const ended = await exclusive(async () => {
+        const s = slotRow(d.db, n);
+        if (s && !s.stopped && s.light) {
+          if (d.slot.busy?.(n)) return false;
+          await d.ctl.light(n).catch(report(n));
+        }
+        if (s) endRefresh(d.db, n, { now: now(), result });
+        return true;
+      });
+      if (ended) break;
+      // A call can start during renewal or while another slot operation holds the queue.
+      await sleep(2000);
+    }
   }
   return result;
 }

@@ -22,6 +22,7 @@ import { BLANK, hostOf, isTeamsUrl, pickTeamsPage } from "./logic/hosts";
 import { errorText, log } from "./log";
 import { Scheduler, type Job } from "./scheduler";
 import { asAgent } from "./teams/input";
+import { continueMcas } from "./teams/mcas";
 import { sleep, TeamsPage } from "./teams/page";
 
 // Seconds between two inputs on the Teams page
@@ -194,6 +195,20 @@ export async function runAgent(a: Omit<Agent, "tp" | "health">, browser: Browser
       }
       const page = pickTeamsPage(context.pages());
       if (!page) {
+        let continued = false;
+        for (const candidate of context.pages()) {
+          if (!/^https:\/\/[a-z0-9-]+\.access\.mcas\.ms\//i.test(candidate.url())) continue;
+          if (await continueMcas(candidate)) {
+            log.info("SESSION", "MCAS monitored-access notice continued");
+            continued = true;
+            break;
+          }
+        }
+        if (continued) {
+          away = null;
+          await sleep(1000);
+          continue;
+        }
         // the page that is not blank, if any: a sign-in on another host (federated sign-in page, MFA) looks like this
         const url = context.pages().map((p) => p.url()).find((u) => !BLANK.test(u)) ?? "";
         await noTabHealth(agent, url);

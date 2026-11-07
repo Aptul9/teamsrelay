@@ -41,6 +41,7 @@ function refused(l: Light, e: unknown): boolean {
 export async function renewSignIn(l: Light, renewed: { for: number; retryAt: number }) {
   const previous = parseState(LightSignIn, l.store.getState(STATE.lightToken));
   const file = l.config.lightTokenFile;
+  if (previous.browser) return;
   if (file && (previous.session || fs.existsSync(sessionFile(file)))) {
     if (!previous.session) l.store.setState(STATE.lightToken, JSON.stringify({ ...previous, session: true } satisfies LightSignIn));
     const stored = l.token.stored();
@@ -58,7 +59,10 @@ export async function renewSignIn(l: Light, renewed: { for: number; retryAt: num
       if (previous.expiresOn !== fresh.expiresOn) log.info("light", "Microsoft session renewed without browser", { until: new Date(fresh.expiresOn * 1000).toISOString() });
     } catch (e) {
       renewed.retryAt = Date.now() + (e instanceof NeedsSignIn ? 5 * 60_000 : 60_000);
-      if (!refused(l, e instanceof NeedsSignIn ? new SignedOut(e.message) : e)) log.warn("light", errorText(e));
+      if (e instanceof NeedsSignIn) {
+        l.store.setState(STATE.lightToken, JSON.stringify({ ...previous, browser: true } satisfies LightSignIn));
+        log.info("light", "Microsoft session needs browser renewal");
+      } else log.warn("light", errorText(e));
     }
     return;
   }

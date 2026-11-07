@@ -62,10 +62,22 @@ it("backs off transient failures without clearing access tokens or marking sign-
   expect(JSON.parse(state.get(STATE.lightToken)!)).toMatchObject({ refused: false });
 });
 
-it("marks a missing captured session as needing sign-in, without opening a browser", async () => {
+it("requests browser fallback for a missing session without declaring a still-usable token signed out", async () => {
   const { dir, l, state, renewed } = setup();
   fs.unlinkSync(path.join(dir, "session.json"));
   await renewSignIn(l, renewed);
-  expect(JSON.parse(state.get(STATE.lightToken)!)).toMatchObject({ refused: true, session: true });
-  expect(l.signedOut).toBe(true);
+  expect(JSON.parse(state.get(STATE.lightToken)!)).toMatchObject({ refused: false, session: true, browser: true });
+  expect(l.signedOut).toBe(false);
+});
+
+it("hands an MCAS form to browser renewal once, keeping the current token", async () => {
+  const { l, state, renewed, file } = setup();
+  const fetch = vi.fn(async () => new Response('<form method="post" action="https://tenant.access.mcas.ms/aad_login"><input name="id_token" value="private"></form>'));
+  vi.stubGlobal("fetch", fetch);
+  await renewSignIn(l, renewed);
+  await renewSignIn(l, renewed);
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(JSON.parse(state.get(STATE.lightToken)!)).toMatchObject({ browser: true, refused: false });
+  expect(LightToken.load(file)?.refreshToken).toBe("old");
+  expect(l.signedOut).toBe(false);
 });

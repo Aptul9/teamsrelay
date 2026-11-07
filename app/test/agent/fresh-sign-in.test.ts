@@ -77,4 +77,22 @@ describe("new Microsoft sign-in of a light account's browser", () => {
     expect(await freshSignIn(a)).toBe(false);
     expect(page.goto).not.toHaveBeenCalled();
   });
+
+  it("renews a browser-backed session without clearing Microsoft or MCAS login cookies", async () => {
+    const { a, page, store, cleared } = agent(refused());
+    store.setState(STATE.lightToken, JSON.stringify({ at: now() - 86400, expiresOn: 1, refused: false, session: true, browser: true }));
+    page.url = () => "https://teams.cloud.microsoft.mcas.ms/";
+    expect(await freshSignIn(a)).toBe(true);
+    expect(cleared).toContain("https://teams.cloud.microsoft.mcas.ms");
+    expect(cleared.some((u) => u.includes("login.microsoftonline") || u.includes("access.mcas"))).toBe(false);
+    const cdp = await page.context().newCDPSession();
+    expect(cdp.send.mock.calls.every(([, p]) => !String((p as { storageTypes?: string }).storageTypes).includes("all"))).toBe(true);
+  });
+
+  it("forces a new sign-in for detected MCAS after refusal, even before the browser flag was captured", async () => {
+    const { a, page, store } = agent(refused(), { pageRt: "rt-rotated" });
+    store.setState(STATE.lightToken, JSON.stringify({ at: now() - 1000, expiresOn: now() + 3600, refused: true, session: true }));
+    page.url = () => "https://teams.cloud.microsoft.mcas.ms/";
+    expect(await freshSignIn(a)).toBe(true);
+  });
 });
