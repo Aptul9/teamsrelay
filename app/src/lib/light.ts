@@ -68,7 +68,8 @@ export async function runRefresh(n: number, d: CheckDeps): Promise<CheckResult |
         result = null;
         break;
       }
-      if (usable(d.slot.lightSignIn(n), now())) {
+      const sign = d.slot.lightSignIn(n);
+      if (usable(sign, now()) && (sign?.session || (sign?.at ?? 0) >= begun)) {
         result = "ok";
         break;
       }
