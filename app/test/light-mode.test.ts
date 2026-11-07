@@ -98,6 +98,18 @@ describe("when a light account needs its browser", () => {
 });
 
 describe("sign-in run of a light account", () => {
+  it("keeps a legacy account's browser until this run captured its session, even while the old token holds", async () => {
+    const n = slot();
+    sign = { at: T0 - 100, expiresOn: T0 + 3600, refused: false };
+    askRefresh(db, n);
+    onSleep = (s) => {
+      if (s >= T0 + 8) sign = { at: s, expiresOn: T0 + 3600, refused: false, session: true };
+    };
+    expect(await runRefresh(n, deps())).toBe("ok");
+    expect(secs()).toBe(T0 + 8);
+    expect(calls).toEqual([`start ${n}`, `light ${n}`]);
+  });
+
   it("finishes capture once the Microsoft session is saved, even with an old SPA refresh token", async () => {
     const n = slot();
     onSleep = (s) => void (sign = { at: s, expiresOn: s - 1, refused: false, session: true });
