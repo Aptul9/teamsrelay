@@ -486,12 +486,11 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   }
 
   // Answer from the app: the sound of the call comes to the app, started from this tap (a page may play from a tap);
-  // where it cannot, the remote desktop, which carries the sound, opens at once (a window opened after the request
-  // would count as a popup). The agent clicks Accept with audio in Teams at its next look. False when Teams did not
+  // where it cannot, a toast says so. The agent clicks Accept with audio in Teams at its next look. False when Teams did not
   // take the call: the banner offers Answer again while it rings, and the sound stops unless the call is in progress.
   async function answerCall(c: RingingCall): Promise<boolean> {
     const relaySound = startRelayAudio(c.acc);
-    if (carriesSound(c.acc) && !startCallAudio(c.acc)) openDesktop(c.acc);
+    if (carriesSound(c.acc) && !startCallAudio(c.acc)) toast.info("No call sound in this browser", { description: "Open the app in a recent Chrome, Edge or Safari to hear the call." });
     const failed = (description: string) => {
       if (!callsRef.current.some((x) => x.acc === c.acc && x.active)) answered?.stop(c.acc);
       toast.error("Call not answered", { description });
@@ -515,7 +514,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     const done = () => setPlacing((p) => (p?.acc === n && p.name === name ? null : p));
     setPlacing(mine);
     const relaySound = startRelayAudio(n);
-    if (carriesSound(n) && !startCallAudio(n)) openDesktop(n);
+    if (carriesSound(n) && !startCallAudio(n)) toast.info("No call sound in this browser", { description: "Open the app in a recent Chrome, Edge or Safari to hear the call." });
     const failed = (description: string) => {
       done();
       if (!callsRef.current.some((x) => x.acc === n && x.active)) answered?.stop(n);
@@ -539,7 +538,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
       answered?.stop(c.acc);
       return true;
     }
-    toast.error("Call not ended", { description: "End it in Teams, in the remote desktop of the account." });
+    toast.error("Call not ended", { description: "Try again." });
     return false;
   }
 
@@ -551,7 +550,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     callMutes.settled(n, r.status === "done");
     if (r.status !== "done" && callMutes.view(n).teams !== undefined)
       toast.error(on ? "Teams did not mute" : "Teams did not unmute", {
-        description: on ? "Muted on this device only: the others see no mute mark." : "Unmute in Teams, in the remote desktop of the account.",
+        description: on ? "Muted on this device only: the others see no mute mark." : "Try again.",
       });
   }
 
@@ -562,12 +561,6 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     if (d.mic !== devices.mic) void call?.useMic(d.mic);
     if (d.speaker !== devices.speaker) void call?.useSpeaker(d.speaker);
     setDevices(d);
-  }
-
-  // the desktop takes the call over, its sound included
-  function callToDesktop(n: number) {
-    answered?.stop(n);
-    openDesktop(n);
   }
 
   async function addAccount() {
@@ -697,15 +690,13 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
     if (to < 1) setOpenChat(null);
   });
 
-  const tabs: { id: ListTab | "desktop"; label: string; icon: React.ComponentType<{ className?: string }>; count: number; red?: boolean }[] = [
+  const tabs: { id: ListTab; label: string; icon: React.ComponentType<{ className?: string }>; count: number; red?: boolean }[] = [
     { id: "chats", label: "Chats", icon: MessageSquareIcon, count: unreadChats },
     { id: "activity", label: "Notifications", icon: BellIcon, count: unreadActivity },
     { id: "calls", label: "Calls", icon: PhoneIcon, count: unreadCalls, red: true },
-    // the Teams window of an account on another computer is there
-    ...(!isPc && !current?.relay ? [{ id: "desktop" as const, label: "Desktop", icon: MonitorIcon, count: 0 }] : []),
   ];
-  const activeTab = pane === "desktop" ? "desktop" : listTab;
-  const selectTab = (t: string) => (t === "desktop" ? acc && openDesktop(acc) : showList(t as ListTab));
+  const activeTab = listTab;
+  const selectTab = (t: string) => showList(t as ListTab);
 
   const phoneNav = (
     <nav className="grid shrink-0 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
@@ -752,7 +743,6 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
         onSelect={selectAccount}
         onAnswer={answerCall}
         onHangUp={hangUpCall}
-        onDesktop={callToDesktop}
         audio={callAudio}
         mutes={mutes}
         onMute={(n, on) => void muteCall(n, on)}
@@ -792,7 +782,6 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
             health={health}
             pushOff={pushOff}
             onEnablePush={() => void turnOnPush()}
-            onOpenDesktop={() => acc && openDesktop(acc)}
           />
         </div>
 
@@ -999,7 +988,6 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
               others={others}
               otherCalls={otherCalls}
               onBack={() => setOpenChat(null)}
-              onOpenDesktop={() => openDesktop(acc)}
               onCall={callable(openChat) ? () => void placeCall(acc, openChat) : undefined}
               callHost={current?.relay && !current.callAudio ? relayHost(current) : undefined}
             />

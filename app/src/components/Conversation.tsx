@@ -7,7 +7,6 @@ import {
   CheckIcon,
   CopyIcon,
   DownloadIcon,
-  ExternalLinkIcon,
   FileTextIcon,
   ImagePlusIcon,
   MessageSquareDashedIcon,
@@ -110,7 +109,6 @@ export function Conversation({
   others,
   otherCalls = 0,
   onBack,
-  onOpenDesktop,
   onCall,
   callHost,
 }: {
@@ -129,7 +127,6 @@ export function Conversation({
   others: number;
   otherCalls?: number;
   onBack: () => void;
-  onOpenDesktop: () => void;
   // a Teams audio call to the person of this chat, given only where the app can place one (a 1:1 chat of an account of
   // the browsers container, no call on it): the header offers Call, and asks before calling
   onCall?: () => void;
@@ -743,14 +740,6 @@ export function Conversation({
             </Button>
           </TooltipTrigger>
           <TooltipContent>Refresh from Teams</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-10 md:size-9" onClick={onOpenDesktop} aria-label="Open in the remote Teams">
-              <ExternalLinkIcon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Open in the remote Teams</TooltipContent>
         </Tooltip>
       </header>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { MicIcon, MicOffIcon, MonitorIcon, PhoneIcon, PhoneIncomingIcon, PhoneOffIcon, SlidersHorizontalIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
+import { MicIcon, MicOffIcon, PhoneIcon, PhoneIncomingIcon, PhoneOffIcon, SlidersHorizontalIcon, Volume2Icon, VolumeXIcon } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -17,7 +17,7 @@ function callLine(a: CallAudioState | undefined, m: MuteView | undefined, muted:
   if (!a) return muted ? "Muted" : "";
   if (a.link === "connecting" || a.link === "retrying") return "Connecting the sound";
   if (a.link === "desktop") return muted ? "Sound on the desktop, muted" : "Sound on the desktop";
-  if (a.link === "unavailable") return `${a.reason || "No sound in the app"}: use Desktop`;
+  if (a.link === "unavailable") return a.reason || "No sound in the app";
   if (a.link === "closed") return "";
   if (muted) return !m || m.teams === true || m.want !== null ? "Sound in the app, muted" : "Sound in the app, muted here only";
   if (a.mic === "on") return "Sound in the app, microphone on";
@@ -63,7 +63,6 @@ export function CallBanner({
   onSelect,
   onAnswer,
   onHangUp,
-  onDesktop,
   audio,
   mutes,
   onMute,
@@ -78,7 +77,6 @@ export function CallBanner({
   onSelect: (acc: number) => void;
   onAnswer?: (c: RingingCall) => unknown;
   onHangUp?: (c: RingingCall) => unknown;
-  onDesktop?: (acc: number) => void;
   audio?: Record<number, CallAudioState>;
   mutes?: Record<number, MuteView>;
   onMute?: (acc: number, on: boolean) => void;
@@ -179,12 +177,6 @@ export function CallBanner({
                     >
                       <SlidersHorizontalIcon />
                       <span className="sr-only">Devices</span>
-                    </Button>
-                  )}
-                  {onDesktop && !other && (
-                    <Button size="sm" variant="secondary" className={button} onClick={() => onDesktop(c.acc)}>
-                      <MonitorIcon />
-                      <span className="@max-[21rem]:sr-only">Desktop</span>
                     </Button>
                   )}
                   {onHangUp && (

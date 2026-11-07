@@ -295,13 +295,12 @@ describe("call ring where the page may play sound (installed app)", () => {
     expect(c.errors).toEqual([]);
   });
 
-  it("shows a call in progress with Desktop and Hang up, without a ring", async () => {
+  it("shows a call in progress with Hang up, no Desktop, without a ring", async () => {
     const active = { acc: 2, caller: "Anna Rossi", since: 1_790_000_120_000, active: true };
     await setCalls(c, [active]);
     await until(c, "In call with Anna Rossi");
     expect(await loudest(c)).toBeLessThan(0.001);
-    await click(c, "[role=alert] button", "Desktop");
-    expect(await run(c, "window.desktop")).toBe(2);
+    expect(await buttons(c)).not.toContain("Desktop");
     await click(c, "[role=alert] button", "Hang up");
     expect(await run(c, "window.hungUp")).toEqual(active);
     await setCalls(c, []);
@@ -328,7 +327,8 @@ describe("call ring where the page may play sound (installed app)", () => {
     await audio({ link: "desktop", mic: "off" });
     await until(c, "Sound on the desktop");
     await audio({ link: "unavailable", reason: "The remote desktop cannot be reached", mic: "off" });
-    await until(c, "The remote desktop cannot be reached: use Desktop");
+    await until(c, "The remote desktop cannot be reached");
+    expect(await run(c, "document.body.innerText.includes('use Desktop')")).toBe(false);
     await run(c, "window.setAudio({})");
     await setCalls(c, []);
   });

@@ -204,12 +204,12 @@ export function AccountMenu({
                   <LaptopIcon />
                   Runs on {relayHost(current)}
                 </DropdownMenuItem>
-              ) : (
+              ) : needsLogin(current) ? (
                 <DropdownMenuItem disabled={current.stopped || idleChecked(current)} onSelect={() => onOpenDesktop(current.slot)}>
                   <MonitorIcon />
-                  {needsLogin(current) ? "Sign in to Microsoft" : "Open the remote Teams"}
+                  Sign in to Microsoft
                 </DropdownMenuItem>
-              )}
+              ) : null}
               <DropdownMenuItem variant="destructive" onSelect={() => onRemove(current)}>
                 <Trash2Icon />
                 Remove this account…
