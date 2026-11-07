@@ -377,3 +377,33 @@ describe("sign-in capture of a light account", () => {
     expect(parseState(LightSignIn, store.getState(STATE.lightToken))).toMatchObject({ expiresOn: 1, session: true, refused: false });
   });
 });
+
+describe("native call command wiring", () => {
+  it("uses the resolved one-to-one peer and preserves answer identity", async () => {
+    const { l, store } = setup(() => []);
+    const command = vi.fn(async () => true);
+    l.calls = { command } as unknown as NonNullable<Light['calls']>;
+    l.list.ids.set('Other', 'thread'); l.list.members.set('thread', [mri('other')]);
+    const handlers = lightHandlers({list: async()=>true, activity:async()=>true});
+    const base = { id: 1, ts: Math.floor(Date.now()/1000), arg1:'Other', arg2:'', type:'call' };
+    expect(await handlers.call!(l, base)).toBe('done');
+    expect(command).toHaveBeenCalledWith('call', {thread:'thread',peer:mri('other'),name:'Other'});
+    expect(await handlers.answer!(l,{...base,type:'answer',arg2:'{"since":123}'})).toBe('done');
+    expect(command).toHaveBeenCalledWith('answer',{since:123});
+    store.close();
+  });
+});
+
+
+describe("independent native call command lane", () => {
+ it("answers while a non-call command waits without marking it interrupted", async () => {
+  const {l,store}=setup(()=>[]);
+  let release!:()=>void; const waiting=new Promise<void>(r=>{release=r;});
+  const slow=store.enqueue('open','Slow'); const answer=store.enqueue('answer','Peer','{"since":1}');
+  const handlers={open:async()=>{await waiting;return 'done' as const;},answer:async()=> 'done' as const};
+  const running=runLightCommands(l,handlers,'other');
+  await runLightCommands(l,handlers,'calls');
+  expect(store.commandStatus(answer)).toBe('done');
+  release();await running;expect(store.commandStatus(slow)).toBe('done');store.close();
+ });
+});

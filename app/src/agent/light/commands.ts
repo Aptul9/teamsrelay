@@ -195,6 +195,15 @@ export type Reads = { list: () => Promise<boolean>; activity: () => Promise<bool
 
 export function lightHandlers(reads: Reads): Partial<Record<CommandType, Handler>> {
   return {
+    call: async (l, cmd) => {
+      const thread = l.list.ids.get(cmd.arg1);
+      const peers = thread ? l.list.members.get(thread)?.filter(m => m !== `8:orgid:${l.me.oid}`) : [];
+      if (!l.calls || !thread || peers?.length !== 1) { log.warn("calling", "outgoing peer unavailable", { worker: !!l.calls, thread: !!thread, peers: peers?.length ?? 0 }); return "failed"; }
+      return await l.calls.command("call", { thread, peer: peers[0], name: cmd.arg1 }) ? "done" : "failed";
+    },
+    answer: async (l, cmd) => l.calls && await l.calls.command("answer", JSON.parse(cmd.arg2 || "{}")) ? "done" : "failed",
+    mute: async (l, cmd) => l.calls && await l.calls.command("mute", JSON.parse(cmd.arg2 || "{}")) ? "done" : "failed",
+    hangup: async (l) => l.calls && await l.calls.command("hangup", {}) ? "done" : "failed",
     open,
     send,
     reply,
@@ -218,10 +227,12 @@ export function lightHandlers(reads: Reads): Partial<Record<CommandType, Handler
 }
 
 // Every pending command, oldest first, as the browser agent runs them (src/agent/commands/index.ts)
-export async function runLightCommands(l: Light, handlers: Partial<Record<CommandType, Handler>>) {
-  const interrupted = l.store.interruptedCommands();
+export async function runLightCommands(l: Light, handlers: Partial<Record<CommandType, Handler>>, lane: "all" | "calls" | "other" = "all") {
+  const interrupted = lane === "all" ? l.store.interruptedCommands() : 0;
   if (interrupted) log.warn("cmd", "stopped while running, not run again: unconfirmed", { commands: interrupted });
   for (const cmd of l.store.pendingCommands()) {
+    const call = ["answer", "hangup", "mute"].includes(cmd.type);
+    if ((lane === "calls" && !call) || (lane === "other" && call)) continue;
     const expired = l.store.expirePendingCommands(COMMAND_MAX_AGE);
     if (expired) log.warn("cmd", "waited too long, not run", { commands: expired });
     if (l.store.commandStatus(cmd.id) !== "pending") continue;

@@ -1,0 +1,33 @@
+import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+import { tempDir } from '../helpers';
+const spawn = vi.hoisted(() => vi.fn());
+vi.mock('node:child_process', () => ({ fork: spawn }));
+import { NativeCalls } from '@/agent/light/native-calls';
+import type { Light } from '@/agent/light/context';
+import { STATE } from '@/shared/slot-db/state';
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+describe('native calling parent', () => {
+ it('starts isolated child, advertises readiness, records state and correlates commands', async () => {
+  const dir=tempDir(), state=new Map<string,string>();
+  const child=Object.assign(new EventEmitter(),{connected:true,send:vi.fn(),kill:vi.fn(),exitCode:null,signalCode:null});
+  spawn.mockReturnValue(child);
+  vi.stubGlobal('fetch',vi.fn(async()=>Response.json({tokens:{skypeToken:'test'},regionGtms:{}})));
+  const notifier={call:vi.fn(async()=>1)};
+  const store={setState:(k:string,v:string)=>state.set(k,v),addCall:vi.fn()};
+  const l={config:{lightTokenFile:path.join(dir,'light-token.json'),slot:7},me:{oid:'owned',name:'Owner'},token:{accessToken:async()=> 'access'},list:{members:new Map([['thread',['8:orgid:peer']]]),names:new Map([['thread','Peer']])},store,notifier} as unknown as Light;
+  const calls=new NativeCalls(l);await calls.start();
+  expect(spawn.mock.calls[0][1]).toEqual(['--mode=serve']);
+  child.emit('message',{stage:'worker-ready'});expect(state.get(STATE.callAudio)).toBe('1');
+  child.emit('message',{call:{caller:'8:orgid:peer',since:123,seen:124,ringing:true,active:false}});
+  expect(JSON.parse(state.get(STATE.call)! ).caller).toBe('Peer');expect(notifier.call).toHaveBeenCalledWith('Peer','ringing',123);
+  const result=calls.command('answer',{since:123});const sent=child.send.mock.calls[0][0];
+  child.emit('message',{command:sent.id,ok:true});expect(await result).toBe(true);
+  child.emit('message',{call:{caller:'8:orgid:peer',since:123,seen:130,ringing:false,active:false,ended:true,answered:true}});
+  expect(store.addCall).toHaveBeenCalledTimes(1);
+  const token=fs.readFileSync(path.join(dir,'calling-audio-token'),'utf8');expect(token).toHaveLength(64);
+  calls.stop();child.emit('exit',0);expect(state.get(STATE.callAudio)).toBe('0');
+ });
+});

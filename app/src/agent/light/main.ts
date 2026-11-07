@@ -29,14 +29,14 @@ function check() {
 
 async function main() {
   if (process.argv.includes("--check")) return check();
-  for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => process.exit(0));
+  for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { /* runLight owns graceful native-worker shutdown */ setTimeout(() => process.exit(0), 4000).unref(); });
   const config = loadConfig();
   const store = SlotStore.open(config.dbPath);
   const vapid = loadVapidKeys(config.vapid.privateKeyFile, config.vapid.appKeyFile);
   if (!vapid) log.warn("push", "no VAPID private key: push notifications off", { file: config.vapid.privateKeyFile });
   const devices = new AppStore(config.appDb, config.slot);
   const sa = loadServiceAccount(config.fcmCredentials);
-  const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy, fcm: sa ? new FcmSender(sa) : null, answerable: false });
+  const notifier = new Notifier({ store, devices, vapid, subject: config.vapid.subject, ntfy: config.ntfy, fcm: sa ? new FcmSender(sa) : null, answerable: process.env.NATIVE_CALLS === "1" });
   const token = new LightToken(config.lightTokenFile);
   const api = new LightApi(token, () => token.stored()?.region || "emea");
   const l: Light = {

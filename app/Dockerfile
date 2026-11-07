@@ -19,6 +19,13 @@ RUN mkdir -p /agent/node_modules/better-sqlite3/prebuilds \
  && cp "node_modules/better-sqlite3/prebuilds/linux-$(node -p process.arch).node" /agent/node_modules/better-sqlite3/prebuilds/ \
  && cp dist/agent.cjs dist/agent.cjs.map dist/light.cjs dist/light.cjs.map dist/supervisor.cjs /agent/
 
+# Native calling worker and its exact reviewed vendor artifacts. No package install scripts.
+RUN cp -r node_modules/@roamhq /agent/node_modules/ \
+ && cp -r node_modules/opusscript node_modules/ws node_modules/domexception node_modules/webidl-conversions /agent/node_modules/ \
+ && cp scripts/calling-live-host.mjs scripts/calling-host-helpers.mjs scripts/calling-audio-bridge.mjs scripts/trouter-live-probe.mjs scripts/trouter-offline-probe.mjs /agent/ \
+ && printf '{"private":true}' > /agent/package.json \
+ && node scripts/fetch-calling.mjs
+
 # Every Teams account: Chromium and the remote desktop of linuxserver, the agents, and the supervisor that runs
 # them (s6 service svc-teamsrelay). The desktop no longer opens a browser by itself.
 FROM lscr.io/linuxserver/chromium:latest@sha256:cf6200ccdcb224feaf5d3bde4ce45b3783c926a7496c98059cae1e0db78e5b2f AS browsers

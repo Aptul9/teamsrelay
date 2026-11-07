@@ -135,6 +135,7 @@ jobs:
           TR_NTFY_ENABLED: ${{ vars.NTFY_ENABLED }}
           TR_NTFY_URL: ${{ vars.NTFY_URL }}
           TR_NTFY_TOPIC: ${{ vars.NTFY_TOPIC }}
+          TR_NATIVE_CALLS: ${{ vars.NATIVE_CALLS }}
         run: |
           deploy/render-env.sh > /tmp/tr.env
           grep -Eq '^(BETTER_AUTH_SECRET|SESSION_SECRET)=.{32,}' /tmp/tr.env || { echo "no session key of at least 32 characters in the pipeline variables" >&2; exit 1; }

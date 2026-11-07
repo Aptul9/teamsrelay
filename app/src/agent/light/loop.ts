@@ -1,3 +1,4 @@
+import { NativeCalls } from "./native-calls";
 import { setTimeout as sleep } from "node:timers/promises";
 import fs from "node:fs";
 import { Identity, LightSignIn, parseState, STATE, Watch, type AgentHealth, type TeamsState } from "@/shared/slot-db/state";
@@ -222,12 +223,28 @@ async function readViewing(l: Light) {
 }
 
 export async function runLight(l: Light, signal?: AbortSignal): Promise<void> {
+  if (process.env.NATIVE_CALLS === "1") {
+    if (!l.me.oid) await identify(l);
+    l.calls = new NativeCalls(l);
+    process.once("SIGTERM", () => l.calls?.stop());
+    process.once("SIGINT", () => l.calls?.stop());
+    await l.calls.start().catch(e => { log.warn("calling", errorText(e)); l.calls?.schedule(); });
+  }
   const handlers = lightHandlers({ list: () => readList(l), activity: () => readFeed(l) });
   const renewed = { for: 0, retryAt: 0 };
   let healthAt = 0;
   let viewingAt = 0;
   let renewalAt = 0;
   let presenceAt = 0;
+  // Call controls have their own lane: a chat-list read or message command must not hold an answer or hang-up.
+  if (l.calls) l.store.interruptedCommands();
+  let commandsBusy = false;
+  const commandTimer = l.calls ? setInterval(() => {
+    if (commandsBusy) return;
+    commandsBusy = true;
+    void runLightCommands(l, handlers, "calls").catch(e => log.warn("cmd", errorText(e))).finally(() => { commandsBusy = false; });
+  }, 250) : null;
+  commandTimer?.unref();
   while (!signal?.aborted) {
     const now = Date.now();
     try {
@@ -256,10 +273,12 @@ export async function runLight(l: Light, signal?: AbortSignal): Promise<void> {
         healthAt = now + HEALTH_EVERY_MS;
         await writeHealth(l);
       }
-      await runLightCommands(l, handlers);
+      await runLightCommands(l, handlers, commandTimer ? "other" : "all");
     } catch (e) {
       log.warn("loop", errorText(e));
     }
     await sleep(250);
   }
+  if (commandTimer) clearInterval(commandTimer);
+  l.calls?.stop();
 }

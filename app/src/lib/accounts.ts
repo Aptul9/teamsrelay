@@ -102,7 +102,7 @@ export function accountSummary(s: Slot): AccountSummary {
     relay: !!s.relay,
     host: d?.link.host ?? "",
     relaySeen: d?.link.seen ?? 0,
-    callAudio: !!s.relay && !!d?.callAudio,
+    callAudio: (!!s.relay || !!s.light) && !!d?.callAudio,
     light: !!s.light,
     refreshing: !!s.refreshing,
   };

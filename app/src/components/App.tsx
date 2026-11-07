@@ -229,7 +229,7 @@ export function App({ user, desktopUrl }: { user: User; desktopUrl: string }) {
   );
   // where the sound of the call of an account goes: to this app or to the remote desktop, or nowhere here for an
   // account on another computer, whose call is taken in Teams there (no audio link, no desktop to open)
-  const carriesSound = (n: number) => !accounts?.find((a) => a.slot === n)?.relay;
+  const carriesSound = (n: number) => { const a = accounts?.find(a => a.slot === n); return !a?.relay && !a?.callAudio; };
   // the call answered here goes on while it is in progress, and its sound ends with it
   const callsRef = useRef<RingingCall[]>([]);
   useEffect(() => {

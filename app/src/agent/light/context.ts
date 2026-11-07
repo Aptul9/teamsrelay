@@ -10,6 +10,7 @@ import type { LightToken } from "./token";
 
 // What the light agent (an account with no browser of its own) works with
 export type Light = {
+  calls?: import("./native-calls").NativeCalls;
   config: Config;
   store: SlotStore;
   notifier: Notify;

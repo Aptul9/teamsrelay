@@ -21,7 +21,7 @@ const Env = z.object({
 // passed on as they are, when set. PULSE_RUNTIME_PATH: where the image runs PulseAudio (/defaults/native), the sound of
 // the desktop and the microphone Selkies forwards; without it Chromium looks in XDG_RUNTIME_DIR/pulse and finds none
 const BROWSER_ENV = ["TZ", "LANG", "LANGUAGE", "LC_ALL", "PULSE_RUNTIME_PATH"];
-const AGENT_ENV = ["TZ", "VAPID_SUBJECT", "NTFY_ENABLED", "NTFY_URL", "NTFY_TOPIC", "LIGHT_POLL"];
+const AGENT_ENV = ["TZ", "VAPID_SUBJECT", "NTFY_ENABLED", "NTFY_URL", "NTFY_TOPIC", "LIGHT_POLL", "NATIVE_CALLS", "DOMAIN"];
 
 type SupervisorConfig = { socket: string; accounts: AccountsConfig };
 

@@ -95,4 +95,66 @@ Subsequent scratch test installed pinned `@roamhq/wrtc@0.10.0` using checksum-ve
 
 Native test remains failed overall: process exited 139 after tracks ended, sinks stopped and peer connections closed. Minimal source/track retention reproduces 139. Releasing wrappers and requesting GC avoids the minimal crash but did not fix the full harness. No forced exit was used. Actual Teams acknowledgement/answer, Opus-hub integration and reliable native lifecycle remain unproved. Current receipt and preserved failed attempts reside in `teamsrelay-native-media` under the local session scratch directory. No native package was added to the application or production image.
 
+## Native lifecycle
+
+Lifecycle bisection found the exit-139 cause. On Node 26 the closed `@roamhq/wrtc` peer connections, tracks and sinks are never collected, so their finalizers run during environment teardown and fault. Node 24 collects them and exits 0; upstream supports Node 20 and 22 only. Forty sequential negotiated audio calls in one process kept heap growth near 9 KiB per call and threads and descriptors flat. An explicit `process.exit(0)` after closing every call exits 0 on Node 26. Native media therefore belongs in its own child process, so a native fault cannot stop the agent.
+
+## Call-audio hub adapter
+
+`opusscript@0.1.1` (libopus 1.4, no dependencies, no install scripts) encodes the native sink to Opus 48 kHz mono 20 ms packets, the relay side of `src/server/call-audio-hub.ts`, and decodes the app's microphone packets (Opus 24 kHz mono, `MIC_ENCODER`) into a 60 ms jitter buffer feeding `RTCAudioSource`. Offline loopback: the 440 Hz downlink tone and the 660 Hz uplink tone were each present in every 100 ms window after start-up, with zero decode errors. PCM must reach opusscript as a byte `Buffer`; an `Int16Array` encodes garbage. Frames are paced by elapsed time, since interval timers drift. Not yet in the application.
+
+## Live browserless media
+
+- [x] Build the shipped calling stack in Node with native WebRTC and initialize the registry for Bandpey on a real Trouter registration.
+- [x] Place a browserless call to Microsoft's Teams test-call service and prove two-way audio, mute, local and remote hang-up.
+- [ ] Answer an owned incoming call (event 107, attach, accept) with two-way audio measured on both sides.
+
+Files: `scripts/calling-live-host.mjs`, `scripts/calling-host-helpers.mjs`, `test/agent/calling-host-helpers.test.ts`. The host runs in an isolated container from the production image, bridge network, read-only root, nonroot, `@roamhq/wrtc` from scratch, pinned vendor bundles. The stack's HTTP goes through its own `HttpRequestDispatcherImplementation` over a fetch limited to https Teams and Skype hosts; no request was denied in any run.
+
+The test call targets `28:cf28171e-fcfd-47e4-a1d6-79460b0b3ca0`, the `teamsEchoBotMri` of the shipped configuration. It plays a prompt, records a few seconds and plays them back. Results:
+
+- `createCallAsync` with an empty thread, `addParticipant(bot)` and `start()` reached Connected in about 1.7 s; `POST epconv` 201.
+- ICE connected in 170 to 340 ms with the Teams TURN servers from the ECS `MDN_TRAP` agent offered; selected pair srflx/udp; zero packet loss.
+- The bot's speech arrived at 16 kHz. The host sends a melody of 200 ms notes (440, 554, 659, 880 Hz); the bot played it back in order, so uplink audio crossed the Teams media path.
+- Muted over the bot's recording window, the bot heard nothing, said so and ended the call: mute silences the uplink. Unmuted runs play the melody back.
+- `call.stop(false)` went Disconnecting then Disconnected with `leave` 204; the bot's own hang-up also reached Disconnected.
+
+Node shims the stack needs: `getUserMedia` returning an `RTCAudioSource` track; an own `getSettings` on capture tracks through `Object.defineProperty` (plain assignment throws, `getUserMedia` then fails and the offer goes `recvonly`); an `AudioContext` whose media-stream destination is an `RTCAudioSource`, because the send path mixes the microphone through Web Audio; that mixer must emit silence while the source track is disabled, because a native sink on a local track keeps delivering frames when `enabled` is false and mute otherwise changes nothing; an audio element whose `srcObject` attaches `RTCAudioSink`; a Trouter URL observable whose `changed` carries `off`.
+
+Incoming answer remains unproved live. The only proven owned caller, Npo slot 1, is signed out since 2026-11-07 13:10:36Z, waiting at the Microsoft sign-in page for the owner. MSC and Aubay have no one-to-one chat with Bandpey.
+
 The MCAS reference audit established zero matched broker code-grant events, not zero token traffic in every format. Actual callback script execution and temporary-state availability were not retained. A bounded follow-up kept certificate requests denied and instrumented source identities, state-presence booleans and token-request metadata before filtering. It reached finalize_login200 but expired while proxied auth assets loaded, before callback or token events. No renewal was proved. This bounded diagnostic path stopped. No new HTTP auth variant or policy change was introduced.
+
+
+## Hub integration proof
+
+`calling-audio-bridge.mjs` now connects the native host to the existing call-audio hub protocol, using injected Opus codec and authenticated WebSocket transport. Microphone frames are bounded to 200 ms with 60 ms prebuffer. Teams 16/32/48 kHz audio is converted to 48 kHz mono Opus packets. `CALL_AUDIO_URL` opts into hub audio; no URL retains the synthetic test source.
+
+Owned incoming calls 492 and 493 traversed the actual bundled `attachCallAudioHub` implementation in an isolated container. A synthetic app-side client supplied microphone Opus, Npo received its melody, and the app client decoded 878 downlink packets (393 non-silent). Bandpey mute/unmute and local hang-up passed. All slots green afterwards; production PIDs unchanged, owned endpoint and container removed. Queue drops before answer reflect microphone demand beginning before the call's source starts; this remains diagnostic behavior, not a production readiness claim.
+
+Production integration remains open: account-scoped authorization for local native workers, app audio selection for browserless slots, persistent incoming notification/control wiring, dependency packaging and lifecycle supervision. Current host remains isolated slot-7 diagnostic, not a deployed replacement.
+
+
+## Persistent integration
+
+Native calling worker now starts from the light agent behind `NATIVE_CALLS=1`. Parent supplies discovery and identity, routes call state to existing slot database and notifications, and routes answer/mute/hangup/outgoing commands through IPC. Child crash restarts independently of chat polling; timeout terminates the worker to prevent late command completion. Stale owned registration is deleted before restart. Tokens renew through parent IPC, including during calls. Native worker is recycled while idle after 45 minutes. Hub bearer rotates per worker and is checked against the requested running light slot; web-page origins cannot use the bearer. App selects existing hub audio when callAudio is advertised, and light calls are included in event stream and permitted commands.
+
+Packaging pins `@roamhq/wrtc` 0.10.0 and `opusscript` 0.1.1, verifies both vendor bundle digests during Docker build, and preserves browser mode unless native calling is explicitly enabled. Existing Npo/MSC/Aubay browser modes remain unchanged.
+
+Persistent serve-mode IPC tested on owned incoming call: answer, mute, unmute, local hangup all returned success, worker exited 0, endpoint removed, all production slots stayed green. This exercised serve-mode worker and actual hub with synthetic app client; full deployed UI/authorization/controller chain still requires staging validation and controlled rollout.
+
+
+## Rollout gate
+
+Owner approved gradual production deployment, beginning with Bandpey slot 7; Npo/MSC/Aubay browser modes preserved. `NATIVE_CALLS` accepts `1` (all light slots) or a comma-separated slot list. Rollback captures current runtime image because original browser image ID is absent from local Docker inventory; writable container layer snapshot excludes mounted state. No default-branch merge or public PR text approved yet.
+
+Full staged application API proof: call500, real app sign-in and session-bound hub authorization, commands queued through parent IPC; Answer/Mute/Unmute/Hangup done. Npo received the app tone, mute gap visible; app decoded 594 speaker packets with measured nonzero audio. Stage containers and network removed.
+
+
+## Production result
+
+Gradual rollout enabled Bandpey only (`NATIVE_CALLS=7`). Native hub uses public WSS through existing Caddy because browsers and webapp Docker networks are intentionally separate. Production incoming503: app Answer/Mute/Unmute/Hangup succeeded, 481 microphone packets and 605 speaker packets, Npo received test tone with mute gap. Production outgoing command33 to the owned `Antonio Maritato` chat and mute34/unmute35/hangup36 all completed; 1409 microphone packets and592 decoded speaker packets. All accounts green, no active call afterwards. Npo/MSC/Aubay retained browser mode.
+
+An outgoing request for stale chat display name `MARITATO Antonio` failed without ringing; current CSA name `Antonio Maritato` passed. No display-name fallback to another peer was introduced.
+
+Rollback images retained as `teamsrelay-rollback:teams-browsers` and `teamsrelay-rollback:teams-webapp`; original env/compose in `/var/tmp/teamsrelay-live-calling-20261107/rollback`. Restore those files, tag rollback images to `teamsrelay-browsers:latest` and `teamsrelay:latest`, then `docker compose up -d --no-build browsers webapp`.

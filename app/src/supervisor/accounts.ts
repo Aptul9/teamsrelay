@@ -122,6 +122,7 @@ export function agentCommand(n: number, cfg: AccountsConfig): Command {
 export function lightCommand(n: number, cfg: AccountsConfig): Command {
   const agent = agentCommand(n, cfg);
   const env = Object.fromEntries(Object.entries(agent.env ?? {}).filter(([k]) => !["CDP", "DESKTOP_PORT", "DESKTOP_UID", "DESKTOP_GID", "DESKTOP_APP_ID", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY"].includes(k)));
+  if (env.NATIVE_CALLS && env.NATIVE_CALLS !== "1") env.NATIVE_CALLS = env.NATIVE_CALLS.split(",").includes(String(n)) ? "1" : "0";
   return { file: cfg.node, args: [cfg.lightScript], env };
 }
 
