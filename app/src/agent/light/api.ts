@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { TeamsAuth } from "../teams/chatsvc";
 import { CHATSVCAGG, IC3, PRESENCE, SPACES, type LightToken } from "./token";
 
@@ -75,6 +76,8 @@ export function notificationsOf(j: NotificationsReply): Notification[] {
 }
 
 export class LightApi {
+  private readonly endpoint = randomUUID();
+  private registered = false;
   constructor(
     private readonly token: LightToken,
     private readonly region: () => string,
@@ -151,6 +154,24 @@ export class LightApi {
       }
     }
     return out;
+  }
+
+  async keepActive(): Promise<void> {
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${await this.token.accessToken(PRESENCE)}` };
+    if (!this.registered) {
+      const r = await fetch("https://presence.teams.microsoft.com/v1/me/endpoints/", {
+        method: "PUT", headers, body: JSON.stringify({ id: this.endpoint, activity: "Available", availability: "Available", deviceType: "Web" }), signal: AbortSignal.timeout(15_000),
+      });
+      if (!r.ok) throw new HttpStatusError(r.status, "presence endpoint");
+      this.registered = true;
+    }
+    const r = await fetch("https://presence.teams.microsoft.com/v1/me/reportmyactivity/", {
+      method: "POST", headers, body: JSON.stringify({ endpointId: this.endpoint, isActive: true }), signal: AbortSignal.timeout(15_000),
+    });
+    if (!r.ok) {
+      this.registered = false;
+      throw new HttpStatusError(r.status, "presence activity");
+    }
   }
 
   // The Activity feed (missed calls, mentions, reactions...), newest first as Teams keeps it

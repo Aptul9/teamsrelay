@@ -70,4 +70,11 @@ describe("new Microsoft sign-in of a light account's browser", () => {
     expect(await freshSignIn(a)).toBe(true);
     expect(page.goto).toHaveBeenCalledTimes(1);
   });
+
+  it("leaves a captured Microsoft session to HTTP renewal even when the SPA token ended", async () => {
+    const { a, page, store } = agent({ at: now() - 86400, expiresOn: 1, refused: false });
+    store.setState(STATE.lightToken, JSON.stringify({ at: now() - 86400, expiresOn: 1, refused: false, session: true }));
+    expect(await freshSignIn(a)).toBe(false);
+    expect(page.goto).not.toHaveBeenCalled();
+  });
 });

@@ -21,7 +21,7 @@ const ENDING = 600;
 export async function freshSignIn(a: Agent): Promise<boolean> {
   const now = nowSeconds();
   const sign = lightSignIn(a);
-  if (sign.at && !sign.refused && sign.expiresOn - now >= ENDING) return false;
+  if (sign.at && !sign.refused && (sign.session || sign.expiresOn - now >= ENDING)) return false;
   const email = a.store.getState(STATE.me) ? parseState(Identity, a.store.getState(STATE.me)).email : "";
   if (!email) return false;
   if (now - (Number(a.store.getState(STATE.freshSignIn)) || 0) < SIGN_IN_TRY_EVERY) return false;

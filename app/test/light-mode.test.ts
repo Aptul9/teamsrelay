@@ -86,9 +86,25 @@ describe("when a light account needs its browser", () => {
     expect(refreshDue({ ...slotRow(db, n)!, refreshing: T0 - 10 }, null, T0)).toBe(false);
     expect(refreshDue({ ...slotRow(db, n)!, stopped: 1 }, null, T0)).toBe(false);
   });
+
+  it("never starts a daily browser for a captured Microsoft session, even expired or refused", () => {
+    const s = row({});
+    for (const refused of [false, true]) {
+      expect(refreshDue(s, { at: T0 - 86400, expiresOn: T0 - 1, refused, session: true }, T0)).toBe(false);
+    }
+    askRefresh(db, s.slot);
+    expect(refreshDue(slotRow(db, s.slot)!, { at: 1, expiresOn: 2, refused: true, session: true }, T0)).toBe(true);
+  });
 });
 
 describe("sign-in run of a light account", () => {
+  it("finishes capture once the Microsoft session is saved, even with an old SPA refresh token", async () => {
+    const n = slot();
+    onSleep = (s) => void (sign = { at: s, expiresOn: s - 1, refused: false, session: true });
+    expect(await runRefresh(n, deps())).toBe("ok");
+    expect(secs()).toBe(T0 + 2);
+    expect(calls).toEqual([`start ${n}`, `light ${n}`]);
+  });
   it("runs the browser until it captured a sign-in that holds, then the light agent", async () => {
     const n = slot();
     onSleep = (s) => {

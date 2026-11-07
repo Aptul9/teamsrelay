@@ -113,9 +113,9 @@ export type CallState = z.infer<typeof CallState>;
 export const CALL_SEEN_EVERY = 2;
 export const CALL_FRESH_FOR = 10;
 
-// The sign-in of a light account: when its browser run captured it (Unix s, 0 never), when it ends (Unix s), and whether
-// Microsoft refused it since. The web app starts the browser run again once it ended or was refused (src/lib/light.ts).
-export const LightSignIn = z.object({ at: z.number().catch(0), expiresOn: z.number().catch(0), refused: z.boolean().catch(false) });
+// Captured sign-in (Unix s), SPA expiry and refusal. session: captured Microsoft cookies enable HTTP renewal,
+// so expiry/refusal no longer starts a browser automatically (src/lib/light.ts).
+export const LightSignIn = z.object({ at: z.number().catch(0), expiresOn: z.number().catch(0), refused: z.boolean().catch(false), session: z.boolean().optional() });
 export type LightSignIn = z.infer<typeof LightSignIn>;
 
 // The relay of an account on another computer: the name of that computer (HOST_LABEL), Unix seconds of its last sync
