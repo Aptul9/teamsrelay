@@ -22,7 +22,7 @@ const ENDING = 600;
 export async function freshSignIn(a: Agent): Promise<boolean> {
   const now = nowSeconds();
   const sign = lightSignIn(a);
-  const browser = sign.browser || behindMcas(a.tp.page.url());
+  const browser = sign.browser || sign.mcas || behindMcas(a.tp.page.url());
   if (sign.at && !sign.refused && ((sign.session && !browser) || sign.expiresOn - now >= ENDING)) return false;
   const email = a.store.getState(STATE.me) ? parseState(Identity, a.store.getState(STATE.me)).email : "";
   if (!email) return false;
@@ -35,7 +35,8 @@ export async function freshSignIn(a: Agent): Promise<boolean> {
   const here = isTeamsUrl(page.url()) ? new URL(page.url()).origin : "https://teams.cloud.microsoft";
   try {
     const cdp = await page.context().newCDPSession(page);
-    for (const origin of new Set([here, ...TEAMS_HOSTS.map((h) => `https://${h}`)])) {
+    const proxyOrigins = browser ? ["https://teams.microsoft.com.mcas.ms", "https://teams.cloud.microsoft.mcas.ms"] : [];
+    for (const origin of new Set([here, ...TEAMS_HOSTS.map((h) => `https://${h}`), ...proxyOrigins])) {
       await cdp.send("Storage.clearDataForOrigin", { origin, storageTypes: "local_storage,indexeddb,cache_storage,service_workers" });
     }
     await cdp.detach();
