@@ -1,7 +1,7 @@
 import { setTimeout as wait } from "node:timers/promises";
 import type Database from "better-sqlite3";
 import { SIGN_IN_TRY_AFTER, SIGN_IN_TRY_WAIT } from "@/shared/sign-in";
-import { LightSignIn, parseState, STATE, Watch } from "@/shared/slot-db/state";
+import { CallState, InCall, inCallOf, LightSignIn, parseState, ringingCall, STATE, Watch } from "@/shared/slot-db/state";
 import { beginCheck, endCheck, endRefresh, listSlots, nextCheck, slotRow, type CheckResult } from "./appdb";
 import type { ControlClient } from "./control";
 import { runDueRefreshes } from "./light";
@@ -26,6 +26,7 @@ export type SlotPort = {
   commandStatus(n: number, id: number): string | null;
   // the sign-in of a light account, null before its first (src/lib/light.ts)
   lightSignIn(n: number): LightSignIn | null;
+  busy?(n: number): boolean;
 };
 
 export type CheckDeps = {
@@ -204,6 +205,7 @@ export function settleChecks(ctl: ControlClient, db: Database.Database): Promise
 // The database of each account as the checks of the web app read it; an account whose agent never ran has none
 export function slotPort(): SlotPort {
   return {
+    busy: (n) => withSlotOr(n, (r) => !!(inCallOf(r.state<InCall | null>(STATE.inCall, null), Date.now()) || ringingCall(r.state<CallState | null>(STATE.call, null), Date.now())), false),
     health: (n) =>
       withSlotOr(
         n,

@@ -7,7 +7,7 @@ import { SIGN_IN_WAIT, SIGNED_OUT, type SlotPort } from "@/lib/checks";
 import type { ControlClient } from "@/lib/control";
 import { BROWSER_WAIT, browserOnDemand, MIN_LIFE, REFRESH_WAIT, refreshDue, runRefresh } from "@/lib/light";
 import { accountStatus, statusText } from "@/lib/client";
-import { keepSlotsUp, setCheckMode, setLightMode } from "@/lib/slots";
+import { exclusive, keepSlotsUp, setCheckMode, setLightMode } from "@/lib/slots";
 import type { LightSignIn } from "@/shared/slot-db/state";
 import { tempDir } from "./helpers";
 
@@ -88,17 +88,82 @@ describe("when a light account needs its browser", () => {
     expect(refreshDue({ ...slotRow(db, n)!, stopped: 1 }, null, T0)).toBe(false);
   });
 
-  it("never starts a daily browser for a captured Microsoft session, even expired or refused", () => {
+  it("keeps direct Microsoft sessions browserless, but falls back when renewal was refused", () => {
     const s = row({});
-    for (const refused of [false, true]) {
-      expect(refreshDue(s, { at: T0 - 86400, expiresOn: T0 - 1, refused, session: true }, T0)).toBe(false);
-    }
+    expect(refreshDue(s, { at: T0 - 86400, expiresOn: T0 - 1, refused: false, session: true }, T0)).toBe(false);
+    expect(refreshDue(s, { at: T0 - 86400, expiresOn: T0 - 1, refused: true, session: true }, T0)).toBe(true);
     askRefresh(db, s.slot);
     expect(refreshDue(slotRow(db, s.slot)!, { at: 1, expiresOn: 2, refused: true, session: true }, T0)).toBe(true);
+  });
+
+  it("renews a browser-backed session only near expiry, not every scheduler tick", () => {
+    const s = row({});
+    const sign = { at: T0 - 80000, expiresOn: T0 + 3600, refused: false, session: true, browser: true };
+    expect(refreshDue(s, sign, T0)).toBe(false);
+    expect(refreshDue(s, { ...sign, expiresOn: T0 + 30 }, T0)).toBe(true);
+    expect(refreshDue({ ...s, refreshed: T0 - 30, refresh_result: "failed" }, { ...sign, refused: true }, T0)).toBe(false);
+    expect(refreshDue({ ...s, refreshed: T0 - 3600, refresh_result: "login" }, { ...sign, refused: true }, T0)).toBe(false);
   });
 });
 
 describe("sign-in run of a light account", () => {
+  it("defers browser renewal while a call is active or ringing", async () => {
+    const n = slot();
+    expect(await runRefresh(n, { ...deps(), slot: { ...port, busy: () => true } })).toBeNull();
+    expect(calls).toEqual([]);
+    expect(slotRow(db, n)?.refreshing).toBe(0);
+  });
+
+  it("keeps the browser when a call starts during renewal, until the call ends", async () => {
+    const n = slot();
+    let busy = false;
+    onSleep = (s) => {
+      busy = s >= T0 + 8 && s < T0 + 20;
+      if (s >= T0 + 8) sign = { at: s, expiresOn: s + 86400, refused: false, session: true, browser: true };
+      if (busy) expect(calls).not.toContain(`light ${n}`);
+    };
+    expect(await runRefresh(n, { ...deps(), slot: { ...port, busy: () => busy } })).toBe("ok");
+    expect(secs()).toBe(T0 + 20);
+    expect(calls).toEqual([`start ${n}`, `light ${n}`]);
+  });
+
+  it("rechecks calls after waiting for another queued slot operation", async () => {
+    const n = slot();
+    let busy = false;
+    onSleep = (s) => {
+      if (s === T0 + 8) {
+        sign = { at: s, expiresOn: s + 86400, refused: false, session: true, browser: true };
+        void exclusive(async () => {
+          await new Promise((resolve) => setImmediate(resolve));
+          busy = true;
+        });
+      }
+      if (s >= T0 + 20) busy = false;
+    };
+    expect(await runRefresh(n, { ...deps(), slot: { ...port, busy: () => busy } })).toBe("ok");
+    expect(secs()).toBe(T0 + 20);
+  });
+  it("does not accept a saved session row from before this browser run", async () => {
+    const n = slot();
+    sign = { at: T0 - 100, expiresOn: T0 + 3600, refused: false, session: true };
+    onSleep = (s) => {
+      if (s >= T0 + 8) sign = { ...sign!, at: s };
+    };
+    expect(await runRefresh(n, deps())).toBe("ok");
+    expect(secs()).toBe(T0 + 8);
+  });
+
+  it("waits for a usable token on a browser-backed session, even after cookies were captured", async () => {
+    const n = slot();
+    sign = { at: T0 - 100, expiresOn: T0 - 1, refused: false, session: true, browser: true } as LightSignIn;
+    onSleep = (s) => {
+      sign = { ...sign!, at: s, expiresOn: s >= T0 + 10 ? s + 72000 : T0 - 1 };
+    };
+    expect(await runRefresh(n, deps())).toBe("ok");
+    expect(secs()).toBe(T0 + 10);
+    expect(calls).toEqual([`start ${n}`, `light ${n}`]);
+  });
+
   it("keeps a legacy account's browser until this run captured its session, even while the old token holds", async () => {
     const n = slot();
     sign = { at: T0 - 100, expiresOn: T0 + 3600, refused: false };
