@@ -42,6 +42,8 @@ export type AccountSummary = {
   callAudio: boolean;
   // a light account, no browser of its own (src/lib/light.ts); refreshing: its browser runs now to sign it in again
   light: boolean;
+  // calls of an account with no browser switched on in Settings; absent: on
+  calls?: boolean;
   refreshing: boolean;
 };
 
@@ -102,8 +104,9 @@ export function accountSummary(s: Slot): AccountSummary {
     relay: !!s.relay,
     host: d?.link.host ?? "",
     relaySeen: d?.link.seen ?? 0,
-    callAudio: !!s.relay && !!d?.callAudio,
+    callAudio: (!!s.relay || !!s.light) && !!d?.callAudio,
     light: !!s.light,
+    calls: s.calls !== 0,
     refreshing: !!s.refreshing,
   };
 }

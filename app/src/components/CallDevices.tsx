@@ -44,23 +44,27 @@ function useDevices() {
   return { list, refresh };
 }
 
-// A bar as loud as the microphone, redrawn every frame outside React. Speech sits well under full scale: doubled.
+// Map microphone RMS to a speech meter: -60 dB is silence, -12 dB fills the bar.
 function MicLevel({ read }: { read: () => number }) {
   const box = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let frame = 0;
     const draw = () => {
-      const v = Math.min(1, Math.max(0, read() * 2));
+      const sample = read();
+      const v = Number.isFinite(sample) && sample > 0 ? Math.min(1, Math.max(0, (20 * Math.log10(sample) + 60) / 48)) : 0;
       if (bar.current) bar.current.style.width = `${Math.round(v * 100)}%`;
-      if (box.current) box.current.dataset.micLevel = v.toFixed(2);
+      if (box.current) {
+        box.current.dataset.micLevel = v.toFixed(2);
+        box.current.setAttribute("aria-valuenow", String(Math.round(v * 100)));
+      }
       frame = requestAnimationFrame(draw);
     };
     draw();
     return () => cancelAnimationFrame(frame);
   }, [read]);
   return (
-    <div ref={box} data-mic-level="0" className="h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden>
+    <div ref={box} data-mic-level="0" role="meter" aria-label="Microphone level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={0} className="h-3 w-full overflow-hidden rounded-full bg-muted">
       <div ref={bar} className="h-full w-0 bg-success" />
     </div>
   );

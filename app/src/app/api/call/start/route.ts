@@ -5,7 +5,7 @@ import { desktopUrlOf } from "@/lib/config";
 import { body, HttpError, route } from "@/lib/http";
 import { requireSlot } from "@/lib/session";
 import { withSlot } from "@/lib/slotdb";
-import { inCallOf, ringingCall } from "@/shared/slot-db/state";
+import { STATE, inCallOf, ringingCall } from "@/shared/slot-db/state";
 
 const SELF_CHAT = /\(you\)/i;
 
@@ -24,7 +24,7 @@ export const POST = route(async (req) => {
   }));
   if (busy) throw new HttpError(409, "A call is on: end it first");
   if (kind !== "one" || SELF_CHAT.test(name)) throw new HttpError(409, "Only a 1:1 chat can be called");
-  const relay = !!slotRow(appDb(), slot)?.relay;
+  const relay = !!slotRow(appDb(), slot)?.relay || withSlot(slot, r => r.state<number>(STATE.callAudio, 0) === 1);
   // audio: the page opened the sound of the call; the relay of an account on another computer then sends it there
   const id = queueOnce(slot, "call", name, relay && b.audio === true ? JSON.stringify({ audio: true }) : "");
   return Response.json({ ok: true, id, desktop: relay ? null : desktopUrlOf(slot) });

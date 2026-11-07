@@ -15,7 +15,7 @@ export class CallReaders {
   ringing(slots: readonly Slot[], now = Date.now()): RingingCall[] {
     const calls: RingingCall[] = [];
     for (const s of slots) {
-      const r = runsBrowser(s) ? this.reader(s.slot) : null;
+      const r = (runsBrowser(s) || (s.light && !s.stopped)) ? this.reader(s.slot) : null;
       if (!r) continue;
       const c = ringingCall(r.call(), now);
       if (c) calls.push({ acc: s.slot, ...c });

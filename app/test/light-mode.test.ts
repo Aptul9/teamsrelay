@@ -1,7 +1,8 @@
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { beforeEach, describe, expect, it } from "vitest";
-import { askRefresh, claimSlot, endRefresh, listSlots, migrateAppSchema, openAppDb, setCheckEvery, setLight, setSlotStopped, slotRow, type Slot } from "@/lib/appdb";
+import { askRefresh, claimSlot, endRefresh, listSlots, migrateAppSchema, openAppDb, setCalls, setCheckEvery, setLight, setSlotStopped, slotRow, type Slot } from "@/lib/appdb";
+import { AppStore } from "@/agent/store/app-store";
 import { SIGN_IN_WAIT, SIGNED_OUT, type SlotPort } from "@/lib/checks";
 import type { ControlClient } from "@/lib/control";
 import { BROWSER_WAIT, browserOnDemand, MIN_LIFE, REFRESH_WAIT, refreshDue, runRefresh } from "@/lib/light";
@@ -285,5 +286,21 @@ describe("light mode of an account", () => {
     expect(statusText(a)).toBe("Active, no browser");
     expect(statusText({ ...a, refreshing: true })).toBe("Signing in again");
     expect(statusText({ ...a, teams: "login" })).toBe("Signed out");
+  });
+});
+
+
+describe("calls of an account with no browser", () => {
+  it("are on by default and switch per account, read by that account's agent", () => {
+    const a = slot();
+    const b = slot();
+    expect(slotRow(db, a)?.calls).toBe(1);
+    setCalls(db, a, false);
+    expect(slotRow(db, a)?.calls).toBe(0);
+    expect(slotRow(db, b)?.calls).toBe(1);
+    expect(new AppStore(db.name, a).callsOn()).toBe(false);
+    expect(new AppStore(db.name, b).callsOn()).toBe(true);
+    setCalls(db, a, true);
+    expect(new AppStore(db.name, a).callsOn()).toBe(true);
   });
 });

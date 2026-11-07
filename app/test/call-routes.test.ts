@@ -1,6 +1,7 @@
 // Answer, hang-up, mute and call asked from the app: queued for the agent of the account, once per call, only while
 // the call rings or is in progress. An account on another computer takes them as well: its relay fetches the command
 // and its agent presses Teams there; there is no desktop to open for it.
+import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -351,4 +352,34 @@ describe("POST /api/call/mute", () => {
     vi.mocked(requireSlot).mockRejectedValueOnce(new HttpError(404, "Account not found"));
     expect((await post(mute, { on: true })).status).toBe(404);
   });
+});
+
+
+describe("native calling audio authorization", () => {
+  it("accepts only the token for a running light slot, with no browser origin", async () => {
+    appDb().prepare("UPDATE teams_accounts SET light=1 WHERE slot=?").run(slot);
+    const file = path.join(path.dirname(process.env.APP_DB!), String(slot), "calling-audio-token");
+    fs.writeFileSync(file, "a".repeat(64));
+    write(STATE.callAudio, 1 as unknown as object);
+    const request = (token: string, origin?: string) => new Request(`http://localhost/api/call/audio?a=${slot}`, { headers: { Authorization: `Bearer ${token}`, ...(origin ? { Origin: origin } : {}) } });
+    const good = await audioSide(request("a".repeat(64)), undefined);
+    expect(await good.json()).toEqual({ slot, side: "relay" });
+    expect((await audioSide(request("b".repeat(64)), undefined)).status).not.toBe(200);
+    expect((await audioSide(request("a".repeat(64), "https://evil.example"), undefined)).status).not.toBe(200);
+    setSlotStopped(appDb(), slot, true);
+    expect((await audioSide(request("a".repeat(64)), undefined)).status).not.toBe(200);
+    appDb().prepare("UPDATE teams_accounts SET light=0 WHERE slot=?").run(slot);
+  });
+});
+
+
+describe("native light call commands", () => {
+ it("queues answer when native worker advertises readiness", async () => {
+  appDb().prepare("UPDATE teams_accounts SET light=1 WHERE slot=?").run(slot);
+  write(STATE.callAudio, 1 as unknown as object);
+  ring(Date.now());
+  const since = JSON.parse((slotDb.prepare("SELECT v FROM state WHERE k=?").get(STATE.call) as {v:string}).v).since;
+  expect((await post(answer, {since, audio:true})).status).toBe(200);
+  appDb().prepare("UPDATE teams_accounts SET light=0 WHERE slot=?").run(slot);
+ });
 });

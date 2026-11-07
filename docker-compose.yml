@@ -37,7 +37,9 @@ services:
       SELKIES_MICROPHONE_ON_START: demand
       <<: *notify-env
       # time for the supervisor to close the browsers when the container stops
-      S6_SERVICES_GRACETIME: "20000"
+      S6_SERVICES_GRACETIME: "35000"
+      NATIVE_CALLS: ${NATIVE_CALLS:-0}
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
     volumes:
       # browser profiles, one directory per account: the signed-in Microsoft sessions
       - ./config:/profiles
@@ -50,7 +52,7 @@ services:
     security_opt:
       - seccomp:unconfined
     shm_size: "1gb"
-    stop_grace_period: 30s
+    stop_grace_period: 40s
     healthcheck:
       # the supervisor answers on its socket
       test: ["CMD", "node", "/app/supervisor.cjs", "status"]

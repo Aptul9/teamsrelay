@@ -322,3 +322,13 @@ describe("Accounts", () => {
     expect(a.status().every((s) => !s.browser.running && !s.agent.running)).toBe(true);
   });
 });
+
+
+describe("native calling rollout scope",()=>{
+ it("enables only selected light accounts",()=>{
+  cfg.agentEnv.NATIVE_CALLS='7';
+  expect(lightCommand(7,cfg).env?.NATIVE_CALLS).toBe('1');
+  expect(lightCommand(4,cfg).env?.NATIVE_CALLS).toBe('0');
+  cfg.agentEnv.NATIVE_CALLS='1';expect(lightCommand(4,cfg).env?.NATIVE_CALLS).toBe('1');
+ });
+});

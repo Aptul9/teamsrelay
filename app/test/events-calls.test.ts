@@ -129,3 +129,13 @@ describe("calls on the event stream", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+describe("browserless calls in event stream", () => {
+ it("includes a light slot even without a browser run", async () => {
+  appDb().prepare("UPDATE teams_accounts SET light=1,refreshing=0 WHERE slot=?").run(slot);
+  const since=Date.now(); write(STATE.call,{caller:'Native caller',since,seen:since,ringing:true});
+  const s=await open(); await vi.advanceTimersByTimeAsync(CALLS_EVERY_MS);
+  expect(s.last('calls')).toEqual([{acc:slot,caller:'Native caller',since}]);
+  s.close(); appDb().prepare("UPDATE teams_accounts SET light=0 WHERE slot=?").run(slot);
+ });
+});

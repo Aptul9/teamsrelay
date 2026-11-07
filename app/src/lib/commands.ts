@@ -1,4 +1,5 @@
 import { commandOf, type AppCommand } from "@/shared/command-input";
+import { STATE } from "@/shared/slot-db/state";
 import { LIGHT_UNSUPPORTED, type CommandType } from "@/shared/slot-db/commands";
 import { appDb, slotRow } from "./appdb";
 import { body, HttpError, route } from "./http";
@@ -37,7 +38,7 @@ function takesCommands(slot: number, type: CommandType) {
   if (why) throw new HttpError(409, why);
   const s = slotRow(appDb(), slot);
   // the light agent runs it, unless the browser of the account runs now to sign it in again
-  if (s?.light && !s.refreshing && LIGHT_UNSUPPORTED.includes(type)) {
+  if (s?.light && !s.refreshing && LIGHT_UNSUPPORTED.includes(type) && (type === "download" || !withSlot(slot, r => r.state<number>(STATE.callAudio, 0) === 1))) {
     throw new HttpError(409, "This Teams account runs without a browser: calls and downloads need Always on in Settings");
   }
 }

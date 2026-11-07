@@ -104,7 +104,6 @@ function Page() {
           w.hungUp = c;
           return pending();
         }}
-        onDesktop={(n) => (w.desktop = n)}
         audio={audio}
         mutes={mutes}
         onMute={(n, on) => (w.muted = [n, on])}

@@ -1,3 +1,4 @@
+import { NativeCalls } from "./native-calls";
 import { setTimeout as sleep } from "node:timers/promises";
 import fs from "node:fs";
 import { Identity, LightSignIn, parseState, STATE, Watch, type AgentHealth, type TeamsState } from "@/shared/slot-db/state";
@@ -221,16 +222,53 @@ async function readViewing(l: Light) {
   if (chat && inApp(l, chat)) await saveChat(l, chat).catch((e: unknown) => void refused(l, e));
 }
 
+// The calling worker of this account follows its Calls switch: started when on, stopped (calls end) when off
+export async function syncNativeCalls(l: Light, want: boolean, make: (l: Light) => NonNullable<Light["calls"]> = (x) => new NativeCalls(x)) {
+  if (want && !l.calls) {
+    if (!l.me.oid) await identify(l);
+    l.calls = make(l);
+    await l.calls.start().catch((e) => {
+      log.warn("calling", errorText(e));
+      l.calls?.schedule();
+    });
+  } else if (!want && l.calls) {
+    log.info("calling", "switched off for this account");
+    l.calls.stop();
+    l.calls = undefined;
+  }
+}
+
 export async function runLight(l: Light, signal?: AbortSignal): Promise<void> {
+  const nativeAllowed = process.env.NATIVE_CALLS === "1";
+  const callsWanted = () => nativeAllowed && (l.callsWanted?.() ?? true);
+  if (nativeAllowed) {
+    process.once("SIGTERM", () => l.calls?.stop());
+    process.once("SIGINT", () => l.calls?.stop());
+    await syncNativeCalls(l, callsWanted()).catch((e) => log.warn("calling", errorText(e)));
+  }
   const handlers = lightHandlers({ list: () => readList(l), activity: () => readFeed(l) });
   const renewed = { for: 0, retryAt: 0 };
   let healthAt = 0;
   let viewingAt = 0;
   let renewalAt = 0;
   let presenceAt = 0;
+  let callsAt = Date.now() + 5_000;
+  // Call controls have their own lane: a chat-list read or message command must not hold an answer or hang-up.
+  if (nativeAllowed) l.store.interruptedCommands();
+  let commandsBusy = false;
+  const commandTimer = nativeAllowed ? setInterval(() => {
+    if (commandsBusy) return;
+    commandsBusy = true;
+    void runLightCommands(l, handlers, "calls").catch(e => log.warn("cmd", errorText(e))).finally(() => { commandsBusy = false; });
+  }, 250) : null;
+  commandTimer?.unref();
   while (!signal?.aborted) {
     const now = Date.now();
     try {
+      if (nativeAllowed && now >= callsAt) {
+        callsAt = now + 5_000;
+        await syncNativeCalls(l, callsWanted());
+      }
       if (now >= renewalAt) {
         renewalAt = now + 60_000;
         await renewSignIn(l, renewed);
@@ -256,10 +294,12 @@ export async function runLight(l: Light, signal?: AbortSignal): Promise<void> {
         healthAt = now + HEALTH_EVERY_MS;
         await writeHealth(l);
       }
-      await runLightCommands(l, handlers);
+      await runLightCommands(l, handlers, commandTimer ? "other" : "all");
     } catch (e) {
       log.warn("loop", errorText(e));
     }
     await sleep(250);
   }
+  if (commandTimer) clearInterval(commandTimer);
+  l.calls?.stop();
 }

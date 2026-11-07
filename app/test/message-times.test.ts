@@ -94,7 +94,7 @@ describe("times in the open chat", () => {
       createElement(
         TooltipProvider,
         null,
-        createElement(Conversation, { acc: 1, chat: "Simonetta Viola", rows, stopped: false, others: 0, onBack: () => undefined, onOpenDesktop: () => undefined }),
+        createElement(Conversation, { acc: 1, chat: "Simonetta Viola", rows, stopped: false, others: 0, onBack: () => undefined }),
       ),
     );
   const stamp = (t: number) => new RegExp(`<time[^>]*datetime="${new Date(t).toISOString()}"[^>]*>${timeLabel(t)}</time>`, "i");

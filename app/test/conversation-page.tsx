@@ -29,7 +29,6 @@ function Page() {
           stopped={!!view.stopped}
           others={0}
           onBack={() => undefined}
-          onOpenDesktop={() => undefined}
           onCall={view.callable ? () => (w.called = (w.called ?? 0) + 1) : undefined}
         />
       </div>

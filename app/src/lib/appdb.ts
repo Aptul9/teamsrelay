@@ -39,6 +39,8 @@ export type Slot = {
   refreshing: number;
   refreshed: number;
   refresh_result: string;
+  // a light account rings and answers calls in the app (native calling worker); 0 reads messages only
+  calls: number;
 };
 
 export { CHECK_INTERVALS } from "@/shared/checks";
@@ -46,7 +48,7 @@ export type CheckResult = "ok" | "login" | "failed";
 
 // relay_token, the digest of the token of the relay, never leaves the database: rows say only whether there is one
 const SLOT_COLUMNS =
-  "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking, (relay_token <> '') AS relay, browser_off, light, refreshing, refreshed, refresh_result";
+  "slot, owner_id, added, stopped, started, check_every, check_due, checked, check_result, checking, (relay_token <> '') AS relay, browser_off, light, refreshing, refreshed, refresh_result, calls";
 
 let shared: Database.Database | null = null;
 
@@ -86,6 +88,7 @@ export function migrateAppSchema(db: Database.Database) {
     ["refreshing", "INTEGER NOT NULL DEFAULT 0"],
     ["refreshed", "INTEGER NOT NULL DEFAULT 0"],
     ["refresh_result", "TEXT NOT NULL DEFAULT ''"],
+    ["calls", "INTEGER NOT NULL DEFAULT 1"],
   ]) {
     if (!columns.includes(column)) db.exec(`ALTER TABLE teams_accounts ADD COLUMN ${column} ${decl}`);
   }
@@ -179,6 +182,11 @@ export function nextCheck(db: Database.Database, now: number): Slot | null {
 export function setLight(db: Database.Database, slot: number, light: boolean) {
   if (light) db.prepare("UPDATE teams_accounts SET light=1, check_every=0, check_due=0 WHERE slot=?").run(slot);
   else db.prepare("UPDATE teams_accounts SET light=0, refreshing=0 WHERE slot=?").run(slot);
+}
+
+// Calls on or off for one account with no browser: its light agent starts or stops its calling worker
+export function setCalls(db: Database.Database, slot: number, on: boolean) {
+  db.prepare("UPDATE teams_accounts SET calls=? WHERE slot=?").run(on ? 1 : 0, slot);
 }
 
 export function beginRefresh(db: Database.Database, slot: number, now: number) {

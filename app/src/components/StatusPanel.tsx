@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRingIcon, MonitorIcon, RefreshCwIcon, StethoscopeIcon } from "lucide-react";
+import { BellRingIcon, RefreshCwIcon, StethoscopeIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { cn } from "cn";
@@ -40,14 +40,12 @@ export function StatusPanel({
   health,
   pushOff,
   onEnablePush,
-  onOpenDesktop,
 }: {
   acc: number;
   accountName: string;
   health: Health | null;
   pushOff: boolean;
   onEnablePush: () => void;
-  onOpenDesktop: () => void;
 }) {
   const [busy, setBusy] = useState<"" | "resync" | "recheck">("");
   const overall = health?.overall || "yellow";
@@ -119,10 +117,6 @@ export function StatusPanel({
               <Button variant="outline" className="h-10 md:h-9" onClick={() => void run("recheck")} disabled={!!busy || stopped} title="Check the whole chain and send the result as a notification">
                 <StethoscopeIcon />
                 Recheck
-              </Button>
-              <Button variant="outline" className="col-span-2 h-10 md:h-9" onClick={onOpenDesktop} disabled={stopped}>
-                <MonitorIcon />
-                Open the remote Teams (sign-in, MFA)
               </Button>
               {pushOff && (
                 <Button className="col-span-2 h-10 md:h-9" onClick={onEnablePush}>
