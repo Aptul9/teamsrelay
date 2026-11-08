@@ -47,6 +47,8 @@ claude mcp add --scope user --transport http teamsrelay https://<DOMAIN>/mcp --h
 | `edit_message`, `delete_message`, `undo_delete` | On your own messages |
 | `get_attachment` | Images of a message inline, text files as text, other files up to 8 MB as resources; SharePoint files downloaded with the Teams session |
 
+One MCP for Teams, mail and calendars: the Outlook-MCP remote server (repo `Aptul9/Outlook-MCP`, `ts/compose.yml`) runs on the same host, joins this compose network as `communication-mcp`, forwards these tools as `teams_*`, and answers at `https://<DOMAIN>/communication/mcp` with its own bearer token.
+
 `chat` is the name as `list_chats` gives it, `message_id` the id of `read_chat`, `account` the slot (default: the first). The write tools queue the same command as the app and wait up to 45 s for Teams to show it. Accounts without a browser cannot download SharePoint files.
 
 ## Local relay (one account, no server)
