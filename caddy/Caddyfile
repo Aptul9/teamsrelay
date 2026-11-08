@@ -22,6 +22,11 @@
 		}
 		reverse_proxy browsers:3000
 	}
+	# Remote MCP of mail, calendars and Teams (repo Aptul9/Outlook-MCP, ts/compose.yml) at /communication/mcp, when a
+	# container named communication-mcp runs on this compose network; without it this path alone answers 502
+	handle_path /communication/* {
+		reverse_proxy communication-mcp:8190
+	}
 	handle {
 		reverse_proxy webapp:8090
 	}
