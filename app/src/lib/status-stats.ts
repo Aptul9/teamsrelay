@@ -161,6 +161,6 @@ export function bests(days: readonly Omit<DayStats, "stretches">[]): {
     firstOnline: pick(days.filter((d) => d.firstOnline).map((d) => [d.firstOnline, d.day]), (a, b) => a < b),
     lastOnline: pick(days.filter((d) => d.lastOnline).map((d) => [d.lastOnline, d.day]), (a, b) => a > b),
     longestAvailable: pick(days.filter((d) => d.longestAvailable > 0).map((d) => [d.longestAvailable, d.day]), (a, b) => a > b),
-    green: pick(days.filter((d) => d.green !== null).map((d) => [d.green as number, d.day]), (a, b) => a > b),
+    green: pick(days.filter((d) => !!d.green).map((d) => [d.green as number, d.day]), (a, b) => a > b),
   };
 }

@@ -135,4 +135,10 @@ describe("the challenge", () => {
       green: { value: 1, day: "2026-11-04" },
     });
   });
+
+  it("has no best green share while no day had available time", () => {
+    const away = dayStats([[at(9), at(12), "away"]], "2026-11-03", past);
+    expect(away.green).toBe(0);
+    expect(bests([away]).green).toBeNull();
+  });
 });
